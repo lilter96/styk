@@ -54,6 +54,13 @@ func TestReadPaginationAndValues(t *testing.T) {
 		t.Fatalf("unexpected import: %+v", snap)
 	}
 }
+
+func TestStockReportHrefWithExpandQueryUsesEntityPathIdentity(t *testing.T) {
+	id, err := idFromHref("https://api.moysklad.ru/api/remap/1.2/entity/product/10000000-0000-0000-0000-000000000001?expand=synthetic", "product")
+	if err != nil || id != "10000000-0000-0000-0000-000000000001" {
+		t.Fatalf("stock report entity identity not preserved: %q %v", id, err)
+	}
+}
 func TestIncompleteAndDuplicates(t *testing.T) {
 	for _, tc := range []struct{ name, body string }{{"missing rows", `{"meta":{"size":0,"limit":1,"offset":0}}`}, {"empty interrupted", `{"meta":{"size":1,"limit":1,"offset":0},"rows":[]}`}, {"duplicate", `{"meta":{"size":2,"limit":2,"offset":0},"rows":[{"id":"x"},{"id":"x"}]}`}, {"missing id", `{"meta":{"size":1,"limit":1,"offset":0},"rows":[{}]}`}} {
 		t.Run(tc.name, func(t *testing.T) {
