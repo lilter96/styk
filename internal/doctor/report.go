@@ -91,13 +91,26 @@ func Evaluate(e Evidence, now time.Time, maxAge time.Duration) Report {
 	} else {
 		add("ACCOUNT_REGISTRATION", Fail, "Both accounts must be registered to the selected tenant.")
 	}
+	for _, c := range []struct {
+		code       string
+		registered bool
+	}{{"MOYSKLAD_REGISTRATION", e.MoyskladRegistered}, {"OZON_REGISTRATION", e.OzonRegistered}} {
+		if c.registered {
+			add(c.code, Pass, "Account is registered to the selected tenant; registration is an administrative attestation.")
+		} else {
+			add(c.code, NotChecked, "Account is not registered to the selected tenant; its observations were not accessed.")
+		}
+	}
 	add("MOYSKLAD_CONNECTION", NotChecked, "No live connection check was performed.")
 	add("OZON_CONNECTION", NotChecked, "No live connection check was performed.")
 	for _, entry := range []struct {
-		code  string
-		batch Batch
-	}{{"MOYSKLAD_IMPORT", e.Moysklad}, {"OZON_IMPORT", e.Ozon}, {"POSTING_IMPORT", e.Postings}, {"CUSTOMER_ORDER_IMPORT", e.Orders}} {
+		code       string
+		batch      Batch
+		registered bool
+	}{{"MOYSKLAD_IMPORT", e.Moysklad, e.MoyskladRegistered}, {"OZON_IMPORT", e.Ozon, e.OzonRegistered}, {"POSTING_IMPORT", e.Postings, e.OzonRegistered}, {"CUSTOMER_ORDER_IMPORT", e.Orders, e.MoyskladRegistered}} {
 		switch {
+		case !entry.registered:
+			add(entry.code, NotChecked, "Source account is not registered to this tenant.")
 		case !entry.batch.Present:
 			add(entry.code, Warn, "No eligible import is available.")
 		case !entry.batch.Completed:
@@ -108,12 +121,32 @@ func Evaluate(e Evidence, now time.Time, maxAge time.Duration) Report {
 			add(entry.code, Pass, "A completed traversal was recorded within the configured local age limit.")
 		}
 	}
-	if e.ProductMappings == 0 || e.UnconfirmedProducts > 0 {
+	for _, c := range []struct {
+		code       string
+		registered bool
+		batch      Batch
+	}{
+		{"MOYSKLAD_STOCK_COVERAGE", e.MoyskladRegistered, e.Moysklad},
+		{"OZON_STOCK_COVERAGE", e.OzonRegistered, e.Ozon},
+	} {
+		if !c.registered {
+			add(c.code, NotChecked, "Source account is not registered to this tenant.")
+		} else if !c.batch.Present {
+			add(c.code, NotChecked, "No eligible source stock import was found.")
+		} else {
+			add(c.code, Warn, "Reported stock rows do not establish exhaustive or point-in-time coverage; missing rows are unknown.")
+		}
+	}
+	if !e.MoyskladRegistered || !e.OzonRegistered {
+		add("PRODUCT_MAPPINGS", NotChecked, "Both source accounts must be registered before cross-system checks.")
+	} else if e.ProductMappings == 0 || e.UnconfirmedProducts > 0 {
 		add("PRODUCT_MAPPINGS", Warn, "Confirmed mappings are missing or products remain unconfirmed.")
 	} else {
 		add("PRODUCT_MAPPINGS", Pass, "Confirmed mappings exist for the selected scope.")
 	}
-	if e.WarehouseMappings == 0 {
+	if !e.MoyskladRegistered || !e.OzonRegistered {
+		add("WAREHOUSE_MAPPINGS", NotChecked, "Both source accounts must be registered before cross-system checks.")
+	} else if e.WarehouseMappings == 0 {
 		add("WAREHOUSE_MAPPINGS", Warn, "No confirmed warehouse mapping exists for the selected scope.")
 	} else {
 		add("WAREHOUSE_MAPPINGS", Pass, "A confirmed warehouse mapping exists for the selected scope.")
@@ -129,7 +162,11 @@ func Evaluate(e Evidence, now time.Time, maxAge time.Duration) Report {
 		add("ORDER_CORRELATIONS", Warn, "Matching candidates do not prove cross-system order identity.")
 	}
 	add("MATCHING_SUGGESTIONS", NotChecked, "Suggestions are generated on demand by the matching CLI; unconfirmed product counts are not candidate counts.")
-	add("CALCULATION_SCOPE", Warn, "Only the first deterministic mapped item/warehouse pair is evaluated with diagnostic policy: piece, safety 0; other pools are not checked. No decision or command is persisted.")
+	if r.DecisionStatus == "NOT_CHECKED" {
+		add("CALCULATION_SCOPE", NotChecked, "No confirmed product and warehouse mapping pair was evaluated; no decision or command was persisted.")
+	} else {
+		add("CALCULATION_SCOPE", Warn, "Only the first deterministic mapped item/warehouse pair is evaluated with diagnostic policy: piece, safety 0; other pools are not checked. No decision or command is persisted.")
+	}
 	add("EXISTING_EXPOSURE", Warn, "Existing marketplace listings may remain exposed; this report cannot withdraw stock or establish safe capacity.")
 	add("COVERAGE", Warn, "Completed traversal is not exhaustive or a point-in-time snapshot; older active obligations may be outside the selected windows.")
 	add("SOURCE_ORDERING", Warn, "Source event ordering is not established.")

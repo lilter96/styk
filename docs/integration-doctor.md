@@ -2,7 +2,7 @@
 
 `go run ./cmd/doctor -tenant TENANT -moysklad-account MS_ACCOUNT -ozon-account OZ_ACCOUNT` reads persisted evidence and prints a terminal report. Add `-format json` for machine-readable output. `DATABASE_URL` must reference a migrated PostgreSQL database. Flags `-timeout` (30s) and `-max-age` (1h) bound the run and local observation age. No API credentials are required in offline mode, and the command does not load `.env` automatically.
 
-Both exact accounts must have trusted administrative registrations for the selected tenant. Unregistered or incorrectly paired accounts fail the registration check before data is loaded. Catalog history is included only according to each registration's `include_import_history` setting. These checks are application scoping, not authenticated end-user authorization or PostgreSQL row-level security. Use only as a trusted local operator.
+Each source account needs a trusted administrative registration for the selected tenant before its own evidence is loaded. A missing or incorrectly scoped registration no longer suppresses the other registered source's independent diagnostics; the missing source and cross-system checks are `NOT_CHECKED`, and the combined registration check fails. Cross-system mappings, correlations and stock calculations require both registrations. Catalog history is included only according to each registration's `include_import_history` setting. These checks are application scoping, not authenticated end-user authorization or PostgreSQL row-level security. Use only as a trusted local operator.
 
 ## Offline synthetic demo
 
@@ -18,7 +18,7 @@ Expected results include registered accounts and recent completed traversals, on
 
 ## Optional live read diagnostics
 
-Only with authorization for the particular selected accounts, set `MOYSKLAD_TOKEN`, `OZON_CLIENT_ID`, and `OZON_API_KEY` securely in the local environment, then add `-live`. Never pass secrets on command lines or paste them into reports. `OZON_CLIENT_ID` must equal the selected registered Ozon account. Absent or mismatched credentials produce `NOT_CHECKED` for that source. Demo and live modes are mutually exclusive.
+Only with authorization for the particular selected accounts, set `MOYSKLAD_TOKEN`, `MOYSKLAD_ACCOUNT_ID`, `OZON_CLIENT_ID`, and `OZON_API_KEY` securely in the local environment, then add `-live`. Never pass secrets on command lines or paste them into reports. Each configured account ID must equal the selected registered account. Each source is probed independently only when its own registration and credentials match; missing or mismatched registration or credentials produce `NOT_CHECKED` for that source. Demo and live modes are mutually exclusive.
 
 Live mode issues at most one request per configured source with one attempt: MoySklad GET `entity/product?limit=1&offset=0` and Ozon read-only POST `/v3/product/list` with limit 1. Existing allowlisted clients supply authentication, rate limiting, connection reuse, redirects disabled and cancellation. `-request-timeout` defaults to 5s, bounded further by the overall timeout. No retries, full imports or entity writes are performed. A MoySklad empty result cannot independently verify account identity and gives WARN. Neither probe verifies the full account permission set, every connector endpoint or stock correctness. API error bodies and credentials are never copied to the report. No live run was executed during this milestone.
 

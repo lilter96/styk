@@ -28,11 +28,13 @@ func TestEvaluateKeepsIncompleteEvidenceUnknown(t *testing.T) {
 	}{
 		{"unregistered accounts", Evidence{}, "ACCOUNT_REGISTRATION", Fail},
 		{"missing import", Evidence{MoyskladRegistered: true, OzonRegistered: true}, "MOYSKLAD_IMPORT", Warn},
-		{"incomplete import", Evidence{Moysklad: Batch{Present: true}}, "MOYSKLAD_IMPORT", Fail},
-		{"old import", Evidence{Moysklad: Batch{Present: true, Completed: true, ObservedAt: now.Add(-2 * time.Hour)}}, "MOYSKLAD_IMPORT", Warn},
+		{"incomplete import", Evidence{MoyskladRegistered: true, Moysklad: Batch{Present: true}}, "MOYSKLAD_IMPORT", Fail},
+		{"old import", Evidence{MoyskladRegistered: true, Moysklad: Batch{Present: true, Completed: true, ObservedAt: now.Add(-2 * time.Hour)}}, "MOYSKLAD_IMPORT", Warn},
 		{"truncated", Evidence{CorrelationsChecked: true, CorrelationsTruncated: true}, "ORDER_CORRELATIONS", Warn},
 		{"ambiguous", Evidence{CorrelationsChecked: true, AmbiguousCorrelations: 2}, "ORDER_CORRELATIONS", Warn},
-		{"missing mappings", Evidence{}, "PRODUCT_MAPPINGS", Warn},
+		{"missing mappings", Evidence{MoyskladRegistered: true, OzonRegistered: true}, "PRODUCT_MAPPINGS", Warn},
+		{"unregistered stock", Evidence{}, "OZON_STOCK_COVERAGE", NotChecked},
+		{"reported stock is not complete coverage", Evidence{OzonRegistered: true, Ozon: Batch{Present: true, Completed: true, ObservedAt: now, Counts: map[string]int64{"stock_rows": 5}}}, "OZON_STOCK_COVERAGE", Warn},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := Evaluate(tc.e, now, time.Hour)
@@ -62,6 +64,9 @@ func TestReportJSONDeterministicAndNoRawIdentifiers(t *testing.T) {
 	}
 	if got := Evaluate(Evidence{DecisionStatus: "READY_CONDITIONAL"}, now, time.Hour).DecisionStatus; got != "NOT_CHECKED" {
 		t.Fatalf("unexpected ready status: %s", got)
+	}
+	if got := status(Evaluate(Evidence{}, now, time.Hour), "CALCULATION_SCOPE"); got != NotChecked {
+		t.Fatalf("missing pool scope: %s", got)
 	}
 }
 

@@ -122,7 +122,46 @@ func TestDoctorRegisteredTenantIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Batches["moysklad"].Present || r.Batches["ozon"].Present || r.DecisionStatus != "NOT_CHECKED" {
+	if !r.Batches["moysklad"].Present || r.Batches["ozon"].Present || r.DecisionStatus != "NOT_CHECKED" {
 		t.Fatal("registered accounts from different tenants were paired")
+	}
+}
+
+func TestDoctorIndependentAccountScopes(t *testing.T) {
+	f := newStockFixture(t)
+	base := postgres.MatchScope{Tenant: f.req.Pool.Tenant, MoyskladAccount: f.req.Pool.MoyskladAccount, OzonAccount: f.req.Target.OzonAccount}
+	for _, tc := range []struct {
+		name      string
+		scope     postgres.MatchScope
+		moy, ozon bool
+	}{
+		{"both", base, true, true},
+		{"moy only", postgres.MatchScope{Tenant: base.Tenant, MoyskladAccount: base.MoyskladAccount, OzonAccount: "not-registered"}, true, false},
+		{"ozon only", postgres.MatchScope{Tenant: base.Tenant, MoyskladAccount: "not-registered", OzonAccount: base.OzonAccount}, false, true},
+		{"neither", postgres.MatchScope{Tenant: base.Tenant, MoyskladAccount: "missing-m", OzonAccount: "missing-o"}, false, false},
+		{"other tenant", postgres.MatchScope{Tenant: base.Tenant + "-other", MoyskladAccount: base.MoyskladAccount, OzonAccount: base.OzonAccount}, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r, err := f.store.Doctor(context.Background(), tc.scope, time.Now(), time.Hour)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if r.Batches["moysklad"].Present != tc.moy || r.Batches["ozon"].Present != tc.ozon {
+				t.Fatal("independent evidence scope incorrect")
+			}
+			if !tc.moy || !tc.ozon {
+				if r.DecisionStatus != "NOT_CHECKED" || len(r.CorrelationStatuses) != 0 {
+					t.Fatal("cross-system analysis ran without both registrations")
+				}
+				for _, c := range r.Checks {
+					if (c.Code == "PRODUCT_MAPPINGS" || c.Code == "WAREHOUSE_MAPPINGS") && c.Status != doctor.NotChecked {
+						t.Fatal("cross-system mapping was inferred")
+					}
+				}
+			}
+			if r.Publication != "DISABLED" {
+				t.Fatal("publication enabled")
+			}
+		})
 	}
 }

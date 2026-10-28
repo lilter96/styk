@@ -159,4 +159,6 @@ The import window is required, millisecond-aligned and at most 31 days. The firs
 
 ## Integration Doctor
 
+Each registered source is assessed independently; cross-system checks require both accounts to be registered to the selected tenant.
+
 Run `go run ./cmd/doctor -tenant TENANT -moysklad-account MS_ACCOUNT -ozon-account OZ_ACCOUNT` to inspect registered local evidence, or add `-format json`. It reports import windows, ages, counts, mapping and correlation gaps, one sampled stock calculation and its missing proofs. Publication remains disabled. `-demo` seeds an isolated synthetic namespace in a disposable migrated database; `-live` explicitly opts into bounded read probes using locally configured credentials. See [usage, scope and limitations](docs/integration-doctor.md). Offline mode requires only `DATABASE_URL` and never contacts external APIs.

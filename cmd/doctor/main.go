@@ -18,6 +18,10 @@ import (
 	"example.com/styk/internal/postgres"
 )
 
+func probeEligible(registered bool, configured, selected, secret string) bool {
+	return registered && secret != "" && configured != "" && configured == selected
+}
+
 func run() error {
 	f := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	tenant := f.String("tenant", "", "registered tenant")
@@ -61,25 +65,25 @@ func run() error {
 		return errors.New("diagnostic evidence read failed; verify scope, migrations and database availability")
 	}
 	if *live {
-		// Scope registration must pass before any credential is used.
-		registered := false
+		// Each source requires its own registration and matching local account.
+		moyRegistered, ozonRegistered := false, false
 		for _, c := range r.Checks {
-			if c.Code == "ACCOUNT_REGISTRATION" && c.Status == doctor.Pass {
-				registered = true
+			if c.Code == "MOYSKLAD_REGISTRATION" && c.Status == doctor.Pass {
+				moyRegistered = true
+			}
+			if c.Code == "OZON_REGISTRATION" && c.Status == doctor.Pass {
+				ozonRegistered = true
 			}
 		}
-		if !registered {
-			return errors.New("live diagnostics require both registered accounts")
-		}
 		var mp, op doctor.Probe
-		if token := os.Getenv("MOYSKLAD_TOKEN"); token != "" {
+		if token := os.Getenv("MOYSKLAD_TOKEN"); probeEligible(moyRegistered, os.Getenv("MOYSKLAD_ACCOUNT_ID"), scope.MoyskladAccount, token) {
 			c, e := moysklad.New(moysklad.Options{BaseURL: moysklad.BaseURL, Token: token, Timeout: *requestTimeout, Interval: time.Second, Backoff: time.Second, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 1})
 			if e != nil {
 				return errors.New("invalid MoySklad credentials or settings")
 			}
 			mp = func(ctx context.Context) (bool, error) { return c.Probe(ctx, scope.MoyskladAccount) }
 		}
-		if key := os.Getenv("OZON_API_KEY"); key != "" && os.Getenv("OZON_CLIENT_ID") == scope.OzonAccount {
+		if key := os.Getenv("OZON_API_KEY"); probeEligible(ozonRegistered, os.Getenv("OZON_CLIENT_ID"), scope.OzonAccount, key) {
 			c, e := ozon.New(ozon.Options{BaseURL: ozon.BaseURL, ClientID: scope.OzonAccount, APIKey: key, Timeout: *requestTimeout, Interval: time.Second, Backoff: time.Second, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 1})
 			if e != nil {
 				return errors.New("invalid Ozon credentials or settings")

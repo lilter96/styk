@@ -24,21 +24,21 @@ func (s *Store) Doctor(ctx context.Context, scope MatchScope, now time.Time, max
 	}
 	defer tx.Rollback(context.Background())
 	e := doctor.Evidence{}
-	refs := []domain.StockConnectionReference{}
-	for _, c := range []struct {
+	refs := make([]domain.StockConnectionReference, 2)
+	for i, c := range []struct {
 		source, account string
 		ok              *bool
 	}{{"moysklad", scope.MoyskladAccount, &e.MoyskladRegistered}, {"ozon", scope.OzonAccount, &e.OzonRegistered}} {
 		ref := domain.StockConnectionReference{Source: c.source, Account: c.account}
 		err = tx.QueryRow(ctx, `SELECT registered_at,include_import_history FROM stock_connections WHERE tenant_id=$1 AND source=$2 AND account_id=$3`, scope.Tenant, c.source, c.account).Scan(&ref.RegisteredAt, &ref.IncludeImportHistory)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return doctor.Evaluate(e, now, maxAge), nil
+			continue
 		}
 		if err != nil {
 			return doctor.Report{}, err
 		}
 		*c.ok = true
-		refs = append(refs, ref)
+		refs[i] = ref
 	}
 	var mi, oi, pb, ob int64
 	for i, d := range []struct {
@@ -47,6 +47,9 @@ func (s *Store) Doctor(ctx context.Context, scope MatchScope, now time.Time, max
 		id     *int64
 		b      *doctor.Batch
 	}{{"moysklad", refs[0], &mi, &e.Moysklad}, {"ozon", refs[1], &oi, &e.Ozon}} {
+		if (i == 0 && !e.MoyskladRegistered) || (i == 1 && !e.OzonRegistered) {
+			continue
+		}
 		err = tx.QueryRow(ctx, `SELECT id,finished_at,report_scope FROM source_imports WHERE source=$1 AND account_id=$2 AND ($3 OR started_at >= $4) ORDER BY id DESC LIMIT 1`, d.source, d.ref.Account, d.ref.IncludeImportHistory, d.ref.RegisteredAt).Scan(d.id, &d.b.ObservedAt, &d.b.Scope)
 		if errors.Is(err, pgx.ErrNoRows) {
 			continue
@@ -72,6 +75,9 @@ func (s *Store) Doctor(ctx context.Context, scope MatchScope, now time.Time, max
 		id             *int64
 		b              *doctor.Batch
 	}{{"ozon_posting_batches", scope.OzonAccount, &pb, &e.Postings}, {"moy_order_batches", scope.MoyskladAccount, &ob, &e.Orders}} {
+		if (d.table == "ozon_posting_batches" && !e.OzonRegistered) || (d.table == "moy_order_batches" && !e.MoyskladRegistered) {
+			continue
+		}
 		err = tx.QueryRow(ctx, `SELECT id,finished_at,window_from,window_to,traversal_status='completed' FROM `+d.table+` WHERE tenant_id=$1 AND account_id=$2 ORDER BY id DESC LIMIT 1`, scope.Tenant, d.account).Scan(d.id, &d.b.ObservedAt, &d.b.WindowFrom, &d.b.WindowTo, &d.b.Completed)
 		if errors.Is(err, pgx.ErrNoRows) {
 			continue
@@ -95,11 +101,20 @@ func (s *Store) Doctor(ctx context.Context, scope MatchScope, now time.Time, max
 		if d.b.Counts == nil {
 			d.b.Counts = map[string]int64{}
 		}
+		if d.id == 0 {
+			continue
+		}
 		var n int64
 		if err = tx.QueryRow(ctx, d.sql, d.id).Scan(&n); err != nil {
 			return doctor.Report{}, err
 		}
 		d.b.Counts[d.key] = n
+	}
+	if !e.MoyskladRegistered || !e.OzonRegistered {
+		if err = tx.Commit(ctx); err != nil {
+			return doctor.Report{}, err
+		}
+		return doctor.Evaluate(e, now, maxAge), nil
 	}
 	if err = tx.QueryRow(ctx, `SELECT count(*) FROM product_mappings WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount).Scan(&e.ProductMappings); err != nil {
 		return doctor.Report{}, err

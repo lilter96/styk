@@ -19,7 +19,7 @@ func Live(ctx context.Context, r *Report, moy, ozon Probe) {
 			}
 			if p.run == nil {
 				c.Status = NotChecked
-				c.Detail = "Local credentials are unavailable; no request performed."
+				c.Detail = "Registration or matching local credentials are unavailable; no request performed."
 				continue
 			}
 			verified, err := p.run(ctx)
