@@ -3,15 +3,17 @@ package main
 import (
 	"context"
 	"errors"
-	"example.com/styk/internal/config"
-	"example.com/styk/internal/postgres"
-	"example.com/styk/internal/transport"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"example.com/styk/internal/config"
+	"example.com/styk/internal/console"
+	"example.com/styk/internal/postgres"
+	"example.com/styk/internal/transport"
 )
 
 func main() {
@@ -32,7 +34,28 @@ func run() error {
 		return err
 	}
 	defer db.Pool.Close()
-	srv := &http.Server{Addr: c.HTTPAddr, Handler: transport.Handler(db), ReadHeaderTimeout: 5 * time.Second}
+	if err = console.ValidateAddress(c.HTTPAddr); err != nil && os.Getenv("STYK_ALLOW_REMOTE_BIND") != "true" {
+		return errors.New("non-loopback API bind requires STYK_ALLOW_REMOTE_BIND=true")
+	}
+	handler := transport.Handler(db)
+	if secret := os.Getenv("STYK_OPERATOR_SECRET"); secret != "" {
+		if err = console.ValidateAddress(c.HTTPAddr); err != nil {
+			return err
+		}
+		origin := os.Getenv("STYK_CONSOLE_ORIGIN")
+		if origin == "" {
+			origin = "http://127.0.0.1:5173"
+		}
+		api, e := console.Handler(db, secret, origin)
+		if e != nil {
+			return e
+		}
+		mux := http.NewServeMux()
+		mux.Handle("/api/", api)
+		mux.Handle("/", handler)
+		handler = mux
+	}
+	srv := &http.Server{Addr: c.HTTPAddr, Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	done := make(chan error, 1)
 	go func() { done <- srv.ListenAndServe() }()
 	select {

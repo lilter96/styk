@@ -162,3 +162,9 @@ The import window is required, millisecond-aligned and at most 31 days. The firs
 Each registered source is assessed independently; cross-system checks require both accounts to be registered to the selected tenant.
 
 Run `go run ./cmd/doctor -tenant TENANT -moysklad-account MS_ACCOUNT -ozon-account OZ_ACCOUNT` to inspect registered local evidence, or add `-format json`. It reports import windows, ages, counts, mapping and correlation gaps, one sampled stock calculation and its missing proofs. Publication remains disabled. `-demo` seeds an isolated synthetic namespace in a disposable migrated database; `-live` explicitly opts into bounded read probes using locally configured credentials. See [usage, scope and limitations](docs/integration-doctor.md). Offline mode requires only `DATABASE_URL` and never contacts external APIs.
+
+### Local read-only web console
+
+STYK includes a local React/TypeScript operator console for registered accounts and persisted observations. Start PostgreSQL and apply migrations with `make up` and `make migrate`; set `DATABASE_URL`, `HTTP_ADDR=127.0.0.1:8080`, `STYK_CONSOLE_ORIGIN=http://127.0.0.1:5173`, and a random `STYK_OPERATOR_SECRET` of at least 32 characters in the API environment, then run `go run ./cmd/api`. In another terminal run `cd web && npm ci && npm run dev`, and open `http://127.0.0.1:5173`. Enter the operator secret, tenant ID and registered accounts. A missing secret leaves business endpoints disabled. Do not put marketplace credentials in the browser or commit the operator secret.
+
+The console shows persisted imports, product suggestions, warehouse observations and Integration Doctor results. It does not verify live connectivity, confirm mappings, publish stock or synchronize orders. The local shared-secret boundary is not production tenant authentication. See [web console V1](docs/web-console-v1.md) for security, test and setup details.

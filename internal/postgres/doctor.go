@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"example.com/styk/internal/commitment"
@@ -13,8 +14,8 @@ import (
 
 // Doctor reads a consistent local view. Scope is trusted administrative input.
 func (s *Store) Doctor(ctx context.Context, scope MatchScope, now time.Time, maxAge time.Duration) (doctor.Report, error) {
-	if scope.Validate() != nil || maxAge <= 0 {
-		return doctor.Report{}, errors.New("tenant, account pair and positive maximum age required")
+	if strings.TrimSpace(scope.Tenant) == "" || strings.TrimSpace(scope.Tenant) != scope.Tenant || strings.TrimSpace(scope.MoyskladAccount) != scope.MoyskladAccount || strings.TrimSpace(scope.OzonAccount) != scope.OzonAccount || maxAge <= 0 {
+		return doctor.Report{}, errors.New("tenant and positive maximum age required")
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
@@ -29,6 +30,9 @@ func (s *Store) Doctor(ctx context.Context, scope MatchScope, now time.Time, max
 		source, account string
 		ok              *bool
 	}{{"moysklad", scope.MoyskladAccount, &e.MoyskladRegistered}, {"ozon", scope.OzonAccount, &e.OzonRegistered}} {
+		if c.account == "" {
+			continue
+		}
 		ref := domain.StockConnectionReference{Source: c.source, Account: c.account}
 		err = tx.QueryRow(ctx, `SELECT registered_at,include_import_history FROM stock_connections WHERE tenant_id=$1 AND source=$2 AND account_id=$3`, scope.Tenant, c.source, c.account).Scan(&ref.RegisteredAt, &ref.IncludeImportHistory)
 		if errors.Is(err, pgx.ErrNoRows) {
