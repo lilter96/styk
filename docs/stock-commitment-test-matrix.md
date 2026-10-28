@@ -1,6 +1,6 @@
 # Stock commitment engine: proposed test matrix
 
-This is a plan, **not a claim that the new engine or these tests already exist**. All fixtures must be synthetic; unit tests use a fixed clock and pure inputs, HTTP tests use `httptest`, and database tests use a migrated dedicated PostgreSQL test database. No live credentials or external writes. See the [architecture](stock-commitment-architecture.md) and [invariants](stock-commitment-invariants.md).
+This matrix includes future test proposals; proposed names below are not a claim that each test exists. The read-only V1 tests in `internal/commitment/calculator_test.go` and `tests/integration/stock_commitment_test.go` cover synthetic arithmetic, unresolved proofs, scoped ownership, immutable decisions, conflicts, rollback and concurrency. Ledger, allocation and external-write scenarios remain deferred. All fixtures must be synthetic; unit tests use a fixed clock and pure inputs, HTTP tests use `httptest`, and database tests use a migrated dedicated PostgreSQL test database. No live credentials or external writes. See the [architecture](stock-commitment-architecture.md) and [invariants](stock-commitment-invariants.md).
 
 ## Existing evidence and gaps
 

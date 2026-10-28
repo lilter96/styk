@@ -1,6 +1,6 @@
 # Stock commitment engine: proposed invariants
 
-Status: design requirements, not implemented guarantees. [Architecture, evidence and examples](stock-commitment-architecture.md); [proposed tests](stock-commitment-test-matrix.md). An invariant must be enforced transactionally, by permissions, or by a proved external contract as indicated below; an application comment alone is not an enforcement mechanism.
+Status: design requirements; the read-only slice enforces a subset and deliberately reports unresolved proofs. [Architecture, evidence and examples](stock-commitment-architecture.md); [test matrix](stock-commitment-test-matrix.md). An invariant must be enforced transactionally, by permissions, or by a proved external contract as indicated below; an application comment alone is not an enforcement mechanism.
 
 ## Identity, authority and evidence
 
