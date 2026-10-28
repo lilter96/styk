@@ -37,6 +37,8 @@ func TestReadPaginationAndValues(t *testing.T) {
 			fmt.Fprint(w, `{"meta":{"size":1,"limit":1,"offset":0},"rows":[{"id":"v1","product":{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/p1","type":"product"}}}]}`)
 		case "/entity/store":
 			fmt.Fprint(w, `{"meta":{"size":1,"limit":1,"offset":0},"rows":[{"id":"s1"}]}`)
+		case "/report/stock/bystore":
+			fmt.Fprint(w, `{"meta":{"size":0,"limit":1,"offset":0},"rows":[]}`)
 		case "/report/stock/all":
 			fmt.Fprint(w, `{"meta":{"size":1,"limit":1,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/p1","type":"product"},"stock":4.25,"reserve":2,"inTransit":1,"quantity":3.25}]}`)
 		default:
@@ -151,7 +153,7 @@ func TestPageInterruptAndRetrySuccess(t *testing.T) {
 	}))
 	defer retry.Close()
 	snap, err := client(t, retry).Read(context.Background(), "acct")
-	if err != nil || len(snap.Entities) != 0 || len(snap.Stock) != 0 || attempts.Load() != 5 {
+	if err != nil || len(snap.Entities) != 0 || len(snap.Stock) != 0 || attempts.Load() != 6 {
 		t.Fatalf("retry: %+v %v, requests %d", snap, err, attempts.Load())
 	}
 }

@@ -270,6 +270,22 @@ type stockRow struct {
 	FreeStock *json.Number `json:"freeStock"`
 }
 
+type warehouseRow struct {
+	Meta struct {
+		Href string `json:"href"`
+		Type string `json:"type"`
+	} `json:"meta"`
+	Stores *[]struct {
+		Meta struct {
+			Href string `json:"href"`
+			Type string `json:"type"`
+		} `json:"meta"`
+		Stock     *json.Number `json:"stock"`
+		Reserve   *json.Number `json:"reserve"`
+		InTransit *json.Number `json:"inTransit"`
+	} `json:"stockByStore"`
+}
+
 func number(n *json.Number) *string {
 	if n == nil {
 		return nil
@@ -348,6 +364,53 @@ func (c *Client) Read(ctx context.Context, account string) (domain.InventoryImpo
 			return errors.New("stock row missing values")
 		}
 		snap.Stock = append(snap.Stock, domain.StockObservation{Kind: row.Meta.Type, ExternalID: id, SourceHref: row.Meta.Href, Stock: number(row.Stock), Reserve: number(row.Reserve), InTransit: number(row.InTransit), Quantity: number(row.Quantity), FreeStock: number(row.FreeStock)})
+		return nil
+	})
+	if err != nil {
+		return domain.InventoryImport{}, err
+	}
+	warehouseItems := map[string]bool{}
+	err = c.pages(ctx, "report/stock/bystore", url.Values{"filter": {"stockMode=all"}, "groupBy": {"variant"}}, func(raw json.RawMessage) error {
+		var row warehouseRow
+		if err := json.Unmarshal(raw, &row); err != nil {
+			return err
+		}
+		if row.Meta.Type != "product" && row.Meta.Type != "variant" {
+			return errors.New("unexpected warehouse stock item type")
+		}
+		id, err := idFromHref(row.Meta.Href, row.Meta.Type)
+		if err != nil {
+			return err
+		}
+		key := row.Meta.Type + ":" + id
+		if warehouseItems[key] {
+			return errors.New("duplicate warehouse report item")
+		}
+		warehouseItems[key] = true
+		if row.Stores == nil {
+			return errors.New("warehouse stock list missing")
+		}
+		stores := map[string]bool{}
+		for _, store := range *row.Stores {
+			if store.Meta.Type != "store" {
+				return errors.New("invalid warehouse type")
+			}
+			storeID, err := idFromHref(store.Meta.Href, "store")
+			if err != nil {
+				return err
+			}
+			if stores[storeID] {
+				return errors.New("duplicate warehouse identifier")
+			}
+			stores[storeID] = true
+			if store.Stock == nil || store.Reserve == nil || store.InTransit == nil {
+				return errors.New("warehouse stock values missing")
+			}
+			if len(snap.WarehouseStock) >= maxRows {
+				return errors.New("warehouse stock observation limit exceeded")
+			}
+			snap.WarehouseStock = append(snap.WarehouseStock, domain.WarehouseStockObservation{Kind: row.Meta.Type, ExternalID: id, SourceHref: row.Meta.Href, WarehouseID: storeID, WarehouseHref: store.Meta.Href, Stock: number(store.Stock), Reserve: number(store.Reserve), InTransit: number(store.InTransit)})
+		}
 		return nil
 	})
 	if err != nil {

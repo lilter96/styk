@@ -41,10 +41,21 @@ func (i Importer) Run(ctx context.Context, account string) (bool, error) {
 		}
 		return x.ExternalID < y.ExternalID
 	})
+	sort.Slice(snap.WarehouseStock, func(a, b int) bool {
+		x, y := snap.WarehouseStock[a], snap.WarehouseStock[b]
+		if x.Kind != y.Kind {
+			return x.Kind < y.Kind
+		}
+		if x.ExternalID != y.ExternalID {
+			return x.ExternalID < y.ExternalID
+		}
+		return x.WarehouseID < y.WarehouseID
+	})
 	canonical, err := json.Marshal(struct {
-		Entities []domain.ExternalEntity
-		Stock    []domain.StockObservation
-	}{snap.Entities, snap.Stock})
+		Entities       []domain.ExternalEntity
+		Stock          []domain.StockObservation
+		WarehouseStock []domain.WarehouseStockObservation
+	}{snap.Entities, snap.Stock, snap.WarehouseStock})
 	if err != nil {
 		return false, fmt.Errorf("encode import fingerprint: %w", err)
 	}
