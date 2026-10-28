@@ -39,6 +39,7 @@ type postingDTO struct {
 }
 
 func (c *Client) ReadPostings(ctx context.Context, tenant string, since, until time.Time) (domain.PostingImport, error) {
+	b, _ := ctx.Value(budgetKey{}).(*budget)
 	if strings.TrimSpace(tenant) == "" || since.IsZero() || !until.After(since) || until.After(since.AddDate(1, 0, 0)) {
 		return domain.PostingImport{}, errors.New("tenant and a bounded window of at most one year required")
 	}
@@ -62,6 +63,14 @@ func (c *Client) ReadPostings(ctx context.Context, tenant string, since, until t
 			return domain.PostingImport{}, errors.New("missing v4 postings")
 		}
 		for _, p := range *page.Postings {
+			if b != nil {
+				if err := b.add("postings", 1); err != nil {
+					return domain.PostingImport{}, err
+				}
+				if err := b.add("observations", 1); err != nil {
+					return domain.PostingImport{}, err
+				}
+			}
 			if p.PostingNumber == "" || seen[p.PostingNumber] {
 				return domain.PostingImport{}, errors.New("missing or duplicate posting")
 			}

@@ -32,7 +32,7 @@ func (i PostingImporter) Run(ctx context.Context, tenant string, since, until ti
 	}
 	id, err := i.Store.SavePostings(ctx, b)
 	if err != nil {
-		return 0, fmt.Errorf("persist postings: %w", err)
+		return 0, fmt.Errorf("%w: %w", ErrOzonPersistence, err)
 	}
 	return id, nil
 }

@@ -1,0 +1,106 @@
+package ozon
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"example.com/styk/internal/domain"
+)
+
+// Limits bound one catalog traversal. Reaching a limit never returns a snapshot.
+type Limits struct {
+	Requests, Pages, Entities, Observations  int
+	Attempts, Products, Warehouses, Postings int
+	ResponseBytes                            int64
+	Duration                                 time.Duration
+}
+
+type Counts struct{ Requests, Attempts, Pages, Entities, Products, Warehouses, Observations, Postings int }
+type LimitError struct {
+	Resource string
+	Counts   Counts
+}
+
+func (e *LimitError) Error() string {
+	return fmt.Sprintf("Ozon %s limit reached (requests=%d pages=%d entities=%d observations=%d)", e.Resource, e.Counts.Requests, e.Counts.Pages, e.Counts.Entities, e.Counts.Observations)
+}
+
+type budgetKey struct{}
+type budget struct {
+	limits Limits
+	counts Counts
+}
+
+func (b *budget) add(resource string, n int) error {
+	var v *int
+	var limit int
+	switch resource {
+	case "requests":
+		v, limit = &b.counts.Requests, b.limits.Requests
+	case "attempts":
+		v, limit = &b.counts.Attempts, b.limits.Attempts
+	case "pages":
+		v, limit = &b.counts.Pages, b.limits.Pages
+	case "entities":
+		v, limit = &b.counts.Entities, b.limits.Entities
+	case "products":
+		v, limit = &b.counts.Products, b.limits.Products
+	case "warehouses":
+		v, limit = &b.counts.Warehouses, b.limits.Warehouses
+	case "postings":
+		v, limit = &b.counts.Postings, b.limits.Postings
+	case "observations":
+		v, limit = &b.counts.Observations, b.limits.Observations
+	default:
+		return errors.New("invalid budget resource")
+	}
+	if n > limit-*v {
+		return &LimitError{Resource: resource, Counts: b.counts}
+	}
+	*v += n
+	return nil
+}
+
+func (l Limits) validate() error {
+	if l.Requests < 1 || l.Attempts < 1 || l.Pages < 1 || l.Entities < 1 || l.Products < 1 || l.Warehouses < 1 || l.Observations < 1 || l.Postings < 1 || l.ResponseBytes < 1 || l.ResponseBytes > maxBody || l.Duration <= 0 {
+		return errors.New("invalid Ozon execution limits")
+	}
+	return nil
+}
+
+// ReadBounded performs the existing complete traversal with per-execution limits.
+// A caller must not persist data when any error is returned.
+func (c *Client) ReadBounded(ctx context.Context, limits Limits) (domain.OzonImport, Counts, error) {
+	if err := limits.validate(); err != nil {
+		return domain.OzonImport{}, Counts{}, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, limits.Duration)
+	defer cancel()
+	b := &budget{limits: limits}
+	snap, err := c.Read(context.WithValue(ctx, budgetKey{}, b))
+	if err == nil {
+		err = ctx.Err()
+	}
+	if err != nil {
+		return domain.OzonImport{}, b.counts, err
+	}
+	return snap, b.counts, nil
+}
+func (c *Client) ReadPostingsBounded(ctx context.Context, tenant string, since, until time.Time, limits Limits) (domain.PostingImport, Counts, error) {
+	if err := limits.validate(); err != nil {
+		return domain.PostingImport{}, Counts{}, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, limits.Duration)
+	defer cancel()
+	b := &budget{limits: limits}
+	snap, err := c.ReadPostings(context.WithValue(ctx, budgetKey{}, b), tenant, since, until)
+	if err == nil {
+		err = ctx.Err()
+	}
+	if err != nil {
+		return domain.PostingImport{}, b.counts, err
+	}
+	return snap, b.counts, nil
+}

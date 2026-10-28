@@ -5,10 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"example.com/styk/internal/domain"
 	"fmt"
 	"sort"
 )
+
+var ErrOzonPersistence = errors.New("Ozon persistence failed")
 
 type OzonReader interface {
 	Read(context.Context) (domain.OzonImport, error)
@@ -44,9 +47,12 @@ func (i OzonImporter) Run(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("fingerprint Ozon import: %w", err)
 	}
 	hash := sha256.Sum256(b)
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	created, err := i.Store.SaveOzonImport(ctx, snap, hex.EncodeToString(hash[:]))
 	if err != nil {
-		return false, fmt.Errorf("persist Ozon import: %w", err)
+		return false, fmt.Errorf("%w: %w", ErrOzonPersistence, err)
 	}
 	return created, nil
 }

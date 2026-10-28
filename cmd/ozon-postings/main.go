@@ -20,6 +20,18 @@ import (
 	"example.com/styk/internal/postgres"
 )
 
+type boundedReader struct {
+	client *ozon.Client
+	limits ozon.Limits
+	counts ozon.Counts
+}
+
+func (r *boundedReader) ReadPostings(ctx context.Context, tenant string, since, until time.Time) (domain.PostingImport, error) {
+	s, counts, err := r.client.ReadPostingsBounded(ctx, tenant, since, until, r.limits)
+	r.counts = counts
+	return s, err
+}
+
 func duration(name string, fallback time.Duration) (time.Duration, error) {
 	if value := os.Getenv(name); value != "" {
 		d, err := time.ParseDuration(value)
@@ -37,6 +49,12 @@ func run() error {
 	to := flag.String("to", "", "RFC3339 end")
 	inspect := flag.Bool("inspect", false, "read stored observations and current correlations")
 	moy := flag.String("moysklad-account", "", "MoySklad account for inspection")
+	requests := flag.Int("max-requests", 100, "maximum logical API requests")
+	attemptsLimit := flag.Int("max-attempts", 100, "maximum network attempts including retries")
+	pages := flag.Int("max-pages", 100, "maximum listing pages")
+	postings := flag.Int("max-postings", 1000, "maximum posting observations")
+	bytes := flag.Int64("max-response-bytes", 4<<20, "maximum response bytes")
+	maxDuration := flag.Duration("max-duration", 3*time.Minute, "maximum overall import duration")
 	flag.Parse()
 	if flag.NArg() != 0 {
 		return errors.New("unexpected arguments")
@@ -50,6 +68,12 @@ func run() error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	started := time.Now()
+	if *maxDuration <= 0 {
+		return errors.New("max-duration must be positive")
+	}
+	ctx, cancel := context.WithTimeout(ctx, *maxDuration)
+	defer cancel()
 	db, e := postgres.Open(ctx, cfg.DatabaseURL, cfg.QueryTimeout)
 	if e != nil {
 		return e
@@ -99,9 +123,14 @@ func run() error {
 	if e != nil {
 		return e
 	}
-	id, e := (application.PostingImporter{Reader: client, Store: db}).Run(ctx, *tenant, start, end)
+	reader := &boundedReader{client: client, limits: ozon.Limits{Requests: *requests, Attempts: *attemptsLimit, Pages: *pages, Entities: 1, Products: 1, Warehouses: 1, Observations: *postings, Postings: *postings, ResponseBytes: *bytes, Duration: *maxDuration}}
+	id, e := (application.PostingImporter{Reader: reader, Store: db}).Run(ctx, *tenant, start, end)
+	result := ozon.Result(started, reader.counts, e)
+	if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
+		return err
+	}
 	if e != nil {
-		return e
+		return errors.New(string(result.Outcome))
 	}
 	fmt.Printf("saved batch %d\n", id)
 	return nil

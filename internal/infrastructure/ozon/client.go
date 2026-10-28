@@ -21,6 +21,9 @@ import (
 const BaseURL = "https://api-seller.ozon.ru"
 const maxBody = 16 << 20
 const maxRows = 200000
+
+var ErrTransport = errors.New("Ozon transport failure")
+
 const productPath = "/v3/product/list"
 const warehousePath = "/v2/warehouse/list"
 const stockPath = "/v2/product/info/stocks-by-warehouse/fbs"
@@ -125,6 +128,12 @@ func (c *Client) post(ctx context.Context, path string, body any, out any) error
 	if path != productPath && path != warehousePath && path != stockPath && path != "/v4/posting/fbs/list" && path != "/v3/posting/fbs/get" {
 		return errors.New("Ozon operation not allowed")
 	}
+	b, _ := ctx.Value(budgetKey{}).(*budget)
+	if b != nil {
+		if err := b.add("requests", 1); err != nil {
+			return err
+		}
+	}
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("encode request: %w", err)
@@ -142,6 +151,19 @@ func (c *Client) post(ctx context.Context, path string, body any, out any) error
 		req.Header.Set("Api-Key", c.key)
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "application/json")
+		if b != nil {
+			if b.counts.Attempts >= b.limits.Attempts {
+				return &LimitError{Resource: "attempts", Counts: b.counts}
+			}
+			if attempt == 0 && path != "/v3/posting/fbs/get" {
+				if err := b.add("pages", 1); err != nil {
+					return err
+				}
+			}
+			if err := b.add("attempts", 1); err != nil {
+				return err
+			}
+		}
 		resp, e := c.http.Do(req)
 		var last error
 		retry := false
@@ -150,15 +172,25 @@ func (c *Client) post(ctx context.Context, path string, body any, out any) error
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			last = errors.New("Ozon transport error")
+			last = ErrTransport
 			retry = true
 		} else {
-			data, re := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
+			bodyLimit := int64(maxBody)
+			if b != nil {
+				bodyLimit = b.limits.ResponseBytes
+			}
+			data, re := io.ReadAll(io.LimitReader(resp.Body, bodyLimit+1))
 			ce := resp.Body.Close()
 			if re != nil || ce != nil {
-				last = errors.New("Ozon response read error")
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				last = ErrTransport
 				retry = true
-			} else if len(data) > maxBody {
+			} else if int64(len(data)) > bodyLimit {
+				if b != nil {
+					return &LimitError{Resource: "response_bytes", Counts: b.counts}
+				}
 				return errors.New("Ozon response too large")
 			} else if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 				if err = json.Unmarshal(data, out); err != nil {
@@ -289,6 +321,7 @@ func nextCursor(hasNext *bool, cursor string, seen map[string]bool) (bool, error
 	return true, nil
 }
 func (c *Client) Read(ctx context.Context) (domain.OzonImport, error) {
+	b, _ := ctx.Value(budgetKey{}).(*budget)
 	snap := domain.OzonImport{Account: c.id, StartedAt: time.Now().UTC()}
 	productIDs := map[string]bool{}
 	offers := map[string]string{}
@@ -316,6 +349,14 @@ func (c *Client) Read(ctx context.Context) (domain.OzonImport, error) {
 				return domain.OzonImport{}, errors.New("product count changed during pagination")
 			}
 			for _, p := range *r.Items {
+				if b != nil {
+					if err := b.add("entities", 1); err != nil {
+						return domain.OzonImport{}, err
+					}
+					if err := b.add("products", 1); err != nil {
+						return domain.OzonImport{}, err
+					}
+				}
 				pid := id(p.ProductID)
 				if pid == "" || p.OfferID == "" {
 					return domain.OzonImport{}, errors.New("product missing identifier")
@@ -353,6 +394,14 @@ func (c *Client) Read(ctx context.Context) (domain.OzonImport, error) {
 			return domain.OzonImport{}, errors.New("missing warehouses")
 		}
 		for _, w := range *response.Warehouses {
+			if b != nil {
+				if err := b.add("entities", 1); err != nil {
+					return domain.OzonImport{}, err
+				}
+				if err := b.add("warehouses", 1); err != nil {
+					return domain.OzonImport{}, err
+				}
+			}
 			wid := id(w.ID)
 			if wid == "" || warehouseSeen[wid] {
 				return domain.OzonImport{}, errors.New("missing or duplicate warehouse identifier")
@@ -398,6 +447,11 @@ func (c *Client) Read(ctx context.Context) (domain.OzonImport, error) {
 				return domain.OzonImport{}, errors.New("missing stock products")
 			}
 			for _, p := range *response.Products {
+				if b != nil {
+					if err := b.add("observations", 1); err != nil {
+						return domain.OzonImport{}, err
+					}
+				}
 				pid, wid := id(p.ProductID), id(p.WarehouseID)
 				if pid == "" || wid == "" || p.OfferID == "" || batchIDs[p.OfferID] != pid || p.Present == nil || p.Reserved == nil || p.FreeStock == nil {
 					return domain.OzonImport{}, errors.New("incomplete or inconsistent stock row")
