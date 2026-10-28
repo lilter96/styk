@@ -25,3 +25,4 @@ build:
 	go build -o bin/moysklad-import ./cmd/moysklad-import
 	go build -o bin/ozon-import ./cmd/ozon-import
 	go build -o bin/matching ./cmd/matching
+	go build -o bin/warehouse-mapping ./cmd/warehouse-mapping
