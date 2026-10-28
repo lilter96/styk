@@ -22,3 +22,4 @@ build:
 	go build -o bin/api ./cmd/api
 	go build -o bin/worker ./cmd/worker
 	go build -o bin/demo ./cmd/demo
+	go build -o bin/moysklad-import ./cmd/moysklad-import
