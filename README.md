@@ -154,3 +154,7 @@ go run ./cmd/moysklad-orders correlate -tenant TENANT -moysklad-account MOYSKLAD
 ```
 
 The import window is required, millisecond-aligned and at most 31 days. The first command returns its batch ID. The second uses an explicitly selected posting observation and batch, and requires both accounts registered to the tenant. Results based on confirmed product/warehouse mappings are candidates, never automatic identity confirmation. Current APIs provide no verified cross-system identity source, so `CONFIRMED_BY_EXPLICIT_IDENTITY` is not available in production. Position reserve is not proof of inclusion in a warehouse stock baseline. Customer-order observations improve stock-decision explanations without enabling `READY_CONDITIONAL` or external writes. The CLI is for trusted local administrators; there is no authenticated tenant-facing API.
+
+## Integration Doctor
+
+Run `go run ./cmd/doctor -tenant TENANT -moysklad-account MS_ACCOUNT -ozon-account OZ_ACCOUNT` to inspect registered local evidence, or add `-format json`. It reports import windows, ages, counts, mapping and correlation gaps, one sampled stock calculation and its missing proofs. Publication remains disabled. `-demo` seeds an isolated synthetic namespace in a disposable migrated database; `-live` explicitly opts into bounded read probes using locally configured credentials. See [usage, scope and limitations](docs/integration-doctor.md). Offline mode requires only `DATABASE_URL` and never contacts external APIs.

@@ -29,3 +29,4 @@ build:
 	go build -o bin/ozon-postings ./cmd/ozon-postings
 	go build -o bin/stock-commitment ./cmd/stock-commitment
 	go build -o bin/moysklad-orders ./cmd/moysklad-orders
+	go build -o bin/doctor ./cmd/doctor
