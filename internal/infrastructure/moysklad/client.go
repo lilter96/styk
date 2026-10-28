@@ -112,6 +112,42 @@ func retryAfter(v string, now time.Time) (time.Duration, bool) {
 	}
 	return 0, false
 }
+func millisHeader(value string) (time.Duration, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.Trim(value, "0123456789") != "" {
+		return 0, false
+	}
+	n, err := strconv.ParseUint(value, 10, 64)
+	if err != nil || n > uint64((1<<63-1)/int64(time.Millisecond)) {
+		return time.Duration(1<<63 - 1), true
+	}
+	return time.Duration(n) * time.Millisecond, true
+}
+func rateDelay(h http.Header, status int, now time.Time) time.Duration {
+	var delay time.Duration
+	if status == http.StatusTooManyRequests {
+		if d, ok := retryAfter(h.Get("Retry-After"), now); ok && d > delay {
+			delay = d
+		}
+		if d, ok := millisHeader(h.Get("X-Lognex-Retry-After")); ok && d > delay {
+			delay = d
+		}
+	}
+	if status == http.StatusTooManyRequests || strings.TrimSpace(h.Get("X-RateLimit-Remaining")) == "0" {
+		if d, ok := millisHeader(h.Get("X-Lognex-Reset")); ok && d > delay {
+			delay = d
+		}
+	}
+	return delay
+}
+func (c *Client) deferRequests(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	at := time.Now().Add(d)
+	if at.After(c.next) {
+		c.next = at
+	}
+}
 func (c *Client) get(ctx context.Context, path string, q url.Values) ([]byte, error) {
 	u := c.base.ResolveReference(&url.URL{Path: path})
 	u.RawQuery = q.Encode()
@@ -144,6 +180,11 @@ func (c *Client) get(ctx context.Context, path string, q url.Values) ([]byte, er
 			} else if len(data) > maxBody {
 				return nil, errors.New("MoySklad response exceeds size limit")
 			} else if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				delay := rateDelay(resp.Header, resp.StatusCode, time.Now())
+				if delay > c.maxRetryAfter {
+					return nil, errors.New("MoySklad rate limit reset exceeds configured maximum")
+				}
+				c.deferRequests(delay)
 				return data, nil
 			} else {
 				category := "request rejected"
@@ -161,12 +202,11 @@ func (c *Client) get(ctx context.Context, path string, q url.Values) ([]byte, er
 				}
 				last = &APIError{resp.StatusCode, category}
 				if retry {
-					if d, ok := retryAfter(resp.Header.Get("Retry-After"), time.Now()); ok {
-						if d > c.maxRetryAfter {
-							return nil, fmt.Errorf("%w: Retry-After exceeds configured maximum", last)
-						}
-						delay = d
+					delay = rateDelay(resp.Header, resp.StatusCode, time.Now())
+					if delay > c.maxRetryAfter {
+						return nil, fmt.Errorf("%w: rate limit delay exceeds configured maximum", last)
 					}
+					c.deferRequests(delay)
 				}
 			}
 		}

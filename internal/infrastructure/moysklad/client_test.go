@@ -157,3 +157,36 @@ func TestPageInterruptAndRetrySuccess(t *testing.T) {
 		t.Fatalf("retry: %+v %v, requests %d", snap, err, attempts.Load())
 	}
 }
+
+func TestRateLimitHeaders(t *testing.T) {
+	for _, tc := range []struct {
+		h      http.Header
+		status int
+		want   time.Duration
+	}{
+		{http.Header{"Retry-After": []string{"1"}}, 429, time.Second},
+		{http.Header{"X-Lognex-Retry-After": []string{"150"}, "X-Lognex-Reset": []string{"200"}}, 429, 200 * time.Millisecond},
+		{http.Header{"X-Ratelimit-Remaining": []string{"0"}, "X-Lognex-Reset": []string{"250"}}, 200, 250 * time.Millisecond},
+		{http.Header{"X-Lognex-Retry-After": []string{"bad"}, "X-Lognex-Reset": []string{"-1"}}, 429, 0},
+		{http.Header{}, 429, 0},
+	} {
+		if got := rateDelay(tc.h, tc.status, time.Now()); got != tc.want {
+			t.Errorf("headers %v: got %v want %v", tc.h, got, tc.want)
+		}
+	}
+}
+func TestMoyskladRateLimitWait(t *testing.T) {
+	var calls atomic.Int32
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Header().Set("X-Lognex-Retry-After", "500")
+		w.WriteHeader(429)
+	}))
+	defer s.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+	defer cancel()
+	_, err := client(t, s).Read(ctx, "acct")
+	if !errors.Is(err, context.DeadlineExceeded) || calls.Load() != 1 {
+		t.Fatalf("cancellation %v calls %d", err, calls.Load())
+	}
+}
