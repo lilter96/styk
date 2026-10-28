@@ -22,6 +22,7 @@ export type Batch = {
   present: boolean;
   completed: boolean;
   age: string;
+  observed_at?: string;
   counts?: Record<string, number>;
 };
 export type Report = {

@@ -47,6 +47,39 @@ describe("read-only views", () => {
     );
     expect(screen.getByText(/select both registered/i)).toBeTruthy();
   });
+  it("shows future observation warnings and review actions", () => {
+    const report: Report = {
+      checks: [
+        {
+          code: "MOYSKLAD_IMPORT",
+          status: "WARN",
+          detail: "Stale or invalid observation",
+        },
+      ],
+      batches: {
+        moysklad: {
+          present: true,
+          completed: true,
+          age: "-1m",
+          observed_at: "2026-10-29T00:00:00Z",
+          counts: { products: 9, variants: 2, warehouses: 3, stock_rows: 33 },
+        },
+      },
+      decision_status: "NOT_CHECKED",
+      decision_reasons: [],
+      publication: "DISABLED",
+      mapping_counts: {},
+    };
+    mount(<Overview report={report} loading={false} error={null} />);
+    expect(
+      screen.getByText("Observation timestamp is in the future"),
+    ).toBeTruthy();
+    expect(screen.getByText(/Imported .*2026/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Review products" })).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Review warehouses and stock" }),
+    ).toBeTruthy();
+  });
   it("shows backend failures", () => {
     mount(<Overview loading={false} error={new Error("Offline")} />);
     expect(screen.getByRole("alert").textContent).toBe("Offline");
@@ -86,6 +119,39 @@ describe("read-only views", () => {
     await waitFor(() =>
       expect(
         spy.mock.calls.some((c) => String(c[0]).includes("search=query")),
+      ).toBe(true),
+    );
+  });
+  it("reloads product observations for a changed account", async () => {
+    const spy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(() =>
+        response({ items: [], offset: 0, has_next: false }),
+      );
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const view = (ozon: string) => (
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <Products scope={{ ...scope, ozon }} />
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+    const rendered = render(view("first-account"));
+    await waitFor(() =>
+      expect(
+        spy.mock.calls.some((c) =>
+          String(c[0]).includes("ozon_account=first-account"),
+        ),
+      ).toBe(true),
+    );
+    rendered.rerender(view("second-account"));
+    await waitFor(() =>
+      expect(
+        spy.mock.calls.some((c) =>
+          String(c[0]).includes("ozon_account=second-account"),
+        ),
       ).toBe(true),
     );
   });

@@ -23,17 +23,26 @@ test("local console reads synthetic observations from the real Go API", async ({
     .selectOption("doctor-ozon");
   await expect(page.getByText("Completed import")).toHaveCount(2);
   await page.screenshot({ path: "test-results/overview.png", fullPage: true });
-  await page.getByRole("link", { name: "Products" }).click();
+  await page
+    .getByRole("navigation")
+    .getByRole("link", { name: "Products" })
+    .click();
   await expect(page.getByRole("cell", { name: "offer" })).toBeVisible();
   await expect(page.getByText("Mapped: product · item")).toBeVisible();
-  await page.getByRole("link", { name: "Warehouses" }).click();
+  await page
+    .getByRole("navigation")
+    .getByRole("link", { name: "Warehouses" })
+    .click();
   await page
     .locator("section")
     .filter({ has: page.getByRole("heading", { name: "MoySklad" }) })
     .getByRole("button", { name: "View stock" })
     .click();
   await expect(page.getByText(/Physical 10.*Reserved 2/)).toBeVisible();
-  await page.getByRole("link", { name: "Diagnostics" }).click();
+  await page
+    .getByRole("navigation")
+    .getByRole("link", { name: "Diagnostics" })
+    .click();
   await expect(
     page.getByText("unknown", { exact: true }).first(),
   ).toBeVisible();

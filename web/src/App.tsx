@@ -129,7 +129,11 @@ function SourceCard({
         <State status={status} />
       </div>
       <p className="source-caption">
-        {batch?.present ? "Completed import" : "No import available"}
+        {batch?.present
+          ? batch.completed
+            ? "Completed import"
+            : "Incomplete import"
+          : "No import available"}
       </p>
       <div className="stats">
         <div>
@@ -151,6 +155,11 @@ function SourceCard({
           <span>Stock rows</span>
         </div>
       </div>
+      {batch?.present &&
+        batch.observed_at &&
+        Date.now() - Date.parse(batch.observed_at) > 3600000 && (
+          <p className="source-caption">Stale observation</p>
+        )}
       <div className="card-foot">
         {batch?.present
           ? batch.age?.startsWith("-")
@@ -158,6 +167,11 @@ function SourceCard({
             : `Observed ${batch.age} ago`
           : "No observation time"}
         <span>Live connection not checked</span>
+        {batch?.present && batch.observed_at && (
+          <time dateTime={batch.observed_at}>
+            Imported {new Date(batch.observed_at).toLocaleString()}
+          </time>
+        )}
       </div>
     </article>
   );
@@ -234,6 +248,20 @@ export function Overview({
           }
         />
       </div>
+      <section className="bottom-note" aria-label="Next actions">
+        <div>
+          <strong>Next actions</strong>
+          <p>
+            Review unmatched products and unmapped warehouses; inspect missing
+            stock evidence before considering synchronization.
+          </p>
+          <NavLink to="/products">Review products</NavLink>
+          {" · "}
+          <NavLink to="/warehouses">Review warehouses and stock</NavLink>
+          {" · "}
+          <NavLink to="/diagnostics">Inspect diagnostics</NavLink>
+        </div>
+      </section>
       <div className="bottom-note">
         <span className="info-icon">i</span>
         <div>
@@ -865,8 +893,24 @@ export function App() {
                 />
               }
             />
-            <Route path="/products" element={<Products scope={scope} />} />
-            <Route path="/warehouses" element={<Warehouses scope={scope} />} />
+            <Route
+              path="/products"
+              element={
+                <Products
+                  key={`${scope.tenant}:${scope.moy}:${scope.ozon}`}
+                  scope={scope}
+                />
+              }
+            />
+            <Route
+              path="/warehouses"
+              element={
+                <Warehouses
+                  key={`${scope.tenant}:${scope.moy}:${scope.ozon}`}
+                  scope={scope}
+                />
+              }
+            />
             <Route
               path="/diagnostics"
               element={

@@ -1,6 +1,6 @@
 # STYK
 
-STYK is a B2B integration platform intended to connect marketplaces and ERP systems, initially MoySklad and Ozon FBS. It includes read-only source importers, a read-only stock commitment calculator, and a PostgreSQL-backed mock demonstration. The application has no external write integrations, business API endpoints, frontend, authentication, or inventory synchronization rules. An isolated, explicitly gated development tool can create synthetic fixtures in an authorized MoySklad test account; it is not part of the API or worker.
+STYK is a B2B integration platform intended to connect marketplaces and ERP systems, initially MoySklad and Ozon FBS. It includes read-only source importers, a read-only stock commitment calculator, and a PostgreSQL-backed mock demonstration. The application has a local, authenticated read-only web console; it has no external write integrations, production tenant authentication, or inventory synchronization rules. An isolated, explicitly gated development tool can create synthetic fixtures in an authorized MoySklad test account; it is not part of the API or worker.
 
 Go 1.27.3, net/http, pgx, slog, PostgreSQL 17 and goose are used in one modular monolith. The API provides liveness and database readiness; a separate single-concurrency worker polls a transactional outbox. An observation and its task commit atomically; a lease and claim token permit recovery and fence stale completions. The mock handler is deterministic and performs no external writes. The lease does not prevent overlapping executions after expiration, and none of this guarantees exactly-once external calls.
 
@@ -24,7 +24,7 @@ Running the demo again reuses the same operation key and does not create another
 
 ## Configuration
 
-`DATABASE_URL` is required; `.env.example` contains local-only credentials. `HTTP_ADDR` defaults to `:8080`. `QUERY_TIMEOUT` (5s), `SHUTDOWN_TIMEOUT` (10s), `WORKER_POLL_INTERVAL` (1s), `WORKER_LEASE_DURATION` (30s), and `WORKER_RETRY_DELAY` (2s) are positive Go durations. `WORKER_MAX_ATTEMPTS` defaults to 3 (range 1–100). Lease duration must exceed query timeout. The worker stops on cancellation and unfinished work is recovered after lease expiry; the mock handler does not make network requests. Settings in `.env` are loaded by Make, not automatically by the binaries. Do not commit credentials.
+`DATABASE_URL` is required; `.env.example` contains local-only credentials. `HTTP_ADDR` defaults to `127.0.0.1:8080`. `QUERY_TIMEOUT` (5s), `SHUTDOWN_TIMEOUT` (10s), `WORKER_POLL_INTERVAL` (1s), `WORKER_LEASE_DURATION` (30s), and `WORKER_RETRY_DELAY` (2s) are positive Go durations. `WORKER_MAX_ATTEMPTS` defaults to 3 (range 1–100). Lease duration must exceed query timeout. The worker stops on cancellation and unfinished work is recovered after lease expiry; the mock handler does not make network requests. Settings in `.env` are loaded by Make, not automatically by the binaries. Do not commit credentials.
 
 ## Verification
 
