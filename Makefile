@@ -26,3 +26,4 @@ build:
 	go build -o bin/ozon-import ./cmd/ozon-import
 	go build -o bin/matching ./cmd/matching
 	go build -o bin/warehouse-mapping ./cmd/warehouse-mapping
+	go build -o bin/ozon-postings ./cmd/ozon-postings

@@ -122,7 +122,7 @@ func retryAfter(v string) (time.Duration, bool) {
 
 // Only these documented read operations can be invoked; POST does not imply a write.
 func (c *Client) post(ctx context.Context, path string, body any, out any) error {
-	if path != productPath && path != warehousePath && path != stockPath {
+	if path != productPath && path != warehousePath && path != stockPath && path != "/v4/posting/fbs/list" && path != "/v3/posting/fbs/get" {
 		return errors.New("Ozon operation not allowed")
 	}
 	payload, err := json.Marshal(body)
