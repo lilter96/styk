@@ -43,7 +43,7 @@ Tests create and remove their own uniquely keyed records; keep other workers sto
 
 The mock retry policy treats a process interruption as safe to repeat; it must never be reused for arbitrary external writes. Future designs must distinguish external observations, calculated desired state, intended operations, API acceptance, unknown outcomes, and reconciliation verification. They must address duplicates, out-of-order events, partial success, concurrency, external write ordering, and differing inventory semantics. A timeout after a write can leave an unknown outcome; retry requires an explicit safe policy and reconciliation. API success alone does not verify state. No generic sync status is a substitute for these distinctions.
 
-Product identity, reconciliation and safe external operations are future milestones.
+Reconciliation and safe external operations are future milestones.
 
 The temporary module path `example.com/styk` is intentionally unowned. Before publication, replace it in `go.mod` and imports with the repository's actual module path and run `go mod tidy`.
 
@@ -63,7 +63,7 @@ The documented warehouse report supplies `stock`, `reserve`, and `inTransit`; it
 
 ## Read-only Ozon import
 
-After migrations, set `OZON_CLIENT_ID` and `OZON_API_KEY` in your environment and run `go run ./cmd/ozon-import`. Use a key restricted to the required product, stock and warehouse read permissions where available. The client ID scopes source data; the key is never persisted. Settings `OZON_HTTP_TIMEOUT`, `OZON_REQUEST_INTERVAL`, `OZON_RETRY_BACKOFF`, `OZON_MAX_RETRY_AFTER`, and `OZON_MAX_ATTEMPTS` are shown in `.env.example`. The CLI targets the official HTTPS Seller API, and its HTTP client allowlists only the three read methods below. No marketplace write operations or matching are performed.
+After migrations, set `OZON_CLIENT_ID` and `OZON_API_KEY` in your environment and run `go run ./cmd/ozon-import`. Use a key restricted to the required product, stock and warehouse read permissions where available. The client ID scopes source data; the key is never persisted. Settings `OZON_HTTP_TIMEOUT`, `OZON_REQUEST_INTERVAL`, `OZON_RETRY_BACKOFF`, `OZON_MAX_RETRY_AFTER`, and `OZON_MAX_ATTEMPTS` are shown in `.env.example`. The CLI targets the official HTTPS Seller API, and its HTTP client allowlists only the three read methods below. The importer performs no marketplace write operations or matching.
 
 * `POST /v3/product/list` reads `ALL` (which excludes archived) and `ARCHIVED` separately, using `last_id` and `total_items`. Ozon announced retirement of `total` on 23 November 2026. Duplicate product IDs or seller offer IDs fail the import.
 * `POST /v2/warehouse/list` reads FBS and rFBS warehouse identities, statuses and the reported rFBS flag, with `cursor` and `has_next`.
@@ -72,3 +72,23 @@ After migrations, set `OZON_CLIENT_ID` and `OZON_API_KEY` in your environment an
 The previous v1 warehouse and FBS warehouse-stock methods are retired; see [Ozon's replacement notice](https://dev.ozon.ru/news/648-Izmeneniia-v-metodakh-Seller-API/) and its [total field notice](https://dev.ozon.ru/news/801-Otkaz-ot-polia-total-v-metodakh-Seller-API/). The official interactive API documentation was inaccessible from this development environment; request and response fields were checked against an independently hosted [Seller API OpenAPI snapshot](https://github.com/MissiaL/ozon-api/blob/main/references/ozon-seller-openapi.json). No live Ozon verification was performed. Confirm the current official contract and credential permissions before production use.
 
 Successful imports are atomic and stored in `source_imports`, `ozon_import_batches`, `ozon_product_observations`, `ozon_warehouse_observations`, and `ozon_fbs_stock_observations`. The batch's `completed` status means API traversal completed, not that the data is complete, synchronized across endpoints, or a point-in-time snapshot. Product counts and duplicate IDs detect some changes, not all changes during pagination. Missing stock rows and omitted products remain unknown. Repeating the same latest content creates no new batch and does not advance its observation timestamp. Stock observation times are local import completion times. Collections are bounded to 200,000 rows and each HTTP response to 16 MiB; imports are held in memory and written within the configured database timeout. Rate limiting is per process, not shared among instances. Non-2xx errors do not persist a batch, and 401/403 are not retried.
+
+## Product matching V1
+
+After importing both sources and applying migrations, inspect candidates with the local administrative CLI:
+
+```sh
+go run ./cmd/matching inspect -tenant TENANT_ID -ozon-account OZON_CLIENT_ID -moysklad-account MOYSKLAD_ACCOUNT_ID
+```
+
+To confirm one explicitly reviewed candidate, pass the Ozon product ID, MoySklad kind and ID, and a meaningful operator/reason string:
+
+```sh
+go run ./cmd/matching confirm -tenant TENANT_ID -ozon-account OZON_CLIENT_ID -moysklad-account MOYSKLAD_ACCOUNT_ID -product OZON_PRODUCT_ID -target-kind variant -target-id MOYSKLAD_VARIANT_ID -provenance 'operator: reason'
+```
+
+Only trusted administrators with database access should use this CLI. Tenant and account identifiers are explicit operator-supplied scopes; STYK does not yet authenticate operators or maintain a tenant-to-account ownership registry, so an operator must verify the scope. Provenance is an operator-supplied audit statement, not a verified identity. There are no public approval endpoints.
+
+The engine compares Ozon `offer_id` against MoySklad product or variant `article` and `code`, trimming only leading and trailing whitespace. It retains original values and evidence, preserves case and punctuation, and returns every candidate in stable order. Ozon SKU and product ID are never used as seller articles. Neither importer stores barcodes, so barcode matching is unavailable; no barcode is invented. A unique candidate is a suggestion, not a confirmation. Result statuses distinguish missing input, no candidate, unique candidate, ambiguity, confirmed mapping and conflicts. Shared targets are flagged for review, including on unconfirmed candidates; they are not a stock synchronization policy.
+
+Confirmation re-reads the latest completed imports and revalidates the selected candidate under database locks. It creates a versioned current mapping and an audit history entry containing both import IDs and provenance in one transaction. Different Ozon offers may map to one MoySklad item; each Ozon product and offer may have at most one mapping per tenant and Ozon account. Existing mappings cannot be overwritten by this CLI, including when evidence changes. Mapping replacement and revocation are not implemented; version 1 and its confirmation are retained. Absence from a later import never deletes a mapping. Imports may be incomplete or change during traversal, so suggestions are not proof of identity. Suggestions are generated on demand and not persisted. No stock publication is enabled.
