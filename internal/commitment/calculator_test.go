@@ -211,3 +211,14 @@ func TestUnprovenCommitmentsRemainUnknown(t *testing.T) {
 		t.Fatalf("unsafe result: %+v", d)
 	}
 }
+
+func TestConfirmedOrderIdentityDoesNotProveStockBaseline(t *testing.T) {
+	r, e, now := provenFixture()
+	batch := int64(1)
+	reserve := "2"
+	e.CustomerOrders = &domain.StockCustomerOrderEvidence{BatchID: &batch, Correlations: []domain.OrderCorrelation{{Status: domain.OrderIdentityConfirmed, Candidates: []domain.OrderCorrelationCandidate{{Positions: []domain.OrderPositionEvidence{{Reserve: &reserve}}}}}}}
+	d := Evaluate(r, e, now)
+	if d.Status != domain.StockUnknown || d.Quantity != nil || !hasReason(d, "CUSTOMER_ORDER_BASELINE_INCLUSION_UNKNOWN") {
+		t.Fatalf("identity link was promoted to baseline proof: %+v", d)
+	}
+}

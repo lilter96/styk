@@ -9,6 +9,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,6 +21,17 @@ import (
 const BaseURL = "https://api.moysklad.ru/api/remap/1.2/"
 const maxBody = 16 << 20
 const maxRows = 200000
+
+var orderReadPath = regexp.MustCompile(`^entity/customerorder/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(/positions)?$`)
+var orderUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+func allowedReadPath(path string) bool {
+	switch path {
+	case "entity/product", "entity/variant", "entity/store", "report/stock/all", "report/stock/bystore", "entity/customerorder":
+		return true
+	}
+	return orderReadPath.MatchString(path)
+}
 
 type Options struct {
 	BaseURL, Token                            string
@@ -149,6 +161,9 @@ func (c *Client) deferRequests(d time.Duration) {
 	}
 }
 func (c *Client) get(ctx context.Context, path string, q url.Values) ([]byte, error) {
+	if !allowedReadPath(path) {
+		return nil, errors.New("MoySklad read path is not allowlisted")
+	}
 	u := c.base.ResolveReference(&url.URL{Path: path})
 	u.RawQuery = q.Encode()
 	for attempt := 0; attempt < c.attempts; attempt++ {

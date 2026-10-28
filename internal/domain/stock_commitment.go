@@ -95,6 +95,13 @@ type StockEvidence struct {
 	SharedPool        bool
 	WarehouseConflict bool
 	ProductConflict   bool
+	CustomerOrders    *StockCustomerOrderEvidence
+}
+
+type StockCustomerOrderEvidence struct {
+	BatchID      *int64
+	Correlations []OrderCorrelation
+	Truncated    bool
 }
 
 type StockDecisionStatus string

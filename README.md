@@ -143,3 +143,14 @@ The decision's sorted `ReasonCodes` and per-gate `Checks` explain failures and p
 The database scopes decision evidence and mapping-history foreign keys to tenant, accounts, warehouse and item. Decisions, evidence, policies, pools and registrations reject update/delete through normal SQL. The migration's down path refuses to drop them once registrations or policies exist; any manual removal of this history requires separate review. Privileged database owners can change schema or disable triggers, and legacy observations can be edited by privileged SQL; the decision stores a frozen value snapshot and restricts deletion of referenced rows. The calculator does not yet build a commitment ledger, establish historical mapping validity, reconcile external state, or allocate a shared pool. See the [architecture and write-enablement criteria](docs/stock-commitment-architecture.md).
 
 Migration 14 adds ordinary indexes and unique constraints to existing import and mapping tables. On a large database these can take locks and must be reviewed and planned before deployment; they were applied here only to disposable test infrastructure.
+
+## Read-only MoySklad customer-order evidence
+
+After explicit trusted account registration and migrations, a separately authorized operator can run a bounded customer-order read. Set `MOYSKLAD_TOKEN` locally; never put it in command arguments, logs, or Git. The command checks the tenant/account registration before contacting MoySklad. It makes only the allowlisted GET requests described in [reservation evidence](docs/moysklad-reservation-evidence.md).
+
+```sh
+go run ./cmd/moysklad-orders import -tenant TENANT -moysklad-account MOYSKLAD_ACCOUNT -from 2026-10-01T00:00:00Z -to 2026-10-02T00:00:00Z
+go run ./cmd/moysklad-orders correlate -tenant TENANT -moysklad-account MOYSKLAD_ACCOUNT -ozon-account OZON_ACCOUNT -posting-observation POSTING_OBSERVATION_ID -order-batch ORDER_BATCH_ID
+```
+
+The import window is required, millisecond-aligned and at most 31 days. The first command returns its batch ID. The second uses an explicitly selected posting observation and batch, and requires both accounts registered to the tenant. Results based on confirmed product/warehouse mappings are candidates, never automatic identity confirmation. Current APIs provide no verified cross-system identity source, so `CONFIRMED_BY_EXPLICIT_IDENTITY` is not available in production. Position reserve is not proof of inclusion in a warehouse stock baseline. Customer-order observations improve stock-decision explanations without enabling `READY_CONDITIONAL` or external writes. The CLI is for trusted local administrators; there is no authenticated tenant-facing API.

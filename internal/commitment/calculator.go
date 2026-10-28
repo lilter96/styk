@@ -79,6 +79,34 @@ func Evaluate(req domain.StockCalculationRequest, e domain.StockEvidence, now ti
 		observationFresh = validPolicy && age >= 0 && age < req.Policy.MaxObservationAge
 	}
 	add("SOURCE_OBSERVATION_STALE", "The local observation time is within the policy age.", "", observationFresh, false)
+	if e.CustomerOrders != nil {
+		orders := e.CustomerOrders
+		add("CUSTOMER_ORDER_IMPORT_MISSING", "A scoped customer-order traversal was recorded.", "", orders.BatchID != nil, false)
+		if orders.BatchID != nil {
+			add("CUSTOMER_ORDER_POSTING_EVIDENCE_MISSING", "A relevant scoped posting observation was considered.", "", len(orders.Correlations) > 0, false)
+			add("CUSTOMER_ORDER_BASELINE_INCLUSION_UNKNOWN", "Position reserve inclusion in the stock baseline is proven.", "", false, false)
+			add("CUSTOMER_ORDER_EVIDENCE_TRUNCATED", "The bounded customer-order evidence was not truncated.", "", !orders.Truncated, false)
+			states := map[domain.OrderCorrelationStatus]bool{}
+			reserveObserved := false
+			for _, c := range orders.Correlations {
+				states[c.Status] = true
+				if c.Truncated {
+					states[domain.OrderInsufficient] = true
+				}
+				for _, candidate := range c.Candidates {
+					for _, p := range candidate.Positions {
+						if p.Reserve != nil {
+							reserveObserved = true
+						}
+					}
+				}
+			}
+			for status := range states {
+				add("CUSTOMER_ORDER_"+string(status), "The customer-order correlation has an independently verified identity.", "", status == domain.OrderIdentityConfirmed, false)
+			}
+			add("CUSTOMER_ORDER_RESERVE_MISSING", "A position reserve value was observed; baseline inclusion remains unknown.", "", reserveObserved, false)
+		}
+	}
 
 	values := []struct {
 		code, invalidCode, message string

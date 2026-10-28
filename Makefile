@@ -28,3 +28,4 @@ build:
 	go build -o bin/warehouse-mapping ./cmd/warehouse-mapping
 	go build -o bin/ozon-postings ./cmd/ozon-postings
 	go build -o bin/stock-commitment ./cmd/stock-commitment
+	go build -o bin/moysklad-orders ./cmd/moysklad-orders

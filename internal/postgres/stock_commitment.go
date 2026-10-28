@@ -154,6 +154,9 @@ func (s *Store) calculateStock(ctx context.Context, r domain.StockCalculationReq
 	if err = loadStockObservations(ctx, tx, r, &e); err != nil {
 		return domain.StockDecision{}, err
 	}
+	if err = loadStockCustomerOrders(ctx, tx, r, &e); err != nil {
+		return domain.StockDecision{}, err
+	}
 	d := commitment.Evaluate(r, e, now)
 	if d.Status == domain.StockReady {
 		return domain.StockDecision{}, errors.New("current imports cannot establish the required readiness proofs")
@@ -323,7 +326,11 @@ func persistStockDecision(ctx context.Context, tx pgx.Tx, poolID int64, d domain
 	if d.Evidence.Marketplace.StockRowFound {
 		ozonStockID = d.Evidence.Marketplace.ImportID
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO stock_decision_evidence(decision_id,tenant_id,pool_id,moysklad_account,moysklad_warehouse_id,item_kind,item_id,ozon_account,ozon_warehouse_id,ozon_product_id,moysklad_import_id,moysklad_stock_import_id,ozon_import_id,ozon_stock_import_id,posting_batch_id,snapshot) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb)`, d.ID, r.Pool.Tenant, poolID, r.Pool.MoyskladAccount, r.Pool.WarehouseID, r.Pool.ItemKind, r.Pool.ItemID, r.Target.OzonAccount, r.Target.WarehouseID, r.Target.ProductID, d.Evidence.Source.ImportID, sourceStockID, d.Evidence.Marketplace.ImportID, ozonStockID, d.Evidence.Marketplace.PostingBatchID, snapshot)
+	var orderBatch *int64
+	if d.Evidence.CustomerOrders != nil {
+		orderBatch = d.Evidence.CustomerOrders.BatchID
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO stock_decision_evidence(decision_id,tenant_id,pool_id,moysklad_account,moysklad_warehouse_id,item_kind,item_id,ozon_account,ozon_warehouse_id,ozon_product_id,moysklad_import_id,moysklad_stock_import_id,ozon_import_id,ozon_stock_import_id,posting_batch_id,snapshot,customer_order_batch_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17)`, d.ID, r.Pool.Tenant, poolID, r.Pool.MoyskladAccount, r.Pool.WarehouseID, r.Pool.ItemKind, r.Pool.ItemID, r.Target.OzonAccount, r.Target.WarehouseID, r.Target.ProductID, d.Evidence.Source.ImportID, sourceStockID, d.Evidence.Marketplace.ImportID, ozonStockID, d.Evidence.Marketplace.PostingBatchID, snapshot, orderBatch)
 	if err != nil {
 		return fmt.Errorf("insert stock decision evidence: %w", err)
 	}
