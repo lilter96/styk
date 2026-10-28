@@ -22,7 +22,7 @@ func client(t *testing.T, s *httptest.Server) *Client {
 }
 func TestReadPaginationAndValues(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "GET" || r.Header.Get("Authorization") != "Bearer test-token" {
+		if r.Method != "GET" || r.Header.Get("Authorization") != "Bearer test-token" || r.Header.Get("Accept") != "application/json;charset=utf-8" {
 			t.Error("incorrect auth or method")
 		}
 		offset := r.URL.Query().Get("offset")

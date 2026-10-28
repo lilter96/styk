@@ -124,7 +124,7 @@ func (c *Client) get(ctx context.Context, path string, q url.Values) ([]byte, er
 			return nil, errors.New("construct MoySklad request")
 		}
 		req.Header.Set("Authorization", "Bearer "+c.token)
-		req.Header.Set("Accept", "application/json")
+		req.Header.Set("Accept", "application/json;charset=utf-8")
 		resp, err := c.http.Do(req)
 		var retry bool
 		var delay time.Duration
