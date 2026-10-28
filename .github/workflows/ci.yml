@@ -1,0 +1,31 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.6
+        env:
+          POSTGRES_USER: styk
+          POSTGRES_PASSWORD: test_only
+          POSTGRES_DB: styk_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U styk -d styk_test"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      DATABASE_URL: postgres://styk:test_only@localhost:5432/styk_test?sslmode=disable
+      TEST_DATABASE_URL: postgres://styk:test_only@localhost:5432/styk_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.3'
+      - run: make lint
+      - run: make test
+      - run: go test -race ./...
+      - run: make build
+      - run: make migrate
+      - run: make test-integration
+      - run: go test -race -tags=integration -count=1 ./tests/integration/...
