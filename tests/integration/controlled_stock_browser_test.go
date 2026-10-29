@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -32,8 +33,39 @@ func TestControlledStockPublicationBrowser(t *testing.T) {
 	if os.Getenv("STYK_CONTROLLED_BROWSER_E2E") != "1" {
 		t.Skip("browser E2E not requested")
 	}
-	db, _ := controlledFixtureWithMapping(t, false)
+	controlledStockBrowser(t, false)
+}
+
+func TestControlledStockRecoveryBrowser(t *testing.T) {
+	if os.Getenv("STYK_CONTROLLED_RECOVERY_E2E") != "1" {
+		t.Skip("recovery browser E2E not requested")
+	}
+	controlledStockBrowser(t, true)
+}
+
+func controlledStockBrowser(t *testing.T, recovery bool) {
+	var oldOperation string
+	db, review := controlledFixtureWithMapping(t, recovery)
 	scope := testpublication.Scope()
+	if recovery {
+		v := controlledEnable(t, db, review)
+		oldOperation = v.LastOperation.ID
+		now := time.Now().UTC()
+		claim, err := db.NextControlledStockPublication(context.Background(), now)
+		if err != nil || claim == nil {
+			t.Fatalf("seed claim: %v", err)
+		}
+		if err = db.FinishStockTarget(context.Background(), scope, claim.ID, claim.Targets[0].ID, "UNKNOWN", "REQUEST_OUTCOME_UNKNOWN", now); err != nil {
+			t.Fatal(err)
+		}
+		zero := int64(0)
+		if err = db.RecordUnknownStockReadback(context.Background(), scope, claim.ID, claim.Targets[0].ID, &zero, time.Now().UTC()); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = db.MutateStockSync(context.Background(), scope, "disable", "", "synthetic-disable-recovery", time.Now().UTC()); err != nil {
+			t.Fatal(err)
+		}
+	}
 	t.Setenv("OZON_CLIENT_ID", scope.OzonAccount)
 	t.Setenv("OZON_API_KEY", "synthetic-key")
 	t.Setenv("MOYSKLAD_ACCOUNT_ID", scope.MoyskladAccount)
@@ -82,21 +114,34 @@ func TestControlledStockPublicationBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pub := stocksync.Runner{Enabled: true, ControlledTest: true, Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return oz, nil }}
+	pub := stocksync.Runner{Enabled: true, ControlledTest: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return oz, nil }}
 	imports := ozonjob.Runner{Store: db, Account: scope.OzonAccount, Client: oz, MoyskladAccount: scope.MoyskladAccount, MoyskladClient: mo}
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 	worker := application.Worker{Store: db, Handler: application.MockHandler{}, Imports: imports, Publications: pub, ImportAccount: scope.OzonAccount, MoyskladImportAccount: scope.MoyskladAccount, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Poll: 50 * time.Millisecond, Lease: time.Minute, Retry: time.Second}
 	done := make(chan error, 1)
-	go func() { done <- worker.Run(ctx) }()
-	defer func() { cancel(); <-done }()
+	var once sync.Once
+	var started atomic.Bool
+	startWorker := func() { once.Do(func() { started.Store(true); go func() { done <- worker.Run(ctx) }() }) }
+	if !recovery {
+		startWorker()
+	}
+	defer func() {
+		cancel()
+		if started.Load() {
+			<-done
+		}
+	}()
 	const origin = "http://127.0.0.1:15178"
 	const secret = "synthetic-controlled-browser-operator-secret"
 	handler, err := console.Handler(db, secret, origin)
 	if err != nil {
 		t.Fatal(err)
 	}
-	api := httptest.NewServer(handler)
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /__test/start-worker", func(w http.ResponseWriter, _ *http.Request) { startWorker(); w.WriteHeader(http.StatusNoContent) })
+	mux.Handle("/", handler)
+	api := httptest.NewServer(mux)
 	defer api.Close()
 	web, err := filepath.Abs("../../web")
 	if err != nil {
@@ -131,9 +176,13 @@ func TestControlledStockPublicationBrowser(t *testing.T) {
 	if !ready {
 		t.Fatalf("vite: %s", logs.String())
 	}
-	cmd := exec.CommandContext(ctx, "node", "node_modules/@playwright/test/cli.js", "test", "e2e/controlled-stock.spec.ts", "--workers=1", "--reporter=line")
+	spec := "e2e/controlled-stock.spec.ts"
+	if recovery {
+		spec = "e2e/controlled-recovery.spec.ts"
+	}
+	cmd := exec.CommandContext(ctx, "node", "node_modules/@playwright/test/cli.js", "test", spec, "--workers=1", "--reporter=line")
 	cmd.Dir = web
-	cmd.Env = append(os.Environ(), "STYK_CONTROLLED_E2E_ORIGIN="+origin, "STYK_CONTROLLED_E2E_SECRET="+secret)
+	cmd.Env = append(os.Environ(), "STYK_CONTROLLED_E2E_ORIGIN="+origin, "STYK_CONTROLLED_E2E_SECRET="+secret, "STYK_CONTROLLED_E2E_TEST_API="+api.URL)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("controlled browser: %v\n%s", err, output)
@@ -149,5 +198,11 @@ func TestControlledStockPublicationBrowser(t *testing.T) {
 	var productAudits, warehouseAudits int
 	if err = db.Pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM product_mapping_confirmation_audits WHERE tenant_id=$1 AND evidence_class='OPERATOR_ATTESTED'), (SELECT count(*) FROM warehouse_mapping_confirmation_audits WHERE tenant_id=$1 AND evidence_class='OPERATOR_ATTESTED')`, scope.Tenant).Scan(&productAudits, &warehouseAudits); err != nil || productAudits != 1 || warehouseAudits != 1 {
 		t.Fatalf("browser mapping audits product=%d warehouse=%d: %v", productAudits, warehouseAudits, err)
+	}
+	if recovery {
+		var oldState, linked string
+		if err = db.Pool.QueryRow(ctx, `SELECT t.state,l.new_operation_id FROM stock_publication_targets t JOIN stock_publication_recoveries r ON r.target_id=t.id JOIN stock_publication_recovery_links l ON l.recovery_id=r.id WHERE t.operation_id=$1`, oldOperation).Scan(&oldState, &linked); err != nil || oldState != "UNKNOWN" || linked == oldOperation || linked == "" {
+			t.Fatalf("recovery audit original=%s new=%s: %v", oldState, linked, err)
+		}
 	}
 }

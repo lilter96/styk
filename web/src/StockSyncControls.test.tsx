@@ -39,6 +39,7 @@ function setup({
   omitAvailability = false,
   testAccount = false,
   attestationFails = false,
+  recoveryScenario = false,
 }: {
   ready?: boolean;
   lost?: boolean;
@@ -50,8 +51,10 @@ function setup({
   omitAvailability?: boolean;
   testAccount?: boolean;
   attestationFails?: boolean;
+  recoveryScenario?: boolean;
 } = {}) {
   let accepted = 0;
+  let recovered = false;
   const calls: { path: string; method: string; body: string }[] = [];
   const target = {
     ozon_product_id: "101",
@@ -81,6 +84,11 @@ function setup({
     enabled:
       blocked || (accepted > 0 && selected.ozon_account === scope.ozon_account),
     state:
+      (recoveryScenario
+        ? recovered
+          ? "TEST_SUPERSEDED_REVIEW_REQUIRED"
+          : "DISABLED_OUTCOME_UNKNOWN"
+        : "") ||
       remoteState ||
       (blocked
         ? "BLOCKED"
@@ -90,6 +98,44 @@ function setup({
     ready: blocked ? false : ready,
     checks: [],
     targets: [target],
+    ...(recoveryScenario
+      ? {
+          last_operation: {
+            ...selected,
+            id: "p".repeat(32),
+            state: "OUTCOME_UNKNOWN",
+            created_at: new Date().toISOString(),
+            targets: [
+              {
+                id: 1,
+                ozon_product_id: "101",
+                ozon_warehouse_id: "201",
+                quantity: "7",
+                state: "OUTCOME_UNKNOWN",
+                safe_error: "REQUEST_OUTCOME_UNKNOWN",
+                dispatched_at: new Date().toISOString(),
+                readback_at: "2026-10-29T13:27:08Z",
+                readback_quantity: "0",
+              },
+            ],
+          },
+          ...(recovered
+            ? {
+                recovery: {
+                  id: "r".repeat(32),
+                  original_operation_id: "p".repeat(32),
+                  ozon_product_id: "101",
+                  ozon_warehouse_id: "201",
+                  observed_quantity: "0",
+                  observed_at: "2026-10-29T13:27:08Z",
+                  created_at: new Date().toISOString(),
+                  principal_type: "LOCAL_OPERATOR_SESSION",
+                  reason: "Оператор принимает риск тестовой операции",
+                },
+              }
+            : {}),
+        }
+      : {}),
     ...(blocked
       ? {
           last_operation: {
@@ -163,6 +209,10 @@ function setup({
         JSON.stringify({ ...view(), enabled: false, state: "DISABLED" }),
         { status: 200 },
       );
+    if (path.endsWith("/supersede")) {
+      recovered = true;
+      return new Response(JSON.stringify(view()), { status: 200 });
+    }
     if (path.endsWith("/reconcile"))
       return new Response(
         JSON.stringify({
@@ -426,6 +476,38 @@ it("does not claim test assumptions were saved after a failed review", async () 
   );
   await within(dialog).findByText(/Не удалось проверить условия отправки/);
   expect(within(dialog).queryByText(/Допущения записаны/)).toBeNull();
+});
+it("requires explicit uncertainty acceptance before a test recovery", async () => {
+  const { calls } = setup({ testAccount: true, recoveryScenario: true });
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Разрешить новую проверку" }),
+  );
+  const dialog = await screen.findByRole("dialog", {
+    name: "Принять неопределённость тестовой отправки?",
+  });
+  const action = within(dialog).getByRole("button", {
+    name: "Записать решение оператора",
+  }) as HTMLButtonElement;
+  expect(action.disabled).toBe(true);
+  fireEvent.change(within(dialog).getByLabelText("Причина решения"), {
+    target: { value: "Оператор принимает риск тестовой операции" },
+  });
+  fireEvent.click(within(dialog).getByLabelText(/прежний worker остановлен/));
+  fireEvent.click(within(dialog).getByLabelText(/Принимаю неопределённость/));
+  expect(action.disabled).toBe(false);
+  expect(calls.some((x) => x.path.endsWith("/supersede"))).toBe(false);
+  fireEvent.click(action);
+  await screen.findByText(/Неопределённый результат сохранён/);
+  const sent = JSON.parse(
+    calls.find((x) => x.path.endsWith("/supersede"))!.body,
+  );
+  expect(sent).toMatchObject({
+    acknowledge: true,
+    worker_stopped: true,
+    expected_quantity: "0",
+    expected_readback_at: "2026-10-29T13:27:08Z",
+  });
+  expect(calls.some((x) => x.path.endsWith("/enable"))).toBe(false);
 });
 it("rejects expired reviews and unavailable state without creating an enable request", async () => {
   const { calls } = setup({ expired: true });

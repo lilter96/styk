@@ -39,10 +39,12 @@ type Publication = SyncScope & {
     quantity: string;
     state: string;
     safe_error?: string;
+    dispatched_at?: string;
     http_status?: number;
     acknowledged_at?: string;
     readback_at?: string;
     readback_quantity?: string;
+    readbacks?: { observed_at: string; quantity?: string; outcome: string }[];
   }[];
 };
 export type StockSyncView = SyncScope & {
@@ -55,6 +57,18 @@ export type StockSyncView = SyncScope & {
   last_confirmed_at?: string;
   publication_available?: boolean;
   test_account_mode?: boolean;
+  recovery?: {
+    id: string;
+    original_operation_id: string;
+    new_operation_id?: string;
+    ozon_product_id: string;
+    ozon_warehouse_id: string;
+    observed_quantity: string;
+    observed_at: string;
+    created_at: string;
+    principal_type: string;
+    reason: string;
+  };
 };
 type Review = SyncScope & {
   review_id: string;
@@ -68,7 +82,7 @@ type SyncIntent = {
   scope: Readonly<SyncScope>;
   body: string;
   path: string;
-  kind: "enable" | "disable" | "reconcile";
+  kind: "enable" | "disable" | "reconcile" | "supersede";
   uncertain: boolean;
 };
 const sameScope = (a: SyncScope, b: SyncScope) =>
@@ -136,9 +150,11 @@ export function useStockSyncSubmission() {
           ? data.test_account_mode
             ? "Отправка поставлена в очередь. Проверьте результат и остаток Ozon."
             : "Синхронизация включена. Результат отправки появится после ответа Ozon."
-          : intent.kind === "disable"
-            ? "Отключение записано. Уже отправленный запрос может ещё выполняться."
-            : "Состояние остатков проверено без повторной отправки.",
+          : intent.kind === "supersede"
+            ? "Принятие неопределённости записано. Для новой отправки нужна свежая проверка."
+            : intent.kind === "disable"
+              ? "Отключение записано. Уже отправленный запрос может ещё выполняться."
+              : "Состояние остатков проверено без повторной отправки.",
       );
       await client.invalidateQueries({
         queryKey: [
@@ -175,18 +191,25 @@ export function useStockSyncSubmission() {
     kind: SyncIntent["kind"],
     reviewID?: string,
     operationID?: string,
+    recovery?: {
+      expected_readback_at: string;
+      expected_quantity: string;
+      reason: string;
+    },
   ) {
     if (ref.current || lock.current) return;
     const value: Record<string, unknown> = { ...scope, acknowledge: true };
     if (kind !== "reconcile") value.idempotency_key = crypto.randomUUID();
     if (kind === "enable") value.review_id = reviewID;
+    if (kind === "supersede")
+      Object.assign(value, recovery, { worker_stopped: true });
     const intent: SyncIntent = {
       scope: Object.freeze({ ...scope }),
       kind,
       body: JSON.stringify(value),
       path:
-        kind === "reconcile"
-          ? `/api/stock-sync/operations/${operationID}/reconcile`
+        kind === "reconcile" || kind === "supersede"
+          ? `/api/stock-sync/operations/${operationID}/${kind}`
           : `/api/stock-sync/${kind}`,
       uncertain: false,
     };
@@ -278,6 +301,8 @@ const proofLabels: Record<string, string> = {
 const checkLabels: Record<string, string> = {
   ...proofLabels,
   SOURCE_TRAVERSAL_STALE: "Повторите загрузку МойСклад: её начало устарело",
+  TEST_RECOVERY_FRESH_TRAVERSALS:
+    "После принятия риска подтвердите допущения и заново загрузите оба сервиса",
   OZON_TRAVERSAL_STALE: "Повторите загрузку Ozon: её начало устарело",
   PROOF_AFTER_SOURCE_TRAVERSAL_STARTED:
     "Подтвердите условия до начала новой загрузки МойСклад",
@@ -386,7 +411,11 @@ export function StockSyncControls({
     [advanced, setAdvanced] = useState(false),
     [evidence, setEvidence] = useState<Record<string, EvidenceForm>>({}),
     [testAck, setTestAck] = useState(false),
-    [testAttestations, setTestAttestations] = useState<TestAttestation[]>([]);
+    [testAttestations, setTestAttestations] = useState<TestAttestation[]>([]),
+    [recoveryOpen, setRecoveryOpen] = useState(false),
+    [recoveryAck, setRecoveryAck] = useState(false),
+    [workerStopped, setWorkerStopped] = useState(false),
+    [recoveryReason, setRecoveryReason] = useState("");
   const scopeKey = `${tenant}:${moy}:${ozon}`;
   const query = useQuery({
     queryKey: ["stock-sync", tenant, moy, ozon],
@@ -418,6 +447,10 @@ export function StockSyncControls({
     setEvidence({});
     setTestAck(false);
     setTestAttestations([]);
+    setRecoveryOpen(false);
+    setRecoveryAck(false);
+    setWorkerStopped(false);
+    setRecoveryReason("");
     setAck(false);
     setMessage("");
   }, [scopeKey]);
@@ -426,6 +459,7 @@ export function StockSyncControls({
       setOpen(null);
       setReview(null);
       setAck(false);
+      setRecoveryOpen(false);
     }
   }, [commands.completed?.sequence, scopeKey]);
   async function preview(withEvidence = false, testInput?: TestAttestation[]) {
@@ -533,10 +567,15 @@ export function StockSyncControls({
     commands.pending && sameScope(commands.pending.scope, scope);
   const active = view?.enabled;
   const state = view?.state || "DISABLED";
+  const superseded =
+    !!view?.recovery &&
+    view.recovery.original_operation_id === view.last_operation?.id;
   const uncertainOperation =
-    ["OUTCOME_UNKNOWN", "PARTIAL"].includes(
+    !superseded &&
+    (["OUTCOME_UNKNOWN", "PARTIAL"].includes(
       view?.last_operation?.state || "",
-    ) || state.includes("UNKNOWN");
+    ) ||
+      state.includes("UNKNOWN"));
   const readbackRequired = state === "READBACK_REQUIRED";
   const settlementRequired = state === "EFFECT_CONFIRMED_REVIEW_REQUIRED";
   const deploymentBlocked = !!view && view.publication_available !== true;
@@ -547,31 +586,33 @@ export function StockSyncControls({
       state === "UPDATING" ||
       state === "STOPPING" ||
       view?.last_operation?.state === "RUNNING");
-  const label = readbackRequired
-    ? "Требуется проверка"
-    : state === "RECONCILING"
-      ? "Проверяем результат"
-      : state === "RECONCILED"
-        ? "Синхронизировано"
-        : state === "QUEUED"
-          ? "Ожидает отправки"
-          : uncertainOperation
-            ? "Результат уточняется"
-            : settlementRequired
-              ? "Нужна проверка перед включением"
-              : inFlightDuringHold
-                ? "Останавливается"
-                : deploymentBlocked
-                  ? "Недоступна"
-                  : blocked
-                    ? "Приостановлена"
-                    : active
-                      ? state === "ACTIVE" || state === "SUCCEEDED"
-                        ? "Включена"
-                        : "Идёт отправка"
-                      : state === "STOPPING"
-                        ? "Останавливается"
-                        : "Выключена";
+  const label = superseded
+    ? "Нужна новая проверка"
+    : readbackRequired
+      ? "Требуется проверка"
+      : state === "RECONCILING"
+        ? "Проверяем результат"
+        : state === "RECONCILED"
+          ? "Синхронизировано"
+          : state === "QUEUED"
+            ? "Ожидает отправки"
+            : uncertainOperation
+              ? "Результат уточняется"
+              : settlementRequired
+                ? "Нужна проверка перед включением"
+                : inFlightDuringHold
+                  ? "Останавливается"
+                  : deploymentBlocked
+                    ? "Недоступна"
+                    : blocked
+                      ? "Приостановлена"
+                      : active
+                        ? state === "ACTIVE" || state === "SUCCEEDED"
+                          ? "Включена"
+                          : "Идёт отправка"
+                        : state === "STOPPING"
+                          ? "Останавливается"
+                          : "Выключена";
   const failedChecks = (review?.checks || []).filter((check) => !check.passed);
   const uniqueFailed = new Map<string, Check>();
   for (const check of [
@@ -605,25 +646,27 @@ export function StockSyncControls({
             </span>
           </div>
           <p>
-            {readbackRequired
-              ? "Ozon ответил на запрос, но текущий остаток ещё не подтверждён. Уточните результат без повторной отправки."
-              : state === "RECONCILING"
-                ? "Ozon ответил на запрос. Проверяем фактический остаток."
-                : uncertainOperation
-                  ? "Уточните результат предыдущей отправки. Повторная отправка в Ozon не запускается автоматически."
-                  : settlementRequired
-                    ? "При проверке Ozon вернул ожидаемый остаток. Это не подтверждает актуальность ответа или завершение прежнего запроса. Автоматическая отправка остановлена; перед включением нужна новая проверка."
-                    : inFlightDuringHold
-                      ? "Ранее отправленный запрос ещё обрабатывается и может изменить остатки. Новые отправки недоступны."
-                      : deploymentBlocked
-                        ? "Отправка остатков временно недоступна: проверка безопасности ещё не завершена."
-                        : blocked
-                          ? "Новые отправки приостановлены: нужно заново проверить условия и актуальность данных."
-                          : view?.last_confirmed_at
-                            ? `Последнее подтверждённое обновление — ${new Date(view.last_confirmed_at).toLocaleString("ru-RU")}.`
-                            : active
-                              ? "Отправка выполняется только для проверенных данных и подтверждённых соответствий."
-                              : "Остатки в Ozon изменятся только после явного включения и проверки условий."}
+            {superseded
+              ? "Неопределённый результат сохранён. Оператор принял риск для тестовой пары; перед новой отправкой проверьте условия и обновите данные."
+              : readbackRequired
+                ? "Ozon ответил на запрос, но текущий остаток ещё не подтверждён. Уточните результат без повторной отправки."
+                : state === "RECONCILING"
+                  ? "Ozon ответил на запрос. Проверяем фактический остаток."
+                  : uncertainOperation
+                    ? "Уточните результат предыдущей отправки. Повторная отправка в Ozon не запускается автоматически."
+                    : settlementRequired
+                      ? "При проверке Ozon вернул ожидаемый остаток. Это не подтверждает актуальность ответа или завершение прежнего запроса. Автоматическая отправка остановлена; перед включением нужна новая проверка."
+                      : inFlightDuringHold
+                        ? "Ранее отправленный запрос ещё обрабатывается и может изменить остатки. Новые отправки недоступны."
+                        : deploymentBlocked
+                          ? "Отправка остатков временно недоступна: проверка безопасности ещё не завершена."
+                          : blocked
+                            ? "Новые отправки приостановлены: нужно заново проверить условия и актуальность данных."
+                            : view?.last_confirmed_at
+                              ? `Последнее подтверждённое обновление — ${new Date(view.last_confirmed_at).toLocaleString("ru-RU")}.`
+                              : active
+                                ? "Отправка выполняется только для проверенных данных и подтверждённых соответствий."
+                                : "Остатки в Ozon изменятся только после явного включения и проверки условий."}
           </p>
           {view?.last_operation && (
             <p>
@@ -641,6 +684,55 @@ export function StockSyncControls({
                 </>
               )}
             </p>
+          )}
+          {uncertainOperation && view?.last_operation?.targets[0] && (
+            <div className="integration-feedback">
+              <p>
+                Товар {view.last_operation.targets[0].ozon_product_id} · склад{" "}
+                {view.last_operation.targets[0].ozon_warehouse_id}.
+              </p>
+              <p>
+                Исходная попытка:{" "}
+                {view.last_operation.targets[0].dispatched_at
+                  ? new Date(
+                      view.last_operation.targets[0].dispatched_at!,
+                    ).toLocaleString("ru-RU")
+                  : "время неизвестно"}
+                . Ответ провайдера не подтверждён; сохранённая ошибка:{" "}
+                {view.last_operation.targets[0].safe_error ===
+                "REQUEST_OUTCOME_UNKNOWN"
+                  ? "результат сетевого запроса неизвестен"
+                  : "требуется проверка"}
+                .
+              </p>
+              {(view.last_operation.targets[0].readbacks || []).map(
+                (item, index) => (
+                  <p key={`${item.observed_at}:${index}`}>
+                    Проверка{" "}
+                    {new Date(item.observed_at).toLocaleString("ru-RU")}:{" "}
+                    {item.quantity ?? "нет данных"} шт.
+                  </p>
+                ),
+              )}
+            </div>
+          )}
+          {view?.recovery && (
+            <details className="technical-details">
+              <summary>Принятие неопределённости</summary>
+              <p>
+                Исходная операция {view.recovery.original_operation_id} остаётся
+                неизвестной. Остаток при проверке:{" "}
+                {view.recovery.observed_quantity} шт. ·{" "}
+                {new Date(view.recovery.observed_at).toLocaleString("ru-RU")}.
+              </p>
+              <p>
+                Решение оператора: {view.recovery.reason} ·{" "}
+                {new Date(view.recovery.created_at).toLocaleString("ru-RU")}.
+              </p>
+              {view.recovery.new_operation_id && (
+                <p>Новая операция: {view.recovery.new_operation_id}</p>
+              )}
+            </details>
           )}
           {view?.last_operation && (
             <details className="technical-details">
@@ -770,6 +862,22 @@ export function StockSyncControls({
               Уточнить результат
             </button>
           )}
+          {view?.test_account_mode &&
+            uncertainOperation &&
+            view.last_operation?.targets[0]?.readback_at && (
+              <button
+                className="secondary"
+                disabled={!!commands.pending || commands.busy}
+                onClick={() => {
+                  setRecoveryAck(false);
+                  setWorkerStopped(false);
+                  setRecoveryReason("");
+                  setRecoveryOpen(true);
+                }}
+              >
+                Разрешить новую проверку
+              </button>
+            )}
         </div>
       </section>
       {scopedPending && (
@@ -1157,6 +1265,99 @@ export function StockSyncControls({
               автоматически. Проверка фактического остатка не доказывает
               завершение прежнего запроса; для возобновления требуется отдельная
               проверка.
+            </p>
+          </div>
+        </IntegrationDialog>
+      )}
+      {recoveryOpen && view?.last_operation?.targets[0] && (
+        <IntegrationDialog
+          title="Принять неопределённость тестовой отправки?"
+          onClose={() => setRecoveryOpen(false)}
+        >
+          <div className="provider-settings-body">
+            <p>
+              Исходная операция останется неизвестной. Старый запрос может
+              изменить остаток позже; новая проверка не гарантирует порядок
+              запросов Ozon. Это решение доступно только для выбранной тестовой
+              пары и само не отправляет остаток.
+            </p>
+            <p>
+              Товар {view.last_operation.targets[0].ozon_product_id} · склад{" "}
+              {view.last_operation.targets[0].ozon_warehouse_id} · запрос{" "}
+              {view.last_operation.targets[0].quantity} шт. · последняя проверка{" "}
+              {view.last_operation.targets[0].readback_quantity ?? "нет данных"}{" "}
+              шт.{" "}
+              {view.last_operation.targets[0].readback_at &&
+                `· ${new Date(view.last_operation.targets[0].readback_at!).toLocaleString("ru-RU")}`}
+              .
+            </p>
+            <label className="integration-field">
+              Причина решения
+              <textarea
+                value={recoveryReason}
+                maxLength={1000}
+                onChange={(e) => setRecoveryReason(e.target.value)}
+              />
+            </label>
+            <label className="integration-ack">
+              <input
+                type="checkbox"
+                checked={workerStopped}
+                onChange={(e) => setWorkerStopped(e.target.checked)}
+              />
+              Подтверждаю, что прежний worker остановлен и другие отправки этой
+              пары не выполняются.
+            </label>
+            <label className="integration-ack">
+              <input
+                type="checkbox"
+                checked={recoveryAck}
+                onChange={(e) => setRecoveryAck(e.target.checked)}
+              />
+              Принимаю неопределённость и риск позднего изменения остатка для
+              тестового аккаунта.
+            </label>
+            <div className="provider-actions">
+              <button
+                disabled={
+                  !recoveryAck ||
+                  !workerStopped ||
+                  recoveryReason.trim().length < 16 ||
+                  !view.last_operation.targets[0].readback_at ||
+                  view.last_operation.targets[0].readback_quantity ===
+                    undefined ||
+                  commands.busy ||
+                  !!commands.pending
+                }
+                onClick={() =>
+                  commands.start(
+                    scope,
+                    "supersede",
+                    undefined,
+                    view.last_operation!.id,
+                    {
+                      expected_readback_at:
+                        view.last_operation!.targets[0].readback_at!,
+                      expected_quantity:
+                        view.last_operation!.targets[0].readback_quantity!,
+                      reason: recoveryReason.trim(),
+                    },
+                  )
+                }
+              >
+                Записать решение оператора
+              </button>
+              <button
+                className="secondary"
+                onClick={() => setRecoveryOpen(false)}
+              >
+                Отмена
+              </button>
+            </div>
+            <p>
+              Проверка остатка должна быть не старше двух минут. После решения
+              подтвердите тестовые допущения, заново загрузите данные и создайте
+              новую проверку.
             </p>
           </div>
         </IntegrationDialog>
