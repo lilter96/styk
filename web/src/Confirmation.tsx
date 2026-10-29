@@ -22,6 +22,11 @@ export function useConfirmation() {
   const [message, setMessage] = useState("");
   const [sessionLost, setSessionLost] = useState(false);
   const [result, setResult] = useState<ConfirmationResult | null>(null);
+  const [resultContext, setResultContext] = useState<Pending | null>(null);
+  const [failure, setFailure] = useState<{
+    reviewId: string;
+    code: string;
+  } | null>(null);
   const lock = useRef(false);
   const pendingRef = useRef<Pending | null>(null);
   async function submit(p: Pending) {
@@ -35,12 +40,17 @@ export function useConfirmation() {
         AbortSignal.timeout(30000),
       );
       setResult(value);
+      setResultContext(p);
       setPending(null);
       pendingRef.current = null;
       await Promise.all(
-        ["products", "review-history", "diagnostics"].map((key) =>
-          client.invalidateQueries({ queryKey: [key] }),
-        ),
+        [
+          "products",
+          "review-history",
+          "warehouses",
+          "warehouse-review",
+          "diagnostics",
+        ].map((key) => client.invalidateQueries({ queryKey: [key] })),
       );
     } catch (error) {
       const code = error instanceof ApiError ? error.code : undefined;
@@ -62,8 +72,9 @@ export function useConfirmation() {
           "REVIEW_NOT_FOUND",
         ].includes(code)
       ) {
+        setFailure({ reviewId: p.intent.reviewId, code });
         setMessage(
-          `${code}: confirmation was rejected. Create a new review or refresh the product and resolve the conflict.`,
+          `${code}: confirmation was rejected. Create a new review or refresh the selection and resolve the conflict.`,
         );
         setPending(null);
         pendingRef.current = null;
@@ -88,17 +99,20 @@ export function useConfirmation() {
     product: string,
     reviewId: string,
     explanation: string,
+    kind: "product" | "warehouse" = "product",
   ) {
     if (pendingRef.current || lock.current) return;
     const p = {
       scope: { ...scope },
       product,
-      intent: createConfirmationIntent(reviewId, explanation),
+      intent: createConfirmationIntent(reviewId, explanation, kind),
       uncertain: false,
     };
     pendingRef.current = p;
     setPending(p);
     setResult(null);
+    setResultContext(null);
+    setFailure(null);
     setSessionLost(false);
     void submit(p);
   }
@@ -108,6 +122,8 @@ export function useConfirmation() {
     message,
     sessionLost,
     result,
+    resultContext,
+    failure,
     start,
     retry: () => {
       if (pendingRef.current && !sessionLost) void submit(pendingRef.current);
@@ -143,8 +159,10 @@ export function ConfirmationNotice({
     <div className="notice" aria-live="polite">
       {pending && (
         <p>
-          Confirmation for product {pending.product} in {pending.scope.tenant} /{" "}
-          {pending.scope.moy} / {pending.scope.ozon}.{" "}
+          Confirmation for{" "}
+          {pending.intent.kind === "warehouse" ? "warehouses" : "product"}{" "}
+          {pending.product} in {pending.scope.tenant} / {pending.scope.moy} /{" "}
+          {pending.scope.ozon}.{" "}
           {busy
             ? "Request in progress; switching accounts does not cancel the transaction."
             : "The original request remains in memory."}
@@ -174,6 +192,15 @@ export function ConfirmationNotice({
           {result.idempotent_replay &&
             "Existing confirmation recovered by idempotent replay."}{" "}
           Principal: LOCAL_OPERATOR_SESSION.
+          {confirmation.resultContext && (
+            <>
+              {" "}
+              Pair: {confirmation.resultContext.product}; tenant{" "}
+              {confirmation.resultContext.scope.tenant}; accounts{" "}
+              {confirmation.resultContext.scope.moy} /{" "}
+              {confirmation.resultContext.scope.ozon}.
+            </>
+          )}
         </p>
       )}
     </div>

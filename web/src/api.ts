@@ -102,10 +102,15 @@ export const params = (p: Record<string, string | number>) =>
 
 // One intent owns both the key and the exact serialized request. Keep it in
 // memory until the outcome is known; a retry must reuse this object.
-export type ConfirmationIntent = Readonly<{ reviewId: string; body: string }>;
+export type ConfirmationIntent = Readonly<{
+  reviewId: string;
+  body: string;
+  kind: "product" | "warehouse";
+}>;
 export function createConfirmationIntent(
   reviewId: string,
   explanation: string,
+  kind: "product" | "warehouse" = "product",
 ): ConfirmationIntent {
   if (!/^[0-9a-f]{32}$/.test(reviewId))
     throw new Error("Invalid review identifier.");
@@ -117,6 +122,7 @@ export function createConfirmationIntent(
   const key = crypto.randomUUID();
   return Object.freeze({
     reviewId,
+    kind,
     body: JSON.stringify({
       idempotency_key: key,
       acknowledge: true,
@@ -137,7 +143,7 @@ export async function sendConfirmation(
   signal?: AbortSignal,
 ): Promise<ConfirmationResult> {
   const response = await fetch(
-    `/api/product-mapping-reviews/${intent.reviewId}/confirm`,
+    `/api/${intent.kind}-mapping-reviews/${intent.reviewId}/confirm`,
     {
       method: "POST",
       credentials: "same-origin",

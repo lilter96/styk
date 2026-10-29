@@ -20,11 +20,9 @@ test("reviews FBS and rFBS warehouses without creating a mapping", async ({
     .getByRole("navigation")
     .getByRole("link", { name: "Warehouses" })
     .click();
-  const ms = page
-    .locator("section")
-    .filter({
-      has: page.getByRole("heading", { name: "MoySklad", exact: true }),
-    });
+  const ms = page.locator("section").filter({
+    has: page.getByRole("heading", { name: "MoySklad", exact: true }),
+  });
   await ms.getByRole("button", { name: "Select for mapping review" }).click();
   const oz = page
     .locator(".warehouse-row")
@@ -34,7 +32,9 @@ test("reviews FBS and rFBS warehouses without creating a mapping", async ({
   await expect(review.getByText("ELIGIBLE_FOR_REVIEW")).toBeVisible();
   await expect(review.getByText(/Classification: FBS/)).toBeVisible();
   await expect(review.getByText(/No mapping history/)).toBeVisible();
-  await expect(review.getByText(/Confirmation is unavailable/)).toBeVisible();
+  await expect(
+    review.getByRole("button", { name: "Create warehouse review" }),
+  ).toBeEnabled();
   await ms.getByRole("button", { name: "View stock" }).click();
   await expect(ms.getByText(/Physical 0/)).toBeVisible();
   const rfbs = page
@@ -42,6 +42,9 @@ test("reviews FBS and rFBS warehouses without creating a mapping", async ({
     .filter({ hasText: "Synthetic rFBS" });
   await rfbs.getByRole("button", { name: "Select for mapping review" }).click();
   await expect(review.getByText("UNSUPPORTED_WAREHOUSE")).toBeVisible();
+  await expect(
+    review.getByRole("button", { name: "Create warehouse review" }),
+  ).toBeDisabled();
   const sql =
     "SELECT (SELECT count(*) FROM warehouse_mappings WHERE tenant_id='ui-e2e-tenant'),(SELECT count(*) FROM warehouse_mapping_history WHERE tenant_id='ui-e2e-tenant'),(SELECT count(*) FROM outbox_tasks)";
   expect(

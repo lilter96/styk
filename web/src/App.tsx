@@ -680,7 +680,13 @@ function WarehouseList({
     </section>
   );
 }
-export function Warehouses({ scope }: { scope: Scope }) {
+export function Warehouses({
+  scope,
+  confirmation,
+}: {
+  scope: Scope;
+  confirmation?: Confirmation;
+}) {
   const [moyWarehouse, setMoyWarehouse] = useState("");
   const [ozonWarehouse, setOzonWarehouse] = useState("");
   return (
@@ -724,6 +730,7 @@ export function Warehouses({ scope }: { scope: Scope }) {
           scope={scope}
           moy={moyWarehouse}
           ozon={ozonWarehouse}
+          confirmation={confirmation}
         />
       )}
     </>
@@ -1004,6 +1011,7 @@ export function App() {
                 <Warehouses
                   key={`${scope.tenant}:${scope.moy}:${scope.ozon}`}
                   scope={scope}
+                  confirmation={confirmation}
                 />
               }
             />

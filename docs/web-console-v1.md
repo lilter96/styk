@@ -20,7 +20,7 @@ The authenticated GET endpoints are `/api/registrations`, `/api/diagnostics`, `/
 
 Overview distinguishes registered sources, completed imports, observation age and unchecked live connectivity. Products show the existing deterministic engine's suggestions; a suggestion is not confirmation. Warehouses show confirmed mappings only for the selected account pair and retain source-specific stock fields. No row means no observation; null means unknown; reported zero remains zero. Observations older than one hour are flagged stale; age is not proof of source freshness. Diagnostics shows Integration Doctor's actual checks and decision status. A missing pool is NOT_CHECKED; UNKNOWN and BLOCKED do not imply zero. READY_CONDITIONAL is never synthesized by the console.
 
-The current account selectors require manually entering an existing tenant. The UI can explicitly confirm product mappings through a revision-bound review, but does not register accounts, trigger imports, manage users, confirm warehouse mappings or provide stock publication. An operator-attested mapping is not independently verified identity. See [product mapping review](product-mapping-review-v1.md) for its audit and recovery limitations.
+The current account selectors require manually entering an existing tenant. The UI can explicitly confirm product and warehouse mappings through revision-bound reviews, but does not register accounts, trigger imports, manage users or provide stock publication. An operator-attested mapping is not independently verified identity. See [product mapping review](product-mapping-review-v1.md) and [warehouse mapping review](warehouse-mapping-review-v1.md) for audit and recovery limitations.
 
 ## Verification and limitations
 
