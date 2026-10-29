@@ -75,6 +75,10 @@ The previous v1 warehouse and FBS warehouse-stock methods are retired; see [Ozon
 
 Successful imports are atomic and stored in `source_imports`, `ozon_import_batches`, `ozon_product_observations`, `ozon_warehouse_observations`, and `ozon_fbs_stock_observations`. The batch's `completed` status means API traversal completed, not that the data is complete, synchronized across endpoints, or a point-in-time snapshot. Product counts and duplicate IDs detect some changes, not all changes during pagination. Missing stock rows and omitted products remain unknown. Repeating the same latest content creates no new batch and does not advance its observation timestamp. Stock observation times are local import completion times. Collections are bounded to 200,000 rows and each HTTP response to 16 MiB; imports are held in memory and written within the configured database timeout. Rate limiting is per process, not shared among instances. Non-2xx errors do not persist a batch, and 401/403 are not retried.
 
+## Durable Ozon import operations
+
+Authenticated local operators can explicitly queue a bounded `OZON_CATALOG_IMPORT` on the existing outbox worker. The operation is scoped to a registered account, supports idempotent submission and queued cancellation, and commits its completed batch and fenced task result atomically. It performs read-only API requests and does not establish a source snapshot or enable stock publication. Configure the API and a matching worker with the same Ozon account credentials; see [durable import operations](docs/import-management-backend-v1.md) for limits, recovery, deployment and security details.
+
 ## Product matching V1
 
 After importing both sources and applying migrations, inspect candidates with the local administrative CLI:

@@ -27,6 +27,8 @@ type Task struct {
 	ObservationID         int64
 	Attempts, MaxAttempts int
 	ClaimToken            string
+	Type                  string
+	ImportOperationID     string
 }
 type State string
 

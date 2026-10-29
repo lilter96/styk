@@ -17,7 +17,8 @@ type Limits struct {
 	Duration                                 time.Duration
 }
 
-type Counts struct{ Requests, Attempts, Pages, Entities, Products, Warehouses, Observations, Postings int }
+type Counts struct{ Requests, Attempts, Pages, Entities, Products, Warehouses, Observations, Postings, CompletedRequests, CompletedPages int }
+type Progress func(context.Context, string, Counts) error
 type LimitError struct {
 	Resource string
 	Counts   Counts
@@ -29,8 +30,26 @@ func (e *LimitError) Error() string {
 
 type budgetKey struct{}
 type budget struct {
-	limits Limits
-	counts Counts
+	limits       Limits
+	counts       Counts
+	progress     Progress
+	phase        string
+	lastProgress time.Time
+}
+
+// Progress callbacks run synchronously at phase changes and at most every two
+// seconds at validated page boundaries; they never receive source data.
+func (b *budget) report(ctx context.Context, phase string, force bool) error {
+	changed := b.phase != phase
+	b.phase = phase
+	if b.progress == nil || (!changed && !force && time.Since(b.lastProgress) < 2*time.Second) {
+		return nil
+	}
+	if err := b.progress(ctx, phase, b.counts); err != nil {
+		return err
+	}
+	b.lastProgress = time.Now()
+	return nil
 }
 
 func (b *budget) add(resource string, n int) error {
@@ -73,12 +92,15 @@ func (l Limits) validate() error {
 // ReadBounded performs the existing complete traversal with per-execution limits.
 // A caller must not persist data when any error is returned.
 func (c *Client) ReadBounded(ctx context.Context, limits Limits) (domain.OzonImport, Counts, error) {
+	return c.ReadBoundedProgress(ctx, limits, nil)
+}
+func (c *Client) ReadBoundedProgress(ctx context.Context, limits Limits, progress Progress) (domain.OzonImport, Counts, error) {
 	if err := limits.validate(); err != nil {
 		return domain.OzonImport{}, Counts{}, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, limits.Duration)
 	defer cancel()
-	b := &budget{limits: limits}
+	b := &budget{limits: limits, progress: progress}
 	snap, err := c.Read(context.WithValue(ctx, budgetKey{}, b))
 	if err == nil {
 		err = ctx.Err()

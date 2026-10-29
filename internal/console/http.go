@@ -39,9 +39,14 @@ func handlerWithConnections(db *postgres.Store, secret, origin string, connectio
 	if connections == nil {
 		connections = newConnections(db)
 	}
+	imports := newImportAPI(db)
 	mux.HandleFunc("POST /api/session", a.login)
 	mux.HandleFunc("DELETE /api/session", a.authorized(a.logout))
 	mux.HandleFunc("GET /api/session", a.authorized(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	mux.HandleFunc("POST /api/imports", a.authorized(a.connectionMutation(imports.create)))
+	mux.HandleFunc("GET /api/imports", a.authorized(imports.list))
+	mux.HandleFunc("GET /api/imports/{id}", a.authorized(imports.get))
+	mux.HandleFunc("POST /api/imports/{id}/cancel", a.authorized(a.connectionMutation(imports.cancel)))
 	mux.HandleFunc("GET /api/integrations", a.authorized(connections.list))
 	mux.HandleFunc("POST /api/integrations/{provider}/probe", a.authorized(a.connectionMutation(connections.probe)))
 	mux.HandleFunc("POST /api/integrations/{provider}/register", a.authorized(a.connectionMutation(connections.register)))

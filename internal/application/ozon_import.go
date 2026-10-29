@@ -29,6 +29,22 @@ func (i OzonImporter) Run(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("collect Ozon data: %w", err)
 	}
+	fingerprint, err := OzonFingerprint(&snap)
+	if err != nil {
+		return false, err
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	created, err := i.Store.SaveOzonImport(ctx, snap, fingerprint)
+	if err != nil {
+		return false, fmt.Errorf("%w: %w", ErrOzonPersistence, err)
+	}
+	return created, nil
+}
+
+// OzonFingerprint normalizes the same evidence as the existing importer.
+func OzonFingerprint(snap *domain.OzonImport) (string, error) {
 	sort.Slice(snap.Products, func(a, b int) bool { return snap.Products[a].ProductID < snap.Products[b].ProductID })
 	sort.Slice(snap.Warehouses, func(a, b int) bool { return snap.Warehouses[a].ID < snap.Warehouses[b].ID })
 	sort.Slice(snap.Stocks, func(a, b int) bool {
@@ -44,15 +60,8 @@ func (i OzonImporter) Run(ctx context.Context) (bool, error) {
 		Stocks     []domain.OzonStock
 	}{snap.Products, snap.Warehouses, snap.Stocks})
 	if err != nil {
-		return false, fmt.Errorf("fingerprint Ozon import: %w", err)
+		return "", fmt.Errorf("fingerprint Ozon import: %w", err)
 	}
 	hash := sha256.Sum256(b)
-	if err := ctx.Err(); err != nil {
-		return false, err
-	}
-	created, err := i.Store.SaveOzonImport(ctx, snap, hex.EncodeToString(hash[:]))
-	if err != nil {
-		return false, fmt.Errorf("%w: %w", ErrOzonPersistence, err)
-	}
-	return created, nil
+	return hex.EncodeToString(hash[:]), nil
 }

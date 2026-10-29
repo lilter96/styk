@@ -13,8 +13,16 @@ type TaskStore interface {
 	Finish(context.Context, domain.Task, string, error, time.Duration) error
 	ExpireExhausted(context.Context) error
 }
+type accountClaimStore interface {
+	ClaimForWorker(context.Context, time.Duration, string) (*domain.Task, error)
+}
 type Handler interface {
 	Process(context.Context, domain.Task) (string, error)
+}
+
+// Import handlers own their fenced task completion together with batch persistence.
+type ImportHandler interface {
+	ProcessImport(context.Context, domain.Task, time.Duration) error
 }
 type MockHandler struct{}
 
@@ -31,6 +39,8 @@ func (MockHandler) Process(ctx context.Context, t domain.Task) (string, error) {
 type Worker struct {
 	Store              TaskStore
 	Handler            Handler
+	Imports            ImportHandler
+	ImportAccount      string
 	Log                *slog.Logger
 	Poll, Lease, Retry time.Duration
 }
@@ -46,13 +56,29 @@ func (w Worker) Run(ctx context.Context) error {
 			}
 			w.Log.Error("expire tasks", "error", err)
 		} else {
-			t, err := w.Store.Claim(ctx, w.Lease)
+			var t *domain.Task
+			var err error
+			if scoped, ok := w.Store.(accountClaimStore); ok {
+				t, err = scoped.ClaimForWorker(ctx, w.Lease, w.ImportAccount)
+			} else {
+				t, err = w.Store.Claim(ctx, w.Lease)
+			}
 			if err != nil {
 				if ctx.Err() != nil {
 					return nil
 				}
 				w.Log.Error("claim task", "error", err)
 			} else if t != nil {
+				if t.Type == domain.OzonCatalogTask {
+					if w.Imports == nil {
+						w.Log.Error("import handler unavailable", "task_id", t.ID)
+					} else if err := w.Imports.ProcessImport(ctx, *t, w.Lease); err != nil && ctx.Err() == nil {
+						// Import errors are deliberately sanitized; provider payloads and
+						// credentials must never be included in worker logs.
+						w.Log.Error("import attempt did not complete", "task_id", t.ID)
+					}
+					continue
+				}
 				result, processErr := w.Handler.Process(ctx, *t)
 				if ctx.Err() != nil {
 					return nil

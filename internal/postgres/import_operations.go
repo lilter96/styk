@@ -1,0 +1,394 @@
+package postgres
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/lilter96/styk/internal/domain"
+)
+
+var (
+	ErrImportScope         = errors.New("import account not registered")
+	ErrImportConflict      = errors.New("import already active")
+	ErrImportIdempotency   = errors.New("import idempotency conflict")
+	ErrImportNotFound      = errors.New("import operation not found")
+	ErrImportClaimLost     = errors.New("import claim not owned")
+	ErrImportRunning       = errors.New("active cancellation unsupported")
+	ErrImportCommitUnknown = errors.New("import commit outcome unknown")
+)
+var importKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
+
+func validImportScope(tenant, account string) bool {
+	return tenant != "" && account != "" && len(tenant) <= 256 && len(account) <= 256 && strings.TrimSpace(tenant) == tenant && strings.TrimSpace(account) == account
+}
+
+// SubmitOzonImport stores submission identity and the outbox task atomically.
+func (s *Store) SubmitOzonImport(ctx context.Context, tenant, account, key, session string, limits domain.ImportLimits) (domain.ImportOperation, bool, error) {
+	if !validImportScope(tenant, account) || !importKeyPattern.MatchString(key) || session == "" || len(session) > 128 {
+		return domain.ImportOperation{}, false, errors.New("invalid import request")
+	}
+	if !limits.Valid() {
+		return domain.ImportOperation{}, false, errors.New("invalid server limits")
+	}
+	payload, err := json.Marshal(struct {
+		Tenant, Account, Type string
+		Limits                domain.ImportLimits
+	}{tenant, account, domain.OzonCatalogImport, limits})
+	if err != nil {
+		return domain.ImportOperation{}, false, err
+	}
+	sum := sha256.Sum256(payload)
+	fingerprint := hex.EncodeToString(sum[:])
+	rawLimits, _ := json.Marshal(limits)
+	var random [16]byte
+	if _, err = rand.Read(random[:]); err != nil {
+		return domain.ImportOperation{}, false, err
+	}
+	id := hex.EncodeToString(random[:])
+	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
+	defer cancel()
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return domain.ImportOperation{}, false, err
+	}
+	defer tx.Rollback(context.Background())
+	var registered bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_connections WHERE tenant_id=$1 AND source='ozon' AND account_id=$2)`, tenant, account).Scan(&registered); err != nil {
+		return domain.ImportOperation{}, false, err
+	}
+	if !registered {
+		return domain.ImportOperation{}, false, ErrImportScope
+	}
+	var inserted string
+	err = tx.QueryRow(ctx, `INSERT INTO ozon_import_operations(id,tenant_id,account_id,operation_type,idempotency_key,request_fingerprint,principal_type,session_audit_id,limits) VALUES($1,$2,$3,$4,$5,$6,'LOCAL_OPERATOR_SESSION',$7,$8) ON CONFLICT(tenant_id,idempotency_key) DO NOTHING RETURNING id`, id, tenant, account, domain.OzonCatalogImport, key, fingerprint, session, rawLimits).Scan(&inserted)
+	replay := false
+	if errors.Is(err, pgx.ErrNoRows) {
+		var existingFingerprint, existingAccount string
+		if err = tx.QueryRow(ctx, `SELECT id,request_fingerprint,account_id FROM ozon_import_operations WHERE tenant_id=$1 AND idempotency_key=$2`, tenant, key).Scan(&id, &existingFingerprint, &existingAccount); err != nil {
+			return domain.ImportOperation{}, false, err
+		}
+		if existingFingerprint != fingerprint || existingAccount != account {
+			return domain.ImportOperation{}, false, ErrImportIdempotency
+		}
+		replay = true
+	} else if err != nil {
+		return domain.ImportOperation{}, false, err
+	}
+	if !replay {
+		_, err = tx.Exec(ctx, `INSERT INTO outbox_tasks(operation_key,observation_id,max_attempts,task_type,import_operation_id,import_tenant_id,import_account_id) VALUES($1,NULL,3,'ozon_catalog_import',$2,$3,$4)`, "ozon-import:"+id, id, tenant, account)
+		if err != nil {
+			var pg *pgconn.PgError
+			if errors.As(err, &pg) && pg.ConstraintName == "outbox_one_active_ozon_catalog" {
+				return domain.ImportOperation{}, false, ErrImportConflict
+			}
+			return domain.ImportOperation{}, false, err
+		}
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return domain.ImportOperation{}, false, err
+	}
+	op, err := s.GetImportOperation(ctx, tenant, account, id)
+	return op, replay, err
+}
+
+const importColumns = `o.id,o.tenant_id,o.provider,o.account_id,o.operation_type,t.state,o.phase,o.outcome,o.limiting_resource,o.created_at,o.started_at,o.attempt_started_at,o.progress_at,o.finished_at,t.attempts,t.max_attempts,o.limits,o.counters,o.batch_id,o.batch_created,t.lease_until,COALESCE(t.state='running' AND t.lease_until<=clock_timestamp(),false)`
+
+func scanImport(row pgx.Row) (domain.ImportOperation, error) {
+	var v domain.ImportOperation
+	var limits, counters []byte
+	var leaseExpired bool
+	err := row.Scan(&v.ID, &v.Tenant, &v.Provider, &v.Account, &v.Type, &v.State, &v.Phase, &v.Outcome, &v.LimitingResource, &v.CreatedAt, &v.StartedAt, &v.AttemptStartedAt, &v.ProgressAt, &v.FinishedAt, &v.Attempt, &v.MaxAttempts, &limits, &counters, &v.BatchID, &v.BatchCreated, &v.LeaseExpiresAt, &leaseExpired)
+	if err != nil {
+		return v, err
+	}
+	if err = json.Unmarshal(limits, &v.Limits); err != nil {
+		return v, err
+	}
+	if err = json.Unmarshal(counters, &v.Counts); err != nil {
+		return v, err
+	}
+	switch v.State {
+	case "pending":
+		v.State = "QUEUED"
+	case "running":
+		v.State = "RUNNING"
+		if leaseExpired && v.Phase == "PERSISTING" {
+			v.State = "OUTCOME_UNKNOWN"
+		}
+	case "succeeded":
+		v.State = "SUCCEEDED"
+	case "failed":
+		v.State = "FAILED"
+	case "cancelled":
+		v.State = "CANCELLED"
+	}
+	if v.AttemptStartedAt != nil {
+		end := time.Now()
+		if v.FinishedAt != nil {
+			end = *v.FinishedAt
+		}
+		if d := end.Sub(*v.AttemptStartedAt); d > 0 {
+			v.ElapsedMS = d.Milliseconds()
+		}
+	}
+	return v, nil
+}
+func (s *Store) GetImportOperation(ctx context.Context, tenant, account, id string) (domain.ImportOperation, error) {
+	if !validImportScope(tenant, account) || len(id) != 32 {
+		return domain.ImportOperation{}, ErrImportNotFound
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
+	defer cancel()
+	v, err := scanImport(s.Pool.QueryRow(ctx, `SELECT `+importColumns+` FROM ozon_import_operations o JOIN outbox_tasks t ON t.import_operation_id=o.id JOIN stock_connections c ON c.tenant_id=o.tenant_id AND c.source=o.provider AND c.account_id=o.account_id WHERE o.tenant_id=$1 AND o.account_id=$2 AND o.id=$3`, tenant, account, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return v, ErrImportNotFound
+	}
+	return v, err
+}
+func (s *Store) ListImportOperations(ctx context.Context, tenant, account string, limit, offset int) ([]domain.ImportOperation, bool, error) {
+	if !validImportScope(tenant, account) || limit < 1 || limit > 50 || offset < 0 || offset > 10000 {
+		return nil, false, errors.New("invalid import scope")
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
+	defer cancel()
+	var registered bool
+	if err := s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_connections WHERE tenant_id=$1 AND source='ozon' AND account_id=$2)`, tenant, account).Scan(&registered); err != nil {
+		return nil, false, err
+	}
+	if !registered {
+		return nil, false, ErrImportScope
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT `+importColumns+` FROM ozon_import_operations o JOIN outbox_tasks t ON t.import_operation_id=o.id WHERE o.tenant_id=$1 AND o.account_id=$2 ORDER BY o.created_at DESC,o.id DESC LIMIT $3 OFFSET $4`, tenant, account, limit+1, offset)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	list := []domain.ImportOperation{}
+	for rows.Next() {
+		v, e := scanImport(rows)
+		if e != nil {
+			return nil, false, e
+		}
+		list = append(list, v)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, false, err
+	}
+	more := len(list) > limit
+	if more {
+		list = list[:limit]
+	}
+	return list, more, nil
+}
+func (s *Store) CancelQueuedImport(ctx context.Context, tenant, account, id string) error {
+	if !validImportScope(tenant, account) || len(id) != 32 {
+		return ErrImportNotFound
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
+	defer cancel()
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(context.Background())
+	var state string
+	err = tx.QueryRow(ctx, `SELECT t.state FROM outbox_tasks t JOIN ozon_import_operations o ON o.id=t.import_operation_id WHERE o.id=$1 AND o.tenant_id=$2 AND o.account_id=$3 FOR UPDATE OF t`, id, tenant, account).Scan(&state)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrImportNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if state == "cancelled" {
+		return nil
+	}
+	if state != "pending" {
+		return ErrImportRunning
+	}
+	if _, err = tx.Exec(ctx, `UPDATE outbox_tasks SET state='cancelled',updated_at=clock_timestamp() WHERE import_operation_id=$1 AND state='pending'`, id); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE ozon_import_operations SET phase='CANCELLED',outcome='CANCELLED',finished_at=clock_timestamp() WHERE id=$1`, id); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// lockImportClaim serializes claim replacement, progress and final persistence.
+func lockImportClaim(ctx context.Context, tx pgx.Tx, t domain.Task) error {
+	var id int64
+	err := tx.QueryRow(ctx, `SELECT id FROM outbox_tasks WHERE id=$1 AND import_operation_id=$2 AND task_type='ozon_catalog_import' AND state='running' AND claim_token=$3 AND lease_until>clock_timestamp() FOR UPDATE`, t.ID, t.ImportOperationID, t.ClaimToken).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrImportClaimLost
+	}
+	return err
+}
+func (s *Store) ImportForClaim(ctx context.Context, t domain.Task) (domain.ImportOperation, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
+	defer cancel()
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return domain.ImportOperation{}, err
+	}
+	defer tx.Rollback(context.Background())
+	if err = lockImportClaim(ctx, tx, t); err != nil {
+		return domain.ImportOperation{}, err
+	}
+	v, err := scanImport(tx.QueryRow(ctx, `SELECT `+importColumns+` FROM ozon_import_operations o JOIN outbox_tasks t ON t.import_operation_id=o.id JOIN stock_connections c ON c.tenant_id=o.tenant_id AND c.source=o.provider AND c.account_id=o.account_id WHERE o.id=$1`, t.ImportOperationID))
+	if err != nil {
+		return v, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return v, err
+	}
+	return v, nil
+}
+func (s *Store) ImportProgress(ctx context.Context, t domain.Task, phase string, counts domain.ImportCounts) error {
+	switch phase {
+	case "READING_PRODUCTS", "READING_WAREHOUSES", "READING_STOCK", "PERSISTING":
+	default:
+		return errors.New("invalid import phase")
+	}
+	raw, err := json.Marshal(counts)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
+	defer cancel()
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(context.Background())
+	if err = lockImportClaim(ctx, tx, t); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE ozon_import_operations SET phase=$2,counters=$3,progress_at=clock_timestamp() WHERE id=$1`, t.ImportOperationID, phase, raw); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+func (s *Store) FailImport(ctx context.Context, t domain.Task, outcome, resource string, counts domain.ImportCounts) error {
+	switch outcome {
+	case "LIMIT_REACHED", "CANCELLED", "API_FAILURE", "INVALID_RESPONSE", "PERSISTENCE_FAILURE", "CONFIGURATION_UNAVAILABLE":
+	default:
+		return errors.New("invalid import outcome")
+	}
+	raw, err := json.Marshal(counts)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
+	defer cancel()
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(context.Background())
+	if err = lockImportClaim(ctx, tx, t); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE ozon_import_operations SET phase='FAILED',outcome=$2,limiting_resource=NULLIF($3,''),counters=$4,progress_at=clock_timestamp(),finished_at=clock_timestamp() WHERE id=$1`, t.ImportOperationID, outcome, resource, raw); err != nil {
+		return err
+	}
+	tag, err := tx.Exec(ctx, `UPDATE outbox_tasks SET state='failed',last_error=$3,claim_token=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE id=$1 AND claim_token=$2 AND lease_until>clock_timestamp()`, t.ID, t.ClaimToken, outcome)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() != 1 {
+		return ErrImportClaimLost
+	}
+	return tx.Commit(ctx)
+}
+
+// CommitClaimedOzonImport commits source evidence, operation linkage and task
+// completion together while the task row is locked and the lease is valid.
+func (s *Store) CommitClaimedOzonImport(ctx context.Context, t domain.Task, snap domain.OzonImport, fingerprint string, counts domain.ImportCounts, timeout time.Duration) error {
+	if timeout <= 0 || timeout > 10*time.Second {
+		return errors.New("invalid persistence timeout")
+	}
+	raw, err := json.Marshal(counts)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(context.Background())
+	if err = lockImportClaim(ctx, tx, t); err != nil {
+		return err
+	}
+	var account string
+	var includeHistory bool
+	var registered time.Time
+	err = tx.QueryRow(ctx, `SELECT o.account_id,c.include_import_history,c.registered_at FROM ozon_import_operations o JOIN stock_connections c ON c.tenant_id=o.tenant_id AND c.source=o.provider AND c.account_id=o.account_id WHERE o.id=$1 FOR SHARE OF c`, t.ImportOperationID).Scan(&account, &includeHistory, &registered)
+	if err != nil {
+		return err
+	}
+	if account != snap.Account {
+		return ErrImportScope
+	}
+	var notBefore *time.Time
+	if !includeHistory {
+		notBefore = &registered
+		if snap.StartedAt.Before(registered) {
+			return errors.New("import predates the account registration")
+		}
+	}
+	id, created, err := saveOzonImportTx(ctx, tx, snap, fingerprint, notBefore)
+	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE ozon_import_operations SET phase='COMPLETED',outcome='COMPLETE_TRAVERSAL',counters=$2,progress_at=clock_timestamp(),finished_at=clock_timestamp(),batch_id=$3,batch_created=$4 WHERE id=$1`, t.ImportOperationID, raw, id, created); err != nil {
+		return err
+	}
+	tag, err := tx.Exec(ctx, `UPDATE outbox_tasks SET state='succeeded',result='COMPLETE_TRAVERSAL',last_error=NULL,claim_token=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE id=$1 AND claim_token=$2 AND lease_until>clock_timestamp()`, t.ID, t.ClaimToken)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() != 1 {
+		return ErrImportClaimLost
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return fmt.Errorf("%w: %w", ErrImportCommitUnknown, err)
+	}
+	return nil
+}
+
+// ResolveImportCommit waits for any prior transaction's task lock before
+// interpreting persisted state; false means no success was committed.
+func (s *Store) ResolveImportCommit(ctx context.Context, t domain.Task) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
+	defer cancel()
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(context.Background())
+	var state, token string
+	var batch *int64
+	err = tx.QueryRow(ctx, `SELECT t.state,COALESCE(t.claim_token,''),o.batch_id FROM outbox_tasks t JOIN ozon_import_operations o ON o.id=t.import_operation_id WHERE t.id=$1 AND o.id=$2 FOR UPDATE OF t`, t.ID, t.ImportOperationID).Scan(&state, &token, &batch)
+	if err != nil {
+		return false, err
+	}
+	if state == "succeeded" && batch != nil {
+		return true, nil
+	}
+	if state != "running" || token != t.ClaimToken {
+		return false, ErrImportClaimLost
+	}
+	return false, nil
+}

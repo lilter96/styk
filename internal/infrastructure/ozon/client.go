@@ -196,6 +196,9 @@ func (c *Client) post(ctx context.Context, path string, body any, out any) error
 				if err = json.Unmarshal(data, out); err != nil {
 					return fmt.Errorf("decode Ozon response: %w", err)
 				}
+				if b != nil {
+					b.counts.CompletedRequests++
+				}
 				return nil
 			} else {
 				category := "request rejected"
@@ -322,6 +325,11 @@ func nextCursor(hasNext *bool, cursor string, seen map[string]bool) (bool, error
 }
 func (c *Client) Read(ctx context.Context) (domain.OzonImport, error) {
 	b, _ := ctx.Value(budgetKey{}).(*budget)
+	if b != nil {
+		if err := b.report(ctx, "READING_PRODUCTS", true); err != nil {
+			return domain.OzonImport{}, err
+		}
+	}
 	snap := domain.OzonImport{Account: c.id, StartedAt: time.Now().UTC()}
 	productIDs := map[string]bool{}
 	offers := map[string]string{}
@@ -373,6 +381,12 @@ func (c *Client) Read(ctx context.Context) (domain.OzonImport, error) {
 				return domain.OzonImport{}, errors.New("inconsistent product count")
 			}
 			if int64(count) == total {
+				if b != nil {
+					b.counts.CompletedPages++
+					if err := b.report(ctx, "READING_PRODUCTS", false); err != nil {
+						return domain.OzonImport{}, err
+					}
+				}
 				break
 			}
 			if len(*r.Items) == 0 || r.LastID == "" || seen[r.LastID] {
@@ -380,6 +394,17 @@ func (c *Client) Read(ctx context.Context) (domain.OzonImport, error) {
 			}
 			seen[r.LastID] = true
 			cursor = r.LastID
+			if b != nil {
+				b.counts.CompletedPages++
+				if err := b.report(ctx, "READING_PRODUCTS", false); err != nil {
+					return domain.OzonImport{}, err
+				}
+			}
+		}
+	}
+	if b != nil {
+		if err := b.report(ctx, "READING_WAREHOUSES", true); err != nil {
+			return domain.OzonImport{}, err
 		}
 	}
 	cursors := map[string]bool{}
@@ -417,12 +442,29 @@ func (c *Client) Read(ctx context.Context) (domain.OzonImport, error) {
 			return domain.OzonImport{}, err
 		}
 		if !more {
+			if b != nil {
+				b.counts.CompletedPages++
+				if err := b.report(ctx, "READING_WAREHOUSES", false); err != nil {
+					return domain.OzonImport{}, err
+				}
+			}
 			break
 		}
 		if len(*response.Warehouses) == 0 {
 			return domain.OzonImport{}, errors.New("empty warehouse continuation page")
 		}
 		cursor = response.Cursor
+		if b != nil {
+			b.counts.CompletedPages++
+			if err := b.report(ctx, "READING_WAREHOUSES", false); err != nil {
+				return domain.OzonImport{}, err
+			}
+		}
+	}
+	if b != nil {
+		if err := b.report(ctx, "READING_STOCK", true); err != nil {
+			return domain.OzonImport{}, err
+		}
 	}
 	stockSeen := map[string]bool{}
 	for start := 0; start < len(snap.Products); start += 100 {
@@ -471,12 +513,24 @@ func (c *Client) Read(ctx context.Context) (domain.OzonImport, error) {
 				return domain.OzonImport{}, err
 			}
 			if !more {
+				if b != nil {
+					b.counts.CompletedPages++
+					if err := b.report(ctx, "READING_STOCK", false); err != nil {
+						return domain.OzonImport{}, err
+					}
+				}
 				break
 			}
 			if len(*response.Products) == 0 {
 				return domain.OzonImport{}, errors.New("empty stock continuation page")
 			}
 			cursor = response.Cursor
+			if b != nil {
+				b.counts.CompletedPages++
+				if err := b.report(ctx, "READING_STOCK", false); err != nil {
+					return domain.OzonImport{}, err
+				}
+			}
 		}
 	}
 	snap.FinishedAt = time.Now().UTC()
