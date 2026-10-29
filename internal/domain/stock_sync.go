@@ -41,6 +41,17 @@ type StockSyncPreviewRequest struct {
 	StockSyncScope
 	Attestations []StockSyncAttestation `json:"attestations,omitempty"`
 }
+type StockRecoveryRequest struct {
+	StockSyncScope
+	OperationID        string    `json:"-"`
+	SessionID          string    `json:"-"`
+	IdempotencyKey     string    `json:"idempotency_key"`
+	ExpectedReadbackAt time.Time `json:"expected_readback_at"`
+	ExpectedQuantity   string    `json:"expected_quantity"`
+	Reason             string    `json:"reason"`
+	Acknowledge        bool      `json:"acknowledge"`
+	WorkerStopped      bool      `json:"worker_stopped"`
+}
 type StockSyncCheck struct {
 	Code    string `json:"code"`
 	Passed  bool   `json:"passed"`
@@ -81,20 +92,38 @@ type StockSyncReview struct {
 	OzonCredentialRevision     int64                  `json:"ozon_credential_revision"`
 }
 type StockPublicationTarget struct {
-	ID               int64         `json:"id"`
-	OperationID      string        `json:"operation_id"`
-	ProductID        string        `json:"ozon_product_id"`
-	WarehouseID      string        `json:"ozon_warehouse_id"`
-	Quantity         string        `json:"quantity"`
-	State            string        `json:"state"`
-	SafeError        string        `json:"safe_error,omitempty"`
-	DispatchedAt     *time.Time    `json:"dispatched_at,omitempty"`
-	FinishedAt       *time.Time    `json:"finished_at,omitempty"`
-	AcknowledgedAt   *time.Time    `json:"acknowledged_at,omitempty"`
-	ReadbackAt       *time.Time    `json:"readback_at,omitempty"`
-	ReadbackQuantity *string       `json:"readback_quantity,omitempty"`
-	HTTPStatus       *int          `json:"http_status,omitempty"`
-	Decision         StockDecision `json:"decision"`
+	ID               int64                      `json:"id"`
+	OperationID      string                     `json:"operation_id"`
+	ProductID        string                     `json:"ozon_product_id"`
+	WarehouseID      string                     `json:"ozon_warehouse_id"`
+	Quantity         string                     `json:"quantity"`
+	State            string                     `json:"state"`
+	SafeError        string                     `json:"safe_error,omitempty"`
+	DispatchedAt     *time.Time                 `json:"dispatched_at,omitempty"`
+	FinishedAt       *time.Time                 `json:"finished_at,omitempty"`
+	AcknowledgedAt   *time.Time                 `json:"acknowledged_at,omitempty"`
+	ReadbackAt       *time.Time                 `json:"readback_at,omitempty"`
+	ReadbackQuantity *string                    `json:"readback_quantity,omitempty"`
+	HTTPStatus       *int                       `json:"http_status,omitempty"`
+	Readbacks        []StockPublicationReadback `json:"readbacks,omitempty"`
+	Decision         StockDecision              `json:"decision"`
+}
+type StockPublicationReadback struct {
+	ObservedAt time.Time `json:"observed_at"`
+	Quantity   *string   `json:"quantity,omitempty"`
+	Outcome    string    `json:"outcome"`
+}
+type StockPublicationRecovery struct {
+	ID                  string    `json:"id"`
+	OriginalOperationID string    `json:"original_operation_id"`
+	NewOperationID      string    `json:"new_operation_id,omitempty"`
+	ProductID           string    `json:"ozon_product_id"`
+	WarehouseID         string    `json:"ozon_warehouse_id"`
+	ObservedQuantity    string    `json:"observed_quantity"`
+	ObservedAt          time.Time `json:"observed_at"`
+	CreatedAt           time.Time `json:"created_at"`
+	PrincipalType       string    `json:"principal_type"`
+	Reason              string    `json:"reason"`
 }
 type StockPublication struct {
 	ID string `json:"id"`
@@ -107,13 +136,14 @@ type StockPublication struct {
 }
 type StockSyncView struct {
 	StockSyncScope
-	Enabled         bool              `json:"enabled"`
-	State           string            `json:"state"`
-	Ready           bool              `json:"ready"`
-	Checks          []StockSyncCheck  `json:"checks"`
-	Targets         []StockSyncTarget `json:"targets"`
-	LastOperation   *StockPublication `json:"last_operation,omitempty"`
-	LastConfirmedAt *time.Time        `json:"last_confirmed_at,omitempty"`
+	Enabled         bool                      `json:"enabled"`
+	State           string                    `json:"state"`
+	Ready           bool                      `json:"ready"`
+	Checks          []StockSyncCheck          `json:"checks"`
+	Targets         []StockSyncTarget         `json:"targets"`
+	LastOperation   *StockPublication         `json:"last_operation,omitempty"`
+	LastConfirmedAt *time.Time                `json:"last_confirmed_at,omitempty"`
+	Recovery        *StockPublicationRecovery `json:"recovery,omitempty"`
 }
 
 var (

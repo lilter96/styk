@@ -28,6 +28,7 @@ func registerStockSyncRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c 
 	mux.HandleFunc("POST /api/stock-sync/enable", a.authorized(a.connectionMutation(api.enable)))
 	mux.HandleFunc("POST /api/stock-sync/disable", a.authorized(a.connectionMutation(api.disable)))
 	mux.HandleFunc("POST /api/stock-sync/operations/{id}/reconcile", a.authorized(a.connectionMutation(api.reconcile)))
+	mux.HandleFunc("POST /api/stock-sync/operations/{id}/supersede", a.authorized(a.connectionMutation(api.supersede)))
 }
 
 // shadow exposes only a bounded projection of the existing status calculation.
@@ -253,6 +254,25 @@ func (a *stockSyncAPI) reconcile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view, err := a.runner.Reconcile(r.Context(), req.StockSyncScope, r.PathValue("id"))
+	if err != nil {
+		stockSyncError(w, err)
+		return
+	}
+	writeStockSyncView(w, view)
+}
+
+func (a *stockSyncAPI) supersede(w http.ResponseWriter, r *http.Request) {
+	var req domain.StockRecoveryRequest
+	if !decodeStockSync(w, r, &req) {
+		return
+	}
+	req.OperationID = r.PathValue("id")
+	req.SessionID, _ = r.Context().Value(auditContextKey{}).(string)
+	if req.SessionID == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED")
+		return
+	}
+	view, err := a.db.SupersedeTestUnknown(r.Context(), req, time.Now().UTC())
 	if err != nil {
 		stockSyncError(w, err)
 		return

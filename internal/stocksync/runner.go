@@ -17,6 +17,7 @@ import (
 type Runner struct {
 	Enabled        bool
 	ControlledTest bool
+	WorkerID       string
 	Store          *postgres.Store
 	ResolveOzon    func(context.Context, string, string) (*ozon.Client, error)
 }
@@ -34,6 +35,9 @@ func (r Runner) RunNext(ctx context.Context) (bool, error) {
 	if r.ControlledTest {
 		if !testpublication.Enabled(testpublication.Scope()) {
 			return false, nil
+		}
+		if err = r.Store.TouchTestStockWorker(ctx, r.WorkerID, now); err != nil {
+			return false, err
 		}
 		if err = r.Store.RecoverControlledStockPublications(ctx, now); err != nil {
 			return false, err
@@ -206,6 +210,9 @@ func (r Runner) Reconcile(ctx context.Context, scope domain.StockSyncScope, id s
 			if err = r.Store.RecordUnknownStockReadback(ctx, scope, id, t.ID, observed, time.Now().UTC()); err != nil {
 				return domain.StockSyncView{}, err
 			}
+			// Controlled supersession preserves the original UNKNOWN outcome even
+			// if a read happens to match the requested quantity.
+			continue
 		}
 		if readErr != nil {
 			if ctx.Err() != nil {

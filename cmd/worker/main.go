@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"github.com/lilter96/styk/internal/application"
 	"github.com/lilter96/styk/internal/config"
@@ -200,7 +202,11 @@ func run() error {
 		return ozon.New(ozon.Options{BaseURL: testEndpoint, ClientID: "synthetic-test-seller", APIKey: "synthetic-test-key", Timeout: 20 * time.Second, Interval: 400 * time.Millisecond, Backoff: time.Second, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 100, AllowSyntheticStockWrites: true})
 	}}
 	if controlled {
-		publications = stocksync.Runner{Enabled: true, ControlledTest: true, Store: db, ResolveOzon: func(ctx context.Context, tenant, account string) (*ozon.Client, error) {
+		var instance [16]byte
+		if _, err := rand.Read(instance[:]); err != nil {
+			return err
+		}
+		publications = stocksync.Runner{Enabled: true, ControlledTest: true, WorkerID: hex.EncodeToString(instance[:]), Store: db, ResolveOzon: func(ctx context.Context, tenant, account string) (*ozon.Client, error) {
 			scope := testpublication.Scope()
 			if tenant != scope.Tenant || account != scope.OzonAccount || !testpublication.Enabled(scope) {
 				return nil, errors.New("controlled test publication scope mismatch")

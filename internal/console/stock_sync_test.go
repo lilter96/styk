@@ -31,7 +31,7 @@ func TestStockSyncRoutesRequireSessionOriginAndExplicitAcknowledgement(t *testin
 		mux.ServeHTTP(w, r)
 		return w
 	}
-	for _, path := range []string{"/api/stock-sync/preview", "/api/stock-sync/enable", "/api/stock-sync/disable", "/api/stock-sync/operations/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/reconcile"} {
+	for _, path := range []string{"/api/stock-sync/preview", "/api/stock-sync/enable", "/api/stock-sync/disable", "/api/stock-sync/operations/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/reconcile", "/api/stock-sync/operations/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/supersede"} {
 		if got := send(path, `{}`, nil, origin).Code; got != 401 {
 			t.Fatalf("unauthenticated %s: %d", path, got)
 		}
@@ -49,6 +49,11 @@ func TestStockSyncRoutesRequireSessionOriginAndExplicitAcknowledgement(t *testin
 		if got := send(path, body, cookie, "http://localhost:evil").Code; got != 403 {
 			t.Fatalf("cross-origin %s: %d", path, got)
 		}
+	}
+	t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", "true")
+	wrongScope := `{"tenant":"another","moysklad_account":"moy","ozon_account":"ozon","idempotency_key":"synthetic-recovery-key","expected_readback_at":"2026-10-29T13:27:08Z","expected_quantity":"0","reason":"synthetic operator accepted uncertainty","acknowledge":true,"worker_stopped":true}`
+	if got := send("/api/stock-sync/operations/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/supersede", wrongScope, cookie, origin).Code; got != 400 {
+		t.Fatalf("unapproved recovery scope: %d", got)
 	}
 }
 

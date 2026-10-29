@@ -279,6 +279,23 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 		if t := e.Marketplace.FreshTraversal; t != nil && !t.FinishedAt.After(now) {
 			marketStarted = t.StartedAt
 		}
+		recoveryFresh := true
+		if testpublication.Enabled(scope) {
+			var recoveredAt time.Time
+			recoveryErr := tx.QueryRow(ctx, `SELECT created_at FROM stock_publication_recoveries WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND product_id=$4 AND warehouse_id=$5 ORDER BY created_at DESC LIMIT 1`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, t.pid, t.wid).Scan(&recoveredAt)
+			if recoveryErr != nil && !errors.Is(recoveryErr, pgx.ErrNoRows) {
+				return review, recoveryErr
+			}
+			if recoveryErr == nil {
+				recoveryFresh = sourceStarted.After(recoveredAt) && marketStarted.After(recoveredAt)
+				for _, proof := range a.Proofs {
+					if proof.AsOf.Before(recoveredAt) {
+						recoveryFresh = false
+					}
+				}
+				checks = append(checks, domain.StockSyncCheck{Code: "TEST_RECOVERY_FRESH_TRAVERSALS", Passed: recoveryFresh, Message: "После принятия неопределённости условия и оба источника проверены заново."})
+			}
+		}
 		sourceTraversalFresh := !sourceStarted.IsZero() && !sourceStarted.After(now) && now.Sub(sourceStarted) < 15*time.Minute
 		marketTraversalFresh := !marketStarted.IsZero() && !marketStarted.After(now) && now.Sub(marketStarted) < 15*time.Minute
 		beforeTraversal := !sourceStarted.IsZero()
@@ -338,7 +355,7 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 			testAllowed = approved && testpublication.TargetAllowed(scope, t.pid, t.wid, t.item, t.sourceWarehouse, quantity)
 			checks = append(checks, domain.StockSyncCheck{Code: "TEST_TARGET_ALLOWED", Passed: testAllowed, Message: "Тестовая пара, подтверждённые соответствия и ограничение количества проверены."})
 		}
-		ready := d.Status == domain.StockReady && validIDs && stockComplete && qtyValid && settled && sourceIdentity && productIdentity && warehouseIdentity && orderingValid && validStockValues && sourceTraversalFresh && marketTraversalFresh && beforeTraversal && testAllowed
+		ready := d.Status == domain.StockReady && validIDs && stockComplete && qtyValid && settled && sourceIdentity && productIdentity && warehouseIdentity && orderingValid && validStockValues && sourceTraversalFresh && marketTraversalFresh && beforeTraversal && testAllowed && recoveryFresh
 		item := domain.StockSyncTarget{SettlementOperationID: settlementID, SettlementObservedAt: settlementAt, ProductID: t.pid, WarehouseID: t.wid, SourceItemID: t.item, SourceWarehouseID: t.sourceWarehouse, SourceImportID: e.Source.ImportID, SourcePhysical: e.Source.Physical, SourceReserve: e.Source.Reserve, MarketplaceFree: e.Marketplace.FreeStock, MarketplacePresent: e.Marketplace.Present, MarketplaceReserved: e.Marketplace.Reserved, Status: string(d.Status), Checks: checks, Decision: d}
 		if e.ProductMapping != nil {
 			item.ProductMappingVersion = e.ProductMapping.Version
@@ -469,7 +486,7 @@ func createPublication(ctx context.Context, tx pgx.Tx, review domain.StockSyncRe
 		err = tx.QueryRow(ctx, `INSERT INTO stock_publication_targets(operation_id,ozon_account,product_id,warehouse_id,quantity,state,decision) VALUES($1,$2,$3,$4,$5,'QUEUED',$6::jsonb) RETURNING id`, id, review.OzonAccount, t.ProductID, t.WarehouseID, *t.Quantity, raw).Scan(&v.ID)
 		if err != nil {
 			var conflict *pgconn.PgError
-			if errors.As(err, &conflict) && conflict.Code == "23505" && conflict.ConstraintName == "stock_publication_target_fence" {
+			if errors.As(err, &conflict) && conflict.Code == "23505" && (conflict.ConstraintName == "stock_publication_target_fence" || conflict.ConstraintName == "stock_publication_target_fences_pkey") {
 				return op, domain.ErrStockSyncBlocked
 			}
 			return op, err
@@ -481,6 +498,10 @@ func createPublication(ctx context.Context, tx pgx.Tx, review domain.StockSyncRe
 			return op, domain.ErrStockSyncBlocked
 		}
 		if _, err = tx.Exec(ctx, `INSERT INTO outbox_tasks(operation_key,observation_id,max_attempts,task_type,publication_operation_id) VALUES($1,NULL,1,'stock_publication',$2)`, "stock-publication:"+id, id); err != nil {
+			return op, err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO stock_publication_recovery_links(recovery_id,new_operation_id,created_at) SELECT r.id,$1,$2 FROM stock_publication_recoveries r LEFT JOIN stock_publication_recovery_links l ON l.recovery_id=r.id WHERE r.tenant_id=$3 AND r.moysklad_account=$4 AND r.ozon_account=$5 AND r.product_id=$6 AND r.warehouse_id=$7 AND l.recovery_id IS NULL AND r.created_at<$8 ORDER BY r.created_at DESC LIMIT 1`, id, now, review.Tenant, review.MoyskladAccount, review.OzonAccount, op.Targets[0].ProductID, op.Targets[0].WarehouseID, review.CreatedAt)
+		if err != nil {
 			return op, err
 		}
 	}
@@ -532,7 +553,7 @@ func (s *Store) MutateStockSync(ctx context.Context, scope domain.StockSyncScope
 			return domain.StockSyncView{}, domain.ErrStockSyncBlocked
 		}
 		var pending bool
-		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_publication_targets t JOIN stock_publications p ON p.id=t.operation_id WHERE p.tenant_id=$1 AND p.moysklad_account=$2 AND p.ozon_account=$3 AND t.state IN ('QUEUED','DISPATCHING','ACKNOWLEDGED','UNKNOWN'))`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount).Scan(&pending); err != nil {
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_publication_targets t JOIN stock_publication_target_fences f ON f.target_id=t.id JOIN stock_publications p ON p.id=t.operation_id WHERE p.tenant_id=$1 AND p.moysklad_account=$2 AND p.ozon_account=$3 AND t.state IN ('QUEUED','DISPATCHING','ACKNOWLEDGED','UNKNOWN'))`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount).Scan(&pending); err != nil {
 			return domain.StockSyncView{}, err
 		}
 		if pending {
@@ -644,6 +665,14 @@ func (s *Store) StockSyncStatus(ctx context.Context, scope domain.StockSyncScope
 			view.State = "ENABLED"
 		}
 	}
+	var recovery domain.StockPublicationRecovery
+	err = tx.QueryRow(ctx, `SELECT r.id,p.id,COALESCE(l.new_operation_id,''),r.product_id,r.warehouse_id,r.observed_quantity,r.observed_at,r.created_at,r.principal_type,r.reason FROM stock_publication_recoveries r JOIN stock_publication_targets t ON t.id=r.target_id JOIN stock_publications p ON p.id=t.operation_id LEFT JOIN stock_publication_recovery_links l ON l.recovery_id=r.id WHERE r.tenant_id=$1 AND r.moysklad_account=$2 AND r.ozon_account=$3 ORDER BY r.created_at DESC LIMIT 1`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount).Scan(&recovery.ID, &recovery.OriginalOperationID, &recovery.NewOperationID, &recovery.ProductID, &recovery.WarehouseID, &recovery.ObservedQuantity, &recovery.ObservedAt, &recovery.CreatedAt, &recovery.PrincipalType, &recovery.Reason)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return view, err
+	}
+	if err == nil {
+		view.Recovery = &recovery
+	}
 	var id string
 	err = tx.QueryRow(ctx, `SELECT id FROM stock_publications WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 ORDER BY created_at DESC,id DESC LIMIT 1`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount).Scan(&id)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -667,7 +696,9 @@ func (s *Store) StockSyncStatus(ctx context.Context, scope domain.StockSyncScope
 				view.State = "STOPPING"
 			}
 		case "UNKNOWN", "PARTIAL":
-			if view.Enabled {
+			if view.Recovery != nil && view.Recovery.OriginalOperationID == op.ID {
+				view.State = "TEST_SUPERSEDED_REVIEW_REQUIRED"
+			} else if view.Enabled {
 				view.State = op.State
 			} else {
 				view.State = "DISABLED_OUTCOME_UNKNOWN"
@@ -750,6 +781,26 @@ func readPublication(ctx context.Context, tx pgx.Tx, scope domain.StockSyncScope
 	}
 	if err = rows.Err(); err != nil {
 		return op, err
+	}
+	rows.Close()
+	for i := range op.Targets {
+		observations, e := tx.Query(ctx, `SELECT observed_at,quantity,outcome FROM stock_publication_readbacks WHERE target_id=$1 ORDER BY observed_at DESC,id DESC LIMIT 20`, op.Targets[i].ID)
+		if e != nil {
+			return op, e
+		}
+		for observations.Next() {
+			var item domain.StockPublicationReadback
+			if e = observations.Scan(&item.ObservedAt, &item.Quantity, &item.Outcome); e != nil {
+				observations.Close()
+				return op, e
+			}
+			op.Targets[i].Readbacks = append(op.Targets[i].Readbacks, item)
+		}
+		e = observations.Err()
+		observations.Close()
+		if e != nil {
+			return op, e
+		}
 	}
 	switch {
 	case states["DISPATCHING"] > 0:

@@ -144,7 +144,7 @@ func TestControlledStockPublicationOutboxAndRecovery(t *testing.T) {
 				http.Error(w, "unexpected", 500)
 			}
 		})
-		runner := stocksync.Runner{Enabled: true, ControlledTest: true, Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return client, nil }}
+		runner := stocksync.Runner{Enabled: true, ControlledTest: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return client, nil }}
 		var wg sync.WaitGroup
 		for i := 0; i < 2; i++ {
 			wg.Add(1)
@@ -225,7 +225,7 @@ func TestControlledStockPublicationUncertainResultsNeverRetry(t *testing.T) {
 				w.WriteHeader(tc.status)
 				fmt.Fprint(w, tc.body)
 			})
-			runner := stocksync.Runner{Enabled: true, ControlledTest: true, Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return client, nil }}
+			runner := stocksync.Runner{Enabled: true, ControlledTest: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return client, nil }}
 			if _, err := runner.RunNext(ctx); err != nil {
 				t.Fatal(err)
 			}
@@ -267,7 +267,7 @@ func TestControlledStockPublicationReadbackMismatchIsFenced(t *testing.T) {
 		reads.Add(1)
 		fmt.Fprintf(w, `{"products":[{"product_id":2764544165,"warehouse_id":1020001323428000,"offer_id":"ATEST-897677","free_stock":%d,"reserved":0,"present":%d}],"has_next":false,"cursor":""}`, observed.Load(), observed.Load())
 	})
-	runner := stocksync.Runner{Enabled: true, ControlledTest: true, Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return client, nil }}
+	runner := stocksync.Runner{Enabled: true, ControlledTest: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return client, nil }}
 	if _, err := runner.RunNext(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -306,7 +306,7 @@ func TestControlledUnknownReadbackIsAuditedWithoutResending(t *testing.T) {
 		reads.Add(1)
 		fmt.Fprint(w, `{"products":[{"product_id":2764544165,"warehouse_id":1020001323428000,"offer_id":"ATEST-897677","free_stock":0,"reserved":0,"present":0}],"has_next":false,"cursor":""}`)
 	})
-	runner := stocksync.Runner{Enabled: true, ControlledTest: true, Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return client, nil }}
+	runner := stocksync.Runner{Enabled: true, ControlledTest: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return client, nil }}
 	if _, err := runner.RunNext(ctx); err != nil {
 		t.Fatal(err)
 	}
