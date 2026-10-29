@@ -177,28 +177,7 @@ func validateCatalogReadback(w catalogsync.Work, c catalogsync.Completion) error
 }
 
 func validateCatalogObservedValues(cmd catalog.Command, observed catalog.Product) error {
-	for field, value := range cmd.Values {
-		actual, ok := observed.Fields[field]
-		if !ok {
-			return catalogsync.ErrStale
-		}
-		if value.State == catalog.StateClear {
-			if actual.State != catalog.StateEmpty && actual.State != catalog.StateClear {
-				return catalogsync.ErrStale
-			}
-			continue
-		}
-		if !catalog.EqualValue(value, actual) {
-			return catalogsync.ErrStale
-		}
-	}
-	for key, value := range cmd.Extensions {
-		actual, ok := observed.Extensions[key]
-		if !ok || !catalog.EqualValue(value, actual) {
-			return catalogsync.ErrStale
-		}
-	}
-	if cmd.Parent != nil && (observed.Parent == nil || !cmd.Parent.SameEntity(*observed.Parent)) {
+	if !catalogsync.ReadbackMatches(cmd, observed) {
 		return catalogsync.ErrStale
 	}
 	return nil

@@ -135,6 +135,10 @@ func catalogSyncRecoverAsync(t *testing.T, db *postgres.Store, w catalogsync.Wor
 
 func catalogSyncCreationPreview(t *testing.T, db *postgres.Store, c catalogsync.Config) (catalogsync.Config, catalogsync.Preview, catalogsync.Enrollment) {
 	t.Helper()
+	return catalogSyncSaveCreationPreview(t, db, c, catalogSyncCreationEnrollment(c))
+}
+
+func catalogSyncCreationEnrollment(c catalogsync.Config) catalogsync.Enrollment {
 	e := c.Targets[0]
 	e.ID = "create-explicit"
 	e.MappingID = ""
@@ -143,6 +147,11 @@ func catalogSyncCreationPreview(t *testing.T, db *postgres.Store, c catalogsync.
 	e.Target.ID = ""
 	e.Target.OfferID = "new-created-offer"
 	e.Create = &catalogsync.Creation{ID: "stable-create-id", ExternalCode: "explicit-marker", Values: map[catalog.Field]catalog.Value{catalog.FieldName: catalog.Text("Created name")}}
+	return e
+}
+
+func catalogSyncSaveCreationPreview(t *testing.T, db *postgres.Store, c catalogsync.Config, e catalogsync.Enrollment) (catalogsync.Config, catalogsync.Preview, catalogsync.Enrollment) {
+	t.Helper()
 	c.Targets = []catalogsync.Enrollment{e}
 	var err error
 	c, err = db.SaveCatalogConfig(context.Background(), catalogsync.SaveConfigRequest{Config: c, ExpectedRevision: 1, Actor: "catalog-test-actor", IdempotencyKey: "enroll-create"}, time.Now())
