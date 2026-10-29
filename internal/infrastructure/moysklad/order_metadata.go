@@ -125,11 +125,7 @@ func (c *OrderClient) readOrderDefinitions(ctx context.Context, result *OrderMet
 			StateType  string `json:"stateType"`
 			EntityType string `json:"entityType"`
 		} `json:"states"`
-		Attributes []struct {
-			catalogReference
-			Name string `json:"name"`
-			Type string `json:"type"`
-		} `json:"attributes"`
+		Attributes json.RawMessage `json:"attributes"`
 	}
 	if json.Unmarshal(raw, &definitions) != nil {
 		return ErrOrderSchema
@@ -141,13 +137,11 @@ func (c *OrderClient) readOrderDefinitions(ctx context.Context, result *OrderMet
 		}
 		result.States = append(result.States, OrderState{OrderReference: OrderReference{ID: id, Name: state.Name}, StateType: state.StateType})
 	}
-	for _, attribute := range definitions.Attributes {
-		id, refErr := c.referenceID(attribute.catalogReference, "entity/customerorder/metadata/attributes", "attributemetadata")
-		if refErr != nil {
-			return refErr
-		}
-		result.Attributes = append(result.Attributes, OrderAttribute{OrderReference: OrderReference{ID: id, Name: attribute.Name}, Type: attribute.Type})
+	attributes, err := c.readOrderAttributeDefinitions(ctx, definitions.Attributes)
+	if err != nil {
+		return err
 	}
+	result.Attributes = attributes
 	return nil
 }
 
