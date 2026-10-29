@@ -106,7 +106,7 @@ func assertMerchantHistoryRollbackGuard(t *testing.T, db *postgres.Store, automa
 	}
 	cmd := exec.Command("go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", db.Pool.Config().ConnString(), "down")
 	output, err := cmd.CombinedOutput()
-	if err == nil || !strings.Contains(string(output), "refusing to remove publication scope guards while merchant identities exist") {
+	if err == nil || !strings.Contains(string(output), "refusing to discard merchant ownership bindings") {
 		t.Fatal("migration rollback did not protect merchant publication scope")
 	}
 }
@@ -207,7 +207,7 @@ func merchantBrowserAPI(t *testing.T, db *postgres.Store, mailbox *testMailbox, 
 			return
 		}
 		var user string
-		if err := db.Pool.QueryRow(r.Context(), `SELECT id FROM saas_users WHERE email=$1`, body.Email).Scan(&user); err != nil || service.ClaimLegacy(r.Context(), body.Workspace, user) != nil {
+		if err := db.Pool.QueryRow(r.Context(), `SELECT id FROM saas_users WHERE email=$1`, body.Email).Scan(&user); err != nil || service.ClaimLegacy(r.Context(), body.Workspace, user) != nil || service.BindLegacyMerchant(r.Context(), user, body.Workspace) != nil {
 			w.WriteHeader(http.StatusConflict)
 			return
 		}

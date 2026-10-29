@@ -27,6 +27,7 @@ func main() {
 func run() error {
 	workspace := flag.String("tenant", "", "existing unclaimed workspace identifier")
 	userID := flag.String("user-id", "", "registered user identifier")
+	bindOnly := flag.Bool("bind-only", false, "bind an already claimed legacy tenant to its verified owner")
 	flag.Parse()
 	if os.Getenv("STYK_LOCAL_CLAIM_ENABLE") != "true" || *workspace == "" || *userID == "" {
 		return errors.New("local claim requires STYK_LOCAL_CLAIM_ENABLE=true, -tenant and -user-id")
@@ -49,10 +50,15 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	if err = service.ClaimLegacy(ctx, *workspace, *userID); err != nil {
-		return fmt.Errorf("claim workspace: %w", err)
+	if !*bindOnly {
+		if err = service.ClaimLegacy(ctx, *workspace, *userID); err != nil {
+			return fmt.Errorf("claim workspace: %w", err)
+		}
 	}
-	fmt.Println("Existing workspace claimed; history remains unchanged.")
+	if err = service.BindLegacyMerchant(ctx, *userID, *workspace); err != nil {
+		return fmt.Errorf("bind merchant account: %w", err)
+	}
+	fmt.Println("Existing merchant account bound; history and credentials remain unchanged.")
 	return nil
 }
 

@@ -65,7 +65,9 @@ func (m *merchantAuth) register(w http.ResponseWriter, r *http.Request) {
 	if !m.publicRequest(w, r, &body, "register") || !m.allowIdentity(w, r, "register:email:"+strings.ToLower(strings.TrimSpace(body.Email)), 10) {
 		return
 	}
-	_, _, err := m.identity.RegisterPending(r.Context(), body.Email, body.Workspace)
+	// Older clients may still send a workspace name. The merchant account is
+	// created automatically and its internal label is not user configuration.
+	_, _, err := m.identity.RegisterPending(r.Context(), body.Email, "Магазин")
 	if errors.Is(err, identity.ErrInvalid) {
 		writeError(w, http.StatusBadRequest, "INVALID_REQUEST")
 		return

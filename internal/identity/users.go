@@ -63,6 +63,9 @@ func (s *Store) insertRegistration(ctx context.Context, user User, workspace Wor
 	if err = insertWorkspace(ctx, tx, workspace, user.ID, ""); err != nil {
 		return err
 	}
+	if _, err = tx.Exec(ctx, `INSERT INTO saas_merchant_accounts(user_id,tenant_id) VALUES($1,$2)`, user.ID, workspace.ID); err != nil {
+		return fmt.Errorf("bind merchant account: %w", err)
+	}
 	if err = event(ctx, tx, workspace.ID, user.ID, "", "REGISTERED", ""); err != nil {
 		return err
 	}

@@ -179,7 +179,7 @@ export type ImportSubmission = {
 export function createImportIntent(scope: ImportScope): ImportIntent {
   if (!scope.tenant || !scope.account)
     throw new Error(
-      "Выберите зарегистрированный аккаунт и рабочее пространство.",
+      "Выберите подключённый аккаунт.",
     );
   const frozenScope = Object.freeze({ ...scope });
   return Object.freeze({

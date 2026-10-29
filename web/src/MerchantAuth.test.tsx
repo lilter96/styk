@@ -26,16 +26,13 @@ it("starts registration without a password and explains when to set it", async (
     target: { value: "seller@example.test" },
   });
   expect(screen.queryByLabelText("Пароль")).toBeNull();
-  fireEvent.change(screen.getByLabelText("Название магазина"), {
-    target: { value: "Магазин" },
-  });
+  expect(screen.queryByLabelText("Название магазина")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Создать аккаунт" }));
   await screen.findByText(/Если адрес доступен/);
   const request = fetcher.mock.calls[0];
   expect(request[0]).toBe("/api/registration");
   expect(JSON.parse(String(request[1]?.body))).toEqual({
     email: "seller@example.test",
-    workspace: "Магазин",
   });
   expect(screen.getByText(/Откройте ссылку и задайте пароль/)).toBeTruthy();
 });

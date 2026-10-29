@@ -58,9 +58,6 @@ it("preserves the registration form during an explicit signed-out session refres
   fireEvent.change(screen.getByLabelText("Электронная почта"), {
     target: { value: "partial@example.test" },
   });
-  fireEvent.change(screen.getByLabelText("Название магазина"), {
-    target: { value: "Мой магазин" },
-  });
   let refresh!: Promise<void>;
   act(() => {
     refresh = client.invalidateQueries({ queryKey: ["session"] });
@@ -76,8 +73,8 @@ it("preserves the registration form during an explicit signed-out session refres
   });
   expect(screen.getByRole("heading", { name: "Создать аккаунт" })).toBeTruthy();
   expect(
-    (screen.getByLabelText("Название магазина") as HTMLInputElement).value,
-  ).toBe("Мой магазин");
+    (screen.getByLabelText("Электронная почта") as HTMLInputElement).value,
+  ).toBe("partial@example.test");
 });
 
 it("clears workspace data and returns to sign-in when an active session expires", async () => {
@@ -90,7 +87,7 @@ it("clears workspace data and returns to sign-in when an active session expires"
       return new Response(
         JSON.stringify({
           user: { id: "user", email: "seller@example.test" },
-          workspaces: [{ id: "workspace", name: "Мой магазин", role: "OWNER" }],
+          account_id: "merchant-account",
           csrf: "csrf",
           expires_at: "2099-01-01T00:00:00Z",
         }),
@@ -122,7 +119,7 @@ it("clears workspace data and returns to sign-in when an active session expires"
   await waitFor(() =>
     expect(client.getQueryData(["private-test", "workspace"])).toBeUndefined(),
   );
-  expect(screen.queryByText("Мой магазин")).toBeNull();
+  expect(screen.queryByText("Подключения")).toBeNull();
 });
 
 it("opens an email link while another session is active", async () => {
@@ -132,7 +129,7 @@ it("opens an email link while another session is active", async () => {
       return new Response(
         JSON.stringify({
           user: { id: "user", email: "seller@example.test" },
-          workspaces: [{ id: "workspace", name: "Мой магазин", role: "OWNER" }],
+          account_id: "merchant-account",
           csrf: "csrf",
           expires_at: "2099-01-01T00:00:00Z",
         }),
@@ -164,4 +161,29 @@ it("opens an email link while another session is active", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Сохранить пароль" }));
   await screen.findByText(/Пароль изменён/);
   expect(screen.getByRole("button", { name: "Вернуться в приложение" })).toBeTruthy();
+});
+
+it("automatically selects a sole connection once without overriding a later choice", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    const path = String(input);
+    if (path === "/api/session")
+      return new Response(JSON.stringify({
+        user: { id: "user", email: "seller@example.test" },
+        account_id: "merchant-account", csrf: "csrf", expires_at: "2099-01-01T00:00:00Z",
+      }), { status: 200 });
+    if (path.startsWith("/api/registrations?"))
+      return new Response(JSON.stringify({ accounts: [
+        { source: "moysklad", account: "source", registered_at: "2026-01-01T00:00:00Z" },
+        { source: "ozon", account: "market", registered_at: "2026-01-01T00:00:00Z" },
+      ], truncated: false }), { status: 200 });
+    if (path.startsWith("/api/diagnostics?"))
+      return new Response(JSON.stringify({ checks: [], batches: {}, mapping_counts: {} }), { status: 200 });
+    throw new Error("unexpected request");
+  });
+  mount();
+  fireEvent.click(await screen.findByText("Подключения"));
+  const source = await screen.findByRole("combobox", { name: "МойСклад" });
+  await waitFor(() => expect((source as HTMLSelectElement).value).toBe("source"));
+  fireEvent.change(source, { target: { value: "" } });
+  await waitFor(() => expect((source as HTMLSelectElement).value).toBe(""));
 });

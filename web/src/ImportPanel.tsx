@@ -185,7 +185,6 @@ function TechnicalDetails({
       <summary>Технические детали</summary>
       <dl className="technical-identifiers">
         <Identifier label="Операция" value={op.id} />
-        <Identifier label="Рабочее пространство" value={scope.tenant} />
         <Identifier label="Аккаунт" value={scope.account} />
         {op.batch_id !== null && (
           <Identifier label="Пакет данных" value={String(op.batch_id)} />
@@ -886,7 +885,6 @@ export function ImportPanel({
           <details className="technical-details">
             <summary>Технические детали</summary>
             <dl>
-              <Identifier label="Рабочее пространство" value={scope.tenant} />
               <Identifier label="Аккаунт" value={scope.account} />
             </dl>
             <p>Действуют установленные ограничения загрузки.</p>

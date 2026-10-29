@@ -73,7 +73,7 @@ export function useImportSubmission() {
         setSessionLost(true);
         setHistoryInspected(false);
         setMessage(
-          "Сессия завершилась. Загрузка могла попасть в очередь. Войдите снова и проверьте историю исходного аккаунта в том же рабочем пространстве перед новым запросом.",
+          "Сессия завершилась. Загрузка могла попасть в очередь. Войдите снова и проверьте историю исходного аккаунта перед новым запросом.",
         );
         void client.invalidateQueries({ queryKey: ["session"] });
       } else if (code === "IDEMPOTENCY_CONFLICT") {
@@ -258,8 +258,6 @@ export function ImportSubmissionNotice({
           <summary>Технические детали</summary>
           {original && (
             <p>
-              Рабочее пространство: <code>{original.tenant}</code>
-              <br />
               Аккаунт: <code>{original.account}</code>
             </p>
           )}

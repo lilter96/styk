@@ -14,11 +14,14 @@ export async function selectWorkspace(
   moy: string,
   ozon: string,
 ) {
+  // Legacy loopback-operator fixtures keep their synthetic scope in test-only
+  // browser state; the merchant UI never asks a seller for a tenant ID.
+  await page.evaluate(
+    (scope) => sessionStorage.setItem("styk-selected-accounts", JSON.stringify(scope)),
+    { tenant, moy, ozon },
+  );
+  await page.reload();
   const selector = page.locator(".workspace-selector");
-  if ((await selector.getAttribute("open")) === null)
-    await selector.locator("summary").first().click();
-  await page.getByLabel("Рабочее пространство", { exact: true }).fill(tenant);
-  await page.getByRole("button", { name: "Открыть пространство" }).click();
   if ((await selector.getAttribute("open")) === null)
     await selector.locator("summary").first().click();
   await page

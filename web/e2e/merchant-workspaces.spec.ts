@@ -16,7 +16,7 @@ const bOzon = "987654321";
 const simulatedWorkspace = "synthetic-auto-browser-b";
 const simulation = process.env.STYK_MERCHANT_AUTOSIM === "1";
 
-test("two merchants register, import independently and switch only through membership", async ({
+test("two merchants register, use independent accounts and stay isolated", async ({
   browser,
 }) => {
   test.skip(
@@ -43,8 +43,8 @@ test("two merchants register, import independently and switch only through membe
         : route.abort(),
     );
   }
-  await register(a, aEmail, "Магазин A", !simulation);
-  await register(b, bEmail, "Магазин B");
+  await register(a, aEmail, !simulation);
+  await register(b, bEmail);
   const claim = await a.request.post(`${testAPI}/__test/claim`, {
     headers: { "X-Test-Secret": testSecret },
     data: { email: aEmail },
@@ -57,10 +57,10 @@ test("two merchants register, import independently and switch only through membe
     });
     expect(claimB.status()).toBe(204);
     await b.reload();
-    await selectWorkspace(b, simulatedWorkspace);
+    await login(b, bEmail);
   }
   await a.reload();
-  await selectWorkspace(a, aTenant);
+  await login(a, aEmail);
   await selectAccounts(a, aMoy, aOzon);
   await a.getByRole("link", { name: "Товары", exact: true }).click();
   await expect(a.getByText("ATEST-897677", { exact: true })).toBeVisible();
@@ -140,7 +140,7 @@ test("two merchants register, import independently and switch only through membe
   const bSession = await (await b.request.get(`${origin}/api/session`)).json();
   const bTenant = simulation
     ? simulatedWorkspace
-    : (bSession.workspaces[0].id as string);
+    : (bSession.account_id as string);
   const autoURL = `${origin}/api/stock-sync/automatic?tenant=${encodeURIComponent(bTenant)}&moysklad_account=${bMoy}&ozon_account=${bOzon}`;
   if (simulation) {
     await expect
@@ -226,20 +226,8 @@ test("two merchants register, import independently and switch only through membe
       await b.request.get(`${origin}/api/registrations?tenant=${aTenant}`)
     ).status(),
   ).toBe(404);
-  await grantViewer(a, bEmail);
-  await b.reload();
-  await selectWorkspace(b, aTenant);
-  await selectAccounts(b, aMoy, aOzon);
-  await b.getByRole("link", { name: "Товары", exact: true }).click();
-  await expect(b.getByText("ATEST-897677", { exact: true })).toBeVisible();
-  await expect(b.getByText("B-TEST-OFFER", { exact: true })).toHaveCount(0);
-  await revokeViewer(a, bEmail);
-  expect(
-    (
-      await b.request.get(`${origin}/api/registrations?tenant=${aTenant}`)
-    ).status(),
-  ).toBe(404);
-  await b.reload();
+  expect((await a.request.get(`${origin}/api/workspaces`)).status()).toBe(404);
+  expect(await b.getByText(/Рабочее пространство/).count()).toBe(0);
   await expect(b.getByText("ATEST-897677", { exact: true })).toHaveCount(0);
 
   await b.screenshot({ path: join(shots, "desktop.png"), fullPage: true });
@@ -253,15 +241,14 @@ test("two merchants register, import independently and switch only through membe
   await bContext.close();
 });
 
-async function register(page: Page, email: string, name: string, slow = false) {
+async function register(page: Page, email: string, slow = false) {
   await page.goto(origin + "/");
   await page.getByRole("button", { name: "Создать аккаунт" }).click();
   await page.getByLabel("Электронная почта").fill(email);
-  await page.getByLabel("Название магазина").fill(name);
+  await expect(page.getByLabel("Название магазина")).toHaveCount(0);
   if (slow) {
     await page.waitForTimeout(16_000);
     await expect(page.getByLabel("Электронная почта")).toHaveValue(email);
-    await expect(page.getByLabel("Название магазина")).toHaveValue(name);
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect(
       page.getByRole("heading", { name: "Создать аккаунт" }),
@@ -359,17 +346,11 @@ async function checkPasswordReset(
   }
 }
 
-async function selectWorkspace(page: Page, id: string) {
-  const selector = page.locator(".workspace-selector");
-  if ((await selector.getAttribute("open")) === null)
-    await selector.locator("summary").first().click();
-  await selector
-    .getByRole("combobox", { name: "Рабочее пространство", exact: true })
-    .selectOption(id, { timeout: 10_000 });
-  await expect(page.locator(".workspace-selector > summary")).toContainText(
-    id === aTenant ? aTenant : "Магазин B",
-    { timeout: 10_000 },
-  );
+async function login(page: Page, email: string) {
+  await page.getByLabel("Электронная почта").fill(email);
+  await page.getByLabel("Пароль").fill(password);
+  await page.getByRole("button", { name: "Войти", exact: true }).click();
+  await expect(page.getByRole("link", { name: "Интеграции", exact: true })).toBeVisible();
 }
 
 async function selectAccounts(page: Page, moy: string, ozon: string) {
@@ -423,31 +404,4 @@ async function importCatalog(page: Page, provider: string) {
   await expect(
     panel.getByRole("button", { name: "Обновить данные" }),
   ).toBeEnabled({ timeout: 20000 });
-}
-
-async function grantViewer(page: Page, email: string) {
-  const selector = page.locator(".workspace-selector");
-  if ((await selector.getAttribute("open")) === null)
-    await selector.locator("summary").first().click();
-  await selector.getByText("Настройки пространства").click();
-  await selector.getByLabel("Почта участника").fill(email);
-  await selector.getByLabel("Роль").selectOption("VIEWER");
-  await selector.getByRole("button", { name: "Сохранить доступ" }).click();
-  await expect(selector.getByText("Доступ обновлён.")).toBeVisible();
-  await selector.locator("summary").first().click();
-}
-
-async function revokeViewer(page: Page, email: string) {
-  const selector = page.locator(".workspace-selector");
-  if ((await selector.getAttribute("open")) === null)
-    await selector.locator("summary").first().click();
-  const settings = selector.locator(".merchant-workspace-settings");
-  if ((await settings.getAttribute("open")) === null)
-    await settings.locator("summary").click();
-  await settings
-    .locator(".merchant-member")
-    .filter({ hasText: email })
-    .getByRole("button", { name: "Отозвать" })
-    .click();
-  await expect(settings.getByText("Доступ отозван.")).toBeVisible();
 }

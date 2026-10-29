@@ -105,7 +105,7 @@ const errors: Record<string, string> = {
   STOCK_SYNC_NOT_FOUND:
     "Настройка или отправка не найдена для выбранных аккаунтов.",
   INVALID_REQUEST: "Проверьте значения и подтверждения условий.",
-  INVALID_SCOPE: "Выберите оба аккаунта этого рабочего пространства.",
+  INVALID_SCOPE: "Выберите оба подключённых аккаунта.",
   FORBIDDEN: "Запрос отклонён. Обновите страницу и войдите снова.",
 };
 export function useStockSyncSubmission() {
@@ -343,7 +343,7 @@ const checkLabels: Record<string, string> = {
   ATTESTATION_TARGETS_CHANGED:
     "Набор сопоставленных товаров или складов изменился",
 
-  OWNERSHIP_NOT_REGISTERED: "Аккаунты принадлежат этому рабочему пространству",
+  OWNERSHIP_NOT_REGISTERED: "Аккаунты подключены к вашей учётной записи",
   PRODUCT_MAPPING_NOT_CONFIRMED: "Соответствия товаров подтверждены",
   WAREHOUSE_MAPPING_NOT_CONFIRMED: "Соответствия складов подтверждены",
   NO_MAPPINGS: "Нет подтверждённых соответствий товаров и складов",
@@ -1434,7 +1434,7 @@ export function StockSyncNotice({
       <strong>Есть запрос на изменение синхронизации</strong>
       <p>
         {submission.message ||
-          "Запрос относится к исходной паре аккаунтов. Смена пространства не отменяет его."}
+          "Запрос относится к исходной паре аккаунтов и не отменяется автоматически."}
       </p>
       <button
         className="secondary"

@@ -11,13 +11,12 @@ import {
 import { ProductMappingPage } from "./ProductMappingPage";
 import { WarehouseReview } from "./WarehouseReview";
 import { hasAuthLink, MerchantAuth } from "./MerchantAuth";
-import { WorkspaceSettings } from "./WorkspaceSettings";
 import {
   ConfirmationNotice,
   useConfirmation,
   type Confirmation,
 } from "./Confirmation";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   NavLink,
@@ -43,7 +42,7 @@ import {
 type Scope = { tenant: string; moy: string; ozon: string };
 type MerchantSession = {
   user: { id: string; email: string };
-  workspaces: { id: string; name: string; role: string }[];
+  account_id: string;
   csrf: string;
   expires_at: string;
 };
@@ -119,7 +118,7 @@ function Login({ onDone }: { onDone: () => void }) {
         S<span>TYK</span>
       </div>
       <div className="login-panel">
-        <p className="eyebrow">Рабочее пространство</p>
+        <p className="eyebrow">Аккаунт STYK</p>
         <h1>Войти в STYK</h1>
         <p>
           Подключайте сервисы, загружайте данные и проверяйте соответствия
@@ -143,7 +142,7 @@ function Login({ onDone }: { onDone: () => void }) {
           )}
         </form>
       </div>
-      <p className="login-footer">STYK · Рабочее пространство</p>
+      <p className="login-footer">STYK · Управление остатками</p>
     </main>
   );
 }
@@ -577,7 +576,7 @@ function checkSummary(code: string, status: string) {
       ? "Данные загрузки неполные. Проверьте историю обновлений."
       : "Успешная загрузка отсутствует или данные устарели.";
   if (code.endsWith("_REGISTRATION") || code === "ACCOUNT_REGISTRATION")
-    return "Оба аккаунта должны быть добавлены в выбранное рабочее пространство.";
+    return "Подключите оба аккаунта к STYK.";
   if (code.includes("STOCK_COVERAGE") || code === "COVERAGE")
     return "Полученные записи не подтверждают полноту остатков. Отсутствующие значения неизвестны.";
   if (code === "EXISTING_EXPOSURE")
@@ -692,9 +691,13 @@ export function Diagnostics({
   );
 }
 
-function savedWorkspace() {
+function savedAccounts() {
   try {
-    const value = JSON.parse(sessionStorage.getItem("styk-workspace") || "{}");
+    const value = JSON.parse(
+      sessionStorage.getItem("styk-selected-accounts") ||
+        sessionStorage.getItem("styk-workspace") ||
+        "{}",
+    );
     return {
       tenant: typeof value.tenant === "string" ? value.tenant : "",
       moy: typeof value.moy === "string" ? value.moy : "",
@@ -765,32 +768,37 @@ export function App() {
     window.addEventListener("hashchange", openLink);
     return () => window.removeEventListener("hashchange", openLink);
   }, [session.data]);
-  const [initialWorkspace] = useState(savedWorkspace);
-  const [workspaceOpen, setWorkspaceOpen] = useState(!initialWorkspace.tenant);
-  const [tenant, setTenant] = useState(initialWorkspace.tenant),
-    [chosen, setChosen] = useState(initialWorkspace.tenant),
-    [moy, setMoy] = useState(initialWorkspace.moy),
-    [ozon, setOzon] = useState(initialWorkspace.ozon),
+  const [initialAccounts] = useState(savedAccounts);
+  const [accountsOpen, setAccountsOpen] = useState(false);
+  const [moy, setMoy] = useState(initialAccounts.moy),
+    [ozon, setOzon] = useState(initialAccounts.ozon),
+    [loadedIdentity, setLoadedIdentity] = useState(""),
     [logoutError, setLogoutError] = useState("");
-  const permittedWorkspace =
-    !session.data ||
-    (!chosen && session.data.workspaces.length === 0) ||
-    session.data.workspaces.some((workspace) => workspace.id === chosen);
+  const autoSelected = useRef({ moy: false, ozon: false });
+  const chosen = session.data?.account_id ||
+    (session.isSuccess && session.data === null ? initialAccounts.tenant : "");
+  const identityKey = session.data
+    ? `${session.data.user.id}:${session.data.account_id}`
+    : "";
+  const identityReady = !session.data || loadedIdentity === identityKey;
   useEffect(() => {
-    if (chosen) setWorkspaceOpen(false);
-  }, [chosen]);
-  useEffect(() => {
-    if (!session.data || permittedWorkspace) return;
-    const next = session.data.workspaces[0]?.id || "";
-    setTenant(next);
-    setChosen(next);
-    setMoy("");
-    setOzon("");
-    client.removeQueries({
-      predicate: (query) =>
-        !["session", "auth-mode"].includes(String(query.queryKey[0])),
-    });
-  }, [session.data, permittedWorkspace, client]);
+    if (!session.data || identityReady) return;
+    if (loadedIdentity) {
+      // A different login must not inherit another merchant's pending UI or
+      // cached provider selections. A full navigation discards both.
+      try {
+        sessionStorage.removeItem("styk-selected-accounts");
+        sessionStorage.removeItem("styk-workspace");
+      } catch {
+        // Reloading still clears the in-memory data.
+      }
+      window.location.assign("/");
+      return;
+    }
+    setMoy(initialAccounts.tenant === chosen ? initialAccounts.moy : "");
+    setOzon(initialAccounts.tenant === chosen ? initialAccounts.ozon : "");
+    setLoadedIdentity(identityKey);
+  }, [session.data, identityReady, loadedIdentity, initialAccounts, chosen, identityKey]);
   useEffect(() => {
     const expired = () => {
       setCSRF("");
@@ -813,15 +821,16 @@ export function App() {
     });
   }, [session.error, client]);
   useEffect(() => {
+    if (!chosen || !identityReady) return;
     try {
       sessionStorage.setItem(
-        "styk-workspace",
+        "styk-selected-accounts",
         JSON.stringify({ tenant: chosen, moy, ozon }),
       );
     } catch {
       // The console remains usable when browser storage is unavailable.
     }
-  }, [chosen, moy, ozon]);
+  }, [chosen, moy, ozon, identityReady]);
   const accounts = useQuery({
     queryKey: ["accounts", chosen],
     queryFn: ({ signal }) =>
@@ -829,11 +838,13 @@ export function App() {
         "/api/registrations?" + params({ tenant: chosen }),
         signal,
       ),
-    enabled: session.isSuccess && !!chosen && permittedWorkspace,
+    enabled: session.isSuccess && !!chosen && identityReady,
   });
   const scope = { tenant: chosen, moy, ozon };
   useEffect(() => {
     if (!accounts.data) return;
+    const moyAccounts = accounts.data.accounts.filter((a) => a.source === "moysklad");
+    const ozonAccounts = accounts.data.accounts.filter((a) => a.source === "ozon");
     if (
       moy &&
       !accounts.data.accounts.some(
@@ -841,6 +852,10 @@ export function App() {
       )
     )
       setMoy("");
+    if (!autoSelected.current.moy && moyAccounts.length) {
+      autoSelected.current.moy = true;
+      if (!moy && moyAccounts.length === 1) setMoy(moyAccounts[0].account);
+    }
     if (
       ozon &&
       !accounts.data.accounts.some(
@@ -848,18 +863,23 @@ export function App() {
       )
     )
       setOzon("");
+    if (!autoSelected.current.ozon && ozonAccounts.length) {
+      autoSelected.current.ozon = true;
+      if (!ozon && ozonAccounts.length === 1) setOzon(ozonAccounts[0].account);
+    }
   }, [accounts.data, moy, ozon]);
   const report = useQuery({
     queryKey: ["diagnostics", scope],
     queryFn: ({ signal }) =>
       api<Report>("/api/diagnostics?" + scopeParams(scope), signal),
-    enabled: session.isSuccess && !!chosen && permittedWorkspace,
+    enabled: session.isSuccess && !!chosen && identityReady,
   });
   if (authLinkInSession) {
     const leaveLink = () => {
       setCSRF("");
       try {
         sessionStorage.removeItem("styk-workspace");
+        sessionStorage.removeItem("styk-selected-accounts");
       } catch {
         // A full navigation still discards the in-memory tenant cache.
       }
@@ -914,7 +934,7 @@ export function App() {
         )}
       </>
     );
-  if (session.data && !permittedWorkspace)
+  if (!identityReady)
     return (
       <main className="login">
         <Loading />
@@ -930,97 +950,16 @@ export function App() {
         throw new Error("Не удалось завершить сессию. Повторите попытку.");
       setCSRF("");
       sessionStorage.removeItem("styk-workspace");
+      sessionStorage.removeItem("styk-selected-accounts");
       client.clear();
       window.location.assign("/");
     } catch {
       setLogoutError("Не удалось завершить сессию. Повторите попытку.");
     }
   }
-  const pendingMutation =
-    !!confirmation.pending ||
-    !!importSubmission.pending ||
-    !!credentialSubmission.pending ||
-    !!stockSyncSubmission.pending;
-  function switchWorkspace(next: string) {
-    if (!next || pendingMutation) return;
-    try {
-      sessionStorage.setItem(
-        "styk-workspace",
-        JSON.stringify({ tenant: next, moy: "", ozon: "" }),
-      );
-    } catch {
-      void client.cancelQueries();
-      client.removeQueries({
-        predicate: (query) =>
-          !["session", "auth-mode"].includes(String(query.queryKey[0])),
-      });
-      void client.invalidateQueries({ queryKey: ["session"] });
-      setTenant(next);
-      setChosen(next);
-      setMoy("");
-      setOzon("");
-      return;
-    }
-    setCSRF("");
-    // The navigation destroys this query cache. Clearing it before navigation
-    // can trigger a render that writes the previous workspace back to storage.
-    window.location.assign("/");
-  }
-  const activeWorkspace = session.data?.workspaces.find(
-    (workspace) => workspace.id === chosen,
-  );
-  const workspaceControls = (
+  const accountControls = (
     <div className="scope-panel">
-      {session.data ? (
-        <>
-          <label>
-            Рабочее пространство
-            <select
-              value={chosen}
-              disabled={pendingMutation}
-              onChange={(event) => switchWorkspace(event.target.value)}
-            >
-              {session.data.workspaces.map((workspace) => (
-                <option key={workspace.id} value={workspace.id}>
-                  {workspace.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          {(activeWorkspace || session.data.workspaces.length === 0) && (
-            <WorkspaceSettings
-              workspace={chosen}
-              role={activeWorkspace?.role || ""}
-              switchTo={switchWorkspace}
-            />
-          )}
-          {activeWorkspace?.role === "VIEWER" && (
-            <span>
-              Доступ только для просмотра. Изменения может внести оператор или
-              администратор.
-            </span>
-          )}
-        </>
-      ) : (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            setChosen(tenant.trim());
-            setMoy("");
-            setOzon("");
-          }}
-        >
-          <label>
-            Рабочее пространство
-            <input
-              value={tenant}
-              onChange={(e) => setTenant(e.target.value)}
-              placeholder="Идентификатор пространства"
-            />
-          </label>
-          <button className="secondary">Открыть пространство</button>
-        </form>
-      )}
+      {session.data && <span>Вы вошли как {session.data.user.email}</span>}
       {accounts.isLoading && <span>Загружаем аккаунты…</span>}
       {accounts.error && <Failure error={accounts.error} />}{" "}
       {accounts.data && (
@@ -1054,7 +993,7 @@ export function App() {
             </select>
           </label>
           {accounts.data.accounts.length === 0 && (
-            <span>В этом пространстве пока нет аккаунтов.</span>
+            <span>Подключите МойСклад и Ozon, чтобы начать.</span>
           )}
           {accounts.data.truncated && (
             <span>
@@ -1083,8 +1022,7 @@ export function App() {
             : ozon,
       }}
       restore={(original) => {
-        setTenant(original.tenant);
-        setChosen(original.tenant);
+        if (original.tenant !== chosen) return;
         if (original.provider === "moysklad") setMoy(original.account);
         else setOzon(original.account);
         navigate("/integrations");
@@ -1097,15 +1035,15 @@ export function App() {
         <details
           className="workspace-selector"
           key={chosen || "empty"}
-          open={workspaceOpen}
-          onToggle={(event) => setWorkspaceOpen(event.currentTarget.open)}
+          open={accountsOpen}
+          onToggle={(event) => setAccountsOpen(event.currentTarget.open)}
         >
           <summary>
-            {activeWorkspace?.name || "Рабочее пространство"}{" "}
+            Подключения{" "}
             <span aria-hidden="true">⌄</span>
           </summary>
           <div className="workspace-popover">
-            {workspaceControls}
+            {accountControls}
             <div className="workspace-footer">
               <NavLink to="/diagnostics">Диагностика</NavLink>
               <button
@@ -1141,8 +1079,7 @@ export function App() {
             confirmation={confirmation}
             scope={scope}
             restore={(original) => {
-              setTenant(original.tenant);
-              setChosen(original.tenant);
+              if (original.tenant !== chosen) return;
               setMoy(original.moy);
               setOzon(original.ozon);
             }}
@@ -1156,8 +1093,7 @@ export function App() {
             }}
             onIntegrations={integrationPage}
             restore={(original) => {
-              setTenant(original.tenant);
-              setChosen(original.tenant);
+              if (original.tenant !== chosen) return;
               setMoy(original.moysklad_account);
               setOzon(original.ozon_account);
               navigate("/integrations");
@@ -1167,8 +1103,7 @@ export function App() {
             submission={credentialSubmission}
             tenant={chosen}
             restore={(original) => {
-              setTenant(original.tenant);
-              setChosen(original.tenant);
+              if (original.tenant !== chosen) return;
               if (original.provider === "moysklad") setMoy(original.account);
               else setOzon(original.account);
               navigate("/integrations");

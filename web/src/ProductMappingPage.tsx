@@ -231,7 +231,7 @@ export function ProductMappingPage({
       )}
       {!ready ? (
         <div className="mapping-empty">
-          Выберите оба аккаунта в рабочем пространстве, чтобы сопоставить
+          Выберите оба подключённых аккаунта, чтобы сопоставить
           товары.
         </div>
       ) : products.isLoading ? (

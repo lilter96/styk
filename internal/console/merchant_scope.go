@@ -16,15 +16,10 @@ import (
 const merchantBodyLimit = 512 << 10
 
 func (m *merchantAuth) authorizeScope(w http.ResponseWriter, r *http.Request, session identity.Session) bool {
-	if r.URL.Path == "/api/session" || r.URL.Path == "/api/workspaces" {
+	if r.URL.Path == "/api/session" {
 		return true
 	}
-	workspace, err := m.requestWorkspace(r, session)
-	if err != nil || workspace == "" {
-		writeError(w, http.StatusNotFound, "NOT_FOUND")
-		return false
-	}
-	role, err := m.identity.Role(r.Context(), session.User.ID, workspace)
+	tenant, err := m.identity.MerchantTenant(r.Context(), session.User.ID)
 	if errors.Is(err, identity.ErrForbidden) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND")
 		return false
@@ -33,12 +28,12 @@ func (m *merchantAuth) authorizeScope(w http.ResponseWriter, r *http.Request, se
 		writeError(w, http.StatusServiceUnavailable, "UNAVAILABLE")
 		return false
 	}
-	if !rolePermits(role, r) {
-		writeError(w, http.StatusForbidden, "FORBIDDEN")
+	if err = m.scopeRequest(r, session, tenant); err != nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND")
 		return false
 	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		if err = m.identity.RecordAction(r.Context(), session, workspace, r.Pattern); err != nil {
+		if err = m.identity.RecordAction(r.Context(), session, tenant, r.Pattern); err != nil {
 			writeError(w, http.StatusServiceUnavailable, "UNAVAILABLE")
 			return false
 		}
@@ -46,45 +41,36 @@ func (m *merchantAuth) authorizeScope(w http.ResponseWriter, r *http.Request, se
 	return true
 }
 
-func rolePermits(role string, r *http.Request) bool {
-	if strings.HasSuffix(r.Pattern, "/members") || strings.HasSuffix(r.Pattern, "/audit") {
-		return identity.CanAdmin(role)
-	}
-	if r.Method == http.MethodGet || r.Method == http.MethodHead {
-		return identity.CanRead(role)
-	}
-	if strings.HasPrefix(r.URL.Path, "/api/integrations/") || r.URL.Path == "/api/stock-sync/automatic" || r.URL.Path == "/api/stock-sync/enable" || r.URL.Path == "/api/stock-sync/disable" || strings.HasSuffix(r.URL.Path, "/supersede") {
-		return identity.CanAdmin(role)
-	}
-	return identity.CanOperate(role)
-}
-
-func (m *merchantAuth) requestWorkspace(r *http.Request, session identity.Session) (string, error) {
-	if workspace := r.PathValue("workspace"); workspace != "" {
-		return workspace, nil
-	}
-	if r.PathValue("id") != "" && (strings.HasPrefix(r.URL.Path, "/api/product-mapping-reviews/") || strings.HasPrefix(r.URL.Path, "/api/warehouse-mapping-reviews/")) {
-		return m.reviewWorkspace(r, session)
-	}
+// Existing domain handlers receive their scoped input as before, but the
+// authenticated user is the authority. A client-supplied scope is optional and
+// may never select another account.
+func (m *merchantAuth) scopeRequest(r *http.Request, session identity.Session, tenant string) error {
 	query, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
-		return "", err
+		return identity.ErrInvalid
 	}
-	values := query["tenant"]
-	if len(values) > 1 {
-		return "", identity.ErrInvalid
+	for key, values := range query {
+		if strings.EqualFold(key, "tenant") && (key != "tenant" || len(values) != 1 || values[0] != tenant) {
+			return identity.ErrForbidden
+		}
+	}
+	query.Set("tenant", tenant)
+	r.URL.RawQuery = query.Encode()
+	if isMappingReviewObject(r) {
+		owner, err := m.reviewWorkspace(r, session)
+		if err != nil || owner != tenant {
+			return identity.ErrForbidden
+		}
+		return nil
 	}
 	if r.Method == http.MethodGet || r.Method == http.MethodHead {
-		if len(values) != 1 {
-			return "", identity.ErrInvalid
-		}
-		return values[0], nil
+		return nil
 	}
-	workspace, err := bodyWorkspace(r)
-	if err != nil || (len(values) == 1 && values[0] != workspace) {
-		return "", identity.ErrInvalid
-	}
-	return workspace, nil
+	return scopeMerchantBody(r, tenant)
+}
+
+func isMappingReviewObject(r *http.Request) bool {
+	return r.PathValue("id") != "" && (strings.HasPrefix(r.URL.Path, "/api/product-mapping-reviews/") || strings.HasPrefix(r.URL.Path, "/api/warehouse-mapping-reviews/"))
 }
 
 func (m *merchantAuth) reviewWorkspace(r *http.Request, session identity.Session) (string, error) {
@@ -96,53 +82,70 @@ func (m *merchantAuth) reviewWorkspace(r *http.Request, session identity.Session
 	if strings.HasPrefix(r.URL.Path, "/api/warehouse-mapping-reviews/") {
 		query = `SELECT tenant_id FROM warehouse_mapping_reviews WHERE id=$1 AND session_audit_id=$2`
 	}
-	var workspace string
-	err := m.db.Pool.QueryRow(r.Context(), query, id, session.AuditID).Scan(&workspace)
+	var tenant string
+	err := m.db.Pool.QueryRow(r.Context(), query, id, session.AuditID).Scan(&tenant)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", identity.ErrForbidden
 	}
-	return workspace, err
+	return tenant, err
 }
 
-func bodyWorkspace(r *http.Request) (string, error) {
+func scopeMerchantBody(r *http.Request, tenant string) error {
 	original := r.Body
 	body, err := io.ReadAll(io.LimitReader(original, merchantBodyLimit+1))
 	closeErr := original.Close()
 	if err != nil || closeErr != nil || len(body) > merchantBodyLimit {
-		return "", identity.ErrInvalid
+		return identity.ErrInvalid
+	}
+	fields, err := merchantObject(body)
+	if err != nil {
+		return err
+	}
+	if value, found := fields["tenant"]; found {
+		var supplied string
+		if json.Unmarshal(value, &supplied) != nil || supplied != tenant {
+			return identity.ErrForbidden
+		}
+	} else {
+		value, err := json.Marshal(tenant)
+		if err != nil {
+			return identity.ErrInvalid
+		}
+		fields["tenant"] = value
+	}
+	body, err = json.Marshal(fields)
+	if err != nil {
+		return identity.ErrInvalid
 	}
 	r.Body = io.NopCloser(bytes.NewReader(body))
+	r.ContentLength = int64(len(body))
+	return nil
+}
+
+func merchantObject(body []byte) (map[string]json.RawMessage, error) {
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	token, err := decoder.Token()
 	if err != nil || token != json.Delim('{') {
-		return "", identity.ErrInvalid
+		return nil, identity.ErrInvalid
 	}
-	workspace, found := "", false
+	fields := make(map[string]json.RawMessage)
 	for decoder.More() {
 		name, err := decoder.Token()
-		if err != nil {
-			return "", identity.ErrInvalid
-		}
 		key, ok := name.(string)
-		if !ok {
-			return "", identity.ErrInvalid
+		if err != nil || !ok || strings.EqualFold(key, "tenant") && key != "tenant" {
+			return nil, identity.ErrInvalid
+		}
+		if _, duplicate := fields[key]; duplicate {
+			return nil, identity.ErrInvalid
 		}
 		var value json.RawMessage
-		if err = decoder.Decode(&value); err != nil {
-			return "", identity.ErrInvalid
+		if decoder.Decode(&value) != nil {
+			return nil, identity.ErrInvalid
 		}
-		if strings.EqualFold(key, "tenant") {
-			if key != "tenant" || found || json.Unmarshal(value, &workspace) != nil {
-				return "", identity.ErrInvalid
-			}
-			found = true
-		}
+		fields[key] = value
 	}
-	if _, err = decoder.Token(); err != nil {
-		return "", identity.ErrInvalid
+	if _, err = decoder.Token(); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		return nil, identity.ErrInvalid
 	}
-	if decoder.Decode(&struct{}{}) != io.EOF || !found || workspace == "" {
-		return "", identity.ErrInvalid
-	}
-	return workspace, nil
+	return fields, nil
 }

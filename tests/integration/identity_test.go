@@ -16,7 +16,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func TestIdentitySessionsAndMembership(t *testing.T) {
+func TestIdentitySessionsAndMerchantAccount(t *testing.T) {
 	db, _ := controlledFixture(t)
 	store, err := identity.New(db.Pool, 10*time.Second)
 	if err != nil {
@@ -58,26 +58,12 @@ func TestIdentitySessionsAndMembership(t *testing.T) {
 	if _, err = store.Session(ctx, expiredToken); !errors.Is(err, identity.ErrAuth) {
 		t.Fatalf("expired session remained active: %v", err)
 	}
-	if err = store.SetMembership(ctx, session, workspace.ID, b.Email, "VIEWER"); err != nil {
+	// Historical shared membership does not change the user's sole account.
+	if _, err = db.Pool.Exec(ctx, `INSERT INTO saas_memberships(workspace_id,user_id,role) VALUES($1,$2,'VIEWER')`, workspace.ID, b.ID); err != nil {
 		t.Fatal(err)
 	}
-	if role, err := store.Role(ctx, b.ID, workspace.ID); err != nil || role != "VIEWER" {
-		t.Fatalf("viewer membership: %s %v", role, err)
-	}
-	if err = store.SetMembership(ctx, session, workspace.ID, b.Email, "OPERATOR"); err != nil {
-		t.Fatal(err)
-	}
-	if role, err := store.Role(ctx, b.ID, workspace.ID); err != nil || role != "OPERATOR" {
-		t.Fatalf("role change: %s %v", role, err)
-	}
-	if err = store.SetMembership(ctx, session, workspace.ID, a.Email, "VIEWER"); !errors.Is(err, identity.ErrLastOwner) {
-		t.Fatalf("removed last owner: %v", err)
-	}
-	if err = store.SetMembership(ctx, session, workspace.ID, b.Email, ""); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = store.Role(ctx, b.ID, workspace.ID); !errors.Is(err, identity.ErrForbidden) {
-		t.Fatalf("revoked membership remained active: %v", err)
+	if tenant, err := store.MerchantTenant(ctx, b.ID); err != nil || tenant != other.ID {
+		t.Fatalf("legacy membership changed merchant account: %q %v", tenant, err)
 	}
 	if err = store.RevokeSession(ctx, session); err != nil {
 		t.Fatal(err)
@@ -109,8 +95,8 @@ func TestLegacyWorkspaceRequiresExplicitSingleClaim(t *testing.T) {
 	}
 	verifyTestEmail(t, store, a.Email)
 	verifyTestEmail(t, store, b.Email)
-	if _, err = store.Role(ctx, a.ID, scope.Tenant); !errors.Is(err, identity.ErrForbidden) {
-		t.Fatalf("legacy workspace was claimed implicitly: %v", err)
+	if tenant, err := store.MerchantTenant(ctx, a.ID); err != nil || tenant == scope.Tenant {
+		t.Fatalf("legacy account was assigned implicitly: %q %v", tenant, err)
 	}
 	var wg sync.WaitGroup
 	results := make(chan error, 2)
@@ -205,7 +191,7 @@ func TestPasswordResetInvalidatesSessionsAndOldAuthentications(t *testing.T) {
 	}
 }
 
-func TestMerchantMutationRechecksRoleInTransaction(t *testing.T) {
+func TestMerchantMutationRechecksAccountInTransaction(t *testing.T) {
 	db, _ := controlledFixture(t)
 	store, err := identity.New(db.Pool, 10*time.Second)
 	if err != nil {
@@ -245,23 +231,26 @@ func TestMerchantMutationRechecksRoleInTransaction(t *testing.T) {
 	if _, _, err = db.SubmitCatalogImport(ctx, workspace.ID, "ozon", account, "unauthorized-import", sb.AuditID, domain.DefaultOzonImportLimits()); err == nil {
 		t.Fatal("foreign actor created a durable import")
 	}
-	if err = store.SetMembership(ctx, sa, workspace.ID, b.Email, "OPERATOR"); err != nil {
+	if _, err = db.Pool.Exec(ctx, `INSERT INTO saas_memberships(workspace_id,user_id,role) VALUES($1,$2,'OPERATOR')`, workspace.ID, b.ID); err != nil {
 		t.Fatal(err)
 	}
-	op, _, err := db.SubmitCatalogImport(ctx, workspace.ID, "ozon", account, "authorized-import", sb.AuditID, domain.DefaultOzonImportLimits())
+	if _, _, err = db.SubmitCatalogImport(ctx, workspace.ID, "ozon", account, "shared-import", sb.AuditID, domain.DefaultOzonImportLimits()); err == nil {
+		t.Fatal("legacy shared membership granted access to another merchant account")
+	}
+	op, _, err := db.SubmitCatalogImport(ctx, workspace.ID, "ozon", account, "authorized-import", sa.AuditID, domain.DefaultOzonImportLimits())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = store.SetMembership(ctx, sa, workspace.ID, b.Email, ""); err != nil {
+	if err = store.RevokeSession(ctx, sa); err != nil {
 		t.Fatal(err)
 	}
-	staleContext := identity.WithSession(ctx, sb)
+	staleContext := identity.WithSession(ctx, sa)
 	if err = db.CancelCatalogImport(staleContext, workspace.ID, "ozon", account, op.ID); err == nil {
-		t.Fatal("revoked operator cancelled queued work")
+		t.Fatal("revoked owner cancelled queued work")
 	}
 	persisted, err := db.GetCatalogOperation(ctx, workspace.ID, "ozon", account, op.ID)
 	if err != nil || persisted.State != "QUEUED" {
-		t.Fatalf("revoked mutation changed operation: %+v %v", persisted, err)
+		t.Fatalf("revoked session changed operation: %+v %v", persisted, err)
 	}
 }
 
@@ -315,11 +304,11 @@ func assertPasswordAndScopes(t *testing.T, store *identity.Store, db *postgres.S
 	if _, err := store.Authenticate(ctx, a.Email, "wrong-password"); !errors.Is(err, identity.ErrAuth) {
 		t.Fatalf("wrong password accepted: %v", err)
 	}
-	if _, err := store.Role(ctx, a.ID, second.ID); !errors.Is(err, identity.ErrForbidden) {
-		t.Fatalf("cross-workspace role: %v", err)
+	if tenant, err := store.MerchantTenant(ctx, a.ID); err != nil || tenant != first.ID {
+		t.Fatalf("incorrect first merchant account: %q %v", tenant, err)
 	}
-	if _, err := store.Role(ctx, b.ID, first.ID); !errors.Is(err, identity.ErrForbidden) {
-		t.Fatalf("reverse cross-workspace role: %v", err)
+	if tenant, err := store.MerchantTenant(ctx, b.ID); err != nil || tenant != second.ID {
+		t.Fatalf("incorrect second merchant account: %q %v", tenant, err)
 	}
 	var hash []byte
 	if err := db.Pool.QueryRow(ctx, `SELECT password_hash FROM saas_users WHERE id=$1`, a.ID).Scan(&hash); err != nil {

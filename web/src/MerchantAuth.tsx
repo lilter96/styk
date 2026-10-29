@@ -29,7 +29,6 @@ export function MerchantAuth({
   const [token, setToken] = useState(initial.token);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [workspace, setWorkspace] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -80,7 +79,6 @@ export function MerchantAuth({
         screen,
         email,
         password,
-        workspace,
         token,
       );
       const response = await authFetch(path, {
@@ -153,7 +151,7 @@ export function MerchantAuth({
         <h1>{titles[screen]}</h1>
         <p>
           {screen === "register"
-            ? "Укажите почту и название магазина. Пароль вы зададите по ссылке из письма."
+            ? "Укажите почту. Пароль вы зададите по ссылке из письма."
             : screen === "login"
               ? "Управляйте остатками своего магазина в одном месте."
               : screen === "verify"
@@ -197,18 +195,6 @@ export function MerchantAuth({
               {screen !== "login" && (
                 <small>Не менее 12 символов, максимум 72 байта.</small>
               )}
-            </>
-          )}
-          {screen === "register" && (
-            <>
-              <label htmlFor="merchant-workspace">Название магазина</label>
-              <input
-                id="merchant-workspace"
-                value={workspace}
-                onChange={(event) => setWorkspace(event.target.value)}
-                maxLength={120}
-                required
-              />
             </>
           )}
           <button disabled={busy}>
@@ -266,7 +252,7 @@ export function MerchantAuth({
           )}
         </div>
       </div>
-      <p className="login-footer">STYK · Рабочее пространство магазина</p>
+      <p className="login-footer">STYK · Управление остатками</p>
     </main>
   );
 }
@@ -275,7 +261,6 @@ function requestFor(
   screen: Screen,
   email: string,
   password: string,
-  workspace: string,
   token: string,
 ) {
   switch (screen) {
@@ -284,7 +269,7 @@ function requestFor(
     case "register":
       return {
         path: "/api/registration",
-        body: { email, workspace },
+        body: { email },
       };
     case "forgot":
       return { path: "/api/password-reset/request", body: { email } };

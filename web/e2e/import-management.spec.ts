@@ -195,9 +195,7 @@ test("operator queues, reconciles and observes a worker import without marketpla
   });
   await page.reload();
   await page.locator(".workspace-selector > summary").click();
-  await expect(
-    page.getByLabel("Рабочее пространство", { exact: true }),
-  ).toHaveValue(tenant);
+  expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem("styk-selected-accounts") || "{}").tenant)).toBe(tenant);
   await expect(page.getByRole("combobox", { name, exact: true })).toHaveValue(
     account,
   );

@@ -26,10 +26,8 @@ test("explicit local registration uses bounded synthetic providers", async ({
     ).status(),
   ).toBe(401);
   await signIn(page, "ssssssssssssssssssssssssssssssss", origin);
-  await page
-    .getByLabel("Рабочее пространство", { exact: true })
-    .fill("browser-tenant");
-  await page.getByRole("button", { name: "Открыть пространство" }).click();
+  await page.evaluate(() => sessionStorage.setItem("styk-selected-accounts", JSON.stringify({ tenant: "browser-tenant", moy: "", ozon: "" })));
+  await page.reload();
   await navigate(page, "Интеграции");
   const moy = page
     .locator("article")
@@ -148,16 +146,13 @@ test("explicit local registration uses bounded synthetic providers", async ({
   await ozonSelector.selectOption(configuredOzon);
   await expect(ozonSelector).toHaveValue(configuredOzon);
   await ozonDialog.getByRole("button", { name: "Закрыть настройки" }).click();
-  await page.locator(".workspace-selector > summary").click();
-  await page
-    .getByLabel("Рабочее пространство", { exact: true })
-    .fill("other-tenant");
-  await page.getByRole("button", { name: "Открыть пространство" }).click();
+  await page.evaluate(() => sessionStorage.setItem("styk-selected-accounts", JSON.stringify({ tenant: "other-tenant", moy: "", ozon: "" })));
+  await page.reload();
   await expect(moy.locator(".connection-state")).toContainText(
     "Нужно действие",
   );
   await moy.getByRole("button", { name: "Подключить", exact: true }).click();
-  await expect(moy.getByText(/другому рабочему пространству/)).toBeVisible();
+  await expect(moy.getByText(/другой учётной записи STYK/)).toBeVisible();
   await expect(
     moyDialog.getByRole("button", { name: "Добавить аккаунт", exact: true }),
   ).toHaveCount(0);

@@ -21,6 +21,7 @@ import (
 	"github.com/lilter96/styk/internal/console"
 	"github.com/lilter96/styk/internal/credentials"
 	"github.com/lilter96/styk/internal/domain"
+	"github.com/lilter96/styk/internal/identity"
 	"github.com/lilter96/styk/internal/postgres"
 )
 
@@ -60,11 +61,8 @@ type merchantSession struct {
 	User struct {
 		ID string `json:"id"`
 	} `json:"user"`
-	CSRF       string `json:"csrf"`
-	Workspaces []struct {
-		ID   string `json:"id"`
-		Role string `json:"role"`
-	} `json:"workspaces"`
+	CSRF      string `json:"csrf"`
+	AccountID string `json:"account_id"`
 }
 
 func newMerchantBrowser(t *testing.T, server string) *merchantBrowser {
@@ -109,7 +107,7 @@ func (b *merchantBrowser) request(t *testing.T, method, path, body string, csrf 
 
 func (b *merchantBrowser) registerAndLogin(t *testing.T, mailbox *testMailbox, email string) merchantSession {
 	t.Helper()
-	body, err := json.Marshal(map[string]string{"email": email, "workspace": email})
+	body, err := json.Marshal(map[string]string{"email": email})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +134,7 @@ func (b *merchantBrowser) registerAndLogin(t *testing.T, mailbox *testMailbox, e
 	}
 	status, raw := b.request(t, http.MethodGet, "/api/session", "", false)
 	var session merchantSession
-	if status != 200 || json.Unmarshal(raw, &session) != nil || len(session.Workspaces) != 1 || session.CSRF == "" {
+	if status != 200 || json.Unmarshal(raw, &session) != nil || session.AccountID == "" || session.CSRF == "" || strings.Contains(string(raw), "workspaces") {
 		t.Fatal("invalid merchant session")
 	}
 	b.csrf = session.CSRF
@@ -162,11 +160,13 @@ func TestMerchantHTTPWorkspaceAndObjectIsolation(t *testing.T) {
 	a, b := newMerchantBrowser(t, server.URL), newMerchantBrowser(t, server.URL)
 	sa := a.registerAndLogin(t, mailbox, "merchant-a@example.test")
 	sb := b.registerAndLogin(t, mailbox, "merchant-b@example.test")
-	wa, wb := sa.Workspaces[0].ID, sb.Workspaces[0].ID
+	wa, wb := sa.AccountID, sb.AccountID
+	if wa == wb {
+		t.Fatal("merchants share an account")
+	}
 	assertMerchantIsolation(t, a, b, wa, wb)
 	assertLegacyCredentialsHidden(t, b, wb)
 	assertMerchantObjects(t, db, a, b, wa, wb)
-	assertMerchantRoleChanges(t, a, b, wa, "merchant-b@example.test")
 }
 
 func assertLegacyCredentialsHidden(t *testing.T, browser *merchantBrowser, workspace string) {
@@ -204,8 +204,11 @@ func assertMerchantIsolation(t *testing.T, a, b *merchantBrowser, wa, wb string)
 	if status, _ := a.request(t, http.MethodGet, "/api/workspaces/"+wb+"/audit", "", false); status != 404 {
 		t.Fatalf("foreign audit visible: %d", status)
 	}
-	if status, _ := b.request(t, http.MethodGet, "/api/workspaces/"+wb+"/audit", "", false); status != 200 {
-		t.Fatalf("workspace owner cannot read audit: %d", status)
+	if status, _ := b.request(t, http.MethodGet, "/api/workspaces/"+wb+"/audit", "", false); status != 404 {
+		t.Fatalf("obsolete workspace API remains available: %d", status)
+	}
+	if status, _ := a.request(t, http.MethodGet, "/api/registrations", "", false); status != 200 {
+		t.Fatalf("own account was not derived from the session: %d", status)
 	}
 	if status, _ := a.request(t, http.MethodPost, "/api/imports", `{"tenant":"`+wb+`"}`, true); status != 404 {
 		t.Fatalf("cross-tenant mutation status %d", status)
@@ -225,6 +228,17 @@ func assertMerchantObjects(t *testing.T, db *postgres.Store, a, b *merchantBrows
 		if err := db.RegisterStockConnection(ctx, entry.tenant, "ozon", entry.account, "synthetic", false); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if err := db.RegisterStockConnection(ctx, wb, "ozon", "merchant-b-second-ozon", "synthetic", false); err != nil {
+		t.Fatal(err)
+	}
+	status, own := b.request(t, http.MethodGet, "/api/registrations", "", false)
+	if status != 200 || !strings.Contains(string(own), "merchant-b-ozon") || !strings.Contains(string(own), "merchant-b-second-ozon") {
+		t.Fatalf("second connection unavailable to its merchant: %d", status)
+	}
+	status, foreign := a.request(t, http.MethodGet, "/api/registrations", "", false)
+	if status != 200 || strings.Contains(string(foreign), "merchant-b-second-ozon") {
+		t.Fatalf("second connection visible to another merchant: %d", status)
 	}
 	vault, err := credentials.FromEnvironment()
 	if err != nil || vault == nil {
@@ -294,7 +308,9 @@ func assertMerchantMapping(t *testing.T, db *postgres.Store, attacker, owner *me
 	if _, err := db.SaveOzonImport(ctx, market, "merchant-b-market"); err != nil {
 		t.Fatal(err)
 	}
-	body := `{"tenant":"` + workspace + `","ozon_account":"merchant-b-ozon","moysklad_account":"merchant-b-moy","product_id":"101","target_kind":"product","target_id":"merchant-b-product","evidence_class":"OPERATOR_ATTESTED"}`
+	// The merchant does not send a tenant; the authenticated account is bound
+	// before the existing mapping service receives the request.
+	body := `{"ozon_account":"merchant-b-ozon","moysklad_account":"merchant-b-moy","product_id":"101","target_kind":"product","target_id":"merchant-b-product","evidence_class":"OPERATOR_ATTESTED"}`
 	status, raw := owner.request(t, http.MethodPost, "/api/product-mapping-reviews", body, true)
 	var review struct {
 		Review struct {
@@ -321,25 +337,68 @@ func assertMerchantMapping(t *testing.T, db *postgres.Store, attacker, owner *me
 	}
 }
 
-func assertMerchantRoleChanges(t *testing.T, owner, member *merchantBrowser, workspace, email string) {
-	t.Helper()
-	path := "/api/workspaces/" + workspace + "/members"
-	body := `{"email":"` + email + `","role":"VIEWER"}`
-	if status, _ := owner.request(t, http.MethodPost, path, body, true); status != 204 {
-		t.Fatalf("add viewer status %d", status)
+func TestMerchantCannotReadOrRecoverForeignPublication(t *testing.T) {
+	db, review := controlledFixture(t)
+	operation := controlledEnable(t, db, review).LastOperation
+	ctx := context.Background()
+	claimed, err := db.NextControlledStockPublication(ctx, time.Now().UTC())
+	if err != nil || claimed == nil {
+		t.Fatalf("claim synthetic publication: %v", err)
 	}
-	read := "/api/registrations?tenant=" + url.QueryEscape(workspace)
-	if status, _ := member.request(t, http.MethodGet, read, "", false); status != 200 {
-		t.Fatalf("viewer read status %d", status)
+	if err = db.RecoverControlledStockPublications(ctx, time.Now().UTC().Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
 	}
-	if status, _ := member.request(t, http.MethodPost, "/api/imports", `{"tenant":"`+workspace+`"}`, true); status != 403 {
-		t.Fatalf("viewer mutation status %d", status)
+	store, err := identity.New(db.Pool, 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
 	}
-	body = `{"email":"` + email + `","role":""}`
-	if status, _ := owner.request(t, http.MethodPost, path, body, true); status != 204 {
-		t.Fatalf("revoke member status %d", status)
+	mailbox := &testMailbox{tokens: map[string]string{}}
+	handler, err := console.MerchantHandler(db, "http://127.0.0.1:5173", mailbox)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if status, _ := member.request(t, http.MethodGet, read, "", false); status != 404 {
-		t.Fatalf("revocation did not affect active session: %d", status)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	owner, attacker := newMerchantBrowser(t, server.URL), newMerchantBrowser(t, server.URL)
+	ownerSession := owner.registerAndLogin(t, mailbox, "publication-owner@example.test")
+	attacker.registerAndLogin(t, mailbox, "publication-attacker@example.test")
+	if err = store.ClaimLegacy(ctx, review.Tenant, ownerSession.User.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.BindLegacyMerchant(ctx, ownerSession.User.ID, review.Tenant); err != nil {
+		t.Fatal(err)
+	}
+	login := `{"email":"publication-owner@example.test","password":"long-merchant-password"}`
+	if status, _ := owner.request(t, http.MethodPost, "/api/session", login, false); status != 204 {
+		t.Fatalf("owner login after migration: %d", status)
+	}
+	status, raw := owner.request(t, http.MethodGet, "/api/session", "", false)
+	if status != 200 || json.Unmarshal(raw, &ownerSession) != nil || ownerSession.AccountID != review.Tenant {
+		t.Fatal("migrated owner account unavailable")
+	}
+	owner.csrf = ownerSession.CSRF
+	q := "?moysklad_account=" + url.QueryEscape(review.MoyskladAccount) + "&ozon_account=" + url.QueryEscape(review.OzonAccount)
+	status, raw = owner.request(t, http.MethodGet, "/api/stock-sync"+q, "", false)
+	if status != 200 || !strings.Contains(string(raw), operation.ID) || !strings.Contains(string(raw), "UNKNOWN") {
+		t.Fatalf("owner cannot inspect own unresolved publication: %d", status)
+	}
+	status, raw = attacker.request(t, http.MethodGet, "/api/stock-sync"+q, "", false)
+	if status == 200 && strings.Contains(string(raw), operation.ID) {
+		t.Fatal("foreign publication visible without a tenant parameter")
+	}
+	foreign := `{"tenant":"` + review.Tenant + `","moysklad_account":"` + review.MoyskladAccount + `","ozon_account":"` + review.OzonAccount + `","acknowledge":true}`
+	for _, action := range []string{"reconcile", "supersede"} {
+		path := "/api/stock-sync/operations/" + operation.ID + "/" + action
+		if status, _ = attacker.request(t, http.MethodPost, path, foreign, true); status != 404 {
+			t.Fatalf("foreign %s accepted: %d", action, status)
+		}
+		ownScope := `{"moysklad_account":"` + review.MoyskladAccount + `","ozon_account":"` + review.OzonAccount + `","acknowledge":true}`
+		if status, _ = attacker.request(t, http.MethodPost, path, ownScope, true); status < 400 {
+			t.Fatalf("foreign %s accepted with inferred tenant: %d", action, status)
+		}
+	}
+	persisted, err := db.StockPublication(ctx, review.StockSyncScope, operation.ID)
+	if err != nil || persisted.State != "UNKNOWN" {
+		t.Fatalf("foreign request changed historical outcome: %+v %v", persisted, err)
 	}
 }

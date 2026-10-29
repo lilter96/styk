@@ -367,7 +367,7 @@ it("keeps identifiers behind technical disclosure and account selection in setti
   expect(technical.open).toBe(false);
   fireEvent.click(within(technical).getByText("Технические детали"));
   expect(technical.open).toBe(true);
-  expect(within(technical).getByText(tenant)).toBeTruthy();
+  expect(within(technical).queryByText(tenant)).toBeNull();
   const accountList = technical.querySelector<HTMLElement>(
     ".technical-account-list",
   )!;

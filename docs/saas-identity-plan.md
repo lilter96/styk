@@ -1,81 +1,49 @@
-# SaaS identity migration
+# Merchant identity and existing-data migration
 
-The current console authenticates a single loopback operator and trusts the
-tenant supplied by that operator. Its database already scopes many mappings,
-credentials, imports and publication decisions by tenant and provider account,
-but those scope fields are not an authorization boundary for multiple users.
+Each verified user owns one STYK merchant account. Registration creates the
+internal account in the same transaction; the seller supplies only an email
+address and sets a password after verifying it. Sessions are revocable,
+HttpOnly and protected by CSRF checks. Multiple MoySklad or Ozon connections
+may belong to that account. Registration does not grant live publication
+permission.
 
-1. Reserve existing tenant identifiers as unclaimed workspaces without assigning
-   them to a user. Add users, memberships, revocable database-backed sessions and
-   security events. An explicit local bootstrap operation must claim legacy data.
-2. Authenticate requests and authorize the requested workspace and action on the
-   server, including ID-only review routes. Preserve actor identity in durable
-   records; never trust a browser-provided account or tenant as proof of access.
-3. Recheck account ownership and task scope at worker claims and credential
-   resolution. Keep the existing outbox, publication fences and test-account
-   allowlist; registration does not grant publication rights.
-4. Replace free-text workspace selection with membership-backed navigation and
-   clear tenant-specific browser state on identity or workspace changes.
-5. Verify actual HTTP requests, database constraints, worker execution and two
-   browser sessions with independent synthetic providers before remote rollout.
+The existing `saas_workspaces` and `saas_memberships` tables are retained as
+internal storage for historical scope, audit records and existing foreign
+keys. `saas_merchant_accounts` binds one user to one tenant, with uniqueness
+in both directions. Merchant requests resolve that binding on the server;
+existing domain endpoints accept an omitted tenant, and a supplied tenant must
+match the authenticated account. Historic shared memberships do not grant
+merchant access. Database-side mutation checks lock and recheck the binding,
+session and owner before committing. The legacy member-management HTTP routes
+and user-facing workspace controls are not exposed.
 
-PostgreSQL RLS alone would not secure the current deployment: the application
-uses pooled connections and the worker needs cross-tenant scheduling privileges;
-table owners and privileged roles may bypass policies. Do not enable decorative
-RLS without separate roles, transaction-scoped context and isolation tests.
+Migration 39 automatically binds only unambiguous existing owners. A user with
+multiple owned tenants, or a tenant with multiple owners, remains unbound until
+an operator resolves the ownership deliberately; no data or audit rows are
+deleted. On the loopback database host, an operator may bind an already claimed
+legacy tenant to its verified sole owner using:
 
-This plan is not a production-readiness claim. Existing publication limits and
-UNKNOWN handling remain in force during migration.
+```
+STYK_LOCAL_CLAIM_ENABLE=true go run ./cmd/claim-workspace -tenant <tenant> -user-id <verified-user-id> -bind-only
+```
 
-## Local migration and operation
+For an unclaimed pre-identity tenant, omit `-bind-only`. This is a local
+migration command, not a merchant onboarding step or HTTP endpoint. The
+command verifies historical scope references and refuses to replace a user's
+current account if it contains tenant-scoped business records. It records an
+audit event and revokes existing sessions. Resolve ambiguous or nonempty cases
+with a reviewed migration and backup rather than guessing or discarding data.
+Migration rollback refuses to discard existing merchant bindings.
 
-Apply the ordinary migrations before starting merchant mode. Existing workspace
-identifiers and historical records remain in place and are marked unclaimed;
-registration does not give a new user access to them. Configure
-`STYK_CREDENTIAL_ENCRYPTION_KEY`, `STYK_CONSOLE_ORIGIN`, `STYK_SMTP_ADDRESS`
-and `STYK_SMTP_FROM`; authenticated SMTP additionally needs
-`STYK_SMTP_USERNAME` and `STYK_SMTP_PASSWORD`. SMTP must support STARTTLS.
-Use an HTTPS origin except for loopback development. The API binds to loopback
-behind a trusted TLS proxy; configure `STYK_TRUSTED_PROXY_CIDRS` only for
-proxies that sanitize and append the client address. Do not publish the API
-listener directly. Merchant mode is the default; the old operator mode must be
-explicitly selected with `STYK_AUTH_MODE=local` and remains loopback-only.
-For local development, the frontend proxy must preserve the browser's Host
-header. `localhost` and `127.0.0.1` are accepted only when the Origin matches
-that Host and the configured frontend port.
-Registration asks for an email address and workspace name. The mailbox holder
-sets the login password using the verification link. The API accepts the older
-registration password field for compatibility but does not use it.
+Provider credentials retain their original tenant identifiers and associated
+encryption data. Back up the PostgreSQL database and the existing
+`STYK_CREDENTIAL_ENCRYPTION_KEY` separately; losing or blindly replacing the
+key makes stored credentials unavailable. Automatic key rotation is not yet
+implemented. Use an HTTPS origin except for loopback development; a local
+frontend proxy must preserve the browser's Host header. SMTP must support
+STARTTLS. The API binds to loopback behind a trusted TLS proxy; configure
+`STYK_TRUSTED_PROXY_CIDRS` only for proxies that sanitize client addresses.
 
-To claim historical development data, first register and verify the intended
-owner. On the database host, export the loopback `DATABASE_URL`, inspect the verified user ID locally and run
-`STYK_LOCAL_CLAIM_ENABLE=true go run ./cmd/claim-workspace -tenant <tenant> -user-id <user-id>`
-against a loopback PostgreSQL connection. The command rejects conflicting legacy
-references and cannot be called through the HTTP API. Back up the database and
-encryption key separately; loss of the key makes stored provider credentials
-unrecoverable. Credential replacement is supported, but automated encryption
-key rotation is not yet implemented.
-
-New workspaces may store disabled synchronization drafts and import data, but
-cannot enable real publication. The existing fixed test-account allowlist and
-bounded publication policy remain the only live exception. A merchant
-production-activation workflow, independent worker database roles and a
-production deployment/security review remain outstanding. Rollback migrations
-refuse to delete identity, audit or merchant-draft history; restore a verified
-backup instead of forcing a destructive downgrade.
-
-The two-session browser integration test also runs an isolated second merchant
-against literal-loopback providers. Its disposable schema removes the live-only
-policy check solely to exercise the existing simulator; no real provider is
-contacted. The simulator uses the older publication queue rather than the
-controlled real-account outbox, so that test does not establish a second
-merchant's real publication eligibility or production rollout readiness.
-
-The local development database was migrated from version 32 to 38 on
-2026-10-29. Counts before and after were unchanged: 2 connections, 4 product
-mappings, 1 warehouse mapping, 33 source imports, 20 publications and 1
-recovery. Automatic synchronization was disabled. The existing `cross-e2e`
-workspace was initially unclaimed with no assigned members; claiming it
-requires a registered, verified owner and the explicit local procedure above. A protected
-local pre-migration backup was made outside version control. No provider write
-was performed as part of this identity migration.
+Publication remains default-off for new merchants. The existing tightly scoped,
+owner-authorized test-account policy is separate from production eligibility;
+a production activation and security review are still required.

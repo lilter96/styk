@@ -1,4 +1,4 @@
-// Package identity implements merchant identities and workspace membership.
+// Package identity implements isolated merchant identities and sessions.
 // It does not grant permission to publish marketplace stock.
 package identity
 
@@ -23,8 +23,7 @@ var (
 	ErrInvalid   = errors.New("invalid identity input")
 	ErrAuth      = errors.New("authentication failed")
 	ErrConflict  = errors.New("identity already exists")
-	ErrForbidden = errors.New("workspace unavailable")
-	ErrLastOwner = errors.New("workspace requires an owner")
+	ErrForbidden = errors.New("merchant account unavailable")
 )
 
 const passwordCost = 12

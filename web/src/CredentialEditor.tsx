@@ -205,8 +205,7 @@ export function CredentialEditor({
           checked={ack}
           onChange={(e) => setAck(e.target.checked)}
         />
-        Подтверждаю, что этот аккаунт принадлежит текущему рабочему
-        пространству.
+        Подтверждаю, что этот аккаунт принадлежит мне.
       </label>
       {localError && <p role="alert">{localError}</p>}
       {(samePending ||
@@ -302,12 +301,6 @@ export function CredentialEditor({
         <summary>Технические детали</summary>
         <dl>
           <div>
-            <dt>Рабочее пространство</dt>
-            <dd>
-              <code>{scope.tenant}</code>
-            </dd>
-          </div>
-          <div>
             <dt>Аккаунт</dt>
             <dd>
               <code>
@@ -348,7 +341,7 @@ export function CredentialEditor({
           onClick={async () => {
             try {
               await navigator.clipboard.writeText(
-                `tenant: ${scope.tenant}\naccount: ${metadata?.account || account}\n${accounts.map((item, index) => `account ${index + 1}: ${item.account}`).join("\n")}`,
+                `account: ${metadata?.account || account}\n${accounts.map((item, index) => `account ${index + 1}: ${item.account}`).join("\n")}`,
               );
               setCopied(true);
             } catch {

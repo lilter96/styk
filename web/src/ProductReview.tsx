@@ -517,10 +517,6 @@ export function ProductReview({
         <details className="mapping-technical">
           <summary>Технические данные товаров</summary>
           <dl>
-            <dt>Рабочее пространство</dt>
-            <dd>
-              <code>{scope.tenant}</code>
-            </dd>
             <dt>Аккаунт МойСклад</dt>
             <dd>
               <code>{scope.moy}</code>

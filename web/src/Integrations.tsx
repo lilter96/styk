@@ -271,7 +271,7 @@ export function Integrations({
         error.code === "OWNERSHIP_CONFLICT"
       ) {
         setMessage(
-          "Этот аккаунт уже добавлен в другое рабочее пространство. Перенос недоступен.",
+          "Этот аккаунт уже подключён к другой учётной записи STYK. Перенос недоступен.",
         );
         void query.refetch();
       } else if (
@@ -381,7 +381,7 @@ export function Integrations({
   if (!tenant)
     return (
       <div className="notice">
-        Выберите рабочее пространство в верхнем меню, чтобы подключить сервисы.
+        Войдите в аккаунт STYK, чтобы подключить сервисы.
       </div>
     );
   return (
@@ -586,7 +586,7 @@ export function Integrations({
                         : "Не подключено";
           const problem =
             p.registration === "OWNERSHIP_CONFLICT"
-              ? "Аккаунт подключён к другому рабочему пространству. Выберите другой аккаунт."
+              ? "Аккаунт подключён к другой учётной записи STYK. Выберите другой аккаунт."
               : p.status === "VERIFICATION_FAILED"
                 ? p.check?.reason === "INVALID_CREDENTIALS"
                   ? `${names[p.provider]} не принял ключ доступа. Возможно, он истёк или был отозван.`
@@ -723,8 +723,8 @@ export function Integrations({
                         {p.registration === "NOT_REGISTERED" && (
                           <div className="registration-form">
                             <p>
-                              Добавьте настроенный на сервере аккаунт в это
-                              рабочее пространство. Предыдущие загрузки не будут
+                              Добавьте настроенный на сервере аккаунт в STYK.
+                              Предыдущие загрузки не будут
                               включены автоматически.
                             </p>
                             {p.status === "VERIFIED" && !recentProbe && (
@@ -744,8 +744,7 @@ export function Integrations({
                                   }))
                                 }
                               />
-                              Подтверждаю, что этот аккаунт принадлежит текущему
-                              рабочему пространству.
+                              Подтверждаю, что этот аккаунт принадлежит мне.
                             </label>
                             <button
                               disabled={
@@ -763,12 +762,6 @@ export function Integrations({
                         <details className="technical-details">
                           <summary>Технические детали</summary>
                           <dl>
-                            <div>
-                              <dt>Рабочее пространство</dt>
-                              <dd>
-                                <code>{tenant}</code>
-                              </dd>
-                            </div>
                             <div>
                               <dt>Настроенный аккаунт</dt>
                               <dd>

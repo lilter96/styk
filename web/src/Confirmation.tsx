@@ -205,8 +205,6 @@ export function ConfirmationNotice({
             <p>
               Объект: <code>{pending.product}</code>
               <br />
-              Пространство: <code>{pending.scope.tenant}</code>
-              <br />
               МойСклад: <code>{pending.scope.moy}</code>
               <br />
               Ozon: <code>{pending.scope.ozon}</code>
