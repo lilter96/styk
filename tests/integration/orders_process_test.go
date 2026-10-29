@@ -158,7 +158,8 @@ func (s *ordersProcessStack) awaitState(t *testing.T, number string, wanted orde
 	var state, code string
 	t.Cleanup(func() {
 		if t.Failed() {
-			t.Logf("last durable order phase for %s: state=%s code=%s", number, state, code)
+			t.Logf("last durable order phase for %s: state=%s code=%s provider_writes=%d", number, state, code, s.provider.writeCount(number))
+			s.reportWorkers(t)
 		}
 	})
 	ordersProcessEventually(t, 20*time.Second, "durable "+string(wanted)+" for "+number, func() bool {
@@ -217,8 +218,9 @@ func (s *ordersProcessStack) cooldown(t *testing.T) {
 	results := make(chan int, 3)
 	for replica := range 3 {
 		go func() {
-			status, _ := s.a.request(t, replica, http.MethodGet, "/api/orders/metadata"+ordersHTTPQuery(s.a.scope), nil, false)
-			results <- status
+			status := 0
+			defer func() { results <- status }()
+			status, _ = s.a.request(t, replica, http.MethodGet, "/api/orders/metadata"+ordersHTTPQuery(s.a.scope), nil, false)
 		}()
 	}
 	successes, limited := 0, 0
@@ -250,32 +252,70 @@ func ordersProcessAssertReady(t *testing.T, preview orders.Preview, count int) {
 
 func (s *ordersProcessStack) approveAcrossReplicas(t *testing.T, preview orders.Preview) orders.Operation {
 	t.Helper()
-	type result struct {
-		status int
-		raw    []byte
+	numbers := make([]string, 0, len(preview.Decisions))
+	for _, decision := range preview.Decisions {
+		numbers = append(numbers, decision.Posting.PostingNumber)
 	}
-	results := make(chan result, 3)
-	body := ordersHTTPBody(s.a.scope)
-	body["preview_id"], body["idempotency_key"], body["acknowledge"] = preview.ID, "same-approval-"+preview.ID, true
-	for replica := range 3 {
-		go func() {
-			status, raw := s.a.request(t, replica, http.MethodPost, "/api/orders/approve", body, true)
-			results <- result{status, raw}
-		}()
-	}
+	rival := s.a.preview(t, numbers...)
+	ordersProcessAssertReady(t, rival, len(numbers))
+	results := s.concurrentApprovals(t, []string{preview.ID, preview.ID, preview.ID, rival.ID})
 	var operation orders.Operation
-	for range 3 {
+	winner := ""
+	for range 4 {
 		result := <-results
+		if result.status == http.StatusConflict {
+			continue
+		}
 		var candidate orders.Operation
 		if result.status != http.StatusOK || json.Unmarshal(result.raw, &candidate) != nil || candidate.ID == "" {
 			t.Fatalf("concurrent cross-API approval: %d", result.status)
 		}
-		if operation.ID != "" && operation.ID != candidate.ID {
-			t.Fatal("idempotent approval created separate operations across APIs")
+		if operation.ID != "" && (operation.ID != candidate.ID || winner != result.preview) {
+			t.Fatal("competing previews created separate operations across APIs")
 		}
-		operation = candidate
+		operation, winner = candidate, result.preview
 	}
+	if winner == "" {
+		t.Fatal("every concurrent approval was rejected")
+	}
+	s.replayApproval(t, winner, operation.ID)
 	return operation
+}
+
+type ordersProcessApprovalResult struct {
+	status  int
+	raw     []byte
+	preview string
+}
+
+func (s *ordersProcessStack) concurrentApprovals(t *testing.T, previews []string) <-chan ordersProcessApprovalResult {
+	t.Helper()
+	results := make(chan ordersProcessApprovalResult, len(previews))
+	for index, preview := range previews {
+		go func() {
+			value := ordersProcessApprovalResult{preview: preview}
+			defer func() { results <- value }()
+			value.status, value.raw = s.a.request(t, index%3, http.MethodPost, "/api/orders/approve", ordersProcessApprovalBody(s.a.scope, preview), true)
+		}()
+	}
+	return results
+}
+
+func (s *ordersProcessStack) replayApproval(t *testing.T, preview, operation string) {
+	t.Helper()
+	for replica := range s.apis {
+		status, raw := s.a.request(t, replica, http.MethodPost, "/api/orders/approve", ordersProcessApprovalBody(s.a.scope, preview), true)
+		var candidate orders.Operation
+		if status != http.StatusOK || json.Unmarshal(raw, &candidate) != nil || candidate.ID != operation {
+			t.Fatalf("idempotent approval replay through API %d: %d", replica+1, status)
+		}
+	}
+}
+
+func ordersProcessApprovalBody(scope orders.Scope, preview string) map[string]any {
+	body := ordersHTTPBody(scope)
+	body["preview_id"], body["idempotency_key"], body["acknowledge"] = preview, "same-approval-"+preview, true
+	return body
 }
 
 func (s *ordersProcessStack) assertWorkersClaimed(t *testing.T) {
@@ -302,11 +342,13 @@ func (s *ordersProcessStack) assertWorkersClaimed(t *testing.T) {
 
 func (s *ordersProcessStack) unknownOutcome(t *testing.T) {
 	s.add(t, s.a, "unknown-lost", "FBS", true)
+	s.add(t, s.a, "unaffected-same-merchant", "FBS", false)
 	s.add(t, s.b, "unaffected-merchant", "FBS", false)
-	s.a.approve(t, s.a.preview(t, "unknown-lost"))
+	s.a.approve(t, s.a.preview(t, "unknown-lost", "unaffected-same-merchant"))
 	s.b.approve(t, s.b.preview(t, "unaffected-merchant"))
 	s.workersEnabled(t, true)
 	s.awaitState(t, "unknown-lost", orders.StateUnknown)
+	s.awaitState(t, "unaffected-same-merchant", orders.StateReconciled)
 	s.awaitState(t, "unaffected-merchant", orders.StateReconciled)
 	time.Sleep(450 * time.Millisecond)
 	if s.provider.writeCount("unknown-lost") != 1 {
@@ -327,7 +369,7 @@ func (s *ordersProcessStack) crashRecovery(t *testing.T, phase string) {
 	s.add(t, s.a, number, "FBS", phase == "during-poll")
 	s.a.approve(t, s.a.preview(t, number))
 	worker := s.workers[0]
-	worker.configure(t, true, phase, true)
+	s.faultWorker(t, worker, phase)
 	s.awaitBarrier(t, worker, phase)
 	worker.stop(t, true)
 	s.workers[0] = s.start(t, "worker", 0)
@@ -340,6 +382,14 @@ func (s *ordersProcessStack) crashRecovery(t *testing.T, phase string) {
 		t.Fatalf("kill/restart at %s duplicated or lost provider creation", phase)
 	}
 	s.workersEnabled(t, false)
+}
+
+func (s *ordersProcessStack) faultWorker(t *testing.T, worker *ordersProcessChild, barrier string) {
+	t.Helper()
+	status, _ := worker.request(t, http.MethodPost, "/__test/control", map[string]any{"enabled": true, "barrier": barrier, "release": true, "lease_ms": 2000, "guard_delay_ms": 0})
+	if status != http.StatusNoContent {
+		t.Fatal("configure bounded real crash-recovery lease")
+	}
 }
 
 func (s *ordersProcessStack) awaitBarrier(t *testing.T, worker *ordersProcessChild, phase string) {
@@ -355,9 +405,9 @@ func (s *ordersProcessStack) staleChild(t *testing.T) {
 	s.add(t, s.a, "stale-child", "FBS", false)
 	s.a.approve(t, s.a.preview(t, "stale-child"))
 	old := s.workers[0]
-	old.configure(t, true, "after-claim", true)
+	s.faultWorker(t, old, "after-claim")
 	s.awaitBarrier(t, old, "after-claim")
-	time.Sleep(5100 * time.Millisecond)
+	time.Sleep(2100 * time.Millisecond)
 	s.workers[1].configure(t, true, "", true)
 	s.awaitState(t, "stale-child", orders.StateReconciled)
 	if status, _ := old.request(t, http.MethodPost, "/__test/stale-ack", map[string]any{}); status != http.StatusConflict {

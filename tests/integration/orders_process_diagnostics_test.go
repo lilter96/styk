@@ -16,15 +16,7 @@ import (
 // credentials and database connection strings are never printed.
 func (s *ordersProcessStack) reportSource(t *testing.T, number string) {
 	t.Helper()
-	for _, worker := range s.workers {
-		_, raw := worker.request(t, "GET", "/__test/state", nil)
-		var state struct {
-			SourceError string `json:"source_error"`
-		}
-		if json.Unmarshal(raw, &state) == nil && state.SourceError != "" {
-			t.Logf("source diagnostics from %s: %s", worker.settings.ID, state.SourceError)
-		}
-	}
+	s.reportWorkers(t)
 	var raw []byte
 	var work orders.Work
 	err := s.db.Pool.QueryRow(context.Background(), `SELECT work FROM orders_work WHERE work->'command'->>'posting_number'=$1 ORDER BY created_at DESC LIMIT 1`, number).Scan(&raw)
@@ -51,6 +43,26 @@ func (s *ordersProcessStack) reportSource(t *testing.T, number string) {
 	for _, decision := range preview.Decisions {
 		if decision.Posting.PostingNumber == number {
 			t.Logf("source diagnostics: differing top-level fact fields: %v", ordersProcessSourceDifference(decision.Posting, fresh))
+		}
+	}
+}
+
+func (s *ordersProcessStack) reportWorkers(t *testing.T) {
+	t.Helper()
+	for _, worker := range s.workers {
+		if worker.stopped {
+			continue
+		}
+		_, raw := worker.request(t, "GET", "/__test/state", nil)
+		var state struct {
+			SourceError string `json:"source_error"`
+			TargetError string `json:"target_error"`
+		}
+		if json.Unmarshal(raw, &state) == nil && state.SourceError != "" {
+			t.Logf("source diagnostics from %s: %s", worker.settings.ID, state.SourceError)
+		}
+		if state.TargetError != "" {
+			t.Logf("target diagnostics from %s: %s", worker.settings.ID, state.TargetError)
 		}
 	}
 }

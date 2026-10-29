@@ -309,14 +309,20 @@ func (p *ordersProcessProvider) assertBudget(t *testing.T) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	last := make(map[string]ordersProcessAttempt)
+	minimumGap := time.Hour
+	maximumInflight := 0
 	for account, maximum := range p.maximum {
+		maximumInflight = max(maximumInflight, maximum)
 		if maximum > 2 {
 			t.Errorf("shared provider inflight exceeded for synthetic account %s: %d", account, maximum)
 		}
 	}
 	for _, attempt := range p.attempts {
 		previous, found := last[attempt.account]
-		if found && attempt.at.Sub(previous.at) < 14*time.Millisecond {
+		if found {
+			minimumGap = min(minimumGap, attempt.at.Sub(previous.at))
+		}
+		if found && attempt.at.Sub(previous.at) < 18*time.Millisecond {
 			t.Error("independent processes bypassed shared provider request spacing")
 		}
 		if found && previous.status == http.StatusTooManyRequests && attempt.at.Sub(previous.at) < 950*time.Millisecond {
@@ -324,7 +330,7 @@ func (p *ordersProcessProvider) assertBudget(t *testing.T) {
 		}
 		last[attempt.account] = attempt
 	}
-	t.Logf("observed %d real loopback provider HTTP attempts across nine processes", len(p.attempts))
+	t.Logf("observed %d real loopback provider HTTP attempts across nine processes; minimum account gap=%s, maximum inflight=%d", len(p.attempts), minimumGap, maximumInflight)
 }
 
 func ordersProcessNumber(prefix string, number int) string {

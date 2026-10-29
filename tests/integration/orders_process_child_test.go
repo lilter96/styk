@@ -48,12 +48,14 @@ func TestOrdersProcessChild(t *testing.T) {
 		t.Fatal("open isolated orders process store")
 	}
 	defer db.Pool.Close()
+	if db.Pool.Config().MaxConns != 4 {
+		t.Fatal("orders child must use the bounded four-connection pool")
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	control := &ordersProcessControl{Store: db, secret: settings.Secret}
 	handler := ordersProcessChildHandler(t, db, settings, control)
-	server := ordersProcessServe(t, handler, settings.Ready)
-	defer server.Close()
+	ordersProcessServe(t, handler, settings.Ready)
 	if settings.Role == "api" {
 		<-ctx.Done()
 		return
@@ -95,7 +97,7 @@ func ordersProcessChildHandler(t *testing.T, db *postgres.Store, s ordersProcess
 	return mux
 }
 
-func ordersProcessServe(t *testing.T, handler http.Handler, ready string) *http.Server {
+func ordersProcessServe(t *testing.T, handler http.Handler, ready string) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -115,7 +117,6 @@ func ordersProcessServe(t *testing.T, handler http.Handler, ready string) *http.
 	if err = os.WriteFile(ready, []byte("http://"+listener.Addr().String()), 0o600); err != nil {
 		t.Fatal("publish orders child readiness")
 	}
-	return server
 }
 
 func ordersProcessFactory(t *testing.T, db *postgres.Store, base string) orderprovider.Factory {
@@ -153,7 +154,7 @@ func ordersProcessRun(t *testing.T, ctx context.Context, store *ordersProcessCon
 	}
 	collector := ordersProcessCollector{db: store.Store, factory: factory, worker: settings.ID}
 	resolver := ordersProcessObservedResolver{factory: factory, control: store}
-	runner, err := orderflow.NewRunner(store, resolver, orderflow.RunnerOptions{WorkerID: settings.ID, AllowScope: allow, Service: service, Collector: collector, LeaseDuration: 5 * time.Second, PollInterval: 150 * time.Millisecond})
+	runner, err := orderflow.NewRunner(store, resolver, orderflow.RunnerOptions{WorkerID: settings.ID, AllowScope: allow, Service: service, Collector: collector, LeaseDuration: 15 * time.Second, PollInterval: 150 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +218,9 @@ type ordersProcessControl struct {
 	claims      int
 	errors      int
 	guardDelay  time.Duration
+	lease       time.Duration
 	sourceError string
+	targetError string
 }
 
 func (c *ordersProcessControl) authorized(w http.ResponseWriter, r *http.Request) bool {
@@ -237,6 +240,7 @@ func (c *ordersProcessControl) configure(w http.ResponseWriter, r *http.Request)
 		Barrier      string `json:"barrier"`
 		Release      bool   `json:"release"`
 		GuardDelayMS *int   `json:"guard_delay_ms"`
+		LeaseMS      *int   `json:"lease_ms"`
 	}
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&body) != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -247,6 +251,9 @@ func (c *ordersProcessControl) configure(w http.ResponseWriter, r *http.Request)
 	c.on, c.barrier = body.Enabled, body.Barrier
 	if body.GuardDelayMS != nil && *body.GuardDelayMS >= 0 && *body.GuardDelayMS <= 500 {
 		c.guardDelay = time.Duration(*body.GuardDelayMS) * time.Millisecond
+	}
+	if body.LeaseMS != nil && *body.LeaseMS >= 1000 && *body.LeaseMS <= 60000 {
+		c.lease = time.Duration(*body.LeaseMS) * time.Millisecond
 	}
 	if body.Release && c.release != nil {
 		close(c.release)
@@ -262,7 +269,7 @@ func (c *ordersProcessControl) state(w http.ResponseWriter, r *http.Request) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if err := json.NewEncoder(w).Encode(map[string]any{"pid": os.Getpid(), "claims": c.claims, "errors": c.errors, "reached": c.reached, "source_error": c.sourceError}); err != nil {
+	if err := json.NewEncoder(w).Encode(map[string]any{"pid": os.Getpid(), "claims": c.claims, "errors": c.errors, "reached": c.reached, "source_error": c.sourceError, "target_error": c.targetError}); err != nil {
 		return
 	}
 }
@@ -274,7 +281,7 @@ type ordersProcessObservedResolver struct {
 
 func (r ordersProcessObservedResolver) ResolveOrder(ctx context.Context, scope orders.Scope, provider, account string, revision int64) (orders.Binding, error) {
 	binding, err := r.factory.ResolveOrder(ctx, scope, provider, account, revision)
-	if err == nil && provider == "ozon" {
+	if err == nil {
 		binding.Client = ordersProcessObservedProvider{Provider: binding.Client, control: r.control}
 	}
 	return binding, err
@@ -293,6 +300,40 @@ func (p ordersProcessObservedProvider) ReadOrderPosting(ctx context.Context, sco
 		p.control.mu.Unlock()
 	}
 	return posting, err
+}
+
+func (p ordersProcessObservedProvider) WriteOrder(ctx context.Context, command orders.Command) (orders.Receipt, error) {
+	receipt, err := p.Provider.WriteOrder(ctx, command)
+	if err != nil {
+		p.recordTargetError(err)
+	}
+	return receipt, err
+}
+
+func (p ordersProcessObservedProvider) ReadOrderCorrelation(ctx context.Context, correlation orders.Correlation) (orders.Correlation, error) {
+	result, err := p.Provider.ReadOrderCorrelation(ctx, correlation)
+	if err != nil {
+		p.recordTargetError(err)
+	}
+	return result, err
+}
+
+func (p ordersProcessObservedProvider) ReadCustomerOrder(ctx context.Context, correlation orders.Correlation) (orders.TargetObservation, error) {
+	reader, ok := p.Provider.(orders.TargetReader)
+	if !ok {
+		return orders.TargetObservation{}, orders.ErrBlocked
+	}
+	result, err := reader.ReadCustomerOrder(ctx, correlation)
+	if err != nil {
+		p.recordTargetError(err)
+	}
+	return result, err
+}
+
+func (p ordersProcessObservedProvider) recordTargetError(err error) {
+	p.control.mu.Lock()
+	p.control.targetError = err.Error()
+	p.control.mu.Unlock()
 }
 
 func (c *ordersProcessControl) enabled() bool {
@@ -327,6 +368,12 @@ func (c *ordersProcessControl) wait(ctx context.Context, phase string) {
 
 func (c *ordersProcessControl) ClaimOrderWork(ctx context.Context, request orders.ClaimRequest) (*orders.Work, error) {
 	c.wait(ctx, "before-claim")
+	c.mu.Lock()
+	lease := c.lease
+	c.mu.Unlock()
+	if lease > 0 {
+		request.LeaseUntil = request.Now.Add(lease)
+	}
 	work, err := c.Store.ClaimOrderWork(ctx, request)
 	if err != nil || work == nil {
 		return work, err

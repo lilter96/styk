@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -46,7 +48,9 @@ func ordersProcessProxy(t *testing.T, apis []*ordersProcessChild) *httptest.Serv
 		if err != nil {
 			t.Fatal(err)
 		}
-		proxies = append(proxies, httputil.NewSingleHostReverseProxy(target))
+		proxy := httputil.NewSingleHostReverseProxy(target)
+		proxy.ErrorLog = log.New(io.Discard, "", 0)
+		proxies = append(proxies, proxy)
 	}
 	var next atomic.Uint64
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -70,7 +74,8 @@ func ordersProcessPlaywright(t *testing.T, ctx context.Context, proxy string, sc
 		}
 	})
 	_, err = fmt.Fprintf(config, `import {defineConfig} from 'vite'; export default defineConfig({server:{host:'127.0.0.1',port:15183,strictPort:true,proxy:{'/api':{target:%q,changeOrigin:false}}}});`, proxy)
-	if err != nil || config.Close() != nil {
+	closeErr := config.Close()
+	if err != nil || closeErr != nil {
 		t.Fatal("write orders Vite fixture config")
 	}
 	vite := exec.CommandContext(ctx, "node", "node_modules/vite/bin/vite.js", "--config", config.Name())

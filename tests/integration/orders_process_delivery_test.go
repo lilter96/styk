@@ -35,6 +35,9 @@ func TestOrdersProcessDeliveryObservationCanArriveOutOfOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	newer.ObservedAt = newer.ObservedAt.Add(999 * time.Nanosecond)
+	newer.CheckedAt = newer.CheckedAt.Add(999 * time.Nanosecond)
+	newer.ValidUntil = newer.ValidUntil.Add(999 * time.Nanosecond)
 	older := newer
 	older.CheckedAt, older.ObservedAt, older.ValidUntil = newer.CheckedAt.Add(-time.Second), newer.ObservedAt.Add(-time.Second), newer.ValidUntil.Add(-time.Second)
 	ordersProcessSaveDelivery(t, db, scope, newer)
