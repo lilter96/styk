@@ -76,3 +76,85 @@ it("shows actual zero and missing evidence without sending a write", async () =>
   expect(fetcher.mock.calls[0][1]?.method || "GET").toBe("GET");
   client.clear();
 });
+
+it("distinguishes an unresolved result from operator-acknowledged history", async () => {
+  const target = {
+    warehouse_id: "201",
+    source_item_id: "item",
+    source_warehouse_id: "store",
+    physical: "0",
+    reserve: "0",
+    candidate: null,
+    marketplace_free: null,
+    unreflected: null,
+    unseen_bound: null,
+    safety_stock: null,
+    source_batch_finished: null,
+    marketplace_batch_finished: null,
+    source_batch_started: null,
+    marketplace_batch_started: null,
+    checks: [],
+  };
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        state: "DISABLED",
+        checks: [],
+        targets: [
+          {
+            ...target,
+            product_id: "active",
+            source_item_name: "Активный случай",
+            uncertain_write: true,
+            historical_uncertain_write: false,
+          },
+          {
+            ...target,
+            product_id: "historical",
+            source_item_name: "Исторический случай",
+            uncertain_write: false,
+            historical_uncertain_write: true,
+          },
+        ],
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    ),
+  );
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <StockShadow tenant="tenant" moy="moy" ozon="ozon" />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Проверить остатки" }));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Проверка остатков",
+  });
+  const active = (
+    await within(dialog).findByRole("heading", { name: "Активный случай" })
+  ).closest("article")!;
+  const history = within(dialog)
+    .getByRole("heading", { name: "Исторический случай" })
+    .closest("article")!;
+  expect(
+    within(active).getByText(/Уточните результат перед новой отправкой/),
+  ).toBeTruthy();
+  expect(
+    within(active).queryByText(/Оператор подтвердил восстановление/),
+  ).toBeNull();
+  expect(
+    within(history).getByText(
+      /Оператор подтвердил восстановление; исторический результат не установлен/,
+    ),
+  ).toBeTruthy();
+  expect(
+    within(history).queryByText(/Уточните результат перед новой отправкой/),
+  ).toBeNull();
+  expect(within(history).getAllByText("0")).toHaveLength(2);
+  expect(within(history).getAllByText("Нет данных")).toHaveLength(2);
+  client.clear();
+});

@@ -19,6 +19,7 @@ type Target = {
   source_warehouse_id: string;
   source_warehouse_name: string;
   uncertain_write: boolean;
+  historical_uncertain_write?: boolean;
   expired_evidence: boolean;
   product_mapping_confirmed: boolean;
   warehouse_mapping_confirmed: boolean;
@@ -253,7 +254,15 @@ export function StockShadow({
                   )}
                   {t.uncertain_write && (
                     <p className="shadow-reason">
-                      Результат предыдущей отправки неизвестен.
+                      Результат предыдущей отправки неизвестен. Уточните
+                      результат перед новой отправкой.
+                    </p>
+                  )}
+                  {t.historical_uncertain_write && (
+                    <p className="shadow-times">
+                      В истории есть отправка с неизвестным результатом.
+                      Оператор подтвердил восстановление; исторический результат
+                      не установлен.
                     </p>
                   )}
                   {t.expired_evidence && (
