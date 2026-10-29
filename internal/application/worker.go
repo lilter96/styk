@@ -51,6 +51,7 @@ type Worker struct {
 	Imports               ImportHandler
 	Publications          PublicationRunner
 	Automatic             PublicationRunner
+	Catalog               PublicationRunner
 	StoredCredentials     bool
 	ImportAccount         string
 	MoyskladImportAccount string
@@ -81,6 +82,9 @@ func (w Worker) Run(ctx context.Context) error {
 				continue
 			}
 		}
+		// Catalog operations use the same worker lifecycle and durable outbox.
+		// Give imports a turn even when the catalog queue has ready work.
+		catalogWorked := w.advanceCatalog(ctx)
 		if err := w.Store.ExpireExhausted(ctx); err != nil {
 			if ctx.Err() != nil {
 				return nil
@@ -128,6 +132,9 @@ func (w Worker) Run(ctx context.Context) error {
 				continue
 			}
 		}
+		if catalogWorked {
+			continue
+		}
 		timer := time.NewTimer(w.Poll)
 		select {
 		case <-ctx.Done():
@@ -138,4 +145,15 @@ func (w Worker) Run(ctx context.Context) error {
 		case <-timer.C:
 		}
 	}
+}
+
+func (w Worker) advanceCatalog(ctx context.Context) bool {
+	if w.Catalog == nil {
+		return false
+	}
+	worked, err := w.Catalog.RunNext(ctx)
+	if err != nil && ctx.Err() == nil {
+		w.Log.Error("catalog synchronization did not advance")
+	}
+	return worked && err == nil
 }
