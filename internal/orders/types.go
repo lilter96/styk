@@ -141,6 +141,7 @@ type Cancellation struct {
 type ProtectedCustomer struct {
 	Reference string   `json:"reference"`
 	Schema    string   `json:"schema"`
+	Revision  int64    `json:"revision,omitempty"`
 	Presence  Presence `json:"presence"`
 }
 
@@ -189,6 +190,10 @@ type Posting struct {
 	ChildPostingNumbers []string            `json:"child_posting_numbers"`
 	OrderNumber         Field[string]       `json:"order_number"`
 	Status              Field[string]       `json:"status"`
+	Scheme              Field[string]       `json:"scheme"`
+	Financial           FinancialFacts      `json:"financial"`
+	Analytics           AnalyticsFacts      `json:"analytics"`
+	Delivery            DeliveryFacts       `json:"delivery"`
 	Substatus           Field[string]       `json:"substatus"`
 	WarehouseID         Field[string]       `json:"warehouse_id"`
 	DeliveryMethodID    Field[string]       `json:"delivery_method_id"`
@@ -410,11 +415,12 @@ type Validation struct {
 }
 
 type Decision struct {
-	Posting     Posting      `json:"posting"`
-	Correlation Correlation  `json:"correlation"`
-	Commands    []Command    `json:"commands"`
-	Validation  []Validation `json:"validation"`
-	Ready       bool         `json:"ready"`
+	Posting     Posting            `json:"posting"`
+	Target      *TargetObservation `json:"target,omitempty"`
+	Correlation Correlation        `json:"correlation"`
+	Commands    []Command          `json:"commands"`
+	Validation  []Validation       `json:"validation"`
+	Ready       bool               `json:"ready"`
 }
 
 type Preview struct {

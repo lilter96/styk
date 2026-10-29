@@ -138,6 +138,7 @@ type Completion struct {
 	Code            string
 	Receipt         Receipt
 	Correlation     *Correlation
+	ObservedTarget  *TargetObservation
 	ObservedPosting *Posting
 	NextRunAt       time.Time
 	Now             time.Time

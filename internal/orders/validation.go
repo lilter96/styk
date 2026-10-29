@@ -198,7 +198,7 @@ func safePath(path string) bool {
 		return false
 	}
 	for _, char := range path {
-		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || strings.ContainsRune("._[]*:-", char) {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || strings.ContainsRune("$._[]*:-", char) {
 			continue
 		}
 		return false
