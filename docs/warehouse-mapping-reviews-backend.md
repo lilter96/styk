@@ -1,0 +1,11 @@
+# Durable warehouse mapping reviews
+
+`POST /api/warehouse-mapping-reviews` accepts JSON `tenant`, `moysklad_account`, `ozon_account`, `moysklad_warehouse_id` and `ozon_warehouse_id`. It requires the configured local Origin and authenticated operator session. The server selects eligible completed imports, requires exact warehouse identities and explicitly reported FBS, rejects conflicting active mappings (including hidden history) as `WAREHOUSE_ALREADY_ASSIGNED`, and stores a review. It does not accept revision or principal fields from the browser. `GET /api/warehouse-mapping-reviews/{id}` requires the creating session.
+
+Reviews freeze source import IDs and fingerprints, hashes of selected warehouse fields and mapping state, optional existing mapping identity and version, creation and expiration times, and the server-generated session audit ID. The default `STYK_REVIEW_LIFETIME` is five minutes, maximum ten. Records are immutable and use restrictive scoped foreign keys. No credentials or session cookies are stored. Review creation does not confirm a mapping or create an audit, stock decision or outbox task.
+
+Inspection reports `CURRENT`, `EXPIRED`, `STALE_SOURCE` or `STALE_MAPPING`. A newer eligible import, changed fingerprint, warehouse fields, classification or unavailable registration makes source evidence stale. Changed mapping state makes it stale. A newer traversal is not a point-in-time source snapshot. Reviews are never refreshed in place.
+
+Creation and inspection acquire transaction-scoped advisory locks in the order `ozon:<account>`, `moysklad:<account>`, `matching:<tenant>`, `warehouse-mapping:<tenant>`, compatible with the existing importers and warehouse CLI. Selected records are read with row locks. This coordinates cooperating processes; privileged actors bypassing the lock protocol are outside this guarantee. The local shared operator session does not identify an individual or implement production tenant authorization. `CURRENT` is not proof of physical identity, exclusive ownership or safe stock publication.
+
+The existing React warehouse review remains read-only and does not create durable reviews. Future confirmation needs a transaction that repeats all validation and checks expiration under locks, durable idempotency and immutable mapping audit. No confirmation endpoint exists in this milestone.
