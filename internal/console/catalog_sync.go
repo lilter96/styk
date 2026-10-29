@@ -31,6 +31,7 @@ func registerCatalogRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c *c
 	mux.HandleFunc("POST /api/catalog-sync/config", a.authorized(a.connectionMutation(api.audit(api.saveConfig))))
 	mux.HandleFunc("GET /api/catalog-sync/products", a.authorized(api.audit(api.products)))
 	mux.HandleFunc("POST /api/catalog-sync/preview", a.authorized(a.connectionMutation(api.audit(api.preview))))
+	mux.HandleFunc("POST /api/catalog-sync/reconcile", a.authorized(a.connectionMutation(api.audit(api.reconcile))))
 	mux.HandleFunc("POST /api/catalog-sync/approve", a.authorized(a.connectionMutation(api.audit(api.approve))))
 	mux.HandleFunc("GET /api/catalog-sync/operations", a.authorized(api.audit(api.operations)))
 	mux.HandleFunc("GET /api/catalog-sync/categories", a.authorized(api.audit(api.categories)))
@@ -267,4 +268,30 @@ func (a *catalogAPI) audit(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		next(w, r.WithContext(catalogprovider.AuditRequests(r.Context())))
 	}
+}
+
+func (a *catalogAPI) reconcile(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		catalogRequestScope
+		WorkID         string `json:"work_id"`
+		IdempotencyKey string `json:"idempotency_key"`
+		Acknowledge    bool   `json:"acknowledge"`
+		AcceptWarnings bool   `json:"accept_warnings"`
+		Reason         string `json:"reason"`
+	}
+	if !decodeStockSync(w, r, &body) {
+		return
+	}
+	scope := body.catalogScope()
+	if _, err := a.service.Config(r.Context(), scope); err != nil {
+		catalogHTTPError(w, err)
+		return
+	}
+	runner := catalogsync.Reconciler{Store: a.db, Resolver: a.factory, AllowScope: a.allowed}
+	result, err := runner.Reconcile(r.Context(), catalogsync.ReconciliationRequest{Scope: scope, WorkID: body.WorkID, Actor: catalogActor(r), IdempotencyKey: body.IdempotencyKey, Acknowledge: body.Acknowledge, AcceptWarnings: body.AcceptWarnings, Reason: body.Reason})
+	if err != nil {
+		catalogHTTPError(w, err)
+		return
+	}
+	writeJSON(w, result)
 }
