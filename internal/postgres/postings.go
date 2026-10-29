@@ -11,9 +11,6 @@ import (
 )
 
 func (s *Store) SavePostings(ctx context.Context, b domain.PostingImport) (int64, error) {
-	if strings.TrimSpace(b.Tenant) == "" || strings.TrimSpace(b.Account) == "" || b.StartedAt.IsZero() || b.FinishedAt.IsZero() || !b.Until.After(b.Since) {
-		return 0, errors.New("invalid posting batch")
-	}
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
 	tx, err := s.Pool.Begin(ctx)
@@ -24,8 +21,23 @@ func (s *Store) SavePostings(ctx context.Context, b domain.PostingImport) (int64
 	if err = requireContextActor(ctx, tx, b.Tenant, false); err != nil {
 		return 0, err
 	}
+	batch, err := savePostingsTx(ctx, tx, b)
+	if err != nil {
+		return 0, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("commit postings: %w", err)
+	}
+	return batch, nil
+}
+
+// savePostingsTx seals a complete batch in the caller's transaction.
+func savePostingsTx(ctx context.Context, tx pgx.Tx, b domain.PostingImport) (int64, error) {
+	if strings.TrimSpace(b.Tenant) == "" || strings.TrimSpace(b.Account) == "" || b.StartedAt.IsZero() || b.FinishedAt.IsZero() || b.FinishedAt.Before(b.StartedAt) || !b.Until.After(b.Since) {
+		return 0, errors.New("invalid posting batch")
+	}
 	var batch int64
-	err = tx.QueryRow(ctx, `INSERT INTO ozon_posting_batches(tenant_id,account_id,window_from,window_to,started_at,finished_at,traversal_status) VALUES($1,$2,$3,$4,$5,$6,'completed') RETURNING id`, b.Tenant, b.Account, b.Since, b.Until, b.StartedAt, b.FinishedAt).Scan(&batch)
+	err := tx.QueryRow(ctx, `INSERT INTO ozon_posting_batches(tenant_id,account_id,window_from,window_to,started_at,finished_at,traversal_status) VALUES($1,$2,$3,$4,$5,$6,'completed') RETURNING id`, b.Tenant, b.Account, b.Since, b.Until, b.StartedAt, b.FinishedAt).Scan(&batch)
 	if err != nil {
 		return 0, fmt.Errorf("insert posting batch: %w", err)
 	}
@@ -66,9 +78,6 @@ func (s *Store) SavePostings(ctx context.Context, b domain.PostingImport) (int64
 				return 0, fmt.Errorf("insert posting line: %w", err)
 			}
 		}
-	}
-	if err = tx.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("commit postings: %w", err)
 	}
 	return batch, nil
 }

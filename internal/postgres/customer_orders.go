@@ -28,9 +28,6 @@ func (s *Store) CheckCustomerOrderAccount(ctx context.Context, tenant, account s
 }
 
 func (s *Store) SaveCustomerOrders(ctx context.Context, b domain.CustomerOrderImport) (int64, error) {
-	if strings.TrimSpace(b.Tenant) == "" || strings.TrimSpace(b.Account) == "" || b.Since.IsZero() || !b.Until.After(b.Since) || b.Until.Sub(b.Since) > 31*24*time.Hour || b.StartedAt.IsZero() || b.FinishedAt.Before(b.StartedAt) {
-		return 0, errors.New("invalid customer order import")
-	}
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
 	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{})
@@ -41,11 +38,26 @@ func (s *Store) SaveCustomerOrders(ctx context.Context, b domain.CustomerOrderIm
 	if err = requireContextActor(ctx, tx, b.Tenant, false); err != nil {
 		return 0, err
 	}
-	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "moysklad:"+b.Account); err != nil {
+	batch, err := saveCustomerOrdersTx(ctx, tx, b)
+	if err != nil {
+		return 0, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("commit customer order import: %w", err)
+	}
+	return batch, nil
+}
+
+// saveCustomerOrdersTx seals a complete batch in the caller's transaction.
+func saveCustomerOrdersTx(ctx context.Context, tx pgx.Tx, b domain.CustomerOrderImport) (int64, error) {
+	if strings.TrimSpace(b.Tenant) == "" || strings.TrimSpace(b.Account) == "" || b.Since.IsZero() || !b.Until.After(b.Since) || b.Until.Sub(b.Since) > 31*24*time.Hour || b.StartedAt.IsZero() || b.FinishedAt.Before(b.StartedAt) {
+		return 0, errors.New("invalid customer order import")
+	}
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "moysklad:"+b.Account); err != nil {
 		return 0, fmt.Errorf("lock customer order account: %w", err)
 	}
 	var batch int64
-	err = tx.QueryRow(ctx, `INSERT INTO moy_order_batches(tenant_id,account_id,window_from,window_to,started_at,finished_at,traversal_status) VALUES($1,$2,$3,$4,$5,$6,'completed') RETURNING id`, b.Tenant, b.Account, b.Since, b.Until, b.StartedAt, b.FinishedAt).Scan(&batch)
+	err := tx.QueryRow(ctx, `INSERT INTO moy_order_batches(tenant_id,account_id,window_from,window_to,started_at,finished_at,traversal_status) VALUES($1,$2,$3,$4,$5,$6,'completed') RETURNING id`, b.Tenant, b.Account, b.Since, b.Until, b.StartedAt, b.FinishedAt).Scan(&batch)
 	if err != nil {
 		return 0, fmt.Errorf("insert customer order batch: %w", err)
 	}
@@ -70,9 +82,6 @@ func (s *Store) SaveCustomerOrders(ctx context.Context, b domain.CustomerOrderIm
 				return 0, fmt.Errorf("insert customer order position: %w", err)
 			}
 		}
-	}
-	if err = tx.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("commit customer order import: %w", err)
 	}
 	return batch, nil
 }

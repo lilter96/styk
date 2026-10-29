@@ -134,20 +134,49 @@ func loadOrderCorrelations(ctx context.Context, tx pgx.Tx, req domain.StockCalcu
 // StockOrderEvidence exposes bounded observations for one confirmed mapping.
 // It deliberately does not infer order coverage or non-overlap from a window.
 func (s *Store) StockOrderEvidence(ctx context.Context, scope domain.StockSyncScope, product, warehouse string) (*domain.StockCustomerOrderEvidence, error) {
+	e, _, err := s.stockOrderEvidenceSnapshot(ctx, scope, product, warehouse, false)
+	return e, err
+}
+
+// StockOrderEvidenceWithProgress reads completed evidence and progress from
+// the same snapshot, so a concurrent seal cannot produce a mixed response.
+func (s *Store) StockOrderEvidenceWithProgress(ctx context.Context, scope domain.StockSyncScope, product, warehouse string) (*domain.StockCustomerOrderEvidence, *OrderEvidenceSummary, error) {
+	return s.stockOrderEvidenceSnapshot(ctx, scope, product, warehouse, true)
+}
+
+func (s *Store) stockOrderEvidenceSnapshot(ctx context.Context, scope domain.StockSyncScope, product, warehouse string, includeProgress bool) (*domain.StockCustomerOrderEvidence, *OrderEvidenceSummary, error) {
 	if !scope.Valid() || !positiveAPIID(product) || !positiveAPIID(warehouse) {
-		return nil, domain.ErrStockSyncNotFound
+		return nil, nil, domain.ErrStockSyncNotFound
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
 	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer func() {
 		if err := tx.Rollback(context.Background()); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
 			slog.Warn("could not roll back order-evidence transaction")
 		}
 	}()
+	e, err := loadStockOrderEvidenceSnapshot(ctx, tx, scope, product, warehouse)
+	if err != nil {
+		return nil, nil, err
+	}
+	var progress *OrderEvidenceSummary
+	if includeProgress {
+		progress, err = currentOrderEvidence(ctx, tx, scope)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, nil, fmt.Errorf("commit order-evidence read: %w", err)
+	}
+	return e, progress, nil
+}
+
+func loadStockOrderEvidenceSnapshot(ctx context.Context, tx pgx.Tx, scope domain.StockSyncScope, product, warehouse string) (*domain.StockCustomerOrderEvidence, error) {
 	req, offer, err := stockOrderTarget(ctx, tx, scope, product, warehouse)
 	if err != nil {
 		return nil, err
@@ -165,7 +194,7 @@ func (s *Store) StockOrderEvidence(ctx context.Context, scope domain.StockSyncSc
 	if err = loadStockCustomerOrders(ctx, tx, req, &e); err != nil {
 		return nil, err
 	}
-	return e.CustomerOrders, tx.Commit(ctx)
+	return e.CustomerOrders, nil
 }
 
 func stockOrderTarget(ctx context.Context, tx pgx.Tx, scope domain.StockSyncScope, product, warehouse string) (domain.StockCalculationRequest, string, error) {
