@@ -8,8 +8,8 @@ type MatchSource struct {
 	OfferID  string
 }
 type MatchTarget struct {
-	Identity      ProductIdentity
-	Article, Code string
+	Identity                      ProductIdentity
+	Article, Code, Name, ParentID string
 }
 type MatchEvidence struct{ SourceField, TargetField, SourceValue, TargetValue, Normalized string }
 type MatchCandidate struct {

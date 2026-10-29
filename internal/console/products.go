@@ -63,7 +63,7 @@ func products(db *postgres.Store) http.HandlerFunc {
 			writeError(w, 404, "SCOPE_NOT_REGISTERED")
 			return
 		}
-		rows, e := tx.Query(ctx, `WITH latest AS (SELECT i.id FROM source_imports i JOIN ozon_import_batches b ON b.import_id=i.id AND b.traversal_status='completed' JOIN stock_connections c ON c.source=i.source AND c.account_id=i.account_id AND c.tenant_id=$1 WHERE i.source='ozon' AND i.account_id=$2 AND (c.include_import_history OR i.started_at>=c.registered_at) ORDER BY i.id DESC LIMIT 1) SELECT p.product_id,p.offer_id,p.sku,p.archived,CASE WHEN m.moysklad_account=$3 THEN m.target_kind END,CASE WHEN m.moysklad_account=$3 THEN m.target_id END FROM ozon_product_observations p JOIN latest l ON l.id=p.import_id LEFT JOIN product_mappings m ON m.tenant_id=$1 AND m.ozon_account=$2 AND m.ozon_product_id=p.product_id WHERE length($3::text)>0 AND ($4='' OR p.offer_id ILIKE '%'||$4||'%' OR p.product_id ILIKE '%'||$4||'%' OR p.sku ILIKE '%'||$4||'%') AND ($5='' OR p.archived::text=$5) AND ($7='' OR ($7='confirmed' AND m.moysklad_account=$3) OR ($7='unconfirmed' AND (m.ozon_product_id IS NULL OR m.moysklad_account<>$3))) ORDER BY p.product_id LIMIT 51 OFFSET $6`, tenant, account, moy, search, archived, offset, mappingFilter)
+		rows, e := tx.Query(ctx, `WITH latest AS (SELECT i.id FROM source_imports i JOIN ozon_import_batches b ON b.import_id=i.id AND b.traversal_status='completed' JOIN stock_connections c ON c.source=i.source AND c.account_id=i.account_id AND c.tenant_id=$1 WHERE i.source='ozon' AND i.account_id=$2 AND (c.include_import_history OR i.started_at>=c.registered_at) ORDER BY i.id DESC LIMIT 1), source_latest AS (SELECT i.id FROM source_imports i JOIN stock_connections c ON c.tenant_id=$1 AND c.source=i.source AND c.account_id=i.account_id WHERE i.source='moysklad' AND i.account_id=$3 AND (c.include_import_history OR i.started_at>=c.registered_at) ORDER BY i.id DESC LIMIT 1) SELECT p.product_id,p.offer_id,p.sku,p.archived,CASE WHEN m.moysklad_account=$3 THEN m.target_kind END,CASE WHEN m.moysklad_account=$3 THEN m.target_id END FROM ozon_product_observations p JOIN latest l ON l.id=p.import_id LEFT JOIN product_mappings m ON m.tenant_id=$1 AND m.ozon_account=$2 AND m.ozon_product_id=p.product_id WHERE length($3::text)>0 AND ($4='' OR p.offer_id ILIKE '%'||$4||'%' OR p.product_id ILIKE '%'||$4||'%' OR p.sku ILIKE '%'||$4||'%' OR EXISTS(SELECT 1 FROM source_entities s JOIN source_latest sl ON sl.id=s.import_id WHERE s.kind IN ('product','variant') AND (s.name ILIKE '%'||$4||'%' OR s.article ILIKE '%'||$4||'%' OR s.code ILIKE '%'||$4||'%') AND ((m.moysklad_account=$3 AND s.kind=m.target_kind AND s.external_id=m.target_id) OR (btrim(p.offer_id,$8)<>'' AND (btrim(s.article,$8)=btrim(p.offer_id,$8) OR btrim(s.code,$8)=btrim(p.offer_id,$8)))))) AND ($5='' OR p.archived::text=$5) AND ($7='' OR ($7='confirmed' AND m.moysklad_account=$3) OR ($7='unconfirmed' AND (m.ozon_product_id IS NULL OR m.moysklad_account<>$3))) ORDER BY p.product_id LIMIT 51 OFFSET $6`, tenant, account, moy, search, archived, offset, mappingFilter, matchTrimChars)
 		if e != nil {
 			writeError(w, 503, "PRODUCTS_UNAVAILABLE")
 			return
@@ -99,12 +99,20 @@ func products(db *postgres.Store) http.HandlerFunc {
 		if hasNext {
 			items = items[:50]
 		}
-		targets, mappings, available, truncated, e := matchingData(ctx, tx, tenant, account, moy)
+		offers, productIDs := []string{}, []string{}
+		for _, item := range items {
+			offers, productIDs = append(offers, item.OfferID), append(productIDs, item.ProductID)
+		}
+		targets, mappings, available, truncated, e := matchingData(ctx, tx, tenant, account, moy, offers, productIDs)
 		if e != nil {
 			writeError(w, 503, "MATCHING_UNAVAILABLE")
 			return
 		}
 		engine := matching.New(targets, mappings)
+		targetDetails := map[domain.ProductIdentity]domain.MatchTarget{}
+		for _, target := range targets {
+			targetDetails[target.Identity] = target
+		}
 		for i := range items {
 			v := &items[i]
 			v.Candidates = []candidate{}
@@ -125,7 +133,8 @@ func products(db *postgres.Store) http.HandlerFunc {
 				for _, e := range c.Evidence {
 					fields = append(fields, e.TargetField)
 				}
-				v.Candidates = append(v.Candidates, candidate{Kind: c.Target.Kind, ID: c.Target.ID, Evidence: fields})
+				detail := targetDetails[c.Target]
+				v.Candidates = append(v.Candidates, candidate{Kind: c.Target.Kind, ID: c.Target.ID, Evidence: fields, Name: detail.Name, Article: detail.Article, Code: detail.Code, ParentID: detail.ParentID})
 			}
 		}
 		if e = tx.Commit(ctx); e != nil {
@@ -144,6 +153,10 @@ type candidate struct {
 	Kind     string   `json:"kind"`
 	ID       string   `json:"id"`
 	Evidence []string `json:"evidence"`
+	Name     string   `json:"name,omitempty"`
+	Article  string   `json:"article,omitempty"`
+	Code     string   `json:"code,omitempty"`
+	ParentID string   `json:"parent_id,omitempty"`
 }
 
 func presentMatch(status string) string {
@@ -163,9 +176,12 @@ func presentMatch(status string) string {
 	}
 }
 
-// Load a bounded candidate universe once per page. If the bound is exceeded,
-// no unique-match claim is made; the UI is told that evidence was truncated.
-func matchingData(ctx context.Context, tx pgx.Tx, tenant, account, moy string) ([]domain.MatchTarget, []domain.Mapping, bool, bool, error) {
+// The same Unicode white-space set as strings.TrimSpace. Only identifiers for
+// this page are loaded, so large unrelated catalogs do not destroy candidate
+// suggestions. A bound overflow still refuses a uniqueness claim.
+const matchTrimChars = "\t\n\v\f\r \u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000"
+
+func matchingData(ctx context.Context, tx pgx.Tx, tenant, account, moy string, offers, products []string) ([]domain.MatchTarget, []domain.Mapping, bool, bool, error) {
 	var importID int64
 	e := tx.QueryRow(ctx, `SELECT i.id FROM source_imports i JOIN stock_connections c ON c.tenant_id=$1 AND c.source=i.source AND c.account_id=i.account_id WHERE i.source='moysklad' AND i.account_id=$2 AND (c.include_import_history OR i.started_at>=c.registered_at) ORDER BY i.id DESC LIMIT 1`, tenant, moy).Scan(&importID)
 	if e == pgx.ErrNoRows {
@@ -174,7 +190,13 @@ func matchingData(ctx context.Context, tx pgx.Tx, tenant, account, moy string) (
 	if e != nil {
 		return nil, nil, false, false, e
 	}
-	rows, e := tx.Query(ctx, `SELECT kind,external_id,article,code FROM source_entities WHERE import_id=$1 AND kind IN ('product','variant') ORDER BY kind,external_id LIMIT 2001`, importID)
+	normalized := make([]string, 0, len(offers))
+	for _, offer := range offers {
+		if v := matching.Normalize(offer); v != "" {
+			normalized = append(normalized, v)
+		}
+	}
+	rows, e := tx.Query(ctx, `SELECT kind,external_id,article,code,name,parent_id FROM source_entities WHERE import_id=$1 AND kind IN ('product','variant') AND (btrim(article,$3)=ANY($2::text[]) OR btrim(code,$3)=ANY($2::text[])) ORDER BY kind,external_id LIMIT 2001`, importID, normalized, matchTrimChars)
 	if e != nil {
 		return nil, nil, false, false, e
 	}
@@ -182,7 +204,7 @@ func matchingData(ctx context.Context, tx pgx.Tx, tenant, account, moy string) (
 	for rows.Next() {
 		var v domain.MatchTarget
 		v.Identity = domain.ProductIdentity{System: "moysklad", Account: moy}
-		if e = rows.Scan(&v.Identity.Kind, &v.Identity.ID, &v.Article, &v.Code); e != nil {
+		if e = rows.Scan(&v.Identity.Kind, &v.Identity.ID, &v.Article, &v.Code, &v.Name, &v.ParentID); e != nil {
 			rows.Close()
 			return nil, nil, false, false, e
 		}
@@ -196,7 +218,11 @@ func matchingData(ctx context.Context, tx pgx.Tx, tenant, account, moy string) (
 	if len(targets) > 2000 {
 		return nil, nil, true, true, nil
 	}
-	rows, e = tx.Query(ctx, `SELECT tenant_id,ozon_account,ozon_product_id,ozon_offer_id,moysklad_account,target_kind,target_id,version,confirmed_at FROM product_mappings WHERE tenant_id=$1 AND (ozon_account=$2 OR moysklad_account=$3) ORDER BY id LIMIT 2001`, tenant, account, moy)
+	kinds, ids := []string{}, []string{}
+	for _, target := range targets {
+		kinds, ids = append(kinds, target.Identity.Kind), append(ids, target.Identity.ID)
+	}
+	rows, e = tx.Query(ctx, `SELECT m.tenant_id,m.ozon_account,m.ozon_product_id,m.ozon_offer_id,m.moysklad_account,m.target_kind,m.target_id,m.version,m.confirmed_at FROM product_mappings m WHERE m.tenant_id=$1 AND ((m.ozon_account=$2 AND (m.ozon_product_id=ANY($4::text[]) OR m.ozon_offer_id=ANY($5::text[]))) OR (m.moysklad_account=$3 AND EXISTS(SELECT 1 FROM unnest($6::text[],$7::text[]) AS wanted(kind,id) WHERE wanted.kind=m.target_kind AND wanted.id=m.target_id)) OR EXISTS(SELECT 1 FROM product_mappings current WHERE current.tenant_id=m.tenant_id AND current.ozon_account=$2 AND current.ozon_product_id=ANY($4::text[]) AND current.moysklad_account=m.moysklad_account AND current.target_kind=m.target_kind AND current.target_id=m.target_id)) ORDER BY m.id LIMIT 2001`, tenant, account, moy, products, offers, kinds, ids)
 	if e != nil {
 		return nil, nil, false, false, e
 	}
