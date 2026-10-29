@@ -273,6 +273,7 @@ export function AutomaticStockControls({
       setPending(null);
       setOpen(false);
       setAck(false);
+      setInitialConfirmed([]);
       await Promise.all([
         client.invalidateQueries({ queryKey: key }),
         client.invalidateQueries({
@@ -630,6 +631,7 @@ export function AutomaticStockControls({
                     setMaximum(String(target.maximum));
                   }
                   setAck(false);
+                  setInitialConfirmed([]);
                   setOpen(true);
                 }}
               >
@@ -639,7 +641,11 @@ export function AutomaticStockControls({
           ) : (
             <button
               disabled={busy || !!pending || !availableTargets.length}
-              onClick={() => setOpen(true)}
+              onClick={() => {
+                setAck(false);
+                setInitialConfirmed([]);
+                setOpen(true);
+              }}
             >
               Настроить автоматическую синхронизацию
             </button>

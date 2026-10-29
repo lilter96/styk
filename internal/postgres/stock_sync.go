@@ -530,7 +530,7 @@ func createPublication(ctx context.Context, tx pgx.Tx, review domain.StockSyncRe
 			return domain.StockPublication{}, domain.ErrStockSyncBlocked
 		}
 		var used bool
-		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_initial_publications WHERE ozon_account=$1 AND product_id=$2 AND warehouse_id=$3) OR EXISTS(SELECT 1 FROM stock_publication_targets WHERE ozon_account=$1 AND product_id=$2 AND warehouse_id=$3 AND dispatched_at IS NOT NULL)`, review.OzonAccount, review.Targets[0].ProductID, review.Targets[0].WarehouseID).Scan(&used); err != nil {
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_initial_publications WHERE ozon_account=$1 AND product_id=$2 AND warehouse_id=$3 AND config_revision=$4) OR EXISTS(SELECT 1 FROM stock_publication_targets WHERE ozon_account=$1 AND product_id=$2 AND warehouse_id=$3 AND dispatched_at IS NOT NULL)`, review.OzonAccount, review.Targets[0].ProductID, review.Targets[0].WarehouseID, review.Attestations[0].AutomaticPolicyRevision).Scan(&used); err != nil {
 			return domain.StockPublication{}, err
 		}
 		if used {

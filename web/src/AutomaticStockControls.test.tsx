@@ -354,7 +354,27 @@ it("requires separate consent when Ozon has no stock observation", async () => {
   expect(submit.disabled).toBe(true);
   fireEvent.click(consent);
   expect(submit.disabled).toBe(false);
-  fireEvent.click(submit);
+  fireEvent.click(within(dialog).getByRole("button", { name: "Отмена" }));
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Настроить автоматическую синхронизацию",
+    }),
+  );
+  const reopened = screen.getByRole("dialog", {
+    name: "Настроить автоматическую синхронизацию?",
+  });
+  const renewedConsent = within(reopened).getByLabelText(
+    /Разрешаю первую отправку/,
+  ) as HTMLInputElement;
+  expect(renewedConsent.checked).toBe(false);
+  fireEvent.click(
+    within(reopened).getByLabelText(/Подтверждаю выбранные настройки/),
+  );
+  fireEvent.click(renewedConsent);
+  const renewedSubmit = within(reopened).getByRole("button", {
+    name: "Включить автоматическую проверку",
+  });
+  fireEvent.click(renewedSubmit);
   await waitFor(() => expect(calls).toHaveLength(1));
   expect(calls[0].body.targets).toEqual([
     expect.objectContaining({

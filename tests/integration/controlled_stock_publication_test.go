@@ -259,6 +259,10 @@ func TestControlledStockPublicationUncertainResultsNeverRetry(t *testing.T) {
 					t.Fatal("provider result was mutable")
 				}
 				// The rollback must refuse to discard persisted provider evidence.
+				renewalDown := exec.Command("go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", db.Pool.Config().ConnString(), "down")
+				if _, e := renewalDown.CombinedOutput(); e != nil {
+					t.Fatal("could not roll back empty initial-renewal migration")
+				}
 				initialDown := exec.Command("go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", db.Pool.Config().ConnString(), "down")
 				if _, e := initialDown.CombinedOutput(); e != nil {
 					t.Fatal("could not roll back empty initial-publication migration")
