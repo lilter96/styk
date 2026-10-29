@@ -135,3 +135,35 @@ func TestCatalogSecurityMoySkladRejectsUntrustedMetadataWithoutFetching(t *testi
 		t.Fatal("provider metadata or image URL triggered a request")
 	}
 }
+
+func TestCatalogSecurityImageMetadataRemainsUnfetched(t *testing.T) {
+	t.Parallel()
+	var fetched atomic.Int32
+	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fetched.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer sink.Close()
+	scope, identity := catalogSecurityProviderScope(), catalogSecurityMoyCommand().Target
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body any = map[string]string{"accountId": scope.MoyskladAccount}
+		if r.URL.Path != "/context/employee" {
+			body = map[string]any{"id": identity.ID, "accountId": scope.MoyskladAccount, "name": "Synthetic", "meta": map[string]string{"href": "http://" + r.Host + "/entity/product/" + identity.ID, "type": "product"}, "images": map[string]any{"meta": map[string]any{"href": sink.URL + "/private-images", "size": 1}}}
+		}
+		if err := json.NewEncoder(w).Encode(body); err != nil {
+			t.Errorf("encode synthetic image metadata: %v", err)
+		}
+	}))
+	defer server.Close()
+	client, err := moysklad.NewCatalogClient(catalogSecurityMoyClient(t, server.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := client.ReadCatalog(t.Context(), catalog.ReadRequest{Scope: scope, Account: identity.Account, Identities: []catalog.Identity{identity}, Limit: 1})
+	if err != nil || !snapshot.Complete || len(snapshot.Products) != 1 || snapshot.Products[0].Fields[catalog.FieldImages].State != catalog.StateUnknown {
+		t.Fatalf("unexpanded image reference became a verified image value: products=%d error=%v", len(snapshot.Products), err)
+	}
+	if fetched.Load() != 0 {
+		t.Fatal("otherwise valid provider metadata followed an image URL")
+	}
+}
