@@ -2,6 +2,7 @@
 package console
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -18,11 +19,17 @@ import (
 
 const cookieName = "styk_operator"
 
+type operatorSession struct {
+	expires time.Time
+	auditID string
+}
+type auditContextKey struct{}
+
 type auth struct {
 	secret   [32]byte
 	origin   string
 	mu       sync.Mutex
-	sessions map[[32]byte]time.Time
+	sessions map[[32]byte]operatorSession
 }
 
 func newAuth(secret, origin string) (*auth, error) {
@@ -33,7 +40,7 @@ func newAuth(secret, origin string) (*auth, error) {
 	if e != nil || u.Scheme != "http" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") || !loopbackHost(u.Hostname()) {
 		return nil, errors.New("console origin must be a loopback HTTP origin")
 	}
-	return &auth{secret: sha256.Sum256([]byte(secret)), origin: strings.TrimSuffix(origin, "/"), sessions: map[[32]byte]time.Time{}}, nil
+	return &auth{secret: sha256.Sum256([]byte(secret)), origin: strings.TrimSuffix(origin, "/"), sessions: map[[32]byte]operatorSession{}}, nil
 }
 func loopbackHost(host string) bool {
 	if host == "localhost" {
@@ -87,14 +94,19 @@ func (a *auth) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var token [32]byte
+	var audit [16]byte
 	if _, e := rand.Read(token[:]); e != nil {
+		writeError(w, http.StatusServiceUnavailable, "UNAVAILABLE")
+		return
+	}
+	if _, e := rand.Read(audit[:]); e != nil {
 		writeError(w, http.StatusServiceUnavailable, "UNAVAILABLE")
 		return
 	}
 	a.mu.Lock()
 	now := time.Now()
 	for k, v := range a.sessions {
-		if !v.After(now) {
+		if !v.expires.After(now) {
 			delete(a.sessions, k)
 		}
 	}
@@ -103,7 +115,7 @@ func (a *auth) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "UNAVAILABLE")
 		return
 	}
-	a.sessions[sha256.Sum256(token[:])] = now.Add(8 * time.Hour)
+	a.sessions[sha256.Sum256(token[:])] = operatorSession{expires: now.Add(8 * time.Hour), auditID: base64.RawURLEncoding.EncodeToString(audit[:])}
 	a.mu.Unlock()
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: base64.RawURLEncoding.EncodeToString(token[:]), Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: 8 * 60 * 60})
 	w.Header().Set("Cache-Control", "no-store")
@@ -128,8 +140,8 @@ func (a *auth) authorized(next http.HandlerFunc) http.HandlerFunc {
 		}
 		key := sha256.Sum256(token)
 		a.mu.Lock()
-		expiry, ok := a.sessions[key]
-		if ok && !expiry.After(time.Now()) {
+		session, ok := a.sessions[key]
+		if ok && !session.expires.After(time.Now()) {
 			delete(a.sessions, key)
 			ok = false
 		}
@@ -138,7 +150,7 @@ func (a *auth) authorized(next http.HandlerFunc) http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED")
 			return
 		}
-		next(w, r)
+		next(w, r.WithContext(context.WithValue(r.Context(), auditContextKey{}, session.auditID)))
 	}
 }
 

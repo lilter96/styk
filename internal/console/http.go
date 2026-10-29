@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -19,6 +20,14 @@ func Handler(db *postgres.Store, secret, origin string) (http.Handler, error) {
 	a, e := newAuth(secret, origin)
 	if e != nil {
 		return nil, e
+	}
+	lifetime := 5 * time.Minute
+	if raw := os.Getenv("STYK_REVIEW_LIFETIME"); raw != "" {
+		var err error
+		lifetime, err = time.ParseDuration(raw)
+		if err != nil || lifetime <= 0 || lifetime > 10*time.Minute {
+			return nil, errors.New("STYK_REVIEW_LIFETIME must be positive and at most 10 minutes")
+		}
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/session", a.login)
@@ -79,6 +88,8 @@ func Handler(db *postgres.Store, secret, origin string) (http.Handler, error) {
 		}
 		writeJSON(w, report)
 	}))
+	mux.HandleFunc("POST /api/product-mapping-reviews", a.authorized(a.createMappingReview(db, lifetime)))
+	mux.HandleFunc("GET /api/product-mapping-reviews/{id}", a.authorized(a.inspectMappingReview(db)))
 	mux.HandleFunc("GET /api/products", a.authorized(products(db)))
 	mux.HandleFunc("GET /api/moysklad-products", a.authorized(searchTargets(db)))
 	mux.HandleFunc("GET /api/product-mapping-history", a.authorized(mappingHistory(db)))
