@@ -1003,3 +1003,27 @@ td {
 .import-history td code { font-size: 11px; }
 .import-confirm label { color: #315a53; font-size: 13px; font-weight: 600; }
 @media (max-width: 700px) { .source-card .source-top { align-items: flex-start; flex-direction: column; } }
+.shadow-target {
+  border-top: 1px solid var(--border, #d9e2df);
+  padding: 20px 0;
+}
+
+.shadow-target h3 { margin: 0 0 16px; }
+.shadow-values { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.shadow-values div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.shadow-values span { font-size: 14px; }
+.shadow-values strong { font-size: 18px; overflow-wrap: anywhere; }
+.shadow-target details { overflow-wrap: anywhere; }
+.provider-settings-dialog.stock-shadow-dialog { width: min(650px, 100%); }
+.stock-shadow-dialog .shadow-intro { color: #475569; line-height: 1.5; margin-bottom: 20px; }
+.stock-shadow-dialog .shadow-intro p { margin: 0 0 6px; }
+.stock-shadow-dialog .shadow-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.stock-shadow-dialog .shadow-heading h3 { margin: 0; font-size: 18px; }
+.stock-shadow-dialog .shadow-heading p { margin: 4px 0 0; color: #64748b; }
+.stock-shadow-dialog .shadow-target > p { margin: 8px 0; line-height: 1.45; }
+.stock-shadow-dialog .shadow-values { margin: 18px 0; gap: 18px 24px; }
+.stock-shadow-dialog .shadow-values span { color: #64748b; }
+.stock-shadow-dialog .shadow-times { color: #64748b; font-size: 14px; }
+.stock-shadow-dialog .shadow-reason { color: #92400e; }
+.stock-shadow-dialog details { margin-top: 14px; line-height: 1.5; }
+@media (max-width: 520px) { .stock-shadow-dialog .shadow-heading { flex-direction: column; gap: 8px; } }

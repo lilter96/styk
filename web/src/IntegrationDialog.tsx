@@ -35,11 +35,13 @@ export function IntegrationDialog({
   children,
   onClose,
   closeLabel = "Закрыть",
+  className = "",
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   closeLabel?: string;
+  className?: string;
 }) {
   const titleID = useId();
   const dialog = useRef<HTMLDivElement>(null);
@@ -118,7 +120,7 @@ export function IntegrationDialog({
     >
       <div
         ref={dialog}
-        className="provider-settings-dialog"
+        className={`provider-settings-dialog ${className}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleID}

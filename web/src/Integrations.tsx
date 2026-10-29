@@ -6,6 +6,7 @@ import { IntegrationDialog } from "./IntegrationDialog";
 import { IntegrationEvents } from "./IntegrationEvents";
 import { SupportDiagnostics } from "./SupportDiagnostics";
 import { CredentialEditor } from "./CredentialEditor";
+import { StockShadow } from "./StockShadow";
 import {
   useCredentialSubmission,
   type CredentialSubmissionState,
@@ -31,6 +32,18 @@ import {
   type ImportScope,
   type ImportOperation,
 } from "./api";
+
+function accountLabel(
+  provider: ImportProvider,
+  accounts: Account[],
+  selected?: string,
+) {
+  const entries = accounts.filter((account) => account.source === provider);
+  const index = entries.findIndex((account) => account.account === selected);
+  return index < 0
+    ? "Не выбран"
+    : entries[index].name || `Аккаунт ${index + 1}`;
+}
 
 type Provider = {
   provider: ImportProvider;
@@ -475,6 +488,13 @@ export function Integrations({
         eligible={bothReady && productsMapped && warehousesMapped}
         submission={stockSyncSubmission}
         onStatus={onSyncStatus}
+      />
+      <StockShadow
+        tenant={tenant}
+        moy={selected?.moy || ""}
+        ozon={selected?.ozon || ""}
+        moyLabel={accountLabel("moysklad", accounts, selected?.moy)}
+        ozonLabel={accountLabel("ozon", accounts, selected?.ozon)}
       />
       <div className="integration-cards">
         {providers.map((p) => {

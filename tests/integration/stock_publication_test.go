@@ -597,6 +597,22 @@ func TestStockPublicationHTTPExplicitEnableReplayAndDisable(t *testing.T) {
 	if err = json.Unmarshal(call("POST", "/api/stock-sync/preview", previewBody, http.StatusOK), &review); err != nil || !review.Ready || len(review.ID) != 32 {
 		t.Fatalf("HTTP preview not ready: %v", err)
 	}
+	var beforeCount, afterCount int
+	if err = f.db.Pool.QueryRow(context.Background(), `SELECT count(*) FROM stock_sync_reviews WHERE tenant_id=$1`, f.scope.Tenant).Scan(&beforeCount); err != nil {
+		t.Fatal(err)
+	}
+	query := url.Values{"tenant": {f.scope.Tenant}, "moysklad_account": {f.scope.MoyskladAccount}, "ozon_account": {f.scope.OzonAccount}}
+	var blockedShadow struct {
+		Targets []struct {
+			Candidate *string `json:"candidate"`
+		} `json:"targets"`
+	}
+	if err = json.Unmarshal(call("GET", "/api/stock-sync/shadow?"+query.Encode(), nil, http.StatusOK), &blockedShadow); err != nil || len(blockedShadow.Targets) != 1 || blockedShadow.Targets[0].Candidate != nil {
+		t.Fatalf("shadow invented a candidate without the required evidence: %+v %v", blockedShadow, err)
+	}
+	if err = f.db.Pool.QueryRow(context.Background(), `SELECT count(*) FROM stock_sync_reviews WHERE tenant_id=$1`, f.scope.Tenant).Scan(&afterCount); err != nil || afterCount != beforeCount {
+		t.Fatalf("shadow persisted a review: before=%d after=%d err=%v", beforeCount, afterCount, err)
+	}
 	type mutation struct {
 		domain.StockSyncScope
 		ReviewID    string `json:"review_id,omitempty"`
@@ -608,7 +624,21 @@ func TestStockPublicationHTTPExplicitEnableReplayAndDisable(t *testing.T) {
 	if err = json.Unmarshal(call("POST", "/api/stock-sync/enable", enable, http.StatusOK), &enabled); err != nil || !enabled.Enabled || enabled.State != "QUEUED" || enabled.LastOperation == nil {
 		t.Fatalf("HTTP enable not queued: %v", err)
 	}
-	query := url.Values{"tenant": {f.scope.Tenant}, "moysklad_account": {f.scope.MoyskladAccount}, "ozon_account": {f.scope.OzonAccount}}
+	shadowPayload := call("GET", "/api/stock-sync/shadow?"+query.Encode(), nil, http.StatusOK)
+	var shadow struct {
+		PublicationAvailable bool `json:"publication_available"`
+		Targets              []struct {
+			Physical        *string `json:"physical"`
+			Reserve         *string `json:"reserve"`
+			Candidate       *string `json:"candidate"`
+			MarketplaceFree *string `json:"marketplace_free"`
+		} `json:"targets"`
+	}
+	if err = json.Unmarshal(shadowPayload, &shadow); err != nil || shadow.PublicationAvailable || len(shadow.Targets) != 1 || shadow.Targets[0].Physical == nil || *shadow.Targets[0].Physical != "10" || shadow.Targets[0].Reserve == nil || *shadow.Targets[0].Reserve != "1" || shadow.Targets[0].Candidate == nil || *shadow.Targets[0].Candidate != "8" || shadow.Targets[0].MarketplaceFree == nil || *shadow.Targets[0].MarketplaceFree != "4" {
+		t.Fatalf("shadow did not project the existing calculation: %s (%v)", shadowPayload, err)
+	}
+	otherQuery := url.Values{"tenant": {"wrong-tenant"}, "moysklad_account": {f.scope.MoyskladAccount}, "ozon_account": {f.scope.OzonAccount}}
+	call("GET", "/api/stock-sync/shadow?"+otherQuery.Encode(), nil, http.StatusNotFound)
 	var current domain.StockSyncView
 	statusPayload := call("GET", "/api/stock-sync?"+query.Encode(), nil, http.StatusOK)
 	if !strings.Contains(string(statusPayload), `"publication_available":false`) {
