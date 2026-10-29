@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, params, post } from "./api";
 import { IntegrationDialog } from "./IntegrationDialog";
+import { AutomaticStockControls } from "./AutomaticStockControls";
 
 type SyncScope = {
   tenant: string;
@@ -414,6 +415,7 @@ export function StockSyncControls({
     [testAttestations, setTestAttestations] = useState<TestAttestation[]>([]),
     [recoveryOpen, setRecoveryOpen] = useState(false),
     [recoveryAck, setRecoveryAck] = useState(false),
+    [automaticEnabled, setAutomaticEnabled] = useState(false),
     [workerStopped, setWorkerStopped] = useState(false),
     [recoveryReason, setRecoveryReason] = useState("");
   const scopeKey = `${tenant}:${moy}:${ozon}`;
@@ -451,6 +453,7 @@ export function StockSyncControls({
     setRecoveryAck(false);
     setWorkerStopped(false);
     setRecoveryReason("");
+    setAutomaticEnabled(false);
     setAck(false);
     setMessage("");
   }, [scopeKey]);
@@ -789,18 +792,22 @@ export function StockSyncControls({
           )}
         </div>
         <div className="sync-actions">
-          {blocked && !uncertainOperation && !deploymentBlocked && (
-            <button
-              disabled={!!commands.pending || commands.busy || !!query.error}
-              onClick={() => {
-                setOpen("enable");
-                void preview();
-              }}
-            >
-              Проверить условия
-            </button>
-          )}
+          {blocked &&
+            !automaticEnabled &&
+            !uncertainOperation &&
+            !deploymentBlocked && (
+              <button
+                disabled={!!commands.pending || commands.busy || !!query.error}
+                onClick={() => {
+                  setOpen("enable");
+                  void preview();
+                }}
+              >
+                Проверить условия
+              </button>
+            )}
           {active &&
+            !automaticEnabled &&
             view?.test_account_mode &&
             !blocked &&
             !uncertainOperation &&
@@ -818,34 +825,35 @@ export function StockSyncControls({
                 Проверить новую отправку
               </button>
             )}
-          {active ? (
-            <button
-              className="secondary"
-              disabled={!!commands.pending}
-              onClick={() => {
-                setAck(false);
-                setOpen("disable");
-              }}
-            >
-              Выключить
-            </button>
-          ) : (
-            <button
-              disabled={
-                !!query.error ||
-                query.isLoading ||
-                !!commands.pending ||
-                uncertainOperation ||
-                deploymentBlocked
-              }
-              onClick={() => {
-                setOpen("enable");
-                void preview();
-              }}
-            >
-              Включить синхронизацию
-            </button>
-          )}
+          {!automaticEnabled &&
+            (active ? (
+              <button
+                className="secondary"
+                disabled={!!commands.pending}
+                onClick={() => {
+                  setAck(false);
+                  setOpen("disable");
+                }}
+              >
+                Выключить
+              </button>
+            ) : (
+              <button
+                disabled={
+                  !!query.error ||
+                  query.isLoading ||
+                  !!commands.pending ||
+                  uncertainOperation ||
+                  deploymentBlocked
+                }
+                onClick={() => {
+                  setOpen("enable");
+                  void preview();
+                }}
+              >
+                Включить синхронизацию
+              </button>
+            ))}
           {view?.last_operation && (uncertainOperation || readbackRequired) && (
             <button
               className="secondary"
@@ -880,6 +888,13 @@ export function StockSyncControls({
             )}
         </div>
       </section>
+      {view?.test_account_mode && (
+        <AutomaticStockControls
+          scope={scope}
+          targets={view.targets}
+          onEnabledChange={setAutomaticEnabled}
+        />
+      )}
       {scopedPending && (
         <div className="integration-feedback" role="alert">
           <p>

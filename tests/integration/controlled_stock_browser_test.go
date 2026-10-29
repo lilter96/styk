@@ -33,19 +33,26 @@ func TestControlledStockPublicationBrowser(t *testing.T) {
 	if os.Getenv("STYK_CONTROLLED_BROWSER_E2E") != "1" {
 		t.Skip("browser E2E not requested")
 	}
-	controlledStockBrowser(t, false)
+	controlledStockBrowser(t, false, false)
 }
 
 func TestControlledStockRecoveryBrowser(t *testing.T) {
 	if os.Getenv("STYK_CONTROLLED_RECOVERY_E2E") != "1" {
 		t.Skip("recovery browser E2E not requested")
 	}
-	controlledStockBrowser(t, true)
+	controlledStockBrowser(t, true, false)
 }
 
-func controlledStockBrowser(t *testing.T, recovery bool) {
+func TestControlledStockAutomaticBrowser(t *testing.T) {
+	if os.Getenv("STYK_CONTROLLED_AUTOMATIC_E2E") != "1" {
+		t.Skip("automatic browser E2E not requested")
+	}
+	controlledStockBrowser(t, false, true)
+}
+
+func controlledStockBrowser(t *testing.T, recovery, automatic bool) {
 	var oldOperation string
-	db, review := controlledFixtureWithMapping(t, recovery)
+	db, review := controlledFixtureWithMapping(t, recovery || automatic)
 	scope := testpublication.Scope()
 	if recovery {
 		v := controlledEnable(t, db, review)
@@ -119,6 +126,9 @@ func controlledStockBrowser(t *testing.T, recovery bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 	worker := application.Worker{Store: db, Handler: application.MockHandler{}, Imports: imports, Publications: pub, ImportAccount: scope.OzonAccount, MoyskladImportAccount: scope.MoyskladAccount, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Poll: 50 * time.Millisecond, Lease: time.Minute, Retry: time.Second}
+	if automatic {
+		worker.Automatic = stocksync.AutomaticRunner{Store: db, Publisher: pub}
+	}
 	done := make(chan error, 1)
 	var once sync.Once
 	var started atomic.Bool
@@ -179,6 +189,9 @@ func controlledStockBrowser(t *testing.T, recovery bool) {
 	spec := "e2e/controlled-stock.spec.ts"
 	if recovery {
 		spec = "e2e/controlled-recovery.spec.ts"
+	}
+	if automatic {
+		spec = "e2e/controlled-automatic.spec.ts"
 	}
 	cmd := exec.CommandContext(ctx, "node", "node_modules/@playwright/test/cli.js", "test", spec, "--workers=1", "--reporter=line")
 	cmd.Dir = web
