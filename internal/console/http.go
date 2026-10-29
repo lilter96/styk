@@ -89,6 +89,7 @@ func Handler(db *postgres.Store, secret, origin string) (http.Handler, error) {
 		writeJSON(w, report)
 	}))
 	mux.HandleFunc("POST /api/product-mapping-reviews", a.authorized(a.createMappingReview(db, lifetime)))
+	mux.HandleFunc("POST /api/product-mapping-reviews/{id}/confirm", a.authorized(a.confirmMappingReview(db)))
 	mux.HandleFunc("GET /api/product-mapping-reviews/{id}", a.authorized(a.inspectMappingReview(db)))
 	mux.HandleFunc("GET /api/products", a.authorized(products(db)))
 	mux.HandleFunc("GET /api/moysklad-products", a.authorized(searchTargets(db)))

@@ -1,9 +1,11 @@
 package domain
 
 import (
+	"encoding/hex"
 	"errors"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // MappingEvidenceClass describes what supports an association, not whether it is approved.
@@ -30,6 +32,45 @@ type MappingReviewResult struct {
 	Status          string
 	MappingConflict bool
 	PrincipalType   string
+}
+
+// MappingConfirmationRequest is constructed by the authenticated server. The
+// session audit ID is not a human identity and is never supplied by a client.
+type MappingConfirmationRequest struct {
+	ReviewID, SessionID, IdempotencyKey string
+	Acknowledged                        bool
+	Explanation                         string
+}
+
+type MappingConfirmationResult struct {
+	MappingID        int64                `json:"mapping_id"`
+	MappingVersion   int                  `json:"mapping_version"`
+	ReviewID         string               `json:"review_id"`
+	EvidenceClass    MappingEvidenceClass `json:"evidence_class"`
+	ConfirmedAt      time.Time            `json:"confirmed_at"`
+	IdempotentReplay bool                 `json:"idempotent_replay"`
+}
+
+var ErrInvalidMappingConfirmation = errors.New("invalid mapping confirmation request")
+
+// Validate checks syntax only. Acknowledgement is checked after an existing
+// idempotency outcome so reuse of a key with different content is detected.
+func (r MappingConfirmationRequest) Validate() error {
+	if len(r.ReviewID) != 32 || strings.ToLower(r.ReviewID) != r.ReviewID {
+		return ErrInvalidMappingConfirmation
+	}
+	if _, err := hex.DecodeString(r.ReviewID); err != nil {
+		return ErrInvalidMappingConfirmation
+	}
+	if r.SessionID == "" || len(r.SessionID) > 128 || len(r.IdempotencyKey) == 0 || len(r.IdempotencyKey) > 128 || len(r.Explanation) > 1000 || !utf8.ValidString(r.Explanation) || strings.ContainsRune(r.Explanation, 0) {
+		return ErrInvalidMappingConfirmation
+	}
+	for _, c := range r.IdempotencyKey {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || strings.ContainsRune("._:-", c)) {
+			return ErrInvalidMappingConfirmation
+		}
+	}
+	return nil
 }
 
 // MappingReview identifies the exact local imports reviewed. It does not prove identity.

@@ -99,28 +99,32 @@ func mappingHistory(db *postgres.Store) http.HandlerFunc {
 			writeError(w, 404, "SCOPE_NOT_REGISTERED")
 			return
 		}
-		rows, err := db.Pool.Query(ctx, `SELECT h.mapping_id,h.version,h.ozon_product_id,h.ozon_offer_id,h.target_kind,h.target_id,h.provenance,h.confirmed_at,h.ozon_import_id,h.moysklad_import_id FROM product_mapping_history h JOIN stock_connections mc ON mc.tenant_id=h.tenant_id AND mc.source='moysklad' AND mc.account_id=h.moysklad_account JOIN stock_connections oc ON oc.tenant_id=h.tenant_id AND oc.source='ozon' AND oc.account_id=h.ozon_account JOIN source_imports mi ON mi.id=h.moysklad_import_id AND mi.source='moysklad' AND mi.account_id=h.moysklad_account JOIN source_imports oi ON oi.id=h.ozon_import_id AND oi.source='ozon' AND oi.account_id=h.ozon_account WHERE h.tenant_id=$1 AND h.moysklad_account=$2 AND h.ozon_account=$3 AND h.ozon_product_id=$4 AND (mc.include_import_history OR (mi.started_at>=mc.registered_at AND h.confirmed_at>=mc.registered_at)) AND (oc.include_import_history OR (oi.started_at>=oc.registered_at AND h.confirmed_at>=oc.registered_at)) ORDER BY h.mapping_id,h.version LIMIT 51 OFFSET $5`, tenant, moy, ozon, product, offset)
+		rows, err := db.Pool.Query(ctx, `SELECT h.mapping_id,h.version,h.ozon_product_id,h.ozon_offer_id,h.target_kind,h.target_id,h.provenance,h.confirmed_at,h.ozon_import_id,h.moysklad_import_id,a.review_id,a.evidence_class,a.principal_type,a.explanation FROM product_mapping_history h JOIN stock_connections mc ON mc.tenant_id=h.tenant_id AND mc.source='moysklad' AND mc.account_id=h.moysklad_account JOIN stock_connections oc ON oc.tenant_id=h.tenant_id AND oc.source='ozon' AND oc.account_id=h.ozon_account JOIN source_imports mi ON mi.id=h.moysklad_import_id AND mi.source='moysklad' AND mi.account_id=h.moysklad_account JOIN source_imports oi ON oi.id=h.ozon_import_id AND oi.source='ozon' AND oi.account_id=h.ozon_account LEFT JOIN product_mapping_confirmation_audits a ON a.mapping_id=h.mapping_id AND a.mapping_version=h.version AND a.tenant_id=h.tenant_id AND a.ozon_account=h.ozon_account AND a.moysklad_account=h.moysklad_account WHERE h.tenant_id=$1 AND h.moysklad_account=$2 AND h.ozon_account=$3 AND h.ozon_product_id=$4 AND (mc.include_import_history OR (mi.started_at>=mc.registered_at AND h.confirmed_at>=mc.registered_at)) AND (oc.include_import_history OR (oi.started_at>=oc.registered_at AND h.confirmed_at>=oc.registered_at)) ORDER BY h.mapping_id,h.version LIMIT 51 OFFSET $5`, tenant, moy, ozon, product, offset)
 		if err != nil {
 			writeError(w, 503, "HISTORY_UNAVAILABLE")
 			return
 		}
 		defer rows.Close()
 		type item struct {
-			ID         int64     `json:"mapping_id"`
-			Version    int       `json:"version"`
-			Product    string    `json:"product_id"`
-			Offer      string    `json:"offer_id"`
-			Kind       string    `json:"target_kind"`
-			Target     string    `json:"target_id"`
-			Provenance string    `json:"provenance"`
-			Confirmed  time.Time `json:"confirmed_at"`
-			OzonImport int64     `json:"ozon_import_id"`
-			MoyImport  int64     `json:"moysklad_import_id"`
+			ID          int64     `json:"mapping_id"`
+			Version     int       `json:"version"`
+			Product     string    `json:"product_id"`
+			Offer       string    `json:"offer_id"`
+			Kind        string    `json:"target_kind"`
+			Target      string    `json:"target_id"`
+			Provenance  string    `json:"provenance"`
+			Confirmed   time.Time `json:"confirmed_at"`
+			OzonImport  int64     `json:"ozon_import_id"`
+			MoyImport   int64     `json:"moysklad_import_id"`
+			ReviewID    *string   `json:"review_id,omitempty"`
+			Evidence    *string   `json:"evidence_class,omitempty"`
+			Principal   *string   `json:"principal_type,omitempty"`
+			Explanation *string   `json:"explanation,omitempty"`
 		}
 		items := []item{}
 		for rows.Next() {
 			var v item
-			if rows.Scan(&v.ID, &v.Version, &v.Product, &v.Offer, &v.Kind, &v.Target, &v.Provenance, &v.Confirmed, &v.OzonImport, &v.MoyImport) != nil {
+			if rows.Scan(&v.ID, &v.Version, &v.Product, &v.Offer, &v.Kind, &v.Target, &v.Provenance, &v.Confirmed, &v.OzonImport, &v.MoyImport, &v.ReviewID, &v.Evidence, &v.Principal, &v.Explanation) != nil {
 				writeError(w, 503, "HISTORY_UNAVAILABLE")
 				return
 			}

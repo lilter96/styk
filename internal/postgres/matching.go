@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"example.com/styk/internal/domain"
 	"example.com/styk/internal/matching"
@@ -173,17 +174,42 @@ func (s *Store) ConfirmMatch(ctx context.Context, scope MatchScope, productID, k
 	if !found {
 		return result, errors.New("target is not a current matching candidate")
 	}
-	var id int64
-	err = tx.QueryRow(ctx, `INSERT INTO product_mappings(tenant_id,ozon_account,ozon_product_id,ozon_offer_id,moysklad_account,target_kind,target_id,version,provenance) VALUES($1,$2,$3,$4,$5,$6,$7,1,$8) RETURNING id`, scope.Tenant, scope.OzonAccount, productID, src.OfferID, scope.MoyskladAccount, kind, targetID, provenance).Scan(&id)
+	_, err = insertConfirmedMapping(ctx, tx, mappingInsert{Scope: scope, ProductID: productID, OfferID: src.OfferID, TargetKind: kind, TargetID: targetID, Provenance: provenance, OzonImportID: d.OzonImportID, MoyskladImportID: d.MoyskladImportID})
 	if err != nil {
-		return result, fmt.Errorf("insert confirmed mapping: %w", err)
-	}
-	_, err = tx.Exec(ctx, `INSERT INTO product_mapping_history(mapping_id,version,tenant_id,ozon_account,ozon_product_id,ozon_offer_id,moysklad_account,target_kind,target_id,provenance,confirmed_at,ozon_import_id,moysklad_import_id) SELECT id,version,tenant_id,ozon_account,ozon_product_id,ozon_offer_id,moysklad_account,target_kind,target_id,provenance,confirmed_at,$2,$3 FROM product_mappings WHERE id=$1`, id, d.OzonImportID, d.MoyskladImportID)
-	if err != nil {
-		return result, fmt.Errorf("insert mapping history: %w", err)
+		return result, err
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return result, fmt.Errorf("commit confirmation: %w", err)
 	}
 	return result, nil
+}
+
+type mappingInsert struct {
+	Scope                          MatchScope
+	ProductID, OfferID             string
+	TargetKind, TargetID           string
+	Provenance                     string
+	OzonImportID, MoyskladImportID int64
+	ReviewID                       *string
+}
+
+type persistedMapping struct {
+	ID          int64
+	Version     int
+	ConfirmedAt time.Time
+}
+
+// The caller owns the transaction and performs its own authorization and
+// conflict checks. Both the legacy and review-bound paths use this SQL.
+func insertConfirmedMapping(ctx context.Context, tx pgx.Tx, in mappingInsert) (persistedMapping, error) {
+	var m persistedMapping
+	err := tx.QueryRow(ctx, `INSERT INTO product_mappings(tenant_id,ozon_account,ozon_product_id,ozon_offer_id,moysklad_account,target_kind,target_id,version,provenance,confirmed_at) VALUES($1,$2,$3,$4,$5,$6,$7,1,$8,CASE WHEN $9::text IS NULL THEN transaction_timestamp() ELSE clock_timestamp() END) RETURNING id,version,confirmed_at`, in.Scope.Tenant, in.Scope.OzonAccount, in.ProductID, in.OfferID, in.Scope.MoyskladAccount, in.TargetKind, in.TargetID, in.Provenance, in.ReviewID).Scan(&m.ID, &m.Version, &m.ConfirmedAt)
+	if err != nil {
+		return persistedMapping{}, fmt.Errorf("insert confirmed mapping: %w", err)
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO product_mapping_history(mapping_id,version,tenant_id,ozon_account,ozon_product_id,ozon_offer_id,moysklad_account,target_kind,target_id,provenance,confirmed_at,ozon_import_id,moysklad_import_id,confirmation_review_id) SELECT id,version,tenant_id,ozon_account,ozon_product_id,ozon_offer_id,moysklad_account,target_kind,target_id,provenance,confirmed_at,$2,$3,$4 FROM product_mappings WHERE id=$1`, m.ID, in.OzonImportID, in.MoyskladImportID, in.ReviewID)
+	if err != nil {
+		return persistedMapping{}, fmt.Errorf("insert mapping history: %w", err)
+	}
+	return m, nil
 }

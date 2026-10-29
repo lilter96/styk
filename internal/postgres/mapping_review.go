@@ -23,6 +23,7 @@ var ErrReviewMissing = errors.New("review not found")
 
 type reviewSnapshot struct {
 	OzonID, MoyID                                                                                     int64
+	OzonImportFingerprint, MoyImportFingerprint                                                       string
 	Offer                                                                                             string
 	SKU                                                                                               *string
 	Archived                                                                                          *bool
@@ -51,14 +52,14 @@ func snapshotReview(ctx context.Context, tx pgx.Tx, in domain.MappingReviewReque
 	if !ok {
 		return s, ErrReviewScope
 	}
-	e := tx.QueryRow(ctx, `SELECT i.id FROM source_imports i JOIN ozon_import_batches b ON b.import_id=i.id AND b.traversal_status='completed' JOIN stock_connections c ON c.tenant_id=$1 AND c.source=i.source AND c.account_id=i.account_id WHERE i.source='ozon' AND i.account_id=$2 AND (c.include_import_history OR i.started_at>=c.registered_at) ORDER BY i.id DESC LIMIT 1`, in.Tenant, in.OzonAccount).Scan(&s.OzonID)
+	e := tx.QueryRow(ctx, `SELECT i.id,i.fingerprint FROM source_imports i JOIN ozon_import_batches b ON b.import_id=i.id AND b.traversal_status='completed' JOIN stock_connections c ON c.tenant_id=$1 AND c.source=i.source AND c.account_id=i.account_id WHERE i.source='ozon' AND i.account_id=$2 AND (c.include_import_history OR i.started_at>=c.registered_at) ORDER BY i.id DESC LIMIT 1 FOR SHARE OF i`, in.Tenant, in.OzonAccount).Scan(&s.OzonID, &s.OzonImportFingerprint)
 	if errors.Is(e, pgx.ErrNoRows) {
 		return s, ErrReviewSource
 	}
 	if e != nil {
 		return s, e
 	}
-	e = tx.QueryRow(ctx, `SELECT i.id FROM source_imports i JOIN stock_connections c ON c.tenant_id=$1 AND c.source=i.source AND c.account_id=i.account_id WHERE i.source='moysklad' AND i.account_id=$2 AND (c.include_import_history OR i.started_at>=c.registered_at) ORDER BY i.id DESC LIMIT 1`, in.Tenant, in.MoyskladAccount).Scan(&s.MoyID)
+	e = tx.QueryRow(ctx, `SELECT i.id,i.fingerprint FROM source_imports i JOIN stock_connections c ON c.tenant_id=$1 AND c.source=i.source AND c.account_id=i.account_id WHERE i.source='moysklad' AND i.account_id=$2 AND (c.include_import_history OR i.started_at>=c.registered_at) ORDER BY i.id DESC LIMIT 1 FOR SHARE OF i`, in.Tenant, in.MoyskladAccount).Scan(&s.MoyID, &s.MoyImportFingerprint)
 	if errors.Is(e, pgx.ErrNoRows) {
 		return s, ErrReviewSource
 	}
@@ -136,7 +137,7 @@ func (s *Store) CreateMappingReview(ctx context.Context, in domain.MappingReview
 	if e = r.Validate(); e != nil {
 		return domain.MappingReviewResult{}, e
 	}
-	_, e = tx.Exec(ctx, `INSERT INTO product_mapping_reviews(id,tenant_id,ozon_account,moysklad_account,ozon_product_id,target_kind,target_id,ozon_import_id,moysklad_import_id,existing_mapping_id,existing_mapping_version,observation_hash,mapping_hash,evidence_class,principal_type,session_audit_id,created_at,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'LOCAL_OPERATOR_SESSION',$15,$16,$17)`, r.ID, r.Tenant, r.Source.Account, r.Target.Account, r.Source.ID, r.Target.Kind, r.Target.ID, r.OzonImportID, r.MoyskladImportID, snap.MappingID, snap.MappingVersion, snapshotHash(snap), mappingSnapshotHash(snap), r.EvidenceClass, in.SessionID, r.CreatedAt, r.ExpiresAt)
+	_, e = tx.Exec(ctx, `INSERT INTO product_mapping_reviews(id,tenant_id,ozon_account,moysklad_account,ozon_product_id,target_kind,target_id,ozon_import_id,moysklad_import_id,existing_mapping_id,existing_mapping_version,observation_hash,mapping_hash,evidence_class,principal_type,session_audit_id,created_at,expires_at,ozon_import_fingerprint,moysklad_import_fingerprint) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'LOCAL_OPERATOR_SESSION',$15,$16,$17,$18,$19)`, r.ID, r.Tenant, r.Source.Account, r.Target.Account, r.Source.ID, r.Target.Kind, r.Target.ID, r.OzonImportID, r.MoyskladImportID, snap.MappingID, snap.MappingVersion, snapshotHash(snap), mappingSnapshotHash(snap), r.EvidenceClass, in.SessionID, r.CreatedAt, r.ExpiresAt, snap.OzonImportFingerprint, snap.MoyImportFingerprint)
 	if e != nil {
 		return domain.MappingReviewResult{}, fmt.Errorf("persist review: %w", e)
 	}
@@ -154,45 +155,74 @@ func (s *Store) InspectMappingReview(ctx context.Context, id, sessionID string) 
 		return domain.MappingReviewResult{}, e
 	}
 	defer tx.Rollback(context.Background())
-	var r domain.MappingReview
-	var evidence string
-	var storedHash, storedMappingHash string
-	var mappingID *int64
-	e = tx.QueryRow(ctx, `SELECT tenant_id,ozon_account,moysklad_account,ozon_product_id,target_kind,target_id,ozon_import_id,moysklad_import_id,existing_mapping_id,existing_mapping_version,observation_hash,mapping_hash,evidence_class,created_at,expires_at FROM product_mapping_reviews WHERE id=$1 AND session_audit_id=$2`, id, sessionID).Scan(&r.Tenant, &r.Source.Account, &r.Target.Account, &r.Source.ID, &r.Target.Kind, &r.Target.ID, &r.OzonImportID, &r.MoyskladImportID, &mappingID, &r.ExistingMappingVersion, &storedHash, &storedMappingHash, &evidence, &r.CreatedAt, &r.ExpiresAt)
-	if errors.Is(e, pgx.ErrNoRows) {
-		return domain.MappingReviewResult{}, ErrReviewMissing
-	}
+	stored, e := loadMappingReview(ctx, tx, id, sessionID)
 	if e != nil {
 		return domain.MappingReviewResult{}, e
 	}
+	if e = lockReview(ctx, tx, stored.scope()); e != nil {
+		return domain.MappingReviewResult{}, e
+	}
+	status, snap, e := evaluateMappingReview(ctx, tx, stored)
+	if e != nil {
+		return domain.MappingReviewResult{}, e
+	}
+	if e = tx.Commit(ctx); e != nil {
+		return domain.MappingReviewResult{}, e
+	}
+	return domain.MappingReviewResult{Review: stored.review, Status: status, MappingConflict: snap.Conflict, PrincipalType: "LOCAL_OPERATOR_SESSION"}, nil
+}
+
+type storedMappingReview struct {
+	review                                      domain.MappingReview
+	mappingID                                   *int64
+	observationHash, mappingHash                string
+	ozonImportFingerprint, moyImportFingerprint *string
+}
+
+func (s storedMappingReview) scope() MatchScope {
+	return MatchScope{Tenant: s.review.Tenant, OzonAccount: s.review.Source.Account, MoyskladAccount: s.review.Target.Account}
+}
+
+// loadMappingReview enforces the creating session before returning any scope.
+func loadMappingReview(ctx context.Context, tx pgx.Tx, id, sessionID string) (storedMappingReview, error) {
+	var s storedMappingReview
+	r := &s.review
+	var evidence string
+	err := tx.QueryRow(ctx, `SELECT tenant_id,ozon_account,moysklad_account,ozon_product_id,target_kind,target_id,ozon_import_id,moysklad_import_id,existing_mapping_id,existing_mapping_version,observation_hash,mapping_hash,evidence_class,created_at,expires_at,ozon_import_fingerprint,moysklad_import_fingerprint FROM product_mapping_reviews WHERE id=$1 AND session_audit_id=$2`, id, sessionID).Scan(&r.Tenant, &r.Source.Account, &r.Target.Account, &r.Source.ID, &r.Target.Kind, &r.Target.ID, &r.OzonImportID, &r.MoyskladImportID, &s.mappingID, &r.ExistingMappingVersion, &s.observationHash, &s.mappingHash, &evidence, &r.CreatedAt, &r.ExpiresAt, &s.ozonImportFingerprint, &s.moyImportFingerprint)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return s, ErrReviewMissing
+	}
+	if err != nil {
+		return s, err
+	}
 	r.ID = id
-	r.Source.System = "ozon"
-	r.Source.Kind = "product"
+	r.Source.System, r.Source.Kind = "ozon", "product"
 	r.Target.System = "moysklad"
 	r.EvidenceClass = domain.MappingEvidenceClass(evidence)
-	in := domain.MappingReviewRequest{Tenant: r.Tenant, OzonAccount: r.Source.Account, MoyskladAccount: r.Target.Account, ProductID: r.Source.ID, TargetKind: r.Target.Kind, TargetID: r.Target.ID, SessionID: sessionID, Evidence: r.EvidenceClass}
-	if e = lockReview(ctx, tx, MatchScope{Tenant: in.Tenant, OzonAccount: in.OzonAccount, MoyskladAccount: in.MoyskladAccount}); e != nil {
-		return domain.MappingReviewResult{}, e
-	}
-	snap, e := snapshotReview(ctx, tx, in)
+	return s, nil
+}
+
+// evaluateMappingReview must run while the caller holds the review's existing
+// importer and matching locks; it reuses the same revision policy for reads and writes.
+func evaluateMappingReview(ctx context.Context, tx pgx.Tx, stored storedMappingReview) (string, reviewSnapshot, error) {
+	r := stored.review
+	in := domain.MappingReviewRequest{Tenant: r.Tenant, OzonAccount: r.Source.Account, MoyskladAccount: r.Target.Account, ProductID: r.Source.ID, TargetKind: r.Target.Kind, TargetID: r.Target.ID, Evidence: r.EvidenceClass}
+	snap, err := snapshotReview(ctx, tx, in)
 	status := "CURRENT"
-	if errors.Is(e, ErrReviewSource) {
+	if errors.Is(err, ErrReviewSource) {
 		status = "STALE_SOURCE"
-	} else if e != nil {
-		return domain.MappingReviewResult{}, e
-	} else if snap.OzonID != r.OzonImportID || snap.MoyID != r.MoyskladImportID || snapshotHash(snap) != storedHash {
+	} else if err != nil {
+		return "", snap, err
+	} else if snap.OzonID != r.OzonImportID || snap.MoyID != r.MoyskladImportID || snapshotHash(snap) != stored.observationHash || stored.ozonImportFingerprint == nil || stored.moyImportFingerprint == nil || *stored.ozonImportFingerprint != snap.OzonImportFingerprint || *stored.moyImportFingerprint != snap.MoyImportFingerprint {
 		status = "STALE_SOURCE"
 	}
-	if e == nil && status == "CURRENT" && (pointerInt64Changed(mappingID, snap.MappingID) || pointerIntChanged(r.ExistingMappingVersion, snap.MappingVersion) || storedMappingHash != mappingSnapshotHash(snap)) {
+	if err == nil && status == "CURRENT" && (pointerInt64Changed(stored.mappingID, snap.MappingID) || pointerIntChanged(r.ExistingMappingVersion, snap.MappingVersion) || stored.mappingHash != mappingSnapshotHash(snap)) {
 		status = "STALE_MAPPING"
 	}
 	if !time.Now().Before(r.ExpiresAt) {
 		status = "EXPIRED"
 	}
-	if e = tx.Commit(ctx); e != nil {
-		return domain.MappingReviewResult{}, e
-	}
-	return domain.MappingReviewResult{Review: r, Status: status, MappingConflict: snap.Conflict, PrincipalType: "LOCAL_OPERATOR_SESSION"}, nil
+	return status, snap, nil
 }
 
 func pointerInt64Changed(a, b *int64) bool {

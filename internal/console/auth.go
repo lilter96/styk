@@ -22,6 +22,8 @@ const cookieName = "styk_operator"
 type operatorSession struct {
 	expires time.Time
 	auditID string
+	ctx     context.Context
+	cancel  context.CancelFunc
 }
 type auditContextKey struct{}
 
@@ -107,6 +109,7 @@ func (a *auth) login(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	for k, v := range a.sessions {
 		if !v.expires.After(now) {
+			v.cancel()
 			delete(a.sessions, k)
 		}
 	}
@@ -115,7 +118,8 @@ func (a *auth) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "UNAVAILABLE")
 		return
 	}
-	a.sessions[sha256.Sum256(token[:])] = operatorSession{expires: now.Add(8 * time.Hour), auditID: base64.RawURLEncoding.EncodeToString(audit[:])}
+	sessionCtx, sessionCancel := context.WithCancel(context.Background())
+	a.sessions[sha256.Sum256(token[:])] = operatorSession{expires: now.Add(8 * time.Hour), auditID: base64.RawURLEncoding.EncodeToString(audit[:]), ctx: sessionCtx, cancel: sessionCancel}
 	a.mu.Unlock()
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: base64.RawURLEncoding.EncodeToString(token[:]), Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: 8 * 60 * 60})
 	w.Header().Set("Cache-Control", "no-store")
@@ -142,6 +146,7 @@ func (a *auth) authorized(next http.HandlerFunc) http.HandlerFunc {
 		a.mu.Lock()
 		session, ok := a.sessions[key]
 		if ok && !session.expires.After(time.Now()) {
+			session.cancel()
 			delete(a.sessions, key)
 			ok = false
 		}
@@ -150,7 +155,17 @@ func (a *auth) authorized(next http.HandlerFunc) http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED")
 			return
 		}
-		next(w, r.WithContext(context.WithValue(r.Context(), auditContextKey{}, session.auditID)))
+		// Cancellation also reaches in-flight database operations on logout;
+		// a request cannot keep working beyond the authenticated session expiry.
+		ctx, cancel := context.WithDeadline(r.Context(), session.expires)
+		stop := context.AfterFunc(session.ctx, cancel)
+		defer cancel()
+		defer stop()
+		if session.ctx.Err() != nil || ctx.Err() != nil {
+			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED")
+			return
+		}
+		next(w, r.WithContext(context.WithValue(ctx, auditContextKey{}, session.auditID)))
 	}
 }
 
@@ -162,7 +177,11 @@ func (a *auth) logout(w http.ResponseWriter, r *http.Request) {
 	if c, e := r.Cookie(cookieName); e == nil {
 		if v, e := base64.RawURLEncoding.DecodeString(c.Value); e == nil {
 			a.mu.Lock()
-			delete(a.sessions, sha256.Sum256(v))
+			key := sha256.Sum256(v)
+			if session, ok := a.sessions[key]; ok {
+				session.cancel()
+				delete(a.sessions, key)
+			}
 			a.mu.Unlock()
 		}
 	}
