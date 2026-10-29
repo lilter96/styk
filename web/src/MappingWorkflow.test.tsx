@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { ProductMappingPage as Products } from "./ProductMappingPage";
 import type { Product } from "./api";
+import { ConfirmationNotice, useConfirmation } from "./Confirmation";
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -50,6 +51,7 @@ function setup(
   lost = false,
   counts: Record<string, number> = {},
   products: Product[] = [product],
+  withNotice = false,
 ) {
   let confirmed = false;
   let confirmationAttempts = 0;
@@ -125,11 +127,24 @@ function setup(
       }
     >
       <MemoryRouter>
-        <Products scope={scope} />
+        {withNotice ? <ProductsWithNotice /> : <Products scope={scope} />}
       </MemoryRouter>
     </QueryClientProvider>,
   );
   return fetchMock;
+}
+function ProductsWithNotice() {
+  const confirmation = useConfirmation();
+  return (
+    <>
+      <ConfirmationNotice
+        confirmation={confirmation}
+        scope={scope}
+        restore={() => {}}
+      />
+      <Products scope={scope} confirmation={confirmation} />
+    </>
+  );
 }
 async function createReview() {
   fireEvent.click(
@@ -399,4 +414,78 @@ it("shows confirmed target and Ozon names supplied by the catalog", async () => 
   expect(screen.getByText("Название МойСклад")).toBeTruthy();
   expect(screen.getByText("ART-42")).toBeTruthy();
   expect(screen.getByText("Offer ID: offer")).toBeTruthy();
+});
+
+it("retains partial queue progress and retries an uncertain confirmation only on request", async () => {
+  const candidates = [
+    {
+      kind: "variant",
+      id: "v",
+      name: "Synthetic variant",
+      evidence: ["article"],
+    },
+  ];
+  const mock = setup(
+    "CURRENT",
+    false,
+    true,
+    {},
+    [
+      {
+        ...product,
+        candidates,
+        candidate_count: 1,
+        match_status: "ONE_CANDIDATE",
+      },
+      {
+        ...product,
+        product_id: "p2",
+        offer_id: "second",
+        candidates,
+        candidate_count: 1,
+        match_status: "ONE_CANDIDATE",
+      },
+    ],
+    true,
+  );
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Выбрать предложения на странице",
+    }),
+  );
+  fireEvent.click(screen.getByText("Выбрано для проверки: 2"));
+  await createReview();
+  fireEvent.click(
+    screen.getByLabelText(/Подтверждаю, что это один и тот же товар/),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Подтвердить соответствие" }),
+  );
+  await screen.findByRole("button", { name: "Повторить тот же запрос" });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Закрыть сопоставление" }),
+  );
+  expect(
+    screen.getByText("Подтверждено: 0 · Осталось проверить: 2"),
+  ).toBeTruthy();
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Проверить second",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  expect(
+    mock.mock.calls.filter(([path]) => String(path).endsWith("/confirm")),
+  ).toHaveLength(1);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Повторить то же подтверждение" }),
+  );
+  await screen.findByText("Подтверждено: 1 · Осталось проверить: 1");
+  expect(screen.getByRole("button", { name: "Проверить second" })).toBeTruthy();
+  const calls = mock.mock.calls.filter(([path]) =>
+    String(path).endsWith("/confirm"),
+  );
+  expect(calls).toHaveLength(2);
+  expect(calls[1][1]?.body).toBe(calls[0][1]?.body);
 });

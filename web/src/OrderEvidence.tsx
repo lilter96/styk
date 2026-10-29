@@ -159,13 +159,27 @@ export function OrderEvidence({
     [currentRun.result.source_status, currentRun.result.posting_status].some(
       (status) => status !== "COMPLETED" && status !== "LIMIT_REACHED",
     );
+  const conflict =
+    !!currentRun &&
+    [
+      currentRun.result.source_status,
+      currentRun.result.posting_status,
+    ].includes("CONFLICT");
+  const limited =
+    !!currentRun &&
+    [
+      currentRun.result.source_status,
+      currentRun.result.posting_status,
+    ].includes("LIMIT_REACHED");
   const credentialChanged = !!persisted?.credential_changed;
   const expired = !!persisted?.expired;
   const continuing =
     !!resumable &&
     currentRun.hours === selectedHours &&
     !credentialChanged &&
-    !expired;
+    !expired &&
+    !conflict &&
+    !limited;
   async function refresh() {
     if (busy) return;
     setBusy(true);
@@ -191,10 +205,28 @@ export function OrderEvidence({
           scope.ozon_account,
         ],
       });
+      const saved = client.getQueryData<Evidence>(key)?.progress;
+      if (
+        saved &&
+        String(saved.window_hours) === selectedHours &&
+        saved.source_status === result.source_status &&
+        saved.posting_status === result.posting_status
+      ) {
+        setRun(null);
+      }
     } catch {
       setMessage(
-        "Не удалось получить результат проверки. Обновите сведения или повторите проверку; отправки остатков не было.",
+        "Не удалось получить результат проверки. Сведения о сохранённом ходе обновляются; отправки остатков не было.",
       );
+      setRun(null);
+      await client.invalidateQueries({
+        queryKey: [
+          "order-evidence",
+          scope.tenant,
+          scope.moysklad_account,
+          scope.ozon_account,
+        ],
+      });
     } finally {
       setBusy(false);
     }
@@ -284,7 +316,7 @@ export function OrderEvidence({
             ? "Проверяем заказы…"
             : continuing
               ? "Продолжить проверку"
-              : resumable
+              : resumable || limited
                 ? "Начать новую проверку"
                 : "Проверить заказы"}
         </button>
@@ -297,6 +329,7 @@ export function OrderEvidence({
               currentRun.result.source_status,
               currentRun.result.source_completed_windows,
               currentRun.result.source_pending_windows,
+              currentRun.result.source_limit_resource,
             )}
           </p>
           <p>
@@ -305,6 +338,7 @@ export function OrderEvidence({
               currentRun.result.posting_status,
               currentRun.result.posting_completed_windows,
               currentRun.result.posting_pending_windows,
+              currentRun.result.posting_limit_resource,
             )}
           </p>
           {(currentRun.result.source_status !== "COMPLETED" ||
@@ -325,6 +359,18 @@ export function OrderEvidence({
             <p>
               Выбран другой период: следующий запрос начнёт новую проверку и
               заменит незавершённый прогресс.
+            </p>
+          )}
+          {limited && (
+            <p>
+              Предел этой проверки исчерпан. Следующий запрос начнёт новую
+              проверку.
+            </p>
+          )}
+          {conflict && (
+            <p>
+              Обнаружен конфликт данных. Следующий запрос начнёт проверку
+              заново.
             </p>
           )}
           {credentialChanged && (

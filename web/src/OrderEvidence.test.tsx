@@ -217,3 +217,97 @@ it("does not offer continuation for an expired run", async () => {
   ).toBeNull();
   client.clear();
 });
+
+it("refreshes persisted progress after an unknown request outcome without retrying", async () => {
+  let gets = 0;
+  let posts = 0;
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
+    if (init?.method === "POST") {
+      posts++;
+      throw new Error("synthetic lost response");
+    }
+    gets++;
+    return new Response(
+      JSON.stringify({
+        positions: [],
+        postings: [],
+        truncated: false,
+        progress: {
+          window_hours: 1,
+          from: "2026-10-28T10:00:00Z",
+          to: "2026-10-28T11:00:00Z",
+          source_status: gets > 1 ? "LIMIT_REACHED" : "IN_PROGRESS",
+          source_limit_resource: gets > 1 ? "staging_bytes" : "",
+          posting_status: "COMPLETED",
+        },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <OrderEvidence
+        scope={{ tenant: "t", moysklad_account: "m", ozon_account: "o" }}
+        product="1"
+        warehouse="2"
+      />
+    </QueryClientProvider>,
+  );
+  fireEvent.click(screen.getByText("Заказы и резервы"));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Продолжить проверку" }),
+  );
+  await screen.findByText(/Ограничение: объём временных данных/);
+  expect(
+    screen.getByText(/неполная проверка не подтверждает полноту данных/),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Начать новую проверку" }),
+  ).toBeTruthy();
+  expect(posts).toBe(1);
+  client.clear();
+});
+
+it("explains that a conflict starts a new run", async () => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        positions: [],
+        postings: [],
+        truncated: false,
+        progress: {
+          window_hours: 1,
+          from: "2026-10-28T10:00:00Z",
+          to: "2026-10-28T11:00:00Z",
+          source_status: "CONFLICT",
+          posting_status: "COMPLETED",
+        },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    ),
+  );
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <OrderEvidence
+        scope={{ tenant: "t", moysklad_account: "m", ozon_account: "o" }}
+        product="1"
+        warehouse="2"
+      />
+    </QueryClientProvider>,
+  );
+  fireEvent.click(screen.getByText("Заказы и резервы"));
+  await screen.findByText(/Обнаружен конфликт данных/);
+  expect(
+    screen.getByRole("button", { name: "Начать новую проверку" }),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Продолжить проверку" }),
+  ).toBeNull();
+  client.clear();
+});

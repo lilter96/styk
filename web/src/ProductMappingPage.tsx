@@ -92,6 +92,31 @@ export function ProductMappingPage({
     setOffset(0);
   }, [scope.tenant, scope.moy, scope.ozon]);
 
+  useEffect(() => {
+    const context = activeConfirmation.resultContext;
+    if (
+      !activeConfirmation.result ||
+      context?.intent.kind !== "product" ||
+      context.scope.tenant !== scope.tenant ||
+      context.scope.moy !== scope.moy ||
+      context.scope.ozon !== scope.ozon ||
+      !selectedProducts.some(
+        (product) => product.product_id === context.product,
+      )
+    )
+      return;
+    setCompleted((items) =>
+      items.includes(context.product) ? items : [...items, context.product],
+    );
+  }, [
+    activeConfirmation.result,
+    activeConfirmation.resultContext,
+    scope.tenant,
+    scope.moy,
+    scope.ozon,
+    selectedProducts,
+  ]);
+
   return (
     <div className="product-mapping-page">
       <Link className="mapping-back" to="/integrations">
