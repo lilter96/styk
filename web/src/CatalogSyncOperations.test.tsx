@@ -441,3 +441,22 @@ it.each(["missing task", "non-Ozon", "already reconciled"])(
     ).toBeNull();
   },
 );
+
+it("shows each provider diagnostic once when repeated at task and product level", () => {
+  const work = unknownWork();
+  const original = work.receipt.errors![0];
+  work.receipt.products = [
+    {
+      status: "imported",
+      errors: [{ ...original }, { ...original, attribute_id: 86 }],
+    },
+  ];
+  const recorded = JSON.stringify(work.receipt);
+  mountHistory(work);
+  expect(
+    screen.getAllByText("OZON_WARNING_CODE", { selector: "code" }),
+  ).toHaveLength(2);
+  expect(screen.getAllByText("ID характеристики: 85")).toHaveLength(1);
+  expect(screen.getAllByText("ID характеристики: 86")).toHaveLength(1);
+  expect(JSON.stringify(work.receipt)).toBe(recorded);
+});

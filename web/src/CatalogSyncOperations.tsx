@@ -178,6 +178,21 @@ function targetCaption(work: CatalogWork) {
     : primary;
 }
 
+function uniqueProviderIssues(issues: FieldIssue[]): FieldIssue[] {
+  const seen = new Set<string>();
+  return issues.filter((issue) => {
+    const key = JSON.stringify([
+      issue.field,
+      issue.code,
+      issue.severity,
+      issue.attribute_id,
+    ]);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function WorkResult({
   work,
   scope,
@@ -187,10 +202,10 @@ function WorkResult({
   scope: Scope;
   onRefresh: () => void;
 }) {
-  const errors = [
+  const errors = uniqueProviderIssues([
     ...(work.receipt.errors || []),
     ...(work.receipt.products || []).flatMap((product) => product.errors || []),
-  ];
+  ]);
   const uncertain = work.state === "UNKNOWN";
   return (
     <article className="catalog-work">
