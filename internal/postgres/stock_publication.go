@@ -575,8 +575,13 @@ func (s *Store) StockPublicationCanDispatch(ctx context.Context, op domain.Stock
 		if automaticAllowed {
 			reviewed := review.Targets[0]
 			automaticAllowed = reviewed.Quantity != nil && t.ProductID == reviewed.ProductID && t.WarehouseID == reviewed.WarehouseID && t.Quantity == *reviewed.Quantity && t.Decision.Request.Pool.ItemID == reviewed.SourceItemID && t.Decision.Request.Pool.WarehouseID == reviewed.SourceWarehouseID
+			if automaticAllowed && reviewed.InitialPublication {
+				if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_initial_publications WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND product_id=$4 AND warehouse_id=$5 AND publication_id=$6 AND config_revision=$7)`, op.Tenant, op.MoyskladAccount, op.OzonAccount, t.ProductID, t.WarehouseID, op.ID, review.Attestations[0].AutomaticPolicyRevision).Scan(&automaticAllowed); err != nil {
+					return false, err
+				}
+			}
 		}
-		manualAllowed := testpublication.TargetAllowed(op.StockSyncScope, t.ProductID, t.WarehouseID, t.Decision.Request.Pool.ItemID, t.Decision.Request.Pool.WarehouseID, t.Quantity)
+		manualAllowed := len(review.Targets) == 1 && !review.Targets[0].InitialPublication && testpublication.TargetAllowed(op.StockSyncScope, t.ProductID, t.WarehouseID, t.Decision.Request.Pool.ItemID, t.Decision.Request.Pool.WarehouseID, t.Quantity)
 		if !automaticAllowed && !manualAllowed {
 			return false, nil
 		}

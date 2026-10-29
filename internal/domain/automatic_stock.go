@@ -17,6 +17,9 @@ type AutomaticStockTarget struct {
 	Unreflected             string `json:"unreflected"`
 	UnseenBound             string `json:"unseen_bound"`
 	Maximum                 int64  `json:"maximum"`
+	// A separate, explicit takeover of this target with an unknown Ozon
+	// baseline. It is not evidence that the prior balance or reserve was zero.
+	InitialPublication bool `json:"initial_publication,omitempty"`
 }
 
 type AutomaticStockPolicy struct {
@@ -48,12 +51,13 @@ type AutomaticStockRequest struct {
 }
 
 type AutomaticStockTargetRequest struct {
-	ProductID   string `json:"ozon_product_id"`
-	WarehouseID string `json:"ozon_warehouse_id"`
-	SafetyStock string `json:"safety_stock"`
-	Unreflected string `json:"unreflected"`
-	UnseenBound string `json:"unseen_bound"`
-	Maximum     int64  `json:"maximum"`
+	ProductID          string `json:"ozon_product_id"`
+	WarehouseID        string `json:"ozon_warehouse_id"`
+	SafetyStock        string `json:"safety_stock"`
+	Unreflected        string `json:"unreflected"`
+	UnseenBound        string `json:"unseen_bound"`
+	Maximum            int64  `json:"maximum"`
+	InitialPublication bool   `json:"initial_publication,omitempty"`
 }
 
 type AutomaticStockCycle struct {
@@ -88,6 +92,7 @@ type AutomaticStockCandidate struct {
 	OfferID          string     `json:"offer_id"`
 	SourceItemID     string     `json:"source_item_id"`
 	Eligible         bool       `json:"eligible"`
+	InitialEligible  bool       `json:"initial_eligible"`
 	SourcePhysical   *string    `json:"source_physical,omitempty"`
 	SourceReserve    *string    `json:"source_reserve,omitempty"`
 	MarketplaceFree  *int64     `json:"marketplace_free,omitempty"`

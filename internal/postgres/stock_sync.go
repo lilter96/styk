@@ -228,6 +228,18 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 		if err = loadStockObservations(ctx, tx, r, &e); err != nil {
 			return review, err
 		}
+		// An explicitly enrolled first publication is a takeover with unknown
+		// marketplace balance and reserve, never an inferred zero. It requires a
+		// successful scoped traversal; its one-shot entitlement is consumed
+		// transactionally when a publication operation is created.
+		initial := automaticValid && automaticTarget != nil && automaticTarget.InitialPublication && !e.Marketplace.StockRowFound && e.Marketplace.ImportID != nil && e.Marketplace.FreshTraversal != nil
+		if initial {
+			var absent bool
+			if err = tx.QueryRow(ctx, `SELECT NOT EXISTS(SELECT 1 FROM ozon_fbs_stock_observations WHERE import_id=$1 AND product_id=$2 AND warehouse_id=$3)`, *e.Marketplace.ImportID, t.pid, t.wid).Scan(&absent); err != nil {
+				return review, err
+			}
+			initial = absent
+		}
 		if e.Source.ImportID != nil {
 			// A mapped product and one of its mapped variants can expose the
 			// same physical stock twice even though their IDs/kinds differ.
@@ -268,12 +280,12 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 		if e.Marketplace.ImportID != nil && e.ProductMapping != nil {
 			err = tx.QueryRow(ctx, `SELECT EXISTS(
 				SELECT 1 FROM ozon_product_observations p
-				JOIN ozon_fbs_stock_observations s ON s.import_id=p.import_id AND s.product_id=p.product_id AND s.offer_id=p.offer_id AND s.sku=p.sku
 				JOIN product_mapping_history h ON h.mapping_id=$5 AND h.version=$6
 				JOIN ozon_product_observations original ON original.import_id=h.ozon_import_id AND original.product_id=h.ozon_product_id AND original.offer_id=h.ozon_offer_id AND original.sku=p.sku
-				WHERE p.import_id=$1 AND p.product_id=$2 AND p.offer_id=$3 AND p.archived=false AND p.sku IS NOT NULL AND s.warehouse_id=$4
+				WHERE p.import_id=$1 AND p.product_id=$2 AND p.offer_id=$3 AND p.archived=false AND p.sku IS NOT NULL
+				AND ($11::boolean OR EXISTS(SELECT 1 FROM ozon_fbs_stock_observations s WHERE s.import_id=p.import_id AND s.product_id=p.product_id AND s.offer_id=p.offer_id AND s.sku=p.sku AND s.warehouse_id=$4))
 				AND (NOT $7::boolean OR (p.offer_id=$8 AND p.sku=$9))
-			), EXISTS(SELECT 1 FROM ozon_warehouse_observations WHERE import_id=$1 AND warehouse_id=$4 AND is_rfbs=false AND (NOT $10::boolean OR status='created'))`, *e.Marketplace.ImportID, t.pid, e.ProductMapping.OfferID, t.wid, e.ProductMapping.ID, e.ProductMapping.Version, legacyManualTest, testpublication.OzonOffer, testpublication.OzonSKU, testpublication.Enabled(scope)).Scan(&productIdentity, &warehouseIdentity)
+			), EXISTS(SELECT 1 FROM ozon_warehouse_observations WHERE import_id=$1 AND warehouse_id=$4 AND is_rfbs=false AND (NOT $10::boolean OR status='created'))`, *e.Marketplace.ImportID, t.pid, e.ProductMapping.OfferID, t.wid, e.ProductMapping.ID, e.ProductMapping.Version, legacyManualTest, testpublication.OzonOffer, testpublication.OzonSKU, testpublication.Enabled(scope), initial).Scan(&productIdentity, &warehouseIdentity)
 			if err != nil {
 				return review, err
 			}
@@ -335,10 +347,13 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 		)
 		validIDs := positiveAPIID(t.pid) && positiveAPIID(t.wid)
 		checks = append(checks, domain.StockSyncCheck{Code: "OZON_TARGET_IDENTITIES", Passed: validIDs, Message: "Товар и склад имеют допустимые идентификаторы Ozon."})
-		stockComplete := e.Marketplace.ImportID != nil && e.Marketplace.StockRowFound
-		checks = append(checks, domain.StockSyncCheck{Code: "OZON_STOCK_BASELINE_REQUIRED", Passed: stockComplete, Message: "В полной загрузке Ozon есть остаток выбранного товара на складе."})
+		stockComplete := e.Marketplace.ImportID != nil && (e.Marketplace.StockRowFound || initial)
+		checks = append(checks, domain.StockSyncCheck{Code: "OZON_STOCK_BASELINE_REQUIRED", Passed: stockComplete, Message: "Остаток Ozon наблюдался либо оператор отдельно разрешил первую отправку при неизвестном остатке и резерве."})
 		validStockValues := e.Marketplace.Present != nil && e.Marketplace.Reserved != nil && e.Marketplace.FreeStock != nil && *e.Marketplace.Present >= 0 && *e.Marketplace.Reserved >= 0 && *e.Marketplace.FreeStock >= 0
-		checks = append(checks, domain.StockSyncCheck{Code: "OZON_STOCK_VALUES_INVALID", Passed: validStockValues, Message: "Числа остатков и резервов Ozon присутствуют и неотрицательны."})
+		checks = append(checks, domain.StockSyncCheck{Code: "OZON_STOCK_VALUES_INVALID", Passed: validStockValues || initial, Message: "Остаток и резерв Ozon проверены, либо их отсутствие отдельно принято для первой отправки."})
+		if initial {
+			checks = append(checks, domain.StockSyncCheck{Code: "OZON_INITIAL_TAKEOVER_ATTESTED", Passed: true, Message: "Оператор разрешил первую отправку: предыдущий остаток и резерв Ozon неизвестны."})
+		}
 		marketFreshness := e.Marketplace.ObservedAt
 		if t := e.Marketplace.FreshTraversal; t != nil && !t.FinishedAt.After(now) {
 			marketFreshness = &t.StartedAt
@@ -384,8 +399,8 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 			automaticValid = automaticValid && parseErr == nil && quantity <= automaticTarget.Maximum
 			checks = append(checks, domain.StockSyncCheck{Code: "AUTOMATIC_MAXIMUM_EXCEEDED", Passed: parseErr == nil && quantity <= automaticTarget.Maximum, Message: "Расчёт не превышает настроенный предел тестовой публикации."})
 		}
-		ready := d.Status == domain.StockReady && validIDs && stockComplete && qtyValid && settled && sourceIdentity && productIdentity && warehouseIdentity && orderingValid && validStockValues && sourceTraversalFresh && marketTraversalFresh && beforeTraversal && testAllowed && recoveryFresh && automaticValid
-		item := domain.StockSyncTarget{SettlementOperationID: settlementID, SettlementObservedAt: settlementAt, ProductID: t.pid, WarehouseID: t.wid, SourceItemID: t.item, SourceWarehouseID: t.sourceWarehouse, SourceImportID: e.Source.ImportID, SourcePhysical: e.Source.Physical, SourceReserve: e.Source.Reserve, MarketplaceFree: e.Marketplace.FreeStock, MarketplacePresent: e.Marketplace.Present, MarketplaceReserved: e.Marketplace.Reserved, Status: string(d.Status), Checks: checks, Decision: d}
+		ready := d.Status == domain.StockReady && validIDs && stockComplete && qtyValid && settled && sourceIdentity && productIdentity && warehouseIdentity && orderingValid && (validStockValues || initial) && sourceTraversalFresh && marketTraversalFresh && beforeTraversal && testAllowed && recoveryFresh && automaticValid
+		item := domain.StockSyncTarget{SettlementOperationID: settlementID, SettlementObservedAt: settlementAt, ProductID: t.pid, WarehouseID: t.wid, SourceItemID: t.item, SourceWarehouseID: t.sourceWarehouse, SourceImportID: e.Source.ImportID, SourcePhysical: e.Source.Physical, SourceReserve: e.Source.Reserve, MarketplaceFree: e.Marketplace.FreeStock, MarketplacePresent: e.Marketplace.Present, MarketplaceReserved: e.Marketplace.Reserved, InitialPublication: initial, Status: string(d.Status), Checks: checks, Decision: d}
 		if e.ProductMapping != nil {
 			item.ProductMappingVersion = e.ProductMapping.Version
 		}
@@ -472,10 +487,11 @@ func readSyncReview(ctx context.Context, tx pgx.Tx, scope domain.StockSyncScope,
 }
 func stableSyncEvidence(r domain.StockSyncReview) string {
 	type evidence struct {
-		P, W   string
-		D      domain.StockEvidence
-		Qty    *string
-		PM, WM int
+		P, W    string
+		D       domain.StockEvidence
+		Qty     *string
+		PM, WM  int
+		Initial bool
 	}
 	out := []evidence{}
 	for _, t := range r.Targets {
@@ -490,7 +506,7 @@ func stableSyncEvidence(r domain.StockSyncReview) string {
 			p.ValidUntil = time.Time{}
 			e.Proofs[code] = p
 		}
-		out = append(out, evidence{t.ProductID, t.WarehouseID, e, t.Quantity, t.ProductMappingVersion, t.WarehouseMappingVersion})
+		out = append(out, evidence{t.ProductID, t.WarehouseID, e, t.Quantity, t.ProductMappingVersion, t.WarehouseMappingVersion, t.InitialPublication})
 	}
 	return syncHash(struct {
 		Targets []evidence
@@ -498,6 +514,29 @@ func stableSyncEvidence(r domain.StockSyncReview) string {
 	}{out, r.MoyskladCredentialRevision, r.OzonCredentialRevision})
 }
 func createPublication(ctx context.Context, tx pgx.Tx, review domain.StockSyncReview, now time.Time) (domain.StockPublication, error) {
+	for _, target := range review.Targets {
+		if target.InitialPublication && len(review.Targets) != 1 {
+			return domain.StockPublication{}, domain.ErrStockSyncBlocked
+		}
+	}
+	if len(review.Targets) == 1 && review.Targets[0].InitialPublication {
+		// Only the immutable, current test policy can authorize a first-write
+		// takeover. Never use this route for a previously dispatched target.
+		allowed, err := authorizedAutomaticReview(ctx, tx, review, now)
+		if err != nil {
+			return domain.StockPublication{}, err
+		}
+		if !allowed || len(review.Attestations) != 1 || review.Targets[0].Decision.Evidence.Marketplace.StockRowFound {
+			return domain.StockPublication{}, domain.ErrStockSyncBlocked
+		}
+		var used bool
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_initial_publications WHERE ozon_account=$1 AND product_id=$2 AND warehouse_id=$3) OR EXISTS(SELECT 1 FROM stock_publication_targets WHERE ozon_account=$1 AND product_id=$2 AND warehouse_id=$3 AND dispatched_at IS NOT NULL)`, review.OzonAccount, review.Targets[0].ProductID, review.Targets[0].WarehouseID).Scan(&used); err != nil {
+			return domain.StockPublication{}, err
+		}
+		if used {
+			return domain.StockPublication{}, domain.ErrStockSyncBlocked
+		}
+	}
 	id, err := stockSyncID()
 	if err != nil {
 		return domain.StockPublication{}, err
@@ -505,6 +544,16 @@ func createPublication(ctx context.Context, tx pgx.Tx, review domain.StockSyncRe
 	op := domain.StockPublication{ID: id, StockSyncScope: review.StockSyncScope, ReviewID: review.ID, State: "QUEUED", CreatedAt: now, Targets: []domain.StockPublicationTarget{}}
 	if _, err = tx.Exec(ctx, `INSERT INTO stock_publications(id,tenant_id,moysklad_account,ozon_account,review_id,created_at) VALUES($1,$2,$3,$4,$5,$6)`, id, review.Tenant, review.MoyskladAccount, review.OzonAccount, review.ID, now); err != nil {
 		return op, err
+	}
+	if len(review.Targets) == 1 && review.Targets[0].InitialPublication {
+		_, err = tx.Exec(ctx, `INSERT INTO stock_initial_publications(tenant_id,moysklad_account,ozon_account,product_id,warehouse_id,config_revision,publication_id,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, review.Tenant, review.MoyskladAccount, review.OzonAccount, review.Targets[0].ProductID, review.Targets[0].WarehouseID, review.Attestations[0].AutomaticPolicyRevision, id, now)
+		if err != nil {
+			var conflict *pgconn.PgError
+			if errors.As(err, &conflict) && conflict.Code == "23505" {
+				return op, domain.ErrStockSyncBlocked
+			}
+			return op, err
+		}
 	}
 	for _, t := range review.Targets {
 		if t.Quantity == nil {

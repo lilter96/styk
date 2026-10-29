@@ -195,6 +195,9 @@ func TestControlledAutomaticEnrolledTargetsShareTraversal(t *testing.T) {
 		return exec.Command("go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", db.Pool.Config().ConnString(), action).CombinedOutput()
 	}
 	if _, e := goose("down"); e != nil {
+		t.Fatal("could not roll back empty initial-publication migration")
+	}
+	if _, e := goose("down"); e != nil {
 		t.Fatal("could not roll back recovery migration before new recovery")
 	}
 	if output, e := goose("down"); e == nil || !strings.Contains(string(output), "refusing to discard multi-target cycle publication history") {
@@ -343,6 +346,9 @@ func TestControlledAutomaticEnrolledTargetsShareTraversal(t *testing.T) {
 	}
 	if _, err = db.Pool.Exec(ctx, `UPDATE stock_auto_cycle_publications SET product_id='forged' WHERE cycle_id=$1`, final.LastCycle.ID); err == nil {
 		t.Fatal("cycle publication association was mutable")
+	}
+	if _, e := goose("down"); e != nil {
+		t.Fatal("could not roll back empty initial-publication migration")
 	}
 	if output, e := goose("down"); e == nil || !strings.Contains(string(output), "refusing to revert enrolled-target recovery history") {
 		t.Fatal("migration permitted removal of enrolled-target recovery support")

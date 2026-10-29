@@ -279,6 +279,12 @@ func loadStockObservations(ctx context.Context, tx pgx.Tx, r domain.StockCalcula
 	}
 	if err == nil {
 		e.Marketplace.ImportID = &ozonID
+		// A completed traversal is evidence of the query even when it contains
+		// no row for this target. It must not create an observation or zero.
+		e.Marketplace.FreshTraversal, err = loadMatchingTraversal(ctx, tx, r.Pool.Tenant, "ozon", r.Target.OzonAccount, ozonID)
+		if err != nil {
+			return err
+		}
 		var present, reserved, free int64
 		var observed time.Time
 		err = tx.QueryRow(ctx, `SELECT present,reserved,free_stock,observed_at FROM ozon_fbs_stock_observations WHERE import_id=$1 AND product_id=$2 AND warehouse_id=$3 FOR SHARE`, ozonID, r.Target.ProductID, r.Target.WarehouseID).Scan(&present, &reserved, &free, &observed)
@@ -288,10 +294,6 @@ func loadStockObservations(ctx context.Context, tx pgx.Tx, r domain.StockCalcula
 		if err == nil {
 			e.Marketplace.StockRowFound = true
 			e.Marketplace.Present, e.Marketplace.Reserved, e.Marketplace.FreeStock, e.Marketplace.ObservedAt = &present, &reserved, &free, &observed
-			e.Marketplace.FreshTraversal, err = loadMatchingTraversal(ctx, tx, r.Pool.Tenant, "ozon", r.Target.OzonAccount, ozonID)
-			if err != nil {
-				return err
-			}
 		}
 	}
 	var batch int64

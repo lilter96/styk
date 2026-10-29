@@ -186,6 +186,7 @@ func (s *Store) ConfigureAutomaticStock(ctx context.Context, req domain.Automati
 				unfenced++
 			}
 			t.SafetyStock, t.Unreflected, t.UnseenBound, t.Maximum = selected.SafetyStock, selected.Unreflected, selected.UnseenBound, selected.Maximum
+			t.InitialPublication = selected.InitialPublication
 			p.Targets = append(p.Targets, t)
 		}
 		if unfenced == 0 {
@@ -242,7 +243,10 @@ func (s *Store) AutomaticStockStatus(ctx context.Context, scope domain.StockSync
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
-	rows, err := s.Pool.Query(ctx, `SELECT pm.ozon_product_id,wm.ozon_warehouse_id,pm.ozon_offer_id,pm.target_id,(p.product_id IS NOT NULL AND stock.product_id IS NOT NULL AND wh.warehouse_id IS NOT NULL),src.stock::text,src.reserve::text,stock.free_stock,last.operation_id,last.state,last.quantity,last.readback_quantity,last.readback_at
+	rows, err := s.Pool.Query(ctx, `SELECT pm.ozon_product_id,wm.ozon_warehouse_id,pm.ozon_offer_id,pm.target_id,(p.product_id IS NOT NULL AND stock.product_id IS NOT NULL AND wh.warehouse_id IS NOT NULL),
+		(p.product_id IS NOT NULL AND wh.warehouse_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM ozon_fbs_stock_observations x WHERE x.import_id=p.import_id AND x.product_id=p.product_id AND x.warehouse_id=wm.ozon_warehouse_id)
+		 AND NOT EXISTS(SELECT 1 FROM stock_initial_publications i WHERE i.ozon_account=pm.ozon_account AND i.product_id=pm.ozon_product_id AND i.warehouse_id=wm.ozon_warehouse_id)
+		 AND NOT EXISTS(SELECT 1 FROM stock_publication_targets t WHERE t.ozon_account=pm.ozon_account AND t.product_id=pm.ozon_product_id AND t.warehouse_id=wm.ozon_warehouse_id AND t.dispatched_at IS NOT NULL)),src.stock::text,src.reserve::text,stock.free_stock,last.operation_id,last.state,last.quantity,last.readback_quantity,last.readback_at
 		FROM product_mappings pm JOIN warehouse_mappings wm ON wm.tenant_id=pm.tenant_id AND wm.moysklad_account=pm.moysklad_account AND wm.ozon_account=pm.ozon_account AND wm.status='active'
 		LEFT JOIN ozon_product_observations p ON p.import_id=(SELECT max(id) FROM source_imports WHERE source='ozon' AND account_id=$3) AND p.product_id=pm.ozon_product_id AND p.offer_id=pm.ozon_offer_id AND p.archived=false AND p.sku IS NOT NULL
 		LEFT JOIN ozon_fbs_stock_observations stock ON stock.import_id=p.import_id AND stock.product_id=p.product_id AND stock.offer_id=p.offer_id AND stock.sku=p.sku AND stock.warehouse_id=wm.ozon_warehouse_id
@@ -255,7 +259,7 @@ func (s *Store) AutomaticStockStatus(ctx context.Context, scope domain.StockSync
 	}
 	for rows.Next() {
 		var c domain.AutomaticStockCandidate
-		if err = rows.Scan(&c.ProductID, &c.WarehouseID, &c.OfferID, &c.SourceItemID, &c.Eligible, &c.SourcePhysical, &c.SourceReserve, &c.MarketplaceFree, &c.LastOperationID, &c.LastState, &c.LastQuantity, &c.ReadbackQuantity, &c.ReadbackAt); err != nil {
+		if err = rows.Scan(&c.ProductID, &c.WarehouseID, &c.OfferID, &c.SourceItemID, &c.Eligible, &c.InitialEligible, &c.SourcePhysical, &c.SourceReserve, &c.MarketplaceFree, &c.LastOperationID, &c.LastState, &c.LastQuantity, &c.ReadbackQuantity, &c.ReadbackAt); err != nil {
 			rows.Close()
 			return view, err
 		}

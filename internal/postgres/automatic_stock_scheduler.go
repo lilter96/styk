@@ -400,23 +400,30 @@ func (s *Store) evaluateAutomaticCycle(ctx context.Context, scope domain.StockSy
 			targetResults[key]["checks"] = []string{"CYCLE_TRAVERSAL_CHANGED"}
 			continue
 		}
-		if target.Quantity == nil || target.MarketplaceFree == nil {
+		if target.Quantity == nil || (target.MarketplaceFree == nil && !target.InitialPublication) {
 			blocked++
 			failed = append(failed, "STOCK_OBSERVATION_MISSING")
 			targetResults[key]["outcome"] = "BLOCKED"
 			targetResults[key]["checks"] = []string{"STOCK_OBSERVATION_MISSING"}
 			continue
 		}
-		if target.MarketplaceReserved == nil || *target.MarketplaceReserved != 0 {
+		if !target.InitialPublication && (target.MarketplaceReserved == nil || *target.MarketplaceReserved != 0) {
 			blocked++
 			failed = append(failed, "MARKETPLACE_RESERVATION_REQUIRES_REVIEW")
 			targetResults[key]["outcome"] = "BLOCKED"
 			targetResults[key]["checks"] = []string{"MARKETPLACE_RESERVATION_REQUIRES_REVIEW"}
 			continue
 		}
-		var fenced, rejected bool
-		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_publication_target_fences WHERE ozon_account=$1 AND product_id=$2 AND warehouse_id=$3), EXISTS(SELECT 1 FROM stock_auto_cycles c JOIN stock_auto_cycle_publications cp ON cp.cycle_id=c.id WHERE c.tenant_id=$4 AND c.moysklad_account=$5 AND c.ozon_account=$1 AND c.config_revision=$6 AND cp.outcome='PUBLICATION_REJECTED' AND cp.product_id=$2 AND cp.warehouse_id=$3)`, scope.OzonAccount, target.ProductID, target.WarehouseID, scope.Tenant, scope.MoyskladAccount, policy.Revision).Scan(&fenced, &rejected); err != nil {
+		var fenced, rejected, initialUsed bool
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_publication_target_fences WHERE ozon_account=$1 AND product_id=$2 AND warehouse_id=$3), EXISTS(SELECT 1 FROM stock_auto_cycles c JOIN stock_auto_cycle_publications cp ON cp.cycle_id=c.id WHERE c.tenant_id=$4 AND c.moysklad_account=$5 AND c.ozon_account=$1 AND c.config_revision=$6 AND cp.outcome='PUBLICATION_REJECTED' AND cp.product_id=$2 AND cp.warehouse_id=$3), EXISTS(SELECT 1 FROM stock_initial_publications WHERE ozon_account=$1 AND product_id=$2 AND warehouse_id=$3) OR EXISTS(SELECT 1 FROM stock_publication_targets WHERE ozon_account=$1 AND product_id=$2 AND warehouse_id=$3 AND dispatched_at IS NOT NULL)`, scope.OzonAccount, target.ProductID, target.WarehouseID, scope.Tenant, scope.MoyskladAccount, policy.Revision).Scan(&fenced, &rejected, &initialUsed); err != nil {
 			return err
+		}
+		if target.InitialPublication && initialUsed {
+			blocked++
+			failed = append(failed, "INITIAL_PUBLICATION_ALREADY_USED")
+			targetResults[key]["outcome"] = "BLOCKED"
+			targetResults[key]["checks"] = []string{"INITIAL_PUBLICATION_ALREADY_USED"}
+			continue
 		}
 		if fenced || rejected {
 			blocked++
@@ -426,7 +433,7 @@ func (s *Store) evaluateAutomaticCycle(ctx context.Context, scope domain.StockSy
 			continue
 		}
 		item := candidate{review: r, target: target}
-		if *target.Quantity == strconv.FormatInt(*target.MarketplaceFree, 10) {
+		if target.MarketplaceFree != nil && *target.Quantity == strconv.FormatInt(*target.MarketplaceFree, 10) {
 			targetResults[key]["outcome"] = "NO_CHANGE"
 			if noOp == nil {
 				v := item
