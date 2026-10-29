@@ -202,9 +202,10 @@ type Completion struct {
 }
 
 type PageRequest struct {
-	Limit  int    `json:"limit,omitempty"`
-	Cursor string `json:"cursor,omitempty"`
-	Search string `json:"search,omitempty"`
+	Provider catalog.Provider `json:"provider,omitempty"`
+	Limit    int              `json:"limit,omitempty"`
+	Cursor   string           `json:"cursor,omitempty"`
+	Search   string           `json:"search,omitempty"`
 }
 
 type ProductPage struct {
