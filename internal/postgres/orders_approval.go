@@ -55,7 +55,7 @@ func approveOrderLocked(ctx context.Context, tx pgx.Tx, approval orders.Approval
 	if err != nil {
 		return orders.Operation{}, err
 	}
-	current, err := readOrderReviewContext(ctx, tx, approval.Scope)
+	current, err := readOrderPreviewContext(ctx, tx, preview)
 	if err != nil {
 		return orders.Operation{}, err
 	}

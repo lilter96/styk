@@ -184,7 +184,7 @@ func lockOrderReviewScope(ctx context.Context, tx pgx.Tx, scope orders.Scope) er
 }
 
 func validateAndInsertOrderPreview(ctx context.Context, tx pgx.Tx, preview orders.Preview, owner string) error {
-	current, err := readOrderReviewContext(ctx, tx, preview.Scope)
+	current, err := readOrderPreviewContext(ctx, tx, preview)
 	if err != nil {
 		return err
 	}

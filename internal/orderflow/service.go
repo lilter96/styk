@@ -62,7 +62,7 @@ func (s *Service) preview(ctx context.Context, request orders.PreviewRequest, au
 	if err := s.validatePreviewRequest(request); err != nil {
 		return orders.Preview{}, err
 	}
-	review, err := s.store.OrderReviewContext(ctx, request.Scope)
+	review, err := s.reviewContextFor(ctx, request, automatic)
 	if err != nil {
 		return orders.Preview{}, fmt.Errorf("read order review facts: %w", err)
 	}
