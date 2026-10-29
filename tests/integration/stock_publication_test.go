@@ -72,6 +72,11 @@ func publicationData(t *testing.T, two bool) publicationFixture {
 	if _, err = db.SaveOzonImport(ctx, market, "pub-ozon-"+suffix); err != nil {
 		t.Fatal(err)
 	}
+	for _, c := range []struct{ provider, account string }{{"moysklad", scope.MoyskladAccount}, {"ozon", scope.OzonAccount}} {
+		if err = db.RegisterStockConnection(ctx, scope.Tenant, c.provider, c.account, "synthetic stock publication owner", true); err != nil {
+			t.Fatal(err)
+		}
+	}
 	match := postgres.MatchScope{Tenant: scope.Tenant, MoyskladAccount: scope.MoyskladAccount, OzonAccount: scope.OzonAccount}
 	for i, p := range market.Products {
 		item := "item"
@@ -84,11 +89,6 @@ func publicationData(t *testing.T, two bool) publicationFixture {
 	}
 	if _, err = db.ConfirmWarehouseMapping(ctx, match, "warehouse", "456", "synthetic operator-confirmed warehouse"); err != nil {
 		t.Fatal(err)
-	}
-	for _, c := range []struct{ provider, account string }{{"moysklad", scope.MoyskladAccount}, {"ozon", scope.OzonAccount}} {
-		if err = db.RegisterStockConnection(ctx, scope.Tenant, c.provider, c.account, "synthetic stock publication owner", true); err != nil {
-			t.Fatal(err)
-		}
 	}
 	var attest []domain.StockSyncAttestation
 	for _, p := range market.Products {

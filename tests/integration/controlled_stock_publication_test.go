@@ -45,7 +45,7 @@ func controlledFixtureWithMapping(t *testing.T, mapping bool) (*postgres.Store, 
 	if _, err = admin.Pool.Exec(ctx, `CREATE SCHEMA `+schema); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _, _ = admin.Pool.Exec(ctx, `DROP SCHEMA `+schema+` CASCADE`); admin.Pool.Close() })
+	t.Cleanup(func() { cleanupIntegrationSchema(t, admin.Pool, schema); admin.Pool.Close() })
 	q := u.Query()
 	q.Set("search_path", schema)
 	u.RawQuery = q.Encode()

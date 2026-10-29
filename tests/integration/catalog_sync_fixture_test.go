@@ -41,9 +41,7 @@ func catalogSyncDB(t testing.TB) *postgres.Store {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if _, cleanupErr := admin.Pool.Exec(context.Background(), `DROP SCHEMA `+schema+` CASCADE`); cleanupErr != nil {
-			t.Error("drop catalog test schema")
-		}
+		cleanupIntegrationSchema(t, admin.Pool, schema)
 		admin.Pool.Close()
 	})
 	q := u.Query()

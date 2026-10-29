@@ -146,10 +146,7 @@ func createCatalogSchema(b testing.TB, admin *pgxpool.Pool) string {
 		b.Fatalf("create schema: %v", err)
 	}
 	b.Cleanup(func() {
-		_, err := admin.Exec(context.Background(), "DROP SCHEMA "+pgx.Identifier{schema}.Sanitize()+" CASCADE")
-		if err != nil {
-			b.Errorf("drop isolated schema: %v", err)
-		}
+		cleanupIntegrationSchema(b, admin, schema)
 	})
 	return schema
 }

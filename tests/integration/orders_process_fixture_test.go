@@ -36,11 +36,11 @@ func ordersProcessSafety(t testing.TB, dsn string) {
 		}
 	}
 	u, err := url.Parse(dsn)
-	if err != nil || (u.Hostname() != "127.0.0.1" && u.Hostname() != "localhost") || u.Path != "/styk_orders_store_test" {
+	if err != nil || (u.Hostname() != "127.0.0.1" && u.Hostname() != "localhost") || (u.Path != "/styk_orders_store_test" && u.Path != "/styk_orders_release_test") {
 		t.Fatal("orders process tests require the dedicated localhost orders test database")
 	}
 	config, err := pgxpool.ParseConfig(dsn)
-	if err != nil || config.ConnConfig.Database != "styk_orders_store_test" || (config.ConnConfig.Host != "127.0.0.1" && config.ConnConfig.Host != "localhost") {
+	if err != nil || "/"+config.ConnConfig.Database != u.Path || (config.ConnConfig.Host != "127.0.0.1" && config.ConnConfig.Host != "localhost") {
 		t.Fatal("orders process test DSN cannot override the dedicated localhost database")
 	}
 	for _, fallback := range config.ConnConfig.Fallbacks {
