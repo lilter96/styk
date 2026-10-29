@@ -188,14 +188,163 @@ func TestControlledAutomaticEnrolledTargetsShareTraversal(t *testing.T) {
 	if err = db.Pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM ozon_import_operations WHERE tenant_id=$1 AND principal_type='AUTOMATIC_POLICY'),(SELECT count(*) FROM stock_auto_cycle_publications WHERE cycle_id=$2),(SELECT count(*) FROM stock_auto_cycle_publications cp JOIN stock_publication_targets t ON t.operation_id=cp.publication_id WHERE cp.cycle_id=$2 AND cp.outcome='RECONCILED' AND t.state='RECONCILED' AND t.provider_updated=true AND cardinality(t.provider_error_codes)=0)`, scope.Tenant, final.LastCycle.ID).Scan(&imports, &publications, &stored); err != nil || imports != 2 || publications != 2 || stored != 2 {
 		t.Fatalf("imports=%d publications=%d stored=%d error=%v", imports, publications, stored, err)
 	}
-	if final.LastCycle.Metrics["external_writes"] != float64(2) || final.LastCycle.Metrics["changed_targets"] != float64(2) || final.LastCycle.Metrics["reconciled_operations"] != float64(2) {
+	if final.LastCycle.Metrics["external_writes"] != float64(2) || final.LastCycle.Metrics["changed_targets"] != float64(2) || final.LastCycle.Metrics["reconciled_operations"] != float64(2) || final.LastCycle.Metrics["backlog_peak"] != float64(2) || final.LastCycle.Metrics["backlog_targets"] != float64(0) {
 		t.Fatalf("multi-target metrics: %+v", final.LastCycle.Metrics)
+	}
+	goose := func(action string) ([]byte, error) {
+		return exec.Command("go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", db.Pool.Config().ConnString(), action).CombinedOutput()
+	}
+	if _, e := goose("down"); e != nil {
+		t.Fatal("could not roll back recovery migration before new recovery")
+	}
+	if output, e := goose("down"); e == nil || !strings.Contains(string(output), "refusing to discard multi-target cycle publication history") {
+		t.Fatal("migration permitted loss of multi-target publication history")
+	}
+	if _, e := goose("up"); e != nil {
+		t.Fatal("could not restore enrolled recovery migration")
+	}
+	// Simulate a lost response for the newly enrolled target after a claimed
+	// outbox task. The original outcome must remain UNKNOWN when the operator
+	// explicitly accepts uncertainty, and a live worker must prevent recovery.
+	source.WarehouseStock[1].Reserve = &four
+	market.Stocks[0].Present, market.Stocks[0].FreeStock = 4, 4
+	market.Stocks[1].Present, market.Stocks[1].FreeStock = 7, 7
+	base := time.Now().UTC().Truncate(time.Microsecond)
+	if _, err = db.RequestAutomaticCycle(ctx, scope, base); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 15; i++ {
+		if _, _, err = db.AdvanceAutomaticStock(ctx, base.Add(time.Duration(i)*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		view, e := db.AutomaticStockStatus(ctx, scope)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if view.LastCycle != nil && view.LastCycle.ID != final.LastCycle.ID && view.LastCycle.State == "READING" {
+			break
+		}
+	}
+	for i := 0; i < 2; i++ {
+		task, e := db.ClaimForCatalogWorker(ctx, time.Minute, scope.OzonAccount, scope.MoyskladAccount)
+		if e != nil || task == nil {
+			t.Fatalf("claim recovery import: %+v %v", task, e)
+		}
+		timestamp := time.Now().UTC()
+		counts := domain.ImportCounts{Attempts: 1, Requests: 1, CompletedRequests: 1}
+		if task.Type == domain.MoyskladCatalogTask {
+			source.StartedAt, source.FinishedAt = timestamp, timestamp
+			fingerprint, e := application.InventoryFingerprint(&source)
+			if e != nil {
+				t.Fatal(e)
+			}
+			if e = db.CommitClaimedMoyskladImport(ctx, *task, source, fingerprint, counts, 5*time.Second); e != nil {
+				t.Fatal(e)
+			}
+		} else {
+			market.StartedAt, market.FinishedAt = timestamp, timestamp
+			fingerprint, e := application.OzonFingerprint(&market)
+			if e != nil {
+				t.Fatal(e)
+			}
+			if e = db.CommitClaimedOzonImport(ctx, *task, market, fingerprint, counts, 5*time.Second); e != nil {
+				t.Fatal(e)
+			}
+		}
+	}
+	for i := 5; i < 20; i++ {
+		if _, _, err = db.AdvanceAutomaticStock(ctx, base.Add(time.Duration(i)*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		view, e := db.AutomaticStockStatus(ctx, scope)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if view.LastCycle != nil && view.LastCycle.State == "WAITING_PUBLICATION" {
+			break
+		}
+	}
+	claimed, err := db.NextControlledStockPublication(ctx, base.Add(40*time.Second))
+	if err != nil || claimed == nil || len(claimed.Targets) != 1 || claimed.Targets[0].ProductID != second {
+		t.Fatalf("claim uncertain target: %+v %v", claimed, err)
+	}
+	if err = db.FinishStockTarget(ctx, scope, claimed.ID, claimed.Targets[0].ID, "UNKNOWN", "REQUEST_OUTCOME_UNKNOWN", base.Add(41*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	observedAt := base.Add(42 * time.Second)
+	seven := int64(7)
+	if err = db.RecordUnknownStockReadback(ctx, scope, claimed.ID, claimed.Targets[0].ID, &seven, observedAt); err != nil {
+		t.Fatal(err)
+	}
+	recovery := domain.StockRecoveryRequest{StockSyncScope: scope, OperationID: claimed.ID, Acknowledge: true, WorkerStopped: false, SessionID: "synthetic", IdempotencyKey: "controlled-multi-recovery-1", Reason: "Synthetic explicit uncertainty acceptance", ExpectedReadbackAt: observedAt, ExpectedQuantity: "7"}
+	if _, err = db.SupersedeTestUnknown(ctx, recovery, base.Add(43*time.Second)); err == nil {
+		t.Fatal("missing stopped-worker assertion accepted")
+	}
+	recovery.WorkerStopped = true
+	wrong := recovery
+	wrong.OzonAccount = "other-account"
+	if _, err = db.SupersedeTestUnknown(ctx, wrong, base.Add(43*time.Second)); err == nil {
+		t.Fatal("other account was allowed to supersede the target")
+	}
+	wrong = recovery
+	wrong.Acknowledge = false
+	if _, err = db.SupersedeTestUnknown(ctx, wrong, base.Add(43*time.Second)); err == nil {
+		t.Fatal("missing uncertainty acknowledgment was accepted")
+	}
+	if err = db.TouchTestStockWorker(ctx, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", base.Add(43*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.SupersedeTestUnknown(ctx, recovery, base.Add(44*time.Second)); err == nil {
+		t.Fatal("active worker allowed supersession")
+	}
+	results := make(chan error, 2)
+	for i := 0; i < 2; i++ {
+		go func(i int) {
+			attempt := recovery
+			attempt.IdempotencyKey = fmt.Sprintf("controlled-multi-recovery-%d", i+2)
+			_, e := db.SupersedeTestUnknown(ctx, attempt, base.Add(60*time.Second))
+			results <- e
+		}(i)
+	}
+	succeeded := 0
+	for i := 0; i < 2; i++ {
+		if <-results == nil {
+			succeeded++
+		}
+	}
+	if succeeded != 1 {
+		t.Fatalf("concurrent recovery produced %d successes", succeeded)
+	}
+	old, err := db.StockPublication(ctx, scope, claimed.ID)
+	if err != nil || old.State != "UNKNOWN" || old.Targets[0].State != "UNKNOWN" {
+		t.Fatalf("historical unknown was altered: %+v %v", old, err)
+	}
+	var recoveries int
+	if err = db.Pool.QueryRow(ctx, `SELECT count(*) FROM stock_publication_recoveries WHERE target_id=$1 AND product_id=$2 AND accepted_uncertainty`, claimed.Targets[0].ID, second).Scan(&recoveries); err != nil || recoveries != 1 {
+		t.Fatalf("recovery audit: %d %v", recoveries, err)
+	}
+	market.Stocks = market.Stocks[:1]
+	market.StartedAt, market.FinishedAt = time.Now().UTC(), time.Now().UTC()
+	if _, err = db.SaveOzonImport(ctx, market, "controlled-multi-market-missing"); err != nil {
+		t.Fatal(err)
+	}
+	view, err := db.AutomaticStockStatus(ctx, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var missing *domain.AutomaticStockCandidate
+	for i := range view.Candidates {
+		if view.Candidates[i].ProductID == second {
+			missing = &view.Candidates[i]
+		}
+	}
+	if missing == nil || missing.Eligible || missing.MarketplaceFree != nil {
+		t.Fatalf("missing stock row was hidden or turned into zero: %+v", missing)
 	}
 	if _, err = db.Pool.Exec(ctx, `UPDATE stock_auto_cycle_publications SET product_id='forged' WHERE cycle_id=$1`, final.LastCycle.ID); err == nil {
 		t.Fatal("cycle publication association was mutable")
 	}
-	down := exec.Command("go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", db.Pool.Config().ConnString(), "down")
-	if output, e := down.CombinedOutput(); e == nil || !strings.Contains(string(output), "refusing to discard multi-target cycle publication history") {
-		t.Fatal("migration permitted loss of multi-target publication history")
+	if output, e := goose("down"); e == nil || !strings.Contains(string(output), "refusing to revert enrolled-target recovery history") {
+		t.Fatal("migration permitted removal of enrolled-target recovery support")
 	}
 }

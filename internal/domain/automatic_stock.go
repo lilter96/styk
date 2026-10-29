@@ -87,6 +87,7 @@ type AutomaticStockCandidate struct {
 	WarehouseID      string     `json:"ozon_warehouse_id"`
 	OfferID          string     `json:"offer_id"`
 	SourceItemID     string     `json:"source_item_id"`
+	Eligible         bool       `json:"eligible"`
 	SourcePhysical   *string    `json:"source_physical,omitempty"`
 	SourceReserve    *string    `json:"source_reserve,omitempty"`
 	MarketplaceFree  *int64     `json:"marketplace_free,omitempty"`

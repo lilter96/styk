@@ -444,6 +444,12 @@ func (s *Store) evaluateAutomaticCycle(ctx context.Context, scope domain.StockSy
 		}
 	}
 	metrics["changed_targets"], metrics["blocked_targets"], metrics["failed_checks"], metrics["target_results"] = changed+len(processed), blocked, failed, targetResults
+	var previousPeak int
+	_ = json.Unmarshal(old["backlog_peak"], &previousPeak)
+	if changed > previousPeak {
+		previousPeak = changed
+	}
+	metrics["backlog_targets"], metrics["backlog_peak"] = changed, previousPeak
 	if chosen == nil && len(processed) > 0 {
 		var failedPublications int
 		if err = tx.QueryRow(ctx, `SELECT count(*) FROM stock_auto_cycle_publications WHERE cycle_id=$1 AND outcome IN ('PUBLICATION_UNKNOWN','PUBLICATION_REJECTED','RECONCILIATION_PENDING')`, c.ID).Scan(&failedPublications); err != nil {

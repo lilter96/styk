@@ -47,12 +47,12 @@ func automaticMultiScope(t *testing.T, db *postgres.Store, suffix string, multip
 	type pair struct{ product, kind, item, warehouse string }
 	pairs := []pair{{"101", "product", "item-a", "201"}}
 	if multiple {
-		source.Entities = append(source.Entities, domain.ExternalEntity{Kind: "store", ID: "store-b"}, domain.ExternalEntity{Kind: "product", ID: "parent-b"}, domain.ExternalEntity{Kind: "variant", ID: "item-b", ParentID: "parent-b"}, domain.ExternalEntity{Kind: "product", ID: "parent-c"}, domain.ExternalEntity{Kind: "variant", ID: "item-c", ParentID: "parent-c"})
-		source.WarehouseStock = append(source.WarehouseStock, domain.WarehouseStockObservation{Kind: "variant", ExternalID: "item-b", WarehouseID: "store-b", Stock: &stock4, Reserve: &zero, InTransit: &incoming}, domain.WarehouseStockObservation{Kind: "product", ExternalID: "parent-c", WarehouseID: "store-a", Stock: &stock2, Reserve: &zero, InTransit: &incoming}, domain.WarehouseStockObservation{Kind: "variant", ExternalID: "item-c", WarehouseID: "store-a", Stock: &stock2, Reserve: &zero, InTransit: &incoming})
-		market.Products = append(market.Products, domain.OzonProduct{ProductID: "102", OfferID: "offer-102", SKU: "1002", Archived: &archived}, domain.OzonProduct{ProductID: "103", OfferID: "offer-103", SKU: "1003", Archived: &archived}, domain.OzonProduct{ProductID: "104", OfferID: "offer-104", SKU: "1004", Archived: &archived})
+		source.Entities = append(source.Entities, domain.ExternalEntity{Kind: "store", ID: "store-b"}, domain.ExternalEntity{Kind: "product", ID: "parent-b"}, domain.ExternalEntity{Kind: "variant", ID: "item-b", ParentID: "parent-b"}, domain.ExternalEntity{Kind: "product", ID: "parent-c"}, domain.ExternalEntity{Kind: "variant", ID: "item-c", ParentID: "parent-c"}, domain.ExternalEntity{Kind: "product", ID: "item-zero"})
+		source.WarehouseStock = append(source.WarehouseStock, domain.WarehouseStockObservation{Kind: "variant", ExternalID: "item-b", WarehouseID: "store-b", Stock: &stock4, Reserve: &zero, InTransit: &incoming}, domain.WarehouseStockObservation{Kind: "product", ExternalID: "parent-c", WarehouseID: "store-a", Stock: &stock2, Reserve: &zero, InTransit: &incoming}, domain.WarehouseStockObservation{Kind: "variant", ExternalID: "item-c", WarehouseID: "store-a", Stock: &stock2, Reserve: &zero, InTransit: &incoming}, domain.WarehouseStockObservation{Kind: "product", ExternalID: "item-zero", WarehouseID: "store-a", Stock: &zero, Reserve: &zero, InTransit: &incoming})
+		market.Products = append(market.Products, domain.OzonProduct{ProductID: "102", OfferID: "offer-102", SKU: "1002", Archived: &archived}, domain.OzonProduct{ProductID: "103", OfferID: "offer-103", SKU: "1003", Archived: &archived}, domain.OzonProduct{ProductID: "104", OfferID: "offer-104", SKU: "1004", Archived: &archived}, domain.OzonProduct{ProductID: "105", OfferID: "offer-105", SKU: "1005", Archived: &archived})
 		market.Warehouses = append(market.Warehouses, domain.OzonWarehouse{ID: "202", Status: "created", IsRFBS: &fbs})
-		market.Stocks = append(market.Stocks, domain.OzonStock{ProductID: "102", OfferID: "offer-102", SKU: "1002", WarehouseID: "202", Present: 0, Reserved: 0, FreeStock: 0}, domain.OzonStock{ProductID: "103", OfferID: "offer-103", SKU: "1003", WarehouseID: "201", Present: 0, Reserved: 0, FreeStock: 0}, domain.OzonStock{ProductID: "104", OfferID: "offer-104", SKU: "1004", WarehouseID: "201", Present: 0, Reserved: 0, FreeStock: 0})
-		pairs = append(pairs, pair{"102", "variant", "item-b", "202"}, pair{"103", "product", "parent-c", "201"}, pair{"104", "variant", "item-c", "201"})
+		market.Stocks = append(market.Stocks, domain.OzonStock{ProductID: "102", OfferID: "offer-102", SKU: "1002", WarehouseID: "202", Present: 0, Reserved: 0, FreeStock: 0}, domain.OzonStock{ProductID: "103", OfferID: "offer-103", SKU: "1003", WarehouseID: "201", Present: 0, Reserved: 0, FreeStock: 0}, domain.OzonStock{ProductID: "104", OfferID: "offer-104", SKU: "1004", WarehouseID: "201", Present: 0, Reserved: 0, FreeStock: 0}, domain.OzonStock{ProductID: "105", OfferID: "offer-105", SKU: "1005", WarehouseID: "201", Present: 0, Reserved: 0, FreeStock: 0})
+		pairs = append(pairs, pair{"102", "variant", "item-b", "202"}, pair{"103", "product", "parent-c", "201"}, pair{"104", "variant", "item-c", "201"}, pair{"105", "product", "item-zero", "201"})
 	}
 	if _, err := db.SaveInventoryImport(ctx, source, "synthetic-multi-source-"+suffix); err != nil {
 		t.Fatal(err)
@@ -98,7 +98,7 @@ func TestAutomaticMultipleTargetsScopesAndUnknownIsolation(t *testing.T) {
 	t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", "")
 	t.Setenv("STYK_STOCK_PUBLICATION_ENABLED", "true")
 	t.Setenv("STYK_STOCK_PUBLICATION_TEST_ENDPOINT", "http://127.0.0.1:1")
-	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 80*time.Second)
 	defer cancel()
 	if _, err := db.Pool.Exec(ctx, `ALTER TABLE stock_auto_configs DROP CONSTRAINT stock_auto_configs_check`); err != nil {
 		t.Fatal(err)
@@ -147,6 +147,8 @@ func TestAutomaticMultipleTargetsScopesAndUnknownIsolation(t *testing.T) {
 				product, warehouse = 101, 201
 			case "offer-102":
 				product, warehouse = 102, 202
+			case "offer-105":
+				product, warehouse = 105, 201
 			default:
 				t.Error("unexpected offer")
 				http.Error(w, "bad", 400)
@@ -383,6 +385,72 @@ func TestAutomaticMultipleTargetsScopesAndUnknownIsolation(t *testing.T) {
 	secondOp, err := db.StockPublication(ctx, c.scope, csecond.LastCycle.PublicationID)
 	if err != nil || csecondDone.LastCycle.Outcome != "TARGETS_NEED_ATTENTION" || secondOp.Targets[0].ProductID != "102" || writes.Load() != 5 {
 		t.Fatalf("another changing target was starved: %+v writes=%d err=%v", secondOp, writes.Load(), err)
+	}
+	// The third independent product has an explicit zero observation. Exercise
+	// 0 -> 3 -> 0 through the same automatic worker and fake provider, while
+	// the unrelated first product remains unchanged.
+	three, zero := "3", "0"
+	for i := range c.source.WarehouseStock {
+		if c.source.WarehouseStock[i].ExternalID == "item-zero" {
+			c.source.WarehouseStock[i].Stock = &three
+		}
+	}
+	for i := range c.market.Stocks {
+		if c.market.Stocks[i].ProductID == "101" {
+			c.market.Stocks[i].Present, c.market.Stocks[i].FreeStock = 5, 5
+		}
+	}
+	_, err = db.ConfigureAutomaticStock(ctx, domain.AutomaticStockRequest{StockSyncScope: c.scope, Enabled: true, IntervalSeconds: 30, ValidMinutes: 60, Targets: []domain.AutomaticStockTargetRequest{c.targets[0], c.targets[4]}, Acknowledge: true, SessionID: "synthetic", IdempotencyKey: "synthetic-zero-policy-three"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	startReads(c, csecondDone.LastCycle.ID)
+	positive := waitState(c, "WAITING_PUBLICATION")
+	for i := 0; i < 15; i++ {
+		worked, e := runner.RunNext(ctx)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if worked {
+			break
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	positiveDone := waitState(c, "COMPLETE")
+	positiveOp, err := db.StockPublication(ctx, c.scope, positive.LastCycle.PublicationID)
+	if err != nil || positiveOp.Targets[0].ProductID != "105" || positiveOp.Targets[0].Quantity != "3" || writes.Load() != 6 {
+		t.Fatalf("zero-to-three target: %+v writes=%d err=%v", positiveOp, writes.Load(), err)
+	}
+	for i := range c.source.WarehouseStock {
+		if c.source.WarehouseStock[i].ExternalID == "item-zero" {
+			c.source.WarehouseStock[i].Stock = &zero
+		}
+	}
+	for i := range c.market.Stocks {
+		if c.market.Stocks[i].ProductID == "105" {
+			c.market.Stocks[i].Present, c.market.Stocks[i].FreeStock = 3, 3
+		}
+	}
+	if _, err = db.RequestAutomaticCycle(ctx, c.scope, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	startReads(c, positiveDone.LastCycle.ID)
+	zeroCycle := waitState(c, "WAITING_PUBLICATION")
+	limit := time.Now().Add(35 * time.Second)
+	for time.Now().Before(limit) {
+		worked, e := runner.RunNext(ctx)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if worked {
+			break
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	zeroDone := waitState(c, "COMPLETE")
+	zeroOp, err := db.StockPublication(ctx, c.scope, zeroCycle.LastCycle.PublicationID)
+	if err != nil || zeroDone.LastCycle.Outcome != "RECONCILED" || zeroOp.Targets[0].ProductID != "105" || zeroOp.Targets[0].Quantity != "0" || zeroOp.Targets[0].ReadbackQuantity == nil || *zeroOp.Targets[0].ReadbackQuantity != "0" || writes.Load() != 7 {
+		t.Fatalf("three-to-zero target: %+v writes=%d err=%v", zeroOp, writes.Load(), err)
 	}
 	// Two due account pairs compete for the same scheduler. Concurrent workers
 	// must advance both fairly while persisting only one cycle per account.
