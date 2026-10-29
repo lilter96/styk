@@ -223,6 +223,7 @@ type MetadataCreationCompletion struct {
 	State         State
 	AttributeID   string
 	ObservedAt    time.Time
+	Code          string `json:"code,omitempty"`
 }
 
 // MetadataCreator journals creation separately from the observed UUID registry.

@@ -136,8 +136,8 @@ func (s *MetadataInitializer) initializeMetadata(ctx context.Context, intent ord
 	if err != nil {
 		return MetadataSetupResult{}, fmt.Errorf("record metadata creation outcome: %w", err)
 	}
-	result := MetadataSetupResult{State: completion.State, Registry: updated, IntentID: intent.ID}
-	if completion.State != orders.StateReconciled {
+	result := MetadataSetupResult{State: completion.State, Registry: updated, IntentID: intent.ID, Code: completion.Code}
+	if completion.State != orders.StateReconciled && result.Code == "" {
 		result.Code = metadataOutcomeCode(providerErr, completion.State)
 	}
 	if completion.State == orders.StateReconciled {

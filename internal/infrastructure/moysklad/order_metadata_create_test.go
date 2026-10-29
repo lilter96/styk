@@ -63,6 +63,12 @@ func (fixture *metadataCreateSimulator) serveHTTP(writer http.ResponseWriter, re
 		if fixture.created.Load() && fixture.visible.Load() {
 			rows = append(rows, fixture.attribute())
 		}
+		if fixture.mode == "wrong-marker" && fixture.created.Load() {
+			rows[0].(map[string]any)["name"] = "another-marker"
+		}
+		if fixture.mode == "duplicate-after" && fixture.created.Load() {
+			rows = append(rows, fixture.attribute())
+		}
 		if fixture.mode == "duplicate" {
 			rows = append(rows, fixture.attribute(), fixture.attribute())
 		}
@@ -121,6 +127,16 @@ func (fixture *metadataCreateSimulator) serveHTTP(writer http.ResponseWriter, re
 	if fixture.mode == "foreign" {
 		attribute["accountId"] = orderTestID(99)
 	}
+	if fixture.mode == "unexpected-object" {
+		fixture.reply(writer, map[string]any{"unreviewed_response": true})
+		return
+	}
+	if fixture.mode == "invalid-json" {
+		if _, err := writer.Write([]byte("not-json")); err != nil {
+			return
+		}
+		return
+	}
 	fixture.reply(writer, []any{attribute})
 }
 
@@ -153,7 +169,7 @@ func TestMetadataCreateOneExactNativeAttributeAndIndependentReadback(t *testing.
 
 func TestMetadataCreateUnknownNeverResendsAndCanRecoverReadOnly(t *testing.T) {
 	t.Parallel()
-	for _, mode := range []string{"lost", "lag"} {
+	for _, mode := range []string{"lost", "lag", "invalid-json"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Parallel()
 			fixture, client := newMetadataCreateSimulator(t, mode)
@@ -167,6 +183,26 @@ func TestMetadataCreateUnknownNeverResendsAndCanRecoverReadOnly(t *testing.T) {
 			completion, err = client.CreateOrderAttribute(context.Background(), intent.Scope, intent, nil)
 			if err != nil || completion.State != orders.StateReconciled || completion.ExpectedState != orders.StateUnknown || fixture.writes.Load() != 1 {
 				t.Fatalf("recovery=%+v err=%v", completion, err)
+			}
+		})
+	}
+}
+
+func TestMetadataCreateUnexpectedPostShapeNeedsExactIndependentReadback(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		mode  string
+		state orders.State
+	}{{"unexpected-object", orders.StateReconciled}, {"wrong-marker", orders.StateUnknown}, {"duplicate-after", orders.StateUnknown}, {"lag", orders.StateUnknown}} {
+		t.Run(test.mode, func(t *testing.T) {
+			t.Parallel()
+			fixture, client := newMetadataCreateSimulator(t, test.mode)
+			completion, err := client.CreateOrderAttribute(context.Background(), fixture.intent.Scope, fixture.intent, func(context.Context) (bool, error) { return true, nil })
+			if completion.State != test.state || fixture.writes.Load() != 1 || fixture.reads.Load() != 2 {
+				t.Fatalf("completion=%+v err=%v writes=%d reads=%d", completion, err, fixture.writes.Load(), fixture.reads.Load())
+			}
+			if test.state == orders.StateReconciled && (err != nil || completion.Code != "CONFIRMED_BY_MARKER_AFTER_RESPONSE_DRIFT" || completion.AttributeID != orderTestID(20)) {
+				t.Fatalf("unverified fallback=%+v err=%v", completion, err)
 			}
 		})
 	}

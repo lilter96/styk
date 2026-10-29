@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -93,17 +94,43 @@ func (c *OrderClient) readOrderAttributeResponse(ctx context.Context, intent ord
 		}
 		return completion, orderAttributeResponseError(response.StatusCode)
 	}
-	var attributes []orderCreatedAttribute
-	if orderCheckJSON(raw) != nil || json.Unmarshal(raw, &attributes) != nil || len(attributes) != 1 {
+	if orderCheckJSON(raw) != nil {
+		completion.Code = "POST_RESPONSE_UNVERIFIED"
 		return completion, ErrOrderUnknown
 	}
-	id, err := c.orderAttributeIdentity(attributes[0], intent, true)
+	reported, responseErr := c.reportedOrderAttributeID(raw, intent)
+	observed, err := c.findOrderAttribute(ctx, intent)
+	if err != nil || observed == "" {
+		return completion, ErrOrderUnknown
+	}
+	confirmed, err := c.confirmOrderAttribute(ctx, intent, observed)
 	if err != nil {
 		return completion, ErrOrderUnknown
 	}
-	observed, err := c.findOrderAttribute(ctx, intent)
-	if err != nil || observed != id {
+	if errors.Is(responseErr, ErrOrderIdentity) || (reported != "" && observed != reported) {
+		completion.Code = "POST_RESPONSE_IDENTITY_CONFLICT"
 		return completion, ErrOrderUnknown
 	}
-	return c.confirmOrderAttribute(ctx, intent, id)
+	if responseErr != nil {
+		confirmed.Code = "CONFIRMED_BY_MARKER_AFTER_RESPONSE_DRIFT"
+	}
+	return confirmed, nil
+}
+
+func (c *OrderClient) reportedOrderAttributeID(raw []byte, intent orders.MetadataCreationIntent) (string, error) {
+	var attributes []orderCreatedAttribute
+	if json.Unmarshal(raw, &attributes) != nil || len(attributes) == 0 {
+		return "", ErrOrderSchema
+	}
+	if len(attributes) != 1 {
+		return "", ErrOrderIdentity
+	}
+	attribute := attributes[0]
+	if attribute.ID == "" {
+		if (attribute.Name != "" && attribute.Name != intent.Marker) || (attribute.Type != "" && attribute.Type != intent.Type) || (attribute.AccountID != "" && attribute.AccountID != intent.Scope.MoyskladAccount) {
+			return "", ErrOrderIdentity
+		}
+		return "", ErrOrderSchema
+	}
+	return c.orderAttributeIdentity(attribute, intent, true)
 }

@@ -66,11 +66,13 @@ type metadataInitializationProvider struct {
 	*flowProvider
 	store               *metadataInitializationStore
 	unknown             bool
+	diagnostic          string
 	creates, recoveries int
 }
 
 func (provider *metadataInitializationProvider) CreateOrderAttribute(ctx context.Context, scope orders.Scope, intent orders.MetadataCreationIntent, authorize func(context.Context) (bool, error)) (orders.MetadataCreationCompletion, error) {
 	completion := orders.MetadataCreationCompletion{IntentID: intent.ID, Scope: scope, ExpectedState: intent.State, State: orders.StateUnknown, ObservedAt: flowTestNow}
+	completion.Code = provider.diagnostic
 	if intent.ID == "" || provider.store.intent.ID != intent.ID {
 		return completion, orders.ErrInvalid
 	}
@@ -175,6 +177,16 @@ func TestMetadataInitializerDenialIsPersistedWithoutProviderWrite(t *testing.T) 
 	store.denied = true
 	result, err := service.EnsureMetadata(context.Background(), scope, "styk-order-substatus", "text", "setup-substatus", "actor")
 	if err != nil || result.State != orders.StateRejected || provider.creates != 0 || len(store.completions) != 1 {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
+func TestMetadataInitializerPreservesReadbackDiagnosticWhenReconciled(t *testing.T) {
+	t.Parallel()
+	service, store, provider, scope := metadataInitializerFixture(t)
+	provider.diagnostic = "CONFIRMED_BY_MARKER_AFTER_RESPONSE_DRIFT"
+	result, err := service.EnsureMetadata(context.Background(), scope, "styk-order-status", "string", "setup-status", "actor")
+	if err != nil || result.State != orders.StateReconciled || result.Code != provider.diagnostic || len(store.completions) != 1 || store.completions[0].Code != provider.diagnostic {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
 }

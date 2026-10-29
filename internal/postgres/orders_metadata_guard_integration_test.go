@@ -79,3 +79,25 @@ func TestMetadataGuardPostgresCredentialRevisionAndOwnerAreCurrent(t *testing.T)
 		t.Fatalf("unauthorized dispatch journal=%d err=%v", attempts, err)
 	}
 }
+
+func TestMetadataGuardPostgresRetainsUnknownHistoryAndDiagnosticOnReadback(t *testing.T) {
+	fixture := orderInventoryDBFixture(t)
+	intent, actor := metadataGuardDBIntent(t, fixture)
+	if allowed, err := fixture.db.GuardOrderMetadataCreation(fixture.ctx, intent, actor, 1); err != nil || !allowed {
+		t.Fatalf("guard allowed=%v err=%v", allowed, err)
+	}
+	completion := orders.MetadataCreationCompletion{IntentID: intent.ID, Scope: intent.Scope, ExpectedState: orders.StateDispatching, State: orders.StateUnknown, ObservedAt: time.Now().UTC(), Code: "POST_RESPONSE_UNVERIFIED"}
+	if registry, err := fixture.db.CompleteOrderMetadataCreation(fixture.ctx, completion); err != nil || len(registry.Attributes) != 0 {
+		t.Fatalf("unknown prematurely registered UUID: %+v %v", registry, err)
+	}
+	completion.ExpectedState, completion.State, completion.AttributeID = orders.StateUnknown, orders.StateReconciled, "11111111-1111-4111-8111-111111111111"
+	completion.Code = "CONFIRMED_BY_MARKER_AFTER_RESPONSE_DRIFT"
+	registry, err := fixture.db.CompleteOrderMetadataCreation(fixture.ctx, completion)
+	if err != nil || len(registry.Attributes) != 1 {
+		t.Fatalf("readback registry=%+v err=%v", registry, err)
+	}
+	var unknown, confirmed int
+	if err = fixture.db.Pool.QueryRow(fixture.ctx, `SELECT count(*) FILTER(WHERE result->>'code'='POST_RESPONSE_UNVERIFIED'),count(*) FILTER(WHERE result->>'code'='CONFIRMED_BY_MARKER_AFTER_RESPONSE_DRIFT') FROM orders_metadata_creation_results WHERE intent_id=$1`, intent.ID).Scan(&unknown, &confirmed); err != nil || unknown != 1 || confirmed != 1 {
+		t.Fatalf("immutable outcome history unknown=%d confirmed=%d err=%v", unknown, confirmed, err)
+	}
+}
