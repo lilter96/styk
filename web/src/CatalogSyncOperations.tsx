@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "./api";
+import { api, post } from "./api";
 import {
   catalogURL,
   fieldLabel,
@@ -8,7 +8,9 @@ import {
   productName,
   providerLabel,
   requestError,
+  scopeBody,
   type CatalogWork,
+  type FieldIssue,
   type OperationPage,
   type Scope,
 } from "./CatalogSyncTypes";
@@ -33,6 +35,137 @@ const activeStates = new Set([
   "PROCESSING",
   "ACKNOWLEDGED",
 ]);
+const warningMatchCode = "READBACK_MATCHED_WITH_WARNINGS";
+const warningMatchLabel =
+  "Выбранные поля подтверждены; предупреждения Ozon сохранены";
+
+type ReconciliationResult = {
+  id: string;
+  work_id: string;
+  state: string;
+  code: string;
+  completed: boolean;
+};
+
+function ProviderIssue({ issue }: { issue: FieldIssue }) {
+  const warning = issue.severity === "warning";
+  return (
+    <div className={warning ? "catalog-warning" : "catalog-error"}>
+      <p>
+        {fieldLabel(issue.field)}:{" "}
+        {warning
+          ? "Предупреждение Ozon сохранено. Проверьте данные товара в сервисе."
+          : issueLabel(issue.code)}
+      </p>
+      <details>
+        <summary>
+          Технические сведения {warning ? "о предупреждении" : "об ошибке"}
+        </summary>
+        <p>
+          Код: <code>{issue.code}</code>
+        </p>
+        {issue.attribute_id !== undefined && (
+          <p>ID характеристики: {issue.attribute_id}</p>
+        )}
+      </details>
+    </div>
+  );
+}
+
+function ReadOnlyReconciliation({
+  work,
+  scope,
+  onRefresh,
+}: {
+  work: CatalogWork;
+  scope: Scope;
+  onRefresh: () => void;
+}) {
+  const lock = useRef(false);
+  const [acknowledge, setAcknowledge] = useState(false);
+  const [reason, setReason] = useState("Проверка результата обработки Ozon");
+  const [requested, setRequested] = useState(false);
+  const [message, setMessage] = useState("");
+  async function reconcile() {
+    if (lock.current || !acknowledge || !reason.trim()) return;
+    lock.current = true;
+    setRequested(true);
+    setMessage("Читаем результат обработки и сверяем выбранные поля…");
+    try {
+      const result = await post<ReconciliationResult>(
+        "/api/catalog-sync/reconcile",
+        {
+          ...scopeBody(scope),
+          work_id: work.id,
+          idempotency_key: crypto.randomUUID(),
+          acknowledge: true,
+          accept_warnings: true,
+          reason: reason.trim(),
+        },
+        AbortSignal.timeout(60000),
+      );
+      const matched =
+        result?.completed === true &&
+        result.work_id === work.id &&
+        result.state === "RECONCILED";
+      setMessage(
+        matched
+          ? result.code === warningMatchCode
+            ? warningMatchLabel
+            : "Выбранные поля подтверждены сверкой."
+          : "Сверка не подтвердила результат. Исходное состояние сохранено; проверьте обновлённую историю.",
+      );
+      onRefresh();
+    } catch {
+      setMessage(
+        "Результат сверки неизвестен. Повторный запрос не отправляется. Обновите статусы: это только чтение истории.",
+      );
+    }
+  }
+  return (
+    <details>
+      <summary>Сверить результат без повторной отправки</summary>
+      <div className="catalog-facts-body">
+        <p>
+          STYK только читает результат обработки в Ozon и актуальные значения
+          выбранных полей. Товар повторно не отправляется.
+        </p>
+        <p>
+          Если выбранные поля совпадут, предупреждения Ozon сохранятся. Принятие
+          предупреждений может разрешить выполнение остальных изменений этой
+          отправки, которые вы подтвердили ранее.
+        </p>
+        <label>
+          Причина сверки
+          <input
+            value={reason}
+            maxLength={1000}
+            disabled={requested}
+            onChange={(event) => setReason(event.target.value)}
+          />
+        </label>
+        <label className="catalog-check">
+          <input
+            type="checkbox"
+            checked={acknowledge}
+            disabled={requested}
+            onChange={(event) => setAcknowledge(event.target.checked)}
+          />
+          Я принимаю предупреждения Ozon и разрешаю сверку с продолжением ранее
+          подтверждённых изменений при совпадении выбранных полей
+        </label>
+        <button
+          className="secondary"
+          disabled={requested || !acknowledge || !reason.trim()}
+          onClick={() => void reconcile()}
+        >
+          Сверить результат без повторной отправки
+        </button>
+        {message && <p role="status">{message}</p>}
+      </div>
+    </details>
+  );
+}
 
 function targetCaption(work: CatalogWork) {
   const target = work.command.target;
@@ -45,7 +178,15 @@ function targetCaption(work: CatalogWork) {
     : primary;
 }
 
-function WorkResult({ work }: { work: CatalogWork }) {
+function WorkResult({
+  work,
+  scope,
+  onRefresh,
+}: {
+  work: CatalogWork;
+  scope: Scope;
+  onRefresh: () => void;
+}) {
   const errors = [
     ...(work.receipt.errors || []),
     ...(work.receipt.products || []).flatMap((product) => product.errors || []),
@@ -58,7 +199,9 @@ function WorkResult({ work }: { work: CatalogWork }) {
         <span
           className={`catalog-state ${work.state === "RECONCILED" ? "success" : uncertain || work.state === "REJECTED" || work.state === "BLOCKED" ? "warning" : ""}`}
         >
-          {stateLabel(work.state)}
+          {work.state === "RECONCILED" && work.code === warningMatchCode
+            ? warningMatchLabel
+            : stateLabel(work.state)}
         </span>
       </header>
       <p>
@@ -80,11 +223,24 @@ function WorkResult({ work }: { work: CatalogWork }) {
       {work.receipt.task_id && (
         <p>Номер обработки в сервисе: {work.receipt.task_id}</p>
       )}
-      {errors.map((issue, index) => (
-        <p className="catalog-error" key={`${issue.field}:${index}`}>
-          {fieldLabel(issue.field)}: {issueLabel(issue.code)}
+      {work.state === "RECONCILED" && work.code === warningMatchCode && (
+        <p>
+          Первоначальная отправка имела неизвестный результат. Сверка
+          подтвердила выбранные поля; исходные предупреждения сохранены ниже.
         </p>
+      )}
+      {errors.map((issue, index) => (
+        <ProviderIssue issue={issue} key={`${issue.field}:${index}`} />
       ))}
+      {uncertain &&
+        work.receipt.task_id &&
+        work.command.target.account.provider === "ozon" && (
+          <ReadOnlyReconciliation
+            work={work}
+            scope={scope}
+            onRefresh={onRefresh}
+          />
+        )}
       {(work.state === "REJECTED" || work.state === "BLOCKED") &&
         !errors.length && (
           <p className="catalog-warning">
@@ -165,7 +321,14 @@ export function CatalogSyncOperations({ scope }: { scope: Scope }) {
                 <span>{stateLabel(operation.state)}</span>
               </header>
               {operation.targets.map((work) => (
-                <WorkResult work={work} key={work.id} />
+                <WorkResult
+                  work={work}
+                  scope={scope}
+                  onRefresh={() => {
+                    void query.refetch();
+                  }}
+                  key={work.id}
+                />
               ))}
               {!operation.targets.length && (
                 <p>Данные по товарам пока не получены. Обновите статусы.</p>

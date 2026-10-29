@@ -88,7 +88,13 @@ export type ProductFacts = {
   values?: Record<string, CatalogValue>;
   choices?: Record<string, { id: string; name: string }>;
 };
-export type FieldIssue = { field?: string; code: string; message?: string };
+export type FieldIssue = {
+  field?: string;
+  code: string;
+  message?: string;
+  severity?: "warning" | "error" | "unknown";
+  attribute_id?: number;
+};
 export type Change = {
   field: string;
   source: Identity;
