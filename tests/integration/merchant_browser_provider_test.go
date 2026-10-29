@@ -69,6 +69,8 @@ func (p *merchantFakeProvider) ozon(w http.ResponseWriter, r *http.Request) {
 		merchantFakeReply(w, `{"result":{"items":[{"product_id":%s,"offer_id":%q,"sku":%s,"archived":false}],"total_items":1,"last_id":""}}`, product, offer, sku)
 	case "/v3/product/info/list":
 		merchantFakeReply(w, `{"items":[{"id":%s,"offer_id":%q,"name":"Товар Ozon для проверки"}]}`, product, offer)
+	case "/v4/posting/fbs/list":
+		merchantFakeReply(w, `{"postings":[],"has_next":false,"cursor":""}`)
 	case "/v2/warehouse/list":
 		merchantFakeReply(w, `{"warehouses":[{"warehouse_id":1020001323428000,"name":"Тестовый FBS","status":"created","is_rfbs":false}],"has_next":false,"cursor":""}`)
 	case "/v2/product/info/stocks-by-warehouse/fbs":
@@ -112,6 +114,8 @@ func (p *merchantFakeProvider) moy(w http.ResponseWriter, r *http.Request) {
 		merchantFakeReply(w, `{"meta":{"size":0,"limit":100,"offset":0},"rows":[]}`)
 	case "/entity/store":
 		merchantFakeReply(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Тестовый склад"}]}`, store)
+	case "/entity/customerorder":
+		merchantFakeReply(w, `{"meta":{"size":0,"limit":100,"offset":0},"rows":[]}`)
 	case "/report/stock/all":
 		merchantFakeReply(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stock":2,"reserve":0,"inTransit":0,"quantity":2}]}`, product)
 	case "/report/stock/bystore":

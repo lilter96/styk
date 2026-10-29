@@ -89,6 +89,7 @@ func runMerchantBrowser(t *testing.T, automatic bool) {
 	api := merchantBrowserAPI(t, db, mailbox, handler)
 	defer api.Close()
 	runMerchantPlaywright(t, ctx, api.URL)
+	assertMerchantOrderCheck(t, db)
 	if !automatic && provider.writes.Load() != 0 {
 		t.Fatal("unexpected publication for an unapproved merchant")
 	}
@@ -96,6 +97,21 @@ func runMerchantBrowser(t *testing.T, automatic bool) {
 		t.Fatalf("simulator did not receive exactly one scoped publication: writes=%d stock=%d", provider.writes.Load(), provider.stockB.Load())
 	}
 	assertMerchantHistoryRollbackGuard(t, db, automatic)
+}
+
+func assertMerchantOrderCheck(t *testing.T, db *postgres.Store) {
+	t.Helper()
+	var completed int
+	err := db.Pool.QueryRow(context.Background(), `SELECT count(*) FROM order_evidence_progress p
+	 JOIN moy_order_batches m ON m.id=p.source_batch_id AND m.tenant_id=p.tenant_id AND m.account_id=p.moysklad_account
+	 JOIN ozon_posting_batches o ON o.id=p.posting_batch_id AND o.tenant_id=p.tenant_id AND o.account_id=p.ozon_account
+	 WHERE p.moysklad_account=$1 AND p.ozon_account=$2 AND p.window_hours=1
+	 AND p.source_status='COMPLETED' AND p.posting_status='COMPLETED'
+	 AND m.window_from=p.window_from AND m.window_to=p.window_to
+	 AND o.window_from=p.window_from AND o.window_to=p.window_to`, browserMoyAccount, browserOzon).Scan(&completed)
+	if err != nil || completed != 1 {
+		t.Fatalf("browser order check did not persist exact scoped results: completed=%d error=%v", completed, err)
+	}
 }
 
 func assertMerchantHistoryRollbackGuard(t *testing.T, db *postgres.Store, automatic bool) {
