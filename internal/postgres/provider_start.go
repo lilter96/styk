@@ -57,7 +57,7 @@ func lockProviderPermit(ctx context.Context, tx pgx.Tx, a providercall.Attempt, 
 }
 
 func markProviderSending(ctx context.Context, tx pgx.Tx, a providercall.Attempt, now time.Time) error {
-	_, err := tx.Exec(ctx, `UPDATE provider_call_accounts SET attempts=attempts+1,next_send_at=$3+(interval_ns::double precision/1000000000)*interval '1 second',updated_at=$3 WHERE provider=$1 AND account_id=$2`, a.Scope.Provider, a.Scope.Account, now)
+	_, err := tx.Exec(ctx, `UPDATE provider_call_accounts SET attempts=attempts+1,next_send_at=$3::timestamptz+(interval_ns::double precision/1000000000)*interval '1 second',updated_at=$3 WHERE provider=$1 AND account_id=$2`, a.Scope.Provider, a.Scope.Account, now)
 	if err != nil {
 		return fmt.Errorf("record provider attempt: %w", err)
 	}

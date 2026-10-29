@@ -13,12 +13,20 @@ func responseResult(status int, headers http.Header, forbidden time.Duration) Re
 	r := Result{Status: status}
 	if status == http.StatusForbidden {
 		r.MethodCooldown = min(forbidden, maxCooldown)
-		return r
 	}
-	if status != http.StatusTooManyRequests {
-		return r
+	if status == http.StatusTooManyRequests {
+		r.Cooldown = time.Second
 	}
-	r.Cooldown = time.Second
+	if status == http.StatusTooManyRequests || status >= 500 {
+		applyRetryAfter(&r, headers)
+	}
+	if status == http.StatusTooManyRequests || strings.TrimSpace(headers.Get("X-RateLimit-Remaining")) == "0" {
+		applyMillis(&r, headers.Get("X-Lognex-Reset"))
+	}
+	return r
+}
+
+func applyRetryAfter(r *Result, headers http.Header) {
 	value := strings.TrimSpace(headers.Get("Retry-After"))
 	if seconds, err := strconv.ParseUint(value, 10, 64); err == nil {
 		if seconds > uint64(maxCooldown/time.Second) {
@@ -31,7 +39,11 @@ func responseResult(status int, headers http.Header, forbidden time.Duration) Re
 	} else if numeric(value) {
 		r.IndefiniteCooldown = true
 	}
-	value = strings.TrimSpace(headers.Get("X-Lognex-Retry-After"))
+	applyMillis(r, headers.Get("X-Lognex-Retry-After"))
+}
+
+func applyMillis(r *Result, value string) {
+	value = strings.TrimSpace(value)
 	if millis, err := strconv.ParseUint(value, 10, 64); err == nil {
 		if millis > uint64(maxCooldown/time.Millisecond) {
 			r.IndefiniteCooldown = true
@@ -41,7 +53,6 @@ func responseResult(status int, headers http.Header, forbidden time.Duration) Re
 	} else if numeric(value) {
 		r.IndefiniteCooldown = true
 	}
-	return r
 }
 
 func numeric(value string) bool {

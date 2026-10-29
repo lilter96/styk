@@ -82,4 +82,12 @@ func TestRetryAfterDoesNotPermitEarlyRetry(t *testing.T) {
 	if denied.Cooldown != 0 || denied.MethodCooldown != time.Minute {
 		t.Fatal("method denial blocks whole account")
 	}
+	reset := responseResult(200, http.Header{"X-Ratelimit-Remaining": {"0"}, "X-Lognex-Reset": {"1500"}}, time.Minute)
+	if reset.Cooldown != 1500*time.Millisecond {
+		t.Fatal("successful response discarded exhausted quota")
+	}
+	unavailable := responseResult(503, http.Header{"Retry-After": {"3"}}, time.Minute)
+	if unavailable.Cooldown != 3*time.Second {
+		t.Fatal("unavailable response discarded Retry-After")
+	}
 }

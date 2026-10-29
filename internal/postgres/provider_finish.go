@@ -68,14 +68,15 @@ func applyProviderResponse(ctx context.Context, tx pgx.Tx, a providercall.Attemp
 		if err != nil {
 			return fmt.Errorf("record provider method denial: %w", err)
 		}
-	case http.StatusTooManyRequests:
+	}
+	if r.Cooldown > 0 || !r.CooldownUntil.IsZero() || r.IndefiniteCooldown {
 		return applyProviderCooldown(ctx, tx, a, r, now)
 	}
 	return nil
 }
 
 func applyProviderCooldown(ctx context.Context, tx pgx.Tx, a providercall.Attempt, r providercall.Result, now time.Time) error {
-	until := now.Add(max(r.Cooldown, time.Second))
+	until := now.Add(r.Cooldown)
 	if r.CooldownUntil.After(until) {
 		until = r.CooldownUntil
 	}

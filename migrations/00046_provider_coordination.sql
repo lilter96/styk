@@ -71,10 +71,11 @@ CREATE INDEX provider_call_permits_history ON provider_call_permits(provider,acc
 -- +goose StatementBegin
 DO $$ BEGIN
  IF EXISTS(SELECT 1 FROM provider_call_permits WHERE state IN ('reserved','sending') AND lease_until>clock_timestamp())
- OR EXISTS(SELECT 1 FROM provider_call_accounts WHERE cooldown_blocked OR GREATEST(next_send_at,cooldown_until)>clock_timestamp())
+ OR EXISTS(SELECT 1 FROM provider_call_accounts WHERE attempts>0 OR cooldown_blocked OR GREATEST(next_send_at,cooldown_until)>clock_timestamp())
+ OR EXISTS(SELECT 1 FROM provider_call_rejected_credentials)
  OR EXISTS(SELECT 1 FROM provider_call_methods WHERE cooldown_until>clock_timestamp())
  OR EXISTS(SELECT 1 FROM provider_call_targets WHERE next_send_at>clock_timestamp()) THEN
-  RAISE EXCEPTION 'refusing to discard active provider coordination';
+  RAISE EXCEPTION 'refusing to discard active provider coordination or attempt history';
  END IF;
 END $$;
 -- +goose StatementEnd
