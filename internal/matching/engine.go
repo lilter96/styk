@@ -23,13 +23,76 @@ type indexEntry struct {
 	target       domain.MatchTarget
 	field, value string
 }
+type mappingSourceKey struct {
+	tenant string
+	source domain.ProductIdentity
+}
+
+type mappingTargetKey struct {
+	tenant string
+	target domain.ProductIdentity
+}
+
+type mappingOfferKey struct{ tenant, account, offer string }
+
+type distinctSources struct {
+	first     domain.ProductIdentity
+	present   bool
+	different bool
+}
+
+func (s distinctSources) add(source domain.ProductIdentity) distinctSources {
+	if !s.present {
+		s.first, s.present = source, true
+		return s
+	}
+	if s.first != source {
+		s.different = true
+	}
+	return s
+}
+
+func (s distinctSources) hasOther(source domain.ProductIdentity) bool {
+	return s.present && (s.different || s.first != source)
+}
+
+type distinctIDs struct {
+	first     string
+	present   bool
+	different bool
+}
+
+func (s distinctIDs) add(id string) distinctIDs {
+	if !s.present {
+		s.first, s.present = id, true
+		return s
+	}
+	if s.first != id {
+		s.different = true
+	}
+	return s
+}
+
+func (s distinctIDs) hasOther(id string) bool {
+	return s.present && (s.different || s.first != id)
+}
+
+// Engine is a snapshot of targets and confirmed mappings for an evaluation.
 type Engine struct {
-	index    map[string][]indexEntry
-	mappings []domain.Mapping
+	index         map[string][]indexEntry
+	mappedSources map[mappingSourceKey]domain.Mapping
+	mappedTargets map[mappingTargetKey]distinctSources
+	mappedOffers  map[mappingOfferKey]distinctIDs
 }
 
 func New(targets []domain.MatchTarget, mappings []domain.Mapping) Engine {
-	e := Engine{index: map[string][]indexEntry{}, mappings: mappings}
+	e := Engine{
+		index:         make(map[string][]indexEntry, len(targets)),
+		mappedSources: make(map[mappingSourceKey]domain.Mapping, len(mappings)),
+		mappedTargets: make(map[mappingTargetKey]distinctSources, len(mappings)),
+		mappedOffers:  make(map[mappingOfferKey]distinctIDs, len(mappings)),
+	}
+	e.indexMappings(mappings)
 	for _, t := range targets {
 		if t.Identity.System != "moysklad" || t.Identity.Account == "" || t.Identity.ID == "" || (t.Identity.Kind != "product" && t.Identity.Kind != "variant") {
 			continue
@@ -84,41 +147,48 @@ func (e Engine) Match(tenant string, source domain.MatchSource, targetAccount st
 	return r
 }
 
+// indexMappings preserves the first confirmation for a source. For target and
+// offer conflicts, two distinct sources are sufficient to answer whether any
+// mapping belongs to someone else, regardless of repeated input rows.
+func (e Engine) indexMappings(mappings []domain.Mapping) {
+	for _, m := range mappings {
+		source := mappingSourceKey{m.Tenant, m.Source}
+		if _, exists := e.mappedSources[source]; !exists {
+			e.mappedSources[source] = m
+		}
+		target := mappingTargetKey{m.Tenant, m.Target}
+		e.mappedTargets[target] = e.mappedTargets[target].add(m.Source)
+		offer := mappingOfferKey{m.Tenant, m.Source.Account, m.OfferID}
+		e.mappedOffers[offer] = e.mappedOffers[offer].add(m.Source.ID)
+	}
+}
+
 // applyMappings adds conflict and shared-inventory information without selecting candidates.
 func (e Engine) applyMappings(r *domain.MatchResult, tenant, targetAccount string) {
 	source := r.Source
 	for _, candidate := range r.Candidates {
-		for _, m := range e.mappings {
-			if m.Tenant == tenant && m.Source != source.Identity && m.Target == candidate.Target {
-				r.SharedInventory = true
-			}
+		if e.mappedTargets[mappingTargetKey{tenant, candidate.Target}].hasOther(source.Identity) {
+			r.SharedInventory = true
 		}
 	}
-	for _, m := range e.mappings {
-		if m.Tenant == tenant && m.Source == source.Identity {
-			copy := m
-			r.Confirmed = &copy
-			r.Status = AlreadyConfirmed
-			if m.Target.Account != targetAccount || m.OfferID != source.OfferID {
-				r.Status = MappingConflict
-			}
-			for _, c := range r.Candidates {
-				if c.Target != m.Target {
-					r.Status = MappingConflict
-					break
-				}
-			}
-			for _, other := range e.mappings {
-				if other.Tenant == tenant && other.Source != m.Source && other.Target == m.Target {
-					r.SharedInventory = true
-				}
-			}
-			break
-		}
-	}
-	for _, m := range e.mappings {
-		if m.Tenant == tenant && m.Source.Account == source.Identity.Account && m.Source.ID != source.Identity.ID && m.OfferID == source.OfferID {
+	m, confirmed := e.mappedSources[mappingSourceKey{tenant, source.Identity}]
+	if confirmed {
+		r.Confirmed = &m
+		r.Status = AlreadyConfirmed
+		if m.Target.Account != targetAccount || m.OfferID != source.OfferID {
 			r.Status = MappingConflict
 		}
+		for _, c := range r.Candidates {
+			if c.Target != m.Target {
+				r.Status = MappingConflict
+				break
+			}
+		}
+		if e.mappedTargets[mappingTargetKey{tenant, m.Target}].hasOther(m.Source) {
+			r.SharedInventory = true
+		}
+	}
+	if e.mappedOffers[mappingOfferKey{tenant, source.Identity.Account, source.OfferID}].hasOther(source.Identity.ID) {
+		r.Status = MappingConflict
 	}
 }
