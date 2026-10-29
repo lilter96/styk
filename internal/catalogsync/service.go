@@ -64,6 +64,9 @@ func (service Service) Products(ctx context.Context, scope catalog.Scope, page P
 	if err := service.validateScope(scope); err != nil {
 		return ProductPage{}, err
 	}
+	if page.Provider != "" && page.Provider != catalog.ProviderMoySklad && page.Provider != catalog.ProviderOzon {
+		return ProductPage{}, ErrInvalid
+	}
 	result, err := service.Store.CatalogProducts(ctx, scope, boundedPage(page))
 	if err != nil {
 		return ProductPage{}, fmt.Errorf("list catalog products: %w", err)

@@ -27,9 +27,6 @@ func (runner Runner) poll(ctx context.Context, work Work) error {
 	if !validReceiptFor(work.Command, receipt) || receipt.TaskID != work.Receipt.TaskID {
 		return runner.stop(ctx, work, "TASK_RESULT_INVALID")
 	}
-	if receipt.State != catalog.ReceiptApplied && receipt.State != catalog.ReceiptRejected && receipt.State != catalog.ReceiptAccepted {
-		return runner.stop(ctx, work, "TASK_OUTCOME_NOT_FINAL")
-	}
 	return runner.recordReceipt(ctx, work, receipt)
 }
 
@@ -53,16 +50,27 @@ func (runner Runner) readback(ctx context.Context, work Work) error {
 	if !selectedFieldsMatch(work.Command, observed) {
 		return runner.stop(ctx, work, "READBACK_SELECTED_FIELDS_DIFFER")
 	}
+	return runner.completeReadback(ctx, work, source, target)
+}
+
+func (runner Runner) completeReadback(ctx context.Context, work Work, source, target catalog.Product) error {
+	completion := Completion{State: StateReconciled, Code: "READBACK_MATCHED_EFFECT", Receipt: work.Receipt,
+		ObservedSource: &source, ObservedTarget: &target}
+	if work.Command.Action == catalog.ActionCreate {
+		completion.CreatedTarget = &target.Identity
+	}
+	input := productForAccount(source, target, work.Command.Source.Account)
+	frozen := productForAccount(work.Decision.Source, work.Decision.Target, work.Command.Source.Account)
+	if !sameFacts(input, frozen, true) {
+		completion.State, completion.Code = StateBlocked, "SOURCE_CHANGED_AFTER_DISPATCH"
+		return runner.complete(ctx, work, completion)
+	}
 	baseline, err := catalog.NewBaseline(source, target)
 	if err != nil {
 		return runner.stop(ctx, work, "READBACK_VALUES_INVALID")
 	}
-	var created *catalog.Identity
-	if work.Command.Action == catalog.ActionCreate {
-		created = &target.Identity
-	}
-	return runner.complete(ctx, work, Completion{State: StateReconciled, Code: "READBACK_MATCHED_EFFECT", Receipt: work.Receipt,
-		CreatedTarget: created, Baseline: &baseline, ObservedSource: &source, ObservedTarget: &target})
+	completion.Baseline = &baseline
+	return runner.complete(ctx, work, completion)
 }
 
 func observeReadbackTarget(ctx context.Context, reader catalog.Reader, work Work) (catalog.Product, error) {
@@ -117,7 +125,10 @@ func selectedFieldsMatch(command catalog.Command, observed catalog.Product) bool
 // store must serialize sibling claims and rebase only on these verified facts.
 // Unrelated concurrent edits reject rebasing and require a fresh review.
 func RebaseDecision(decision Decision, applied catalog.Command, source, target catalog.Product) (Decision, error) {
-	if applied.Action != catalog.ActionUpdate || !selectedFieldsMatch(applied, productForAccount(source, target, applied.Target.Account)) {
+	if source.Revision == "" || target.Revision == "" || applied.Action != catalog.ActionUpdate || !approvedCommand(decision, applied) {
+		return Decision{}, ErrStale
+	}
+	if !selectedFieldsMatch(applied, productForAccount(source, target, applied.Target.Account)) {
 		return Decision{}, ErrStale
 	}
 	expectedSource, expectedTarget := decision.Source, decision.Target
@@ -137,6 +148,20 @@ func RebaseDecision(decision Decision, applied catalog.Command, source, target c
 	return decision, nil
 }
 
+func approvedCommand(decision Decision, command catalog.Command) bool {
+	fingerprint, err := catalog.CommandFingerprint(command)
+	if err != nil {
+		return false
+	}
+	for _, approved := range decision.Commands {
+		expected, err := catalog.CommandFingerprint(approved)
+		if err == nil && expected == fingerprint {
+			return true
+		}
+	}
+	return false
+}
+
 func rebaseCommandRevisions(commands []catalog.Command, source, target catalog.Product) []catalog.Command {
 	result := make([]catalog.Command, 0, len(commands))
 	for _, command := range commands {
@@ -151,7 +176,7 @@ func rebaseCommandRevisions(commands []catalog.Command, source, target catalog.P
 // revision guards and fingerprint atomically before that sibling is dispatched.
 // Values, identities, command ID and idempotency key remain exactly as approved.
 func RebaseWork(work Work, applied catalog.Command, source, target catalog.Product) (Work, error) {
-	if work.State != StateQueued && work.State != StateClaimed {
+	if (work.State != StateQueued && work.State != StateClaimed) || work.Command.ID == applied.ID {
 		return Work{}, ErrStale
 	}
 	decision, err := RebaseDecision(work.Decision, applied, source, target)

@@ -13,20 +13,8 @@ func (service Service) approve(ctx context.Context, approval Approval) (Operatio
 	if !service.allowed(approval.Scope) || !validID(approval.Actor) || !validID(approval.PreviewID) || !validID(approval.IdempotencyKey) {
 		return Operation{}, ErrBlocked
 	}
-	preview, err := service.Store.CatalogPreview(ctx, approval.Scope, approval.PreviewID)
-	if err != nil {
-		return Operation{}, fmt.Errorf("load reviewed catalog preview: %w", err)
-	}
-	if err := preview.approvable(approval, service.now()); err != nil {
-		return Operation{}, err
-	}
-	config, err := service.Config(ctx, approval.Scope)
-	if err != nil {
-		return Operation{}, err
-	}
-	if !config.Enabled || !config.TestEnabled || config.Revision != preview.ConfigRevision {
-		return Operation{}, ErrStale
-	}
+	// The store checks replay before freshness under the same transaction. An
+	// already approved idempotency key must survive expiry or later config edits.
 	operation, err := service.Store.ApproveCatalogPreview(ctx, approval, service.now())
 	if err != nil {
 		return Operation{}, fmt.Errorf("approve catalog preview and enqueue intents: %w", err)

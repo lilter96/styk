@@ -92,7 +92,7 @@ func (runner Runner) write(ctx context.Context, writer catalog.Writer, work Work
 		if validReceiptFor(work.Command, receipt) {
 			return runner.recordReceipt(ctx, work, receipt)
 		}
-		unknown := catalog.Receipt{CommandID: work.Command.ID, State: catalog.ReceiptUnknown, HTTPStatus: receipt.HTTPStatus}
+		unknown := unknownReceipt(work.Command, receipt)
 		return runner.complete(ctx, work, Completion{State: StateUnknown, Code: "WRITE_OUTCOME_UNKNOWN", Receipt: unknown, NextRunAt: runner.now().Add(30 * time.Second)})
 	}
 	return runner.recordReceipt(ctx, work, receipt)
@@ -142,10 +142,28 @@ func (work Work) validate() error {
 	if work.Decision.EnrollmentID != work.EnrollmentID || !work.Decision.actionable() || !work.containsCommand() {
 		return ErrStale
 	}
+	if !work.corresponds() {
+		return ErrStale
+	}
 	if !work.Scope.Contains(work.Decision.Source.Identity.Account) || !work.Scope.Contains(work.Decision.Target.Identity.Account) {
 		return ErrStale
 	}
 	return nil
+}
+
+func (work Work) corresponds() bool {
+	command, decision := work.Command, work.Decision
+	if command.Action == catalog.ActionCreate {
+		return decision.TargetAbsent && command.Source.SameEntity(decision.Source.Identity) &&
+			command.Target == decision.Target.Identity && command.MappingID == "" && decision.Mapping == nil
+	}
+	mapping := decision.Mapping
+	if command.Action != catalog.ActionUpdate || mapping == nil || !mapping.Confirmed || mapping.ID != command.MappingID || mapping.Version != command.MappingVersion {
+		return false
+	}
+	forward := command.Source.SameEntity(decision.Source.Identity) && command.Target.SameEntity(decision.Target.Identity)
+	reverse := command.Source.SameEntity(decision.Target.Identity) && command.Target.SameEntity(decision.Source.Identity)
+	return forward || reverse
 }
 
 func (work Work) containsCommand() bool {

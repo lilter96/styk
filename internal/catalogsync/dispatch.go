@@ -58,7 +58,8 @@ func creationEnrollment(command catalog.Command) Enrollment {
 
 func (runner Runner) recordReceipt(ctx context.Context, work Work, receipt catalog.Receipt) error {
 	if !validReceiptFor(work.Command, receipt) {
-		return runner.complete(ctx, work, Completion{State: StateUnknown, Code: "PROVIDER_RESULT_INVALID", NextRunAt: runner.now().Add(30 * time.Second)})
+		return runner.complete(ctx, work, Completion{State: StateUnknown, Code: "PROVIDER_RESULT_INVALID",
+			Receipt: unknownReceipt(work.Command, receipt), NextRunAt: runner.now().Add(30 * time.Second)})
 	}
 	completion := Completion{Receipt: safeReceipt(receipt), CreatedTarget: createdIdentity(work.Command, receipt), NextRunAt: runner.now().Add(5 * time.Second)}
 	switch receipt.State {
@@ -70,12 +71,21 @@ func (runner Runner) recordReceipt(ctx context.Context, work Work, receipt catal
 		completion.State, completion.Code = StateRejected, "PROVIDER_REJECTED"
 	default:
 		completion.State, completion.Code = StateUnknown, "PROVIDER_OUTCOME_UNKNOWN"
+		if receipt.State == catalog.ReceiptUnknown && receipt.TaskID != "" {
+			completion.State, completion.Code = StateProcessing, "TASK_OUTCOME_UNKNOWN"
+		}
 	}
 	return runner.complete(ctx, work, completion)
 }
 
 func validReceiptFor(command catalog.Command, receipt catalog.Receipt) bool {
-	if receipt.CommandID != command.ID || len(receipt.Products) > 1 || !optionalID(receipt.TaskID) || !optionalID(receipt.ExternalID) {
+	if receipt.CommandID != command.ID || len(receipt.Products) > 1 || len(receipt.Errors) > 100 || !optionalID(receipt.TaskID) || !optionalID(receipt.ExternalID) {
+		return false
+	}
+	if receipt.HTTPStatus != 0 && (receipt.HTTPStatus < 100 || receipt.HTTPStatus > 599) {
+		return false
+	}
+	if command.Action != catalog.ActionCreate && receipt.ExternalID != "" && receipt.ExternalID != command.Target.ID {
 		return false
 	}
 	if receipt.State == catalog.ReceiptAccepted && receipt.TaskID == "" {
@@ -85,7 +95,10 @@ func validReceiptFor(command catalog.Command, receipt catalog.Receipt) bool {
 		return true
 	}
 	product := receipt.Products[0]
-	if !optionalID(product.ID) || !optionalID(product.OfferID) {
+	if product.ID != "" && receipt.ExternalID != "" && product.ID != receipt.ExternalID {
+		return false
+	}
+	if !optionalID(product.ID) || !optionalID(product.OfferID) || len(product.Errors) > 100 {
 		return false
 	}
 	if command.Action != catalog.ActionCreate && product.ID != "" && product.ID != command.Target.ID {
@@ -95,6 +108,17 @@ func validReceiptFor(command catalog.Command, receipt catalog.Receipt) bool {
 }
 
 func optionalID(value string) bool { return value == "" || validID(value) }
+
+func unknownReceipt(command catalog.Command, receipt catalog.Receipt) catalog.Receipt {
+	unknown := catalog.Receipt{CommandID: command.ID, State: catalog.ReceiptUnknown}
+	if receipt.HTTPStatus >= 100 && receipt.HTTPStatus <= 599 {
+		unknown.HTTPStatus = receipt.HTTPStatus
+	}
+	if receipt.CommandID == command.ID && len(receipt.Errors) <= 100 {
+		unknown.Errors = safeFieldErrors(receipt.Errors)
+	}
+	return unknown
+}
 
 func createdIdentity(command catalog.Command, receipt catalog.Receipt) *catalog.Identity {
 	if command.Action != catalog.ActionCreate {
@@ -112,20 +136,37 @@ func createdIdentity(command catalog.Command, receipt catalog.Receipt) *catalog.
 }
 
 func safeReceipt(receipt catalog.Receipt) catalog.Receipt {
+	switch receipt.State {
+	case catalog.ReceiptAccepted, catalog.ReceiptApplied, catalog.ReceiptRejected, catalog.ReceiptPartial, catalog.ReceiptUnknown:
+	default:
+		receipt.State = catalog.ReceiptUnknown
+	}
 	receipt.Errors = safeFieldErrors(receipt.Errors)
 	products := make([]catalog.ProductReceipt, 0, len(receipt.Products))
 	for _, product := range receipt.Products {
 		product.Errors = safeFieldErrors(product.Errors)
-		product.Status = ""
+		product.Status = safeProductStatus(product.Status)
 		products = append(products, product)
 	}
 	receipt.Products = products
 	return receipt
 }
 
+func safeProductStatus(status string) string {
+	switch status {
+	case "pending", "imported", "failed", "skipped", "applied", "accepted", "rejected":
+		return status
+	default:
+		return ""
+	}
+}
+
 func safeFieldErrors(fields []catalog.FieldError) []catalog.FieldError {
 	result := make([]catalog.FieldError, 0, len(fields))
 	for _, field := range fields {
+		if !field.Field.Valid() {
+			field.Field = ""
+		}
 		code := field.Code
 		if !validCode(code) {
 			code = "PROVIDER_FIELD_ERROR"
