@@ -143,6 +143,37 @@ it("allows multiple mapped targets to be selected without adding unselected ones
   ]);
 });
 
+it("enrolls mapped candidates returned by the automatic configuration API", async () => {
+  const calls = setup({
+    available: true,
+    candidates: [target, { ...target, ozon_product_id: "102", offer_id: "offer-b" }],
+  });
+  fireEvent.click(await screen.findByRole("button", { name: "Настроить автоматическую синхронизацию" }));
+  const dialog = screen.getByRole("dialog", { name: "Настроить автоматическую синхронизацию?" });
+  fireEvent.click(within(dialog).getByLabelText("Товар offer-b, склад 201"));
+  fireEvent.click(within(dialog).getByLabelText(/Подтверждаю выбранные настройки/));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Включить автоматическую проверку" }));
+  await waitFor(() => expect(calls).toHaveLength(1));
+  expect(calls[0].body.targets).toMatchObject([
+    { ozon_product_id: "101", ozon_warehouse_id: "201" },
+    { ozon_product_id: "102", ozon_warehouse_id: "201" },
+  ]);
+});
+
+it("shows each enrolled target's last calculation and blocked reason", async () => {
+  const second = { ...target, ozon_product_id: "102", offer_id: "offer-b" };
+  setup({
+    available: true,
+    candidates: [target, second],
+    policy: { enabled: true, interval_seconds: 60, valid_until: new Date(Date.now() + 3600000).toISOString(), targets: [target, second] },
+    last_cycle: { id: "multi", state: "BLOCKED", outcome: "TARGETS_NEED_ATTENTION", started_at: "2026-10-29T13:00:00Z", metrics: { blocked_targets: 1, target_results: { "101:201": { outcome: "RECONCILED", candidate: "5", readback_quantity: "5" }, "102:201": { outcome: "BLOCKED", checks: ["PUBLICATION_UNKNOWN_OR_PENDING"] } } } },
+  });
+  fireEvent.click(await screen.findByText(/Товаров в настройке: 2/));
+  expect(screen.getByText(/offer-b.*Требует внимания/)).toBeTruthy();
+  expect(screen.getByText("Проверьте результат предыдущей отправки.")).toBeTruthy();
+  expect(screen.getByText(/расчёт: 5/)).toBeTruthy();
+});
+
 it("shows an unknown outcome and supports pausing without claiming synchronization", async () => {
   const calls = setup({
     available: true,

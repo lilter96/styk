@@ -7,10 +7,15 @@ type Scope = { tenant: string; moysklad_account: string; ozon_account: string };
 type Target = {
   ozon_product_id: string;
   ozon_warehouse_id: string;
+  offer_id?: string;
   source_physical?: string;
   source_reserve?: string;
   marketplace_free?: number;
   quantity?: string;
+  last_operation_id?: string;
+  last_state?: string;
+  readback_quantity?: string;
+  readback_at?: string;
 };
 type AutoView = {
   available: boolean;
@@ -29,6 +34,7 @@ type AutoView = {
   };
   last_cycle_at?: string;
   next_run_at?: string;
+  candidates?: Target[];
   last_cycle?: {
     id: string;
     state: string;
@@ -126,8 +132,9 @@ export function AutomaticStockControls({
   }, [scope.tenant, scope.moysklad_account, scope.ozon_account]);
   if (!data?.available) return null;
   const keyFor = (t: Target) => `${t.ozon_product_id}:${t.ozon_warehouse_id}`;
-  const selection = selected ?? targets.slice(0, 1).map(keyFor);
-  const selectedTargets = targets.filter((t) => selection.includes(keyFor(t)));
+  const availableTargets = data.candidates ?? targets;
+  const selection = selected ?? availableTargets.slice(0, 1).map(keyFor);
+  const selectedTargets = availableTargets.filter((t) => selection.includes(keyFor(t)));
   const current = selectedTargets[0];
   const cycle = data.last_cycle;
   const needsAttention =
@@ -146,6 +153,38 @@ export function AutomaticStockControls({
     cycle?.outcome === "RECONCILED"
       ? cycle.metrics.candidate
       : cycle?.metrics?.marketplace_free;
+  type TargetResult = {
+    outcome?: string;
+    source_physical?: string;
+    source_reserve?: string;
+    marketplace_free?: number;
+    candidate?: string;
+    readback_quantity?: string;
+    publication_id?: string;
+    checks?: string[];
+  };
+  const results = (cycle?.metrics?.target_results || {}) as Record<string, TargetResult>;
+  const enrolled = availableTargets.filter((t) =>
+    data.policy?.targets.some((p) => keyFor(p) === keyFor(t)),
+  );
+  const lastSuccess = enrolled
+    .filter((t) => t.last_state === "RECONCILED" && t.readback_at)
+    .map((t) => t.readback_at!)
+    .sort()
+    .at(-1);
+  function targetOutcome(t: Target): string {
+    const result = results[keyFor(t)];
+    if (result?.outcome === "NO_CHANGE" || result?.outcome === "RECONCILED") return "Сверено";
+    if (result?.outcome === "BLOCKED" || result?.outcome === "PUBLICATION_UNKNOWN" || result?.outcome === "PUBLICATION_REJECTED" || result?.outcome === "RECONCILIATION_PENDING") return "Требует внимания";
+    return "Ожидает проверки";
+  }
+  function targetProblem(checks: string[]): string {
+    if (checks.includes("PUBLICATION_UNKNOWN_OR_PENDING")) return "Проверьте результат предыдущей отправки.";
+    if (checks.includes("MARKETPLACE_RESERVATION_REQUIRES_REVIEW")) return "Проверьте резерв Ozon для этого товара.";
+    if (checks.includes("STOCK_OBSERVATION_MISSING")) return "Нет подтверждённого остатка товара на выбранном складе.";
+    if (checks.includes("AUTOMATIC_MAXIMUM_EXCEEDED")) return "Расчёт превышает настроенный предел отправки.";
+    return "Проверьте актуальность данных, соответствие товара и настройки.";
+  }
 
   async function send(body: string) {
     if (lock.current) return;
@@ -328,6 +367,26 @@ export function AutomaticStockControls({
               {new Date(data.last_cycle_at).toLocaleString("ru-RU")}.
             </p>
           )}
+          {lastSuccess && <p>Последняя сверенная отправка: {new Date(lastSuccess).toLocaleString("ru-RU")}.</p>}
+          {enrolled.length > 0 && (
+            <details className="technical-details">
+              <summary>
+                Товаров в настройке: {enrolled.length} · сверено: {enrolled.filter((t) => targetOutcome(t) === "Сверено").length} · требуют внимания: {enrolled.filter((t) => targetOutcome(t) === "Требует внимания").length}
+              </summary>
+              {enrolled.map((t) => {
+                const r = results[keyFor(t)];
+                return (
+                  <div key={keyFor(t)}>
+                    <p>{t.offer_id || t.ozon_product_id} · склад {t.ozon_warehouse_id} · {targetOutcome(t)}</p>
+                    <p>МойСклад: {number(r?.source_physical ?? t.source_physical)} · резерв: {number(r?.source_reserve ?? t.source_reserve)} · Ozon: {number(r?.readback_quantity ?? r?.marketplace_free ?? t.marketplace_free)} · расчёт: {number(r?.candidate)}</p>
+                    {r?.checks?.length ? <p>{targetProblem(r.checks)}</p> : null}
+                    {r?.publication_id && <p>Последняя отправка: {r.publication_id}</p>}
+                    {t.readback_at && <p>Последняя проверка Ozon: {new Date(t.readback_at).toLocaleString("ru-RU")}.</p>}
+                  </div>
+                );
+              })}
+            </details>
+          )}
           {!!data.unresolved?.length && (
             <details className="technical-details">
               <summary>
@@ -433,7 +492,7 @@ export function AutomaticStockControls({
             </>
           ) : (
             <button
-              disabled={busy || !!pending || !targets.length}
+              disabled={busy || !!pending || !availableTargets.length}
               onClick={() => setOpen(true)}
             >
               Настроить автоматическую синхронизацию
@@ -454,10 +513,10 @@ export function AutomaticStockControls({
               остатки и отправлять изменения в Ozon. Положительный остаток может
               быть доступен реальным покупателям.
             </p>
-            {targets.length > 1 ? (
+            {availableTargets.length > 1 ? (
               <fieldset className="integration-field">
                 <legend>Товары и склады для синхронизации</legend>
-                {targets.map((t) => (
+                {availableTargets.map((t) => (
                   <label className="integration-ack" key={keyFor(t)}>
                     <input
                       type="checkbox"
@@ -470,7 +529,7 @@ export function AutomaticStockControls({
                         )
                       }
                     />
-                    Товар {t.ozon_product_id}, склад {t.ozon_warehouse_id}
+                    Товар {t.offer_id || t.ozon_product_id}, склад {t.ozon_warehouse_id}
                   </label>
                 ))}
               </fieldset>
@@ -481,9 +540,9 @@ export function AutomaticStockControls({
                   value={current ? keyFor(current) : ""}
                   onChange={(e) => setSelected([e.target.value])}
                 >
-                  {targets.map((t) => (
+                  {availableTargets.map((t) => (
                     <option key={keyFor(t)} value={keyFor(t)}>
-                      Товар {t.ozon_product_id}, склад {t.ozon_warehouse_id}
+                      Товар {t.offer_id || t.ozon_product_id}, склад {t.ozon_warehouse_id}
                     </option>
                   ))}
                 </select>
@@ -547,7 +606,7 @@ export function AutomaticStockControls({
               <input
                 type="number"
                 min="0"
-                max="7"
+                max="10"
                 value={maximum}
                 onChange={(e) => setMaximum(e.target.value)}
               />
