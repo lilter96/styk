@@ -96,6 +96,13 @@ func (write CustomerOrderWrite) Validate(scope Scope) error {
 }
 
 func (write CustomerOrderWrite) validateFields() error {
+	seenFields := make(map[string]bool, len(write.OwnedFields))
+	for _, field := range write.OwnedFields {
+		if !writableTarget(field) || seenFields[field] {
+			return ErrInvalid
+		}
+		seenFields[field] = true
+	}
 	if write.Name.Validate() != nil || write.Description.Validate() != nil || write.Applicable.Validate() != nil || write.VATEnabled.Validate() != nil || write.VATIncluded.Validate() != nil {
 		return ErrInvalid
 	}

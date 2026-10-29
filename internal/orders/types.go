@@ -288,6 +288,7 @@ type Config struct {
 	PreviewTTLSeconds      int64            `json:"preview_ttl_seconds"`
 	PIIEnabled             bool             `json:"pii_enabled"`
 	PIIRetentionSeconds    int64            `json:"pii_retention_seconds"`
+	CurrencyID             string           `json:"currency_id,omitempty"`
 	OrganizationID         string           `json:"organization_id"`
 	AgentID                string           `json:"agent_id"`
 	StoreID                string           `json:"store_id"`
@@ -338,6 +339,9 @@ type PositionWrite struct {
 // CustomerOrderWrite deliberately has no sum, paid or shipped fields: those
 // values are computed provider facts. No payment or shipment document is implied.
 type CustomerOrderWrite struct {
+	OwnedFields    []string         `json:"owned_fields,omitempty"`
+	CurrencyID     string           `json:"currency_id,omitempty"`
+	RateValue      Field[Decimal]   `json:"rate_value"`
 	OrganizationID string           `json:"organization_id"`
 	AgentID        string           `json:"agent_id"`
 	StoreID        string           `json:"store_id"`
@@ -374,11 +378,14 @@ type Command struct {
 	AutomationGrantRevision int64               `json:"automation_grant_revision,omitempty"`
 	ExpectedSourceRevision  string              `json:"expected_source_revision"`
 	ExpectedTargetRevision  string              `json:"expected_target_revision,omitempty"`
+	TargetPositions         []TargetPosition    `json:"target_positions,omitempty"`
+	TargetPositionsComplete bool                `json:"target_positions_complete,omitempty"`
 	SourceOrigin            Origin              `json:"source_origin"`
 	SourceCommandID         string              `json:"source_command_id,omitempty"`
 	Warehouse               WarehouseMappingRef `json:"warehouse"`
 	CustomerOrder           *CustomerOrderWrite `json:"customer_order,omitempty"`
 	PostingAction           *PostingAction      `json:"posting_action,omitempty"`
+	ProtectedCustomer       *ProtectedCustomer  `json:"protected_customer,omitempty"`
 	PII                     *Customer           `json:"-"`
 	IdempotencyKey          string              `json:"idempotency_key"`
 	CreatedAt               time.Time           `json:"created_at"`

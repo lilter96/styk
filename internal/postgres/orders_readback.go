@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"slices"
 	"strings"
 	"time"
 
@@ -19,6 +20,9 @@ func orderReadbackMatches(command orders.Command, observed orders.TargetObservat
 		return false
 	}
 	wanted := *command.CustomerOrder
+	if command.Action == orders.ActionMirrorUpdate && len(wanted.OwnedFields) > 0 {
+		return orderOwnedReadback(wanted, observed)
+	}
 	if !orderReadbackFields(wanted, observed.Fields) || len(wanted.Positions) != len(observed.Positions) {
 		return false
 	}
@@ -148,4 +152,65 @@ func sanitizedOrderTarget(command orders.Command, target orders.TargetObservatio
 		target.Fields = *command.CustomerOrder
 	}
 	return target
+}
+
+func orderOwnedReadback(wanted orders.CustomerOrderWrite, observed orders.TargetObservation) bool {
+	actual := observed.Fields
+	if wanted.OrganizationID != actual.OrganizationID || wanted.AgentID != actual.AgentID || wanted.StoreID != actual.StoreID {
+		return false
+	}
+	for _, field := range wanted.OwnedFields {
+		switch field {
+		case "name":
+			if !orderFieldEqual(wanted.Name, actual.Name) {
+				return false
+			}
+		case "description":
+			if !orderFieldEqual(wanted.Description, actual.Description) {
+				return false
+			}
+		case "moment":
+			if !orderTimeFieldEqual(wanted.Moment, actual.Moment) {
+				return false
+			}
+		case "delivery_at":
+			if !orderTimeFieldEqual(wanted.DeliveryAt, actual.DeliveryAt) {
+				return false
+			}
+		case "applicable":
+			if !orderFieldEqual(wanted.Applicable, actual.Applicable) {
+				return false
+			}
+		case "state":
+			if wanted.StateID != actual.StateID {
+				return false
+			}
+		case "vat_enabled":
+			if !orderFieldEqual(wanted.VATEnabled, actual.VATEnabled) {
+				return false
+			}
+		case "vat_included":
+			if !orderFieldEqual(wanted.VATIncluded, actual.VATIncluded) {
+				return false
+			}
+		case "attribute":
+			if !orderReadbackAttributes(wanted.Attributes, actual.Attributes) {
+				return false
+			}
+		default:
+			if strings.HasPrefix(field, "positions.") && !orderReadbackPositions(wanted.Positions, observed.Positions) {
+				return false
+			}
+		}
+	}
+	return true
+}
+func orderReadbackAttributes(wanted, actual []orders.AttributeWrite) bool {
+	for _, field := range wanted {
+		index := slices.IndexFunc(actual, func(value orders.AttributeWrite) bool { return value.AttributeID == field.AttributeID })
+		if index < 0 || !orderFieldEqual(field.Value, actual[index].Value) {
+			return false
+		}
+	}
+	return true
 }

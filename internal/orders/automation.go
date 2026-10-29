@@ -31,7 +31,13 @@ func (grant AutomationGrant) Allows(command Command, now time.Time) bool {
 func (command Command) Fields() []string {
 	fields := make(map[string]bool)
 	if command.CustomerOrder != nil {
-		command.CustomerOrder.collectFields(fields)
+		if command.Action == ActionMirrorUpdate && len(command.CustomerOrder.OwnedFields) > 0 {
+			for _, field := range command.CustomerOrder.OwnedFields {
+				fields[field] = true
+			}
+		} else {
+			command.CustomerOrder.collectFields(fields)
+		}
 	}
 	if action := command.PostingAction; action != nil {
 		fields["posting.lines"] = len(action.Lines) > 0

@@ -16,7 +16,7 @@ type RecordScope struct {
 }
 
 func recordAAD(scope RecordScope) ([]byte, error) {
-	if !scope.Scope.Valid() || !validID(scope.RecordID) || scope.Purpose != "order-customer" || scope.Revision < 1 {
+	if !scope.Valid() || !validID(scope.RecordID) || scope.Purpose != "order-customer" || scope.Revision < 1 {
 		return nil, ErrOwnership
 	}
 	return json.Marshal(struct {

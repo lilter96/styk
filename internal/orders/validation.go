@@ -14,6 +14,9 @@ const (
 )
 
 func (config Config) Validate() error {
+	if config.CurrencyID != "" && !validUUID(config.CurrencyID) {
+		return ErrInvalid
+	}
 	if err := config.Scope.Validate(); err != nil {
 		return fmt.Errorf("validate order configuration scope: %w", err)
 	}
