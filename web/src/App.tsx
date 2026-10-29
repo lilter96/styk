@@ -9,6 +9,7 @@ import {
   useImportSubmission,
 } from "./ImportSubmission";
 import { ProductMappingPage } from "./ProductMappingPage";
+import { CatalogSync } from "./CatalogSync";
 import { WarehouseReview } from "./WarehouseReview";
 import { hasAuthLink, MerchantAuth } from "./MerchantAuth";
 import {
@@ -1069,6 +1070,7 @@ export function App() {
             Обзор
           </NavLink>
           <NavLink to="/products">Товары</NavLink>
+          <NavLink to="/catalog-sync">Каталог</NavLink>
           <NavLink to="/warehouses">Склады</NavLink>
           <NavLink to="/integrations">Интеграции</NavLink>
         </nav>
@@ -1111,6 +1113,10 @@ export function App() {
           />
           {!integrationPage && importNotice}
           <Routes>
+            <Route
+              path="/catalog-sync"
+              element={<CatalogSync key={JSON.stringify(scope)} scope={scope} />}
+            />
             <Route
               path="/integrations"
               element={
