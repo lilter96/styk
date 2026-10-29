@@ -52,7 +52,7 @@ func TestIdentitySessionsAndMembership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.Pool.Exec(ctx, `UPDATE saas_sessions SET created_at=clock_timestamp()-interval '9 hours',expires_at=clock_timestamp()-interval '1 second' WHERE audit_id=$1`, expired.AuditID); err != nil {
+	if _, err = db.Pool.Exec(ctx, `UPDATE saas_sessions SET created_at=clock_timestamp()-interval '9 hours',expires_at=clock_timestamp()-interval '2 hours' WHERE audit_id=$1`, expired.AuditID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = store.Session(ctx, expiredToken); !errors.Is(err, identity.ErrAuth) {
