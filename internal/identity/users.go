@@ -77,6 +77,22 @@ func event(ctx context.Context, tx pgx.Tx, workspace, actor, session, action, ta
 	return nil
 }
 
+// RecordAction records an authorized request intent before the handler can
+// mutate state. The domain's own transaction remains the outcome record.
+func (s *Store) RecordAction(ctx context.Context, session Session, workspace, target string) error {
+	if len(target) > 256 {
+		return ErrInvalid
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+	_, err := s.pool.Exec(ctx, `INSERT INTO saas_security_events(workspace_id,actor_user_id,session_audit_id,action,target)
+	 VALUES($1,$2,$3,'AUTHORIZED_REQUEST',$4)`, workspace, session.User.ID, session.AuditID, target)
+	if err != nil {
+		return fmt.Errorf("record request intent: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) Authenticate(ctx context.Context, email, password string) (User, error) {
 	email, valid := canonicalEmail(email)
 	if valid != nil {

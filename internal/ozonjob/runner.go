@@ -75,11 +75,13 @@ func (r Runner) ProcessImport(parent context.Context, t domain.Task, lease time.
 	}
 	isMoy := op.Provider == "moysklad" && op.Type == domain.MoyskladCatalogImport && t.Type == domain.MoyskladCatalogTask
 	isOzon := op.Provider == "ozon" && op.Type == domain.OzonCatalogImport && t.Type == domain.OzonCatalogTask
+	var credentialRevision *int64
 	if r.Resolver != nil {
-		secret, resolveErr := r.Resolver.Resolve(attempt, credentials.Scope{Tenant: op.Tenant, Provider: op.Provider, Account: op.Account})
+		secret, revision, resolveErr := r.Resolver.ResolveWithRevision(attempt, credentials.Scope{Tenant: op.Tenant, Provider: op.Provider, Account: op.Account})
 		if resolveErr != nil {
 			return r.Store.FailImport(attempt, t, "CONFIGURATION_UNAVAILABLE", "", domain.ImportCounts{})
 		}
+		credentialRevision = &revision
 		if isMoy && r.NewMoysklad != nil {
 			r.MoyskladClient, resolveErr = r.NewMoysklad(op.Account, secret)
 			r.MoyskladAccount = op.Account
@@ -196,7 +198,11 @@ func (r Runner) ProcessImport(parent context.Context, t domain.Task, lease time.
 		}
 		return err
 	}
-	if isMoy {
+	if isMoy && credentialRevision != nil {
+		err = r.Store.CommitClaimedMoyskladImportWithRevision(ctx, t, moySnap, fingerprint, observed, time.Duration(op.Limits.DatabaseTimeoutNS), *credentialRevision)
+	} else if isOzon && credentialRevision != nil {
+		err = r.Store.CommitClaimedOzonImportWithRevision(ctx, t, snap, fingerprint, observed, time.Duration(op.Limits.DatabaseTimeoutNS), *credentialRevision)
+	} else if isMoy {
 		err = r.Store.CommitClaimedMoyskladImport(ctx, t, moySnap, fingerprint, observed, time.Duration(op.Limits.DatabaseTimeoutNS))
 	} else {
 		err = r.Store.CommitClaimedOzonImport(ctx, t, snap, fingerprint, observed, time.Duration(op.Limits.DatabaseTimeoutNS))
@@ -206,6 +212,9 @@ func (r Runner) ProcessImport(parent context.Context, t domain.Task, lease time.
 	}
 	if errors.Is(err, postgres.ErrImportClaimLost) {
 		return err
+	}
+	if errors.Is(err, postgres.ErrImportCredentialChanged) {
+		return r.Store.FailImport(attempt, t, "CONFIGURATION_UNAVAILABLE", "", observed)
 	}
 	if errors.Is(err, postgres.ErrImportCommitUnknown) {
 		// The task row lock serializes this read with any ambiguous commit. Never

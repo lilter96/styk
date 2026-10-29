@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lilter96/styk/internal/credentials"
+	"github.com/lilter96/styk/internal/identity"
 	"github.com/lilter96/styk/internal/postgres"
 )
 
@@ -28,6 +29,24 @@ func handlerWithConnections(db *postgres.Store, secret, origin string, connectio
 	if e != nil {
 		return nil, e
 	}
+	return handlerWithAuth(db, a, connections)
+}
+
+// MerchantHandler exposes the existing business routes behind persistent
+// identity, workspace membership and role checks. It requires private delivery
+// of email verification and password recovery links.
+func MerchantHandler(db *postgres.Store, origin string, sender identity.Sender) (http.Handler, error) {
+	if db == nil {
+		return nil, errors.New("console database required")
+	}
+	a, err := newMerchantAuth(db, origin, sender)
+	if err != nil {
+		return nil, err
+	}
+	return handlerWithAuth(db, a, nil)
+}
+
+func handlerWithAuth(db *postgres.Store, a *auth, connections *connections) (http.Handler, error) {
 	lifetime := 5 * time.Minute
 	if raw := os.Getenv("STYK_REVIEW_LIFETIME"); raw != "" {
 		var err error
@@ -47,9 +66,28 @@ func handlerWithConnections(db *postgres.Store, secret, origin string, connectio
 	registerStockSyncRoutes(mux, a, db, connections)
 	registerOrderEvidenceRoutes(mux, a, db, connections)
 	imports := newImportAPI(db)
-	mux.HandleFunc("POST /api/session", a.login)
-	mux.HandleFunc("DELETE /api/session", a.authorized(a.logout))
-	mux.HandleFunc("GET /api/session", a.authorized(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	mux.HandleFunc("GET /api/auth-mode", func(w http.ResponseWriter, r *http.Request) {
+		valid := a.merchant == nil && a.safe(r) || a.merchant != nil && a.merchant.safe(r)
+		if !valid {
+			writeError(w, http.StatusForbidden, "FORBIDDEN")
+			return
+		}
+		mode := "local"
+		if a.merchant != nil {
+			mode = "merchant"
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, struct {
+			Mode string `json:"mode"`
+		}{mode})
+	})
+	if a.merchant == nil {
+		mux.HandleFunc("POST /api/session", a.login)
+		mux.HandleFunc("DELETE /api/session", a.authorized(a.logout))
+		mux.HandleFunc("GET /api/session", a.authorized(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	} else {
+		registerMerchantRoutes(mux, a)
+	}
 	mux.HandleFunc("POST /api/imports", a.authorized(a.connectionMutation(imports.create)))
 	mux.HandleFunc("GET /api/imports", a.authorized(imports.list))
 	mux.HandleFunc("GET /api/imports/{id}", a.authorized(imports.get))

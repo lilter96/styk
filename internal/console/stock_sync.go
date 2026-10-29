@@ -23,6 +23,7 @@ type stockSyncAPI struct {
 func registerStockSyncRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c *connections) {
 	api := &stockSyncAPI{db: db, runner: stocksync.Runner{Store: db, ResolveOzon: c.resolveOzon}}
 	mux.HandleFunc("GET /api/stock-sync", a.authorized(api.get))
+	mux.HandleFunc("GET /api/stock-sync/eligibility", a.authorized(api.eligibility))
 	mux.HandleFunc("GET /api/stock-sync/shadow", a.authorized(api.shadow))
 	mux.HandleFunc("POST /api/stock-sync/preview", a.authorized(a.connectionMutation(api.preview)))
 	mux.HandleFunc("POST /api/stock-sync/enable", a.authorized(a.connectionMutation(api.enable)))
@@ -32,6 +33,35 @@ func registerStockSyncRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c 
 	mux.HandleFunc("GET /api/stock-sync/automatic", a.authorized(api.automaticStatus))
 	mux.HandleFunc("POST /api/stock-sync/automatic", a.authorized(a.connectionMutation(api.automaticConfigure)))
 	mux.HandleFunc("POST /api/stock-sync/automatic/run", a.authorized(a.connectionMutation(api.automaticRun)))
+}
+
+func (a *stockSyncAPI) eligibility(w http.ResponseWriter, r *http.Request) {
+	scope := syncScope(r)
+	if !scope.Valid() {
+		writeError(w, http.StatusBadRequest, "INVALID_SCOPE")
+		return
+	}
+	var owned bool
+	err := a.db.Pool.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM stock_connections WHERE tenant_id=$1 AND source='moysklad' AND account_id=$2)
+	 AND EXISTS(SELECT 1 FROM stock_connections WHERE tenant_id=$1 AND source='ozon' AND account_id=$3)`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount).Scan(&owned)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "UNAVAILABLE")
+		return
+	}
+	if !owned {
+		writeError(w, http.StatusNotFound, "NOT_FOUND")
+		return
+	}
+	state := "AWAITING_PRODUCTION_ACTIVATION"
+	if scope == testpublication.Scope() {
+		state = "CONTROLLED_TEST_DISABLED"
+		if testpublication.Enabled(scope) {
+			state = "CONTROLLED_TEST_AVAILABLE"
+		}
+	}
+	writeJSON(w, struct {
+		State string `json:"state"`
+	}{state})
 }
 
 func (a *stockSyncAPI) automaticStatus(w http.ResponseWriter, r *http.Request) {

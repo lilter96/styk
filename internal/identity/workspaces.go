@@ -81,6 +81,9 @@ func (s *Store) CreateWorkspace(ctx context.Context, session Session, name strin
 		return Workspace{}, fmt.Errorf("start workspace creation: %w", err)
 	}
 	defer rollback(tx)
+	if err = lockSession(ctx, tx, session); err != nil {
+		return Workspace{}, err
+	}
 	if err = insertWorkspace(ctx, tx, workspace, session.User.ID, session.AuditID); err != nil {
 		return Workspace{}, err
 	}
@@ -90,10 +93,28 @@ func (s *Store) CreateWorkspace(ctx context.Context, session Session, name strin
 	return workspace, nil
 }
 
+func lockSession(ctx context.Context, tx pgx.Tx, session Session) error {
+	var id string
+	err := tx.QueryRow(ctx, `SELECT s.audit_id FROM saas_sessions s JOIN saas_users u ON u.id=s.user_id
+	 WHERE s.audit_id=$1 AND u.id=$2 AND s.revoked_at IS NULL AND s.expires_at>clock_timestamp()
+	 AND s.user_auth_version=u.auth_version AND u.disabled_at IS NULL AND u.email_verified_at IS NOT NULL
+	 FOR SHARE OF s,u`, session.AuditID, session.User.ID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrAuth
+	}
+	if err != nil {
+		return fmt.Errorf("lock active session: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) Members(ctx context.Context, session Session, workspace string) ([]Member, error) {
 	role, err := s.Role(ctx, session.User.ID, workspace)
-	if err != nil || !CanAdmin(role) {
+	if errors.Is(err, ErrForbidden) || (err == nil && !CanAdmin(role)) {
 		return nil, ErrForbidden
+	}
+	if err != nil {
+		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()

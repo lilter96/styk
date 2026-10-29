@@ -154,7 +154,7 @@ func (c *connections) probe(w http.ResponseWriter, r *http.Request) {
 		// The existing trusted local operator may test the configured environment
 		// account before its separate ownership attestation/registration. A stored
 		// record always overrides that fallback, including disabled credentials.
-		if legacyConfigured && errors.Is(storedErr, credentials.ErrNotFound) {
+		if legacyConfigured && sessionFrom(r).AuditID == "" && errors.Is(storedErr, credentials.ErrNotFound) {
 			configured = true
 		} else {
 			var err error
@@ -223,11 +223,32 @@ func (c *connections) list(w http.ResponseWriter, r *http.Request) {
 	views := make([]providerView, 0, 2)
 	for _, provider := range []string{"moysklad", "ozon"} {
 		envAccount, envConfigured := c.account(provider)
+		if sessionFrom(r).AuditID != "" && envAccount != "" {
+			owned, err := c.db.CredentialConnectionOwned(r.Context(), credentials.Scope{Tenant: tenant, Provider: provider, Account: envAccount})
+			if err != nil {
+				writeError(w, 503, "DATABASE_UNAVAILABLE")
+				return
+			}
+			if !owned {
+				envAccount, envConfigured = "", false
+			}
+		}
 		account, configured := envAccount, envConfigured
 		selected := r.URL.Query().Get(provider + "_account")
 		if selected != "" && !validConnectionTenant(selected) {
 			writeError(w, 400, "INVALID_SCOPE")
 			return
+		}
+		if sessionFrom(r).AuditID != "" && selected != "" {
+			owned, err := c.db.CredentialConnectionOwned(r.Context(), credentials.Scope{Tenant: tenant, Provider: provider, Account: selected})
+			if err != nil {
+				writeError(w, 503, "DATABASE_UNAVAILABLE")
+				return
+			}
+			if !owned {
+				writeError(w, 404, "NOT_FOUND")
+				return
+			}
 		}
 		var stored *credentials.Metadata
 		if selected != "" {
@@ -319,6 +340,10 @@ func validConnectionTenant(s string) bool {
 	return s != "" && strings.TrimSpace(s) == s && len(s) <= 256
 }
 func (c *connections) register(w http.ResponseWriter, r *http.Request) {
+	if sessionFrom(r).AuditID != "" {
+		writeError(w, http.StatusNotFound, "NOT_FOUND")
+		return
+	}
 	provider := r.PathValue("provider")
 	account, configured := c.account(provider)
 	if provider != "moysklad" && provider != "ozon" {
@@ -367,7 +392,7 @@ func (c *connections) register(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 409, "PROBE_REQUIRED")
 		return
 	}
-	err = c.db.RegisterStockConnection(ctx, body.Tenant, provider, account, "LOCAL_OPERATOR_SESSION:"+session, false)
+	err = c.db.RegisterStockConnection(ctx, body.Tenant, provider, account, actorProvenance(r), false)
 	if err != nil {
 		// A fresh scoped read reconciles an ambiguous commit without retrying a write.
 		reconcile, cancelRead := context.WithTimeout(r.Context(), c.db.Timeout)

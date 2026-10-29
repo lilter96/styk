@@ -55,6 +55,17 @@ type Session struct {
 	Expires time.Time
 }
 
+type sessionContextKey struct{}
+
+func WithSession(ctx context.Context, session Session) context.Context {
+	return context.WithValue(ctx, sessionContextKey{}, session)
+}
+
+func SessionFromContext(ctx context.Context) (Session, bool) {
+	session, ok := ctx.Value(sessionContextKey{}).(Session)
+	return session, ok && session.AuditID != ""
+}
+
 func New(pool *pgxpool.Pool, timeout time.Duration) (*Store, error) {
 	if pool == nil || timeout <= 0 {
 		return nil, ErrInvalid

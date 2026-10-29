@@ -64,17 +64,17 @@ func newStockFixtureWithHistory(t *testing.T, includeHistory bool) stockFixtureD
 	if _, err = db.SaveOzonImport(ctx, oz, "ozon-fingerprint"); err != nil {
 		t.Fatal(err)
 	}
+	for _, c := range []struct{ source, account string }{{"moysklad", r.Pool.MoyskladAccount}, {"ozon", r.Target.OzonAccount}} {
+		if err = db.RegisterStockConnection(ctx, r.Pool.Tenant, c.source, c.account, "fixture ownership attestation", includeHistory); err != nil {
+			t.Fatal(err)
+		}
+	}
 	scope := postgres.MatchScope{Tenant: r.Pool.Tenant, MoyskladAccount: r.Pool.MoyskladAccount, OzonAccount: r.Target.OzonAccount}
 	if _, err = db.ConfirmMatch(ctx, scope, "product", "variant", "item", "fixture product confirmation"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = db.ConfirmWarehouseMapping(ctx, scope, "warehouse", "ozon-warehouse", "fixture warehouse confirmation"); err != nil {
 		t.Fatal(err)
-	}
-	for _, c := range []struct{ source, account string }{{"moysklad", r.Pool.MoyskladAccount}, {"ozon", r.Target.OzonAccount}} {
-		if err = db.RegisterStockConnection(ctx, r.Pool.Tenant, c.source, c.account, "fixture ownership attestation", includeHistory); err != nil {
-			t.Fatal(err)
-		}
 	}
 	return stockFixtureData{db, r, ms, oz}
 }
@@ -232,12 +232,12 @@ func TestStockWarehouseConflictDoesNotExposeOtherTenant(t *testing.T) {
 	f, other := newStockFixture(t), newStockFixture(t)
 	ctx := context.Background()
 	_, err := f.store.Pool.Exec(ctx, `INSERT INTO warehouse_mappings(tenant_id,moysklad_account,ozon_account,moysklad_warehouse_id,ozon_warehouse_id,status,version,provenance) VALUES($1,$2,$3,$4,'other-warehouse','active',1,'fixture')`, other.req.Pool.Tenant, f.req.Pool.MoyskladAccount, other.req.Target.OzonAccount, f.req.Pool.WarehouseID)
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal("cross-tenant warehouse mapping was accepted")
 	}
 	d := stockCalc(t, f)
-	if d.Status != domain.StockBlocked || !stockHasReason(d, "WAREHOUSE_MAPPING_CONFLICT") || d.Quantity != nil {
-		t.Fatalf("shared warehouse not blocked: %+v", d)
+	if stockHasReason(d, "WAREHOUSE_MAPPING_CONFLICT") || d.Quantity != nil {
+		t.Fatalf("rejected foreign mapping affected calculation: %+v", d)
 	}
 	data, err := json.Marshal(d)
 	if err != nil {

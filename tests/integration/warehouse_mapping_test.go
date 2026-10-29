@@ -42,6 +42,11 @@ func TestWarehouseMapping(t *testing.T) {
 	if _, e = db.SaveOzonImport(ctx, oz, "o"); e != nil {
 		t.Fatal(e)
 	}
+	for _, c := range []struct{ source, account string }{{"ozon", scope.OzonAccount}, {"moysklad", scope.MoyskladAccount}} {
+		if e = db.RegisterStockConnection(ctx, scope.Tenant, c.source, c.account, "synthetic fixture", true); e != nil {
+			t.Fatal(e)
+		}
+	}
 	if _, e = db.ConfirmWarehouseMapping(ctx, scope, "missing", "o1", "operator"); e == nil {
 		t.Fatal("missing warehouse accepted")
 	}
@@ -125,6 +130,11 @@ func TestWarehouseMappingAuditRollback(t *testing.T) {
 	}
 	if _, err = db.SaveOzonImport(ctx, domain.OzonImport{Account: scope.OzonAccount, StartedAt: now, FinishedAt: now, Warehouses: []domain.OzonWarehouse{{ID: "o", IsRFBS: &f}}}, "fixture"); err != nil {
 		t.Fatal(err)
+	}
+	for _, c := range []struct{ source, account string }{{"ozon", scope.OzonAccount}, {"moysklad", scope.MoyskladAccount}} {
+		if err = db.RegisterStockConnection(ctx, scope.Tenant, c.source, c.account, "synthetic fixture", true); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if _, err = db.Pool.Exec(ctx, `ALTER TABLE warehouse_mapping_history ADD CONSTRAINT test_warehouse_audit_failure CHECK (provenance <> 'audit-failure')`); err != nil {
 		t.Fatal(err)

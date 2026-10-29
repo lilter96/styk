@@ -38,6 +38,9 @@ func (s *Store) SaveCustomerOrders(ctx context.Context, b domain.CustomerOrderIm
 		return 0, fmt.Errorf("begin customer order import: %w", err)
 	}
 	defer tx.Rollback(context.Background())
+	if err = requireContextActor(ctx, tx, b.Tenant, false); err != nil {
+		return 0, err
+	}
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "moysklad:"+b.Account); err != nil {
 		return 0, fmt.Errorf("lock customer order account: %w", err)
 	}

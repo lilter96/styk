@@ -455,6 +455,9 @@ func (s *Store) PreviewStockSync(ctx context.Context, req domain.StockSyncPrevie
 		return domain.StockSyncReview{}, err
 	}
 	defer tx.Rollback(context.Background())
+	if err = requireContextActor(ctx, tx, req.Tenant, false); err != nil {
+		return domain.StockSyncReview{}, err
+	}
 	review, err := s.stockSyncReview(ctx, tx, req.StockSyncScope, req.Attestations, now)
 	if err != nil {
 		return review, err
@@ -603,6 +606,9 @@ func (s *Store) MutateStockSync(ctx context.Context, scope domain.StockSyncScope
 		return domain.StockSyncView{}, err
 	}
 	defer tx.Rollback(context.Background())
+	if err = requireContextActor(ctx, tx, scope.Tenant, true); err != nil {
+		return domain.StockSyncView{}, err
+	}
 	if err = syncLock(ctx, tx, scope); err != nil {
 		return domain.StockSyncView{}, err
 	}

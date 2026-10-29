@@ -156,7 +156,7 @@ func (s *Store) CreateWarehouseReview(ctx context.Context, in domain.WarehouseRe
 	}
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	r := domain.WarehouseReview{ID: hex.EncodeToString(b[:]), Tenant: in.Tenant, MoyskladAccount: in.MoyskladAccount, OzonAccount: in.OzonAccount, MoyskladWarehouseID: in.MoyskladWarehouseID, OzonWarehouseID: in.OzonWarehouseID, MoyskladImportID: snap.MoyID, OzonImportID: snap.OzonID, ExistingMappingID: snap.MappingID, ExistingMappingVersion: snap.MappingVersion, CreatedAt: now, ExpiresAt: now.Add(in.Lifetime)}
-	_, err = tx.Exec(ctx, `INSERT INTO warehouse_mapping_reviews(id,tenant_id,moysklad_account,ozon_account,moysklad_warehouse_id,ozon_warehouse_id,moysklad_import_id,ozon_import_id,moysklad_import_fingerprint,ozon_import_fingerprint,observation_hash,mapping_hash,existing_mapping_id,existing_mapping_version,principal_type,session_audit_id,created_at,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'LOCAL_OPERATOR_SESSION',$15,$16,$17)`, r.ID, r.Tenant, r.MoyskladAccount, r.OzonAccount, r.MoyskladWarehouseID, r.OzonWarehouseID, r.MoyskladImportID, r.OzonImportID, snap.MoyFingerprint, snap.OzonFingerprint, warehouseObservationHash(snap), warehouseMappingHash(snap), r.ExistingMappingID, r.ExistingMappingVersion, in.SessionID, r.CreatedAt, r.ExpiresAt)
+	_, err = tx.Exec(ctx, `INSERT INTO warehouse_mapping_reviews(id,tenant_id,moysklad_account,ozon_account,moysklad_warehouse_id,ozon_warehouse_id,moysklad_import_id,ozon_import_id,moysklad_import_fingerprint,ozon_import_fingerprint,observation_hash,mapping_hash,existing_mapping_id,existing_mapping_version,principal_type,session_audit_id,created_at,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$18,$15,$16,$17)`, r.ID, r.Tenant, r.MoyskladAccount, r.OzonAccount, r.MoyskladWarehouseID, r.OzonWarehouseID, r.MoyskladImportID, r.OzonImportID, snap.MoyFingerprint, snap.OzonFingerprint, warehouseObservationHash(snap), warehouseMappingHash(snap), r.ExistingMappingID, r.ExistingMappingVersion, in.SessionID, r.CreatedAt, r.ExpiresAt, auditPrincipal(in.SessionID))
 	if err != nil {
 		return domain.WarehouseReviewResult{}, fmt.Errorf("persist warehouse review: %w", err)
 	}
@@ -167,7 +167,7 @@ func (s *Store) CreateWarehouseReview(ctx context.Context, in domain.WarehouseRe
 	if !time.Now().Before(r.ExpiresAt) {
 		status = "EXPIRED"
 	}
-	return domain.WarehouseReviewResult{Review: r, Status: status, PrincipalType: "LOCAL_OPERATOR_SESSION"}, nil
+	return domain.WarehouseReviewResult{Review: r, Status: status, PrincipalType: auditPrincipal(in.SessionID)}, nil
 }
 func (s *Store) InspectWarehouseReview(ctx context.Context, id, sessionID string) (domain.WarehouseReviewResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
@@ -191,7 +191,7 @@ func (s *Store) InspectWarehouseReview(ctx context.Context, id, sessionID string
 	if err = tx.Commit(ctx); err != nil {
 		return domain.WarehouseReviewResult{}, err
 	}
-	return domain.WarehouseReviewResult{Review: stored.review, Status: status, PrincipalType: "LOCAL_OPERATOR_SESSION"}, nil
+	return domain.WarehouseReviewResult{Review: stored.review, Status: status, PrincipalType: auditPrincipal(sessionID)}, nil
 }
 
 type storedWarehouseReview struct {

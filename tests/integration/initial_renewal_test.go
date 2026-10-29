@@ -55,6 +55,7 @@ func TestCancelledInitialPublicationRequiresFreshAuthorization(t *testing.T) {
 	if err = db.Pool.QueryRow(ctx, `SELECT count(*) FROM stock_initial_publications WHERE ozon_account=$1 AND product_id=$2 AND warehouse_id=$3`, scope.OzonAccount, testpublication.OzonProduct, testpublication.OzonWarehouse).Scan(&audits); err != nil || audits != 2 {
 		t.Fatalf("initial intents not preserved: %d %v", audits, err)
 	}
+	rollbackEmptySaaSMigrations(t, db)
 	cmd := exec.Command("go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", db.Pool.Config().ConnString(), "down")
 	if out, err := cmd.CombinedOutput(); err == nil || !strings.Contains(string(out), "refusing to discard renewed initial publication history") {
 		t.Fatal("renewed intent history could be removed")

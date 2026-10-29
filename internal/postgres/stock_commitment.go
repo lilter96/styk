@@ -27,6 +27,12 @@ func (s *Store) RegisterStockConnection(ctx context.Context, tenant, source, acc
 		return fmt.Errorf("begin connection registration: %w", err)
 	}
 	defer tx.Rollback(context.Background())
+	if err = requireMerchantActor(ctx, tx, tenant, provenance, true); err != nil {
+		return err
+	}
+	if err = ensureConnectionWorkspace(ctx, tx, tenant, provenance); err != nil {
+		return err
+	}
 	_, err = tx.Exec(ctx, `INSERT INTO stock_connections(tenant_id,source,account_id,provenance,include_import_history) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source,account_id) DO NOTHING`, tenant, source, account, provenance, includeImportHistory)
 	if err != nil {
 		return fmt.Errorf("register stock connection: %w", err)

@@ -21,6 +21,9 @@ func (s *Store) SavePostings(ctx context.Context, b domain.PostingImport) (int64
 		return 0, err
 	}
 	defer tx.Rollback(context.Background())
+	if err = requireContextActor(ctx, tx, b.Tenant, false); err != nil {
+		return 0, err
+	}
 	var batch int64
 	err = tx.QueryRow(ctx, `INSERT INTO ozon_posting_batches(tenant_id,account_id,window_from,window_to,started_at,finished_at,traversal_status) VALUES($1,$2,$3,$4,$5,$6,'completed') RETURNING id`, b.Tenant, b.Account, b.Since, b.Until, b.StartedAt, b.FinishedAt).Scan(&batch)
 	if err != nil {

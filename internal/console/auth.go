@@ -30,6 +30,7 @@ type auditContextKey struct{}
 type auth struct {
 	secret   [32]byte
 	origin   string
+	merchant *merchantAuth
 	mu       sync.Mutex
 	sessions map[[32]byte]operatorSession
 }
@@ -126,6 +127,9 @@ func (a *auth) login(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 func (a *auth) authorized(next http.HandlerFunc) http.HandlerFunc {
+	if a.merchant != nil {
+		return a.merchant.authorized(next)
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		if !a.safe(r) {

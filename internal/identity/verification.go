@@ -38,10 +38,19 @@ func (s *Store) CreateVerification(ctx context.Context, email string) (string, s
 	return email, token, nil
 }
 
-func (s *Store) VerifyEmail(ctx context.Context, token string) error {
+// VerifyEmail installs a password chosen by the mailbox holder. A password
+// supplied before email verification cannot survive an unsolicited signup.
+func (s *Store) VerifyEmail(ctx context.Context, token, password string) error {
 	hash, err := tokenHash(token)
 	if err != nil {
 		return ErrAuth
+	}
+	if !validPassword(password) {
+		return ErrInvalid
+	}
+	passwordHash, err := s.passwordHash(ctx, password)
+	if err != nil {
+		return fmt.Errorf("hash verification password: %w", err)
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
@@ -57,7 +66,7 @@ func (s *Store) VerifyEmail(ctx context.Context, token string) error {
 	if err != nil {
 		return fmt.Errorf("read email verification: %w", err)
 	}
-	if err = finishVerification(ctx, tx, userID); err != nil {
+	if err = finishVerification(ctx, tx, userID, passwordHash); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -81,8 +90,8 @@ func lockVerificationUser(ctx context.Context, tx pgx.Tx, hash []byte) (string, 
 	return userID, nil
 }
 
-func finishVerification(ctx context.Context, tx pgx.Tx, userID string) error {
-	if _, err := tx.Exec(ctx, `UPDATE saas_users SET email_verified_at=clock_timestamp() WHERE id=$1`, userID); err != nil {
+func finishVerification(ctx context.Context, tx pgx.Tx, userID string, passwordHash []byte) error {
+	if _, err := tx.Exec(ctx, `UPDATE saas_users SET email_verified_at=clock_timestamp(),password_hash=$2,auth_version=auth_version+1 WHERE id=$1`, userID, passwordHash); err != nil {
 		return fmt.Errorf("verify email: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `UPDATE saas_email_verifications SET used_at=clock_timestamp() WHERE user_id=$1 AND used_at IS NULL`, userID); err != nil {

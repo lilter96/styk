@@ -217,7 +217,7 @@ func (a *credentialAPI) save(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session, _ := r.Context().Value(auditContextKey{}).(string)
-	meta, replay, err := a.db.SaveCredential(r.Context(), scope, in.Name, in.ExpectedRevision, in.RequestID, digest, ciphertext, time.Now().UTC(), "LOCAL_OPERATOR_SESSION:"+session)
+	meta, replay, err := a.db.SaveCredential(r.Context(), scope, in.Name, in.ExpectedRevision, in.RequestID, digest, ciphertext, time.Now().UTC(), actorProvenance(r))
 	if err != nil {
 		credentialError(w, err)
 		return
@@ -258,7 +258,7 @@ func (a *credentialAPI) disconnect(w http.ResponseWriter, r *http.Request) {
 	}
 	raw, _ := json.Marshal(in)
 	digest := a.c.vault.Digest(append([]byte("disconnect:"+provider+":"), raw...))
-	meta, replay, err := a.db.DisconnectCredential(r.Context(), scope, in.ExpectedRevision, in.RequestID, digest)
+	meta, replay, err := a.db.DisconnectCredentialAs(r.Context(), scope, in.ExpectedRevision, in.RequestID, digest, actorProvenance(r))
 	if err != nil {
 		credentialError(w, err)
 		return

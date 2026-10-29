@@ -126,7 +126,7 @@ func (s *Store) ConfirmMappingReview(ctx context.Context, req domain.MappingConf
 	if !time.Now().Before(r.ExpiresAt) {
 		return domain.MappingConfirmationResult{}, ErrReviewExpired
 	}
-	m, err := insertConfirmedMapping(ctx, tx, mappingInsert{Scope: stored.scope(), ProductID: r.Source.ID, OfferID: snap.Offer, TargetKind: r.Target.Kind, TargetID: r.Target.ID, Provenance: "LOCAL_OPERATOR_SESSION", OzonImportID: r.OzonImportID, MoyskladImportID: r.MoyskladImportID, ReviewID: &r.ID})
+	m, err := insertConfirmedMapping(ctx, tx, mappingInsert{Scope: stored.scope(), ProductID: r.Source.ID, OfferID: snap.Offer, TargetKind: r.Target.Kind, TargetID: r.Target.ID, Provenance: auditPrincipal(req.SessionID), OzonImportID: r.OzonImportID, MoyskladImportID: r.MoyskladImportID, ReviewID: &r.ID})
 	if err != nil {
 		var pgerr *pgconn.PgError
 		if errors.As(err, &pgerr) && pgerr.Code == "23505" && pgerr.TableName == "product_mappings" {
@@ -134,7 +134,7 @@ func (s *Store) ConfirmMappingReview(ctx context.Context, req domain.MappingConf
 		}
 		return domain.MappingConfirmationResult{}, err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO product_mapping_confirmation_audits(mapping_id,mapping_version,review_id,tenant_id,ozon_account,moysklad_account,ozon_product_id,ozon_offer_id,target_kind,target_id,ozon_import_id,moysklad_import_id,evidence_class,principal_type,session_audit_id,explanation,confirmed_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'LOCAL_OPERATOR_SESSION',$14,$15,$16)`, m.ID, m.Version, r.ID, r.Tenant, r.Source.Account, r.Target.Account, r.Source.ID, snap.Offer, r.Target.Kind, r.Target.ID, r.OzonImportID, r.MoyskladImportID, r.EvidenceClass, req.SessionID, req.Explanation, m.ConfirmedAt)
+	_, err = tx.Exec(ctx, `INSERT INTO product_mapping_confirmation_audits(mapping_id,mapping_version,review_id,tenant_id,ozon_account,moysklad_account,ozon_product_id,ozon_offer_id,target_kind,target_id,ozon_import_id,moysklad_import_id,evidence_class,principal_type,session_audit_id,explanation,confirmed_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$17,$14,$15,$16)`, m.ID, m.Version, r.ID, r.Tenant, r.Source.Account, r.Target.Account, r.Source.ID, snap.Offer, r.Target.Kind, r.Target.ID, r.OzonImportID, r.MoyskladImportID, r.EvidenceClass, req.SessionID, req.Explanation, m.ConfirmedAt, auditPrincipal(req.SessionID))
 	if err != nil {
 		return domain.MappingConfirmationResult{}, fmt.Errorf("insert confirmation audit: %w", err)
 	}

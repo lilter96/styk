@@ -13,6 +13,7 @@ import (
 	"github.com/lilter96/styk/internal/commitment"
 	"github.com/lilter96/styk/internal/config"
 	"github.com/lilter96/styk/internal/domain"
+	"github.com/lilter96/styk/internal/identity"
 	"github.com/lilter96/styk/internal/testpublication"
 )
 
@@ -101,20 +102,24 @@ func loadAutomaticPolicy(ctx context.Context, tx pgx.Tx, scope domain.StockSyncS
 
 func (s *Store) ConfigureAutomaticStock(ctx context.Context, req domain.AutomaticStockRequest, now time.Time) (domain.AutomaticStockView, error) {
 	scope := req.StockSyncScope
-	if !automaticScopeAllowed(scope) || !req.Acknowledge || req.SessionID == "" || len(req.SessionID) > 128 || len(req.IdempotencyKey) < 16 || len(req.IdempotencyKey) > 128 {
+	session, merchant := identity.SessionFromContext(ctx)
+	allowed := automaticScopeAllowed(scope)
+	if !scope.Valid() || (!allowed && (!merchant || req.Enabled)) || (merchant && req.SessionID != session.AuditID) || !req.Acknowledge || req.SessionID == "" || len(req.SessionID) > 128 || len(req.IdempotencyKey) < 16 || len(req.IdempotencyKey) > 128 {
 		return domain.AutomaticStockView{}, domain.ErrStockSyncInvalid
 	}
-	if req.Enabled && (req.IntervalSeconds < 30 || req.IntervalSeconds > 3600 || req.ValidMinutes < 1 || req.ValidMinutes > 1440) {
+	draft := !req.Enabled && (len(req.Targets) > 0 || req.ProductID != "" || req.WarehouseID != "")
+	configure := req.Enabled || draft
+	if configure && (req.IntervalSeconds < 30 || req.IntervalSeconds > 3600 || req.ValidMinutes < 1 || req.ValidMinutes > 1440) {
 		return domain.AutomaticStockView{}, domain.ErrStockSyncInvalid
 	}
 	requestedTargets := req.Targets
 	if len(req.Targets) > 0 && (req.ProductID != "" || req.WarehouseID != "" || req.SafetyStock != "" || req.Unreflected != "" || req.UnseenBound != "" || req.Maximum != 0) {
 		return domain.AutomaticStockView{}, domain.ErrStockSyncInvalid
 	}
-	if req.Enabled && len(requestedTargets) == 0 {
+	if configure && len(requestedTargets) == 0 {
 		requestedTargets = []domain.AutomaticStockTargetRequest{{ProductID: req.ProductID, WarehouseID: req.WarehouseID, SafetyStock: req.SafetyStock, Unreflected: req.Unreflected, UnseenBound: req.UnseenBound, Maximum: req.Maximum}}
 	}
-	if req.Enabled {
+	if configure {
 		if len(requestedTargets) == 0 || len(requestedTargets) > 100 {
 			return domain.AutomaticStockView{}, domain.ErrStockSyncInvalid
 		}
@@ -161,8 +166,8 @@ func (s *Store) ConfigureAutomaticStock(ctx context.Context, req domain.Automati
 		return domain.AutomaticStockView{}, domain.ErrStockSyncNotFound
 	}
 	var p domain.AutomaticStockPolicy
-	if req.Enabled {
-		p = domain.AutomaticStockPolicy{StockSyncScope: scope, Enabled: true, IntervalSeconds: req.IntervalSeconds, CreatedAt: now, ValidUntil: now.Add(time.Duration(req.ValidMinutes) * time.Minute), EvidenceClass: "OPERATOR_ATTESTED"}
+	if configure {
+		p = domain.AutomaticStockPolicy{StockSyncScope: scope, Enabled: req.Enabled, IntervalSeconds: req.IntervalSeconds, CreatedAt: now, ValidUntil: now.Add(time.Duration(req.ValidMinutes) * time.Minute), EvidenceClass: "OPERATOR_ATTESTED"}
 		unfenced := 0
 		for _, selected := range requestedTargets {
 			var t domain.AutomaticStockTarget
@@ -189,7 +194,7 @@ func (s *Store) ConfigureAutomaticStock(ctx context.Context, req domain.Automati
 			t.InitialPublication = selected.InitialPublication
 			p.Targets = append(p.Targets, t)
 		}
-		if unfenced == 0 {
+		if req.Enabled && unfenced == 0 {
 			return domain.AutomaticStockView{}, domain.ErrStockSyncBlocked
 		}
 	} else {
@@ -216,7 +221,7 @@ func (s *Store) ConfigureAutomaticStock(ctx context.Context, req domain.Automati
 	if err != nil {
 		return domain.AutomaticStockView{}, err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO stock_auto_config_audits(tenant_id,moysklad_account,ozon_account,revision,enabled,snapshot,principal_type,session_audit_id,idempotency_key,request_hash,created_at) VALUES($1,$2,$3,$4,$5,$6,'LOCAL_OPERATOR_SESSION',$7,$8,$9,$10)`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, revision, req.Enabled, raw, req.SessionID, req.IdempotencyKey, requestHash, now); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO stock_auto_config_audits(tenant_id,moysklad_account,ozon_account,revision,enabled,snapshot,principal_type,session_audit_id,idempotency_key,request_hash,created_at) VALUES($1,$2,$3,$4,$5,$6,$11,$7,$8,$9,$10)`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, revision, req.Enabled, raw, req.SessionID, req.IdempotencyKey, requestHash, now, auditPrincipal(req.SessionID)); err != nil {
 		return domain.AutomaticStockView{}, err
 	}
 	// A changed or paused configuration invalidates unclaimed decisions, but it
@@ -237,7 +242,9 @@ func (s *Store) ConfigureAutomaticStock(ctx context.Context, req domain.Automati
 }
 
 func (s *Store) AutomaticStockStatus(ctx context.Context, scope domain.StockSyncScope) (domain.AutomaticStockView, error) {
-	view := domain.AutomaticStockView{Available: automaticScopeAllowed(scope)}
+	_, merchant := identity.SessionFromContext(ctx)
+	allowed := automaticScopeAllowed(scope)
+	view := domain.AutomaticStockView{Available: allowed || (merchant && scope.Valid()), PublicationAvailable: allowed}
 	if !view.Available {
 		return view, nil
 	}
@@ -326,6 +333,9 @@ func (s *Store) RequestAutomaticCycle(ctx context.Context, scope domain.StockSyn
 		return domain.AutomaticStockView{}, err
 	}
 	defer tx.Rollback(context.Background())
+	if err = requireContextActor(ctx, tx, scope.Tenant, false); err != nil {
+		return domain.AutomaticStockView{}, err
+	}
 	if err = syncLock(ctx, tx, scope); err != nil {
 		return domain.AutomaticStockView{}, err
 	}

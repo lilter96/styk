@@ -194,6 +194,7 @@ func TestControlledAutomaticEnrolledTargetsShareTraversal(t *testing.T) {
 	goose := func(action string) ([]byte, error) {
 		return exec.Command("go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", db.Pool.Config().ConnString(), action).CombinedOutput()
 	}
+	rollbackEmptySaaSMigrations(t, db)
 	if _, e := goose("down"); e != nil {
 		t.Fatal("could not roll back empty initial-renewal migration")
 	}
@@ -350,6 +351,7 @@ func TestControlledAutomaticEnrolledTargetsShareTraversal(t *testing.T) {
 	if _, err = db.Pool.Exec(ctx, `UPDATE stock_auto_cycle_publications SET product_id='forged' WHERE cycle_id=$1`, final.LastCycle.ID); err == nil {
 		t.Fatal("cycle publication association was mutable")
 	}
+	rollbackEmptySaaSMigrations(t, db)
 	if _, e := goose("down"); e != nil {
 		t.Fatal("could not roll back empty initial-renewal migration")
 	}

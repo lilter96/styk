@@ -99,6 +99,9 @@ func (s *Store) SaveCredential(ctx context.Context, scope credentials.Scope, nam
 func (s *Store) DisconnectCredential(ctx context.Context, scope credentials.Scope, expected int64, requestID string, digest []byte) (credentials.Metadata, bool, error) {
 	return s.changeCredential(ctx, scope, "", expected, requestID, digest, nil, time.Time{}, "", false)
 }
+func (s *Store) DisconnectCredentialAs(ctx context.Context, scope credentials.Scope, expected int64, requestID string, digest []byte, principal string) (credentials.Metadata, bool, error) {
+	return s.changeCredential(ctx, scope, "", expected, requestID, digest, nil, time.Time{}, principal, false)
+}
 func (s *Store) changeCredential(ctx context.Context, scope credentials.Scope, name string, expected int64, requestID string, digest, ciphertext []byte, checked time.Time, principal string, enable bool) (credentials.Metadata, bool, error) {
 	var zero credentials.Metadata
 	if !scope.Valid() || expected < 0 || requestID == "" || len(digest) != 32 || enable && (name == "" || len(ciphertext) < 29 || checked.IsZero() || principal == "") {
@@ -111,6 +114,9 @@ func (s *Store) changeCredential(ctx context.Context, scope credentials.Scope, n
 		return zero, false, credentials.ErrUnavailable
 	}
 	defer tx.Rollback(context.Background())
+	if err = requireMerchantActor(ctx, tx, scope.Tenant, principal, true); err != nil {
+		return zero, false, credentials.ErrUnavailable
+	}
 	// Lock the request namespace first, then the source account. This serializes
 	// same-key requests even when a caller tries to change the supplied account.
 	for _, key := range []string{fmt.Sprintf("credential-request:%s:%s:%s", scope.Tenant, scope.Provider, requestID), credentials.ScopeKey(credentials.Scope{Provider: scope.Provider, Account: scope.Account})} {
@@ -124,6 +130,9 @@ func (s *Store) changeCredential(ctx context.Context, scope credentials.Scope, n
 		return zero, false, e
 	}
 	if enable {
+		if err = ensureConnectionWorkspace(ctx, tx, scope.Tenant, principal); err != nil {
+			return zero, false, credentials.ErrUnavailable
+		}
 		if _, err = tx.Exec(ctx, `INSERT INTO stock_connections(tenant_id,source,account_id,provenance,include_import_history) VALUES($1,$2,$3,$4,false) ON CONFLICT(source,account_id) DO NOTHING`, scope.Tenant, scope.Provider, scope.Account, principal); err != nil {
 			return zero, false, credentials.ErrUnavailable
 		}
@@ -155,7 +164,11 @@ func (s *Store) changeCredential(ctx context.Context, scope credentials.Scope, n
 	if err != nil {
 		return zero, false, credentials.ErrUnavailable
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO credential_save_requests(tenant_id,provider,request_id,request_digest,account_id,name,revision,enabled,checked_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, scope.Tenant, scope.Provider, requestID, digest, scope.Account, m.Name, m.Revision, m.Enabled, m.CheckedAt, m.UpdatedAt); err != nil {
+	actor := principal
+	if actor == "" {
+		actor = "LEGACY_UNATTRIBUTED"
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO credential_save_requests(tenant_id,provider,request_id,request_digest,account_id,name,revision,enabled,checked_at,updated_at,actor) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, scope.Tenant, scope.Provider, requestID, digest, scope.Account, m.Name, m.Revision, m.Enabled, m.CheckedAt, m.UpdatedAt, actor); err != nil {
 		return zero, false, credentials.ErrUnavailable
 	}
 	if err = tx.Commit(ctx); err != nil {

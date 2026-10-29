@@ -411,6 +411,9 @@ func (s *Store) RecordStockReadback(ctx context.Context, scope domain.StockSyncS
 		return err
 	}
 	defer tx.Rollback(context.Background())
+	if err = requireContextActor(ctx, tx, scope.Tenant, false); err != nil {
+		return err
+	}
 	if err = syncLock(ctx, tx, scope); err != nil {
 		return err
 	}
@@ -465,6 +468,9 @@ func (s *Store) RecordUnknownStockReadback(ctx context.Context, scope domain.Sto
 		return err
 	}
 	defer tx.Rollback(context.Background())
+	if err = requireContextActor(ctx, tx, scope.Tenant, false); err != nil {
+		return err
+	}
 	if err = syncLock(ctx, tx, scope); err != nil {
 		return err
 	}
@@ -507,8 +513,20 @@ func (s *Store) StockPublication(ctx context.Context, scope domain.StockSyncScop
 	return readPublication(ctx, tx, scope, id)
 }
 func (s *Store) MarkStockPublicationUnknown(ctx context.Context, scope domain.StockSyncScope, id string, now time.Time) error {
-	_, err := s.Pool.Exec(ctx, `UPDATE stock_publication_targets t SET state='UNKNOWN',safe_error='WORKER_OUTCOME_UNKNOWN' FROM stock_publications p WHERE t.operation_id=p.id AND p.id=$4 AND p.tenant_id=$1 AND p.moysklad_account=$2 AND p.ozon_account=$3 AND t.state='DISPATCHING' AND t.dispatched_at<$5`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, id, now.Add(-time.Minute))
-	return err
+	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
+	defer cancel()
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer rollbackMerchantMutation(tx)
+	if err = requireContextActor(ctx, tx, scope.Tenant, false); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE stock_publication_targets t SET state='UNKNOWN',safe_error='WORKER_OUTCOME_UNKNOWN' FROM stock_publications p WHERE t.operation_id=p.id AND p.id=$4 AND p.tenant_id=$1 AND p.moysklad_account=$2 AND p.ozon_account=$3 AND t.state='DISPATCHING' AND t.dispatched_at<$5`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, id, now.Add(-time.Minute)); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func StockSyncPublic(value any) any {

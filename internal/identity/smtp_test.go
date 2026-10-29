@@ -78,3 +78,13 @@ func TestSMTPRejectsInvalidRecipientsAndPurposes(t *testing.T) {
 		}
 	}
 }
+
+func TestMailContentSeparatesLinksWithLineBreaks(t *testing.T) {
+	link := "https://example.test/#verify=example"
+	for _, purpose := range []string{"VERIFY_EMAIL", "RESET_PASSWORD"} {
+		_, body, ok := mailContent(purpose, link)
+		if !ok || !strings.Contains(body, "\r\n"+link+"\r\n") {
+			t.Fatalf("%s message does not contain a standalone link", purpose)
+		}
+	}
+}

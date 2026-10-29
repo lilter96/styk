@@ -25,6 +25,9 @@ func (s *Store) SetMembership(ctx context.Context, session Session, workspace, e
 	if err = lockWorkspace(ctx, tx, workspace); err != nil {
 		return err
 	}
+	if _, err = tx.Exec(ctx, `SELECT saas_require_actor($1,$2,true)`, workspace, session.AuditID); err != nil {
+		return ErrForbidden
+	}
 	if err = changeMembership(ctx, tx, session, workspace, email, role); err != nil {
 		return err
 	}
@@ -120,6 +123,9 @@ func (s *Store) ClaimLegacy(ctx context.Context, workspace, userID string) error
 	if err != nil {
 		return fmt.Errorf("lock legacy workspace: %w", err)
 	}
+	if err = checkLegacyMappings(ctx, tx, workspace); err != nil {
+		return err
+	}
 	if _, err = tx.Exec(ctx, `INSERT INTO saas_memberships(workspace_id,user_id,role) SELECT $1,id,'OWNER' FROM saas_users WHERE id=$2 AND disabled_at IS NULL AND email_verified_at IS NOT NULL`, workspace, userID); err != nil {
 		return fmt.Errorf("assign legacy owner: %w", err)
 	}
@@ -137,4 +143,35 @@ func (s *Store) ClaimLegacy(ctx context.Context, workspace, userID string) error
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+func checkLegacyMappings(ctx context.Context, tx pgx.Tx, workspace string) error {
+	var invalid bool
+	err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM product_mappings p WHERE p.tenant_id=$1 AND
+	 (NOT EXISTS(SELECT 1 FROM stock_connections c WHERE c.tenant_id=p.tenant_id AND c.source='ozon' AND c.account_id=p.ozon_account)
+	 OR NOT EXISTS(SELECT 1 FROM stock_connections c WHERE c.tenant_id=p.tenant_id AND c.source='moysklad' AND c.account_id=p.moysklad_account)))
+	 OR EXISTS(SELECT 1 FROM warehouse_mappings w WHERE w.tenant_id=$1 AND
+	 (NOT EXISTS(SELECT 1 FROM stock_connections c WHERE c.tenant_id=w.tenant_id AND c.source='ozon' AND c.account_id=w.ozon_account)
+	 OR NOT EXISTS(SELECT 1 FROM stock_connections c WHERE c.tenant_id=w.tenant_id AND c.source='moysklad' AND c.account_id=w.moysklad_account)))
+	 OR EXISTS(SELECT 1 FROM product_mapping_history h WHERE h.tenant_id=$1 AND
+	 (NOT EXISTS(SELECT 1 FROM stock_connections c WHERE c.tenant_id=h.tenant_id AND c.source='ozon' AND c.account_id=h.ozon_account)
+	 OR NOT EXISTS(SELECT 1 FROM stock_connections c WHERE c.tenant_id=h.tenant_id AND c.source='moysklad' AND c.account_id=h.moysklad_account)
+	 OR NOT EXISTS(SELECT 1 FROM source_imports i WHERE i.id=h.ozon_import_id AND i.source='ozon' AND i.account_id=h.ozon_account)
+	 OR NOT EXISTS(SELECT 1 FROM source_imports i WHERE i.id=h.moysklad_import_id AND i.source='moysklad' AND i.account_id=h.moysklad_account)))
+	 OR EXISTS(SELECT 1 FROM warehouse_mapping_history h WHERE h.tenant_id=$1 AND
+	 (NOT EXISTS(SELECT 1 FROM stock_connections c WHERE c.tenant_id=h.tenant_id AND c.source='ozon' AND c.account_id=h.ozon_account)
+	 OR NOT EXISTS(SELECT 1 FROM stock_connections c WHERE c.tenant_id=h.tenant_id AND c.source='moysklad' AND c.account_id=h.moysklad_account)
+	 OR NOT EXISTS(SELECT 1 FROM source_imports i WHERE i.id=h.ozon_import_id AND i.source='ozon' AND i.account_id=h.ozon_account)
+	 OR NOT EXISTS(SELECT 1 FROM source_imports i WHERE i.id=h.moysklad_import_id AND i.source='moysklad' AND i.account_id=h.moysklad_account)))
+	 OR EXISTS(SELECT 1 FROM ozon_posting_batches b WHERE b.tenant_id=$1 AND NOT EXISTS
+	 (SELECT 1 FROM stock_connections c WHERE c.tenant_id=b.tenant_id AND c.source='ozon' AND c.account_id=b.account_id))
+	 OR EXISTS(SELECT 1 FROM ozon_posting_identities i WHERE i.tenant_id=$1 AND NOT EXISTS
+	 (SELECT 1 FROM stock_connections c WHERE c.tenant_id=i.tenant_id AND c.source='ozon' AND c.account_id=i.account_id))`, workspace).Scan(&invalid)
+	if err != nil {
+		return fmt.Errorf("check legacy mapping ownership: %w", err)
+	}
+	if invalid {
+		return errors.New("legacy mappings require account ownership review before claim")
+	}
+	return nil
 }

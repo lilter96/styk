@@ -118,7 +118,7 @@ func (s *Store) SupersedeTestUnknown(ctx context.Context, req domain.StockRecove
 	if err != nil {
 		return domain.StockSyncView{}, err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO stock_publication_recoveries(id,target_id,tenant_id,moysklad_account,ozon_account,product_id,warehouse_id,readback_id,observed_quantity,observed_at,principal_type,session_audit_id,idempotency_key,request_hash,reason,accepted_uncertainty,worker_stopped_assertion,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'LOCAL_OPERATOR_SESSION',$11,$12,$13,$14,true,true,$15)`, id, targetID, req.Tenant, req.MoyskladAccount, req.OzonAccount, product, warehouse, readbackID, *observed, observedAt, req.SessionID, req.IdempotencyKey, hash, strings.TrimSpace(req.Reason), now)
+	_, err = tx.Exec(ctx, `INSERT INTO stock_publication_recoveries(id,target_id,tenant_id,moysklad_account,ozon_account,product_id,warehouse_id,readback_id,observed_quantity,observed_at,principal_type,session_audit_id,idempotency_key,request_hash,reason,accepted_uncertainty,worker_stopped_assertion,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$16,$11,$12,$13,$14,true,true,$15)`, id, targetID, req.Tenant, req.MoyskladAccount, req.OzonAccount, product, warehouse, readbackID, *observed, observedAt, req.SessionID, req.IdempotencyKey, hash, strings.TrimSpace(req.Reason), now, auditPrincipal(req.SessionID))
 	if err != nil {
 		return domain.StockSyncView{}, err
 	}

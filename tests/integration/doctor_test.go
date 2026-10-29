@@ -181,6 +181,9 @@ func TestDoctorCatalogProgressExcludesHistoricalAndOtherAccountMappings(t *testi
 		}
 	}
 	assertProgress(1, 1)
+	if err := f.store.RegisterStockConnection(ctx, scope.Tenant, "moysklad", scope.MoyskladAccount+"-other", "synthetic other account", true); err != nil {
+		t.Fatal(err)
+	}
 	_, err := f.store.Pool.Exec(ctx, `INSERT INTO product_mappings(tenant_id,ozon_account,ozon_product_id,ozon_offer_id,moysklad_account,target_kind,target_id,version,provenance) VALUES($1,$2,'removed-product','removed-offer',$3,'variant','item',1,'synthetic historical mapping'),($1,$2,'other-product','other-offer',$4,'variant','item',1,'synthetic other account')`, scope.Tenant, scope.OzonAccount, scope.MoyskladAccount, scope.MoyskladAccount+"-other")
 	if err != nil {
 		t.Fatal(err)

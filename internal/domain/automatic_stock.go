@@ -75,13 +75,14 @@ type AutomaticStockCycle struct {
 }
 
 type AutomaticStockView struct {
-	Available   bool                       `json:"available"`
-	Policy      *AutomaticStockPolicy      `json:"policy,omitempty"`
-	NextRunAt   *time.Time                 `json:"next_run_at,omitempty"`
-	LastCycleAt *time.Time                 `json:"last_cycle_at,omitempty"`
-	LastCycle   *AutomaticStockCycle       `json:"last_cycle,omitempty"`
-	Unresolved  []AutomaticStockUnresolved `json:"unresolved,omitempty"`
-	Candidates  []AutomaticStockCandidate  `json:"candidates,omitempty"`
+	Available            bool                       `json:"available"`
+	PublicationAvailable bool                       `json:"publication_available"`
+	Policy               *AutomaticStockPolicy      `json:"policy,omitempty"`
+	NextRunAt            *time.Time                 `json:"next_run_at,omitempty"`
+	LastCycleAt          *time.Time                 `json:"last_cycle_at,omitempty"`
+	LastCycle            *AutomaticStockCycle       `json:"last_cycle,omitempty"`
+	Unresolved           []AutomaticStockUnresolved `json:"unresolved,omitempty"`
+	Candidates           []AutomaticStockCandidate  `json:"candidates,omitempty"`
 }
 
 // Candidates are confirmed mappings observed in the most recent imported

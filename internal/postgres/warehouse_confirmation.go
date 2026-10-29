@@ -89,7 +89,7 @@ func (s *Store) ConfirmWarehouseReview(ctx context.Context, req domain.MappingCo
 	var id int64
 	var version int
 	var confirmed time.Time
-	err = tx.QueryRow(ctx, `INSERT INTO warehouse_mappings(tenant_id,moysklad_account,ozon_account,moysklad_warehouse_id,ozon_warehouse_id,status,version,provenance,confirmed_at) VALUES($1,$2,$3,$4,$5,'active',1,'LOCAL_OPERATOR_SESSION',clock_timestamp()) RETURNING id,version,confirmed_at`, r.Tenant, r.MoyskladAccount, r.OzonAccount, r.MoyskladWarehouseID, r.OzonWarehouseID).Scan(&id, &version, &confirmed)
+	err = tx.QueryRow(ctx, `INSERT INTO warehouse_mappings(tenant_id,moysklad_account,ozon_account,moysklad_warehouse_id,ozon_warehouse_id,status,version,provenance,confirmed_at) VALUES($1,$2,$3,$4,$5,'active',1,$6,clock_timestamp()) RETURNING id,version,confirmed_at`, r.Tenant, r.MoyskladAccount, r.OzonAccount, r.MoyskladWarehouseID, r.OzonWarehouseID, auditPrincipal(req.SessionID)).Scan(&id, &version, &confirmed)
 	if err != nil {
 		var pgerr *pgconn.PgError
 		if errors.As(err, &pgerr) && pgerr.Code == "23505" && pgerr.TableName == "warehouse_mappings" {
@@ -97,11 +97,11 @@ func (s *Store) ConfirmWarehouseReview(ctx context.Context, req domain.MappingCo
 		}
 		return domain.MappingConfirmationResult{}, fmt.Errorf("insert warehouse mapping: %w", err)
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO warehouse_mapping_history(mapping_id,version,tenant_id,moysklad_account,ozon_account,moysklad_warehouse_id,ozon_warehouse_id,status,provenance,confirmed_at,moysklad_import_id,ozon_import_id,confirmation_review_id) VALUES($1,$2,$3,$4,$5,$6,$7,'active','LOCAL_OPERATOR_SESSION',$8,$9,$10,$11)`, id, version, r.Tenant, r.MoyskladAccount, r.OzonAccount, r.MoyskladWarehouseID, r.OzonWarehouseID, confirmed, r.MoyskladImportID, r.OzonImportID, r.ID)
+	_, err = tx.Exec(ctx, `INSERT INTO warehouse_mapping_history(mapping_id,version,tenant_id,moysklad_account,ozon_account,moysklad_warehouse_id,ozon_warehouse_id,status,provenance,confirmed_at,moysklad_import_id,ozon_import_id,confirmation_review_id) VALUES($1,$2,$3,$4,$5,$6,$7,'active',$12,$8,$9,$10,$11)`, id, version, r.Tenant, r.MoyskladAccount, r.OzonAccount, r.MoyskladWarehouseID, r.OzonWarehouseID, confirmed, r.MoyskladImportID, r.OzonImportID, r.ID, auditPrincipal(req.SessionID))
 	if err != nil {
 		return domain.MappingConfirmationResult{}, fmt.Errorf("insert warehouse mapping history: %w", err)
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO warehouse_mapping_confirmation_audits(mapping_id,mapping_version,review_id,tenant_id,ozon_account,moysklad_account,moysklad_warehouse_id,ozon_warehouse_id,ozon_import_id,moysklad_import_id,evidence_class,principal_type,session_audit_id,explanation,confirmed_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'OPERATOR_ATTESTED','LOCAL_OPERATOR_SESSION',$11,$12,$13)`, id, version, r.ID, r.Tenant, r.OzonAccount, r.MoyskladAccount, r.MoyskladWarehouseID, r.OzonWarehouseID, r.OzonImportID, r.MoyskladImportID, req.SessionID, req.Explanation, confirmed)
+	_, err = tx.Exec(ctx, `INSERT INTO warehouse_mapping_confirmation_audits(mapping_id,mapping_version,review_id,tenant_id,ozon_account,moysklad_account,moysklad_warehouse_id,ozon_warehouse_id,ozon_import_id,moysklad_import_id,evidence_class,principal_type,session_audit_id,explanation,confirmed_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'OPERATOR_ATTESTED',$14,$11,$12,$13)`, id, version, r.ID, r.Tenant, r.OzonAccount, r.MoyskladAccount, r.MoyskladWarehouseID, r.OzonWarehouseID, r.OzonImportID, r.MoyskladImportID, req.SessionID, req.Explanation, confirmed, auditPrincipal(req.SessionID))
 	if err != nil {
 		return domain.MappingConfirmationResult{}, fmt.Errorf("insert warehouse confirmation audit: %w", err)
 	}

@@ -137,14 +137,14 @@ func (s *Store) CreateMappingReview(ctx context.Context, in domain.MappingReview
 	if e = r.Validate(); e != nil {
 		return domain.MappingReviewResult{}, e
 	}
-	_, e = tx.Exec(ctx, `INSERT INTO product_mapping_reviews(id,tenant_id,ozon_account,moysklad_account,ozon_product_id,target_kind,target_id,ozon_import_id,moysklad_import_id,existing_mapping_id,existing_mapping_version,observation_hash,mapping_hash,evidence_class,principal_type,session_audit_id,created_at,expires_at,ozon_import_fingerprint,moysklad_import_fingerprint) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'LOCAL_OPERATOR_SESSION',$15,$16,$17,$18,$19)`, r.ID, r.Tenant, r.Source.Account, r.Target.Account, r.Source.ID, r.Target.Kind, r.Target.ID, r.OzonImportID, r.MoyskladImportID, snap.MappingID, snap.MappingVersion, snapshotHash(snap), mappingSnapshotHash(snap), r.EvidenceClass, in.SessionID, r.CreatedAt, r.ExpiresAt, snap.OzonImportFingerprint, snap.MoyImportFingerprint)
+	_, e = tx.Exec(ctx, `INSERT INTO product_mapping_reviews(id,tenant_id,ozon_account,moysklad_account,ozon_product_id,target_kind,target_id,ozon_import_id,moysklad_import_id,existing_mapping_id,existing_mapping_version,observation_hash,mapping_hash,evidence_class,principal_type,session_audit_id,created_at,expires_at,ozon_import_fingerprint,moysklad_import_fingerprint) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$20,$15,$16,$17,$18,$19)`, r.ID, r.Tenant, r.Source.Account, r.Target.Account, r.Source.ID, r.Target.Kind, r.Target.ID, r.OzonImportID, r.MoyskladImportID, snap.MappingID, snap.MappingVersion, snapshotHash(snap), mappingSnapshotHash(snap), r.EvidenceClass, in.SessionID, r.CreatedAt, r.ExpiresAt, snap.OzonImportFingerprint, snap.MoyImportFingerprint, auditPrincipal(in.SessionID))
 	if e != nil {
 		return domain.MappingReviewResult{}, fmt.Errorf("persist review: %w", e)
 	}
 	if e = tx.Commit(ctx); e != nil {
 		return domain.MappingReviewResult{}, e
 	}
-	return domain.MappingReviewResult{Review: r, Status: "CURRENT", MappingConflict: snap.Conflict, PrincipalType: "LOCAL_OPERATOR_SESSION"}, nil
+	return domain.MappingReviewResult{Review: r, Status: "CURRENT", MappingConflict: snap.Conflict, PrincipalType: auditPrincipal(in.SessionID)}, nil
 }
 
 func (s *Store) InspectMappingReview(ctx context.Context, id, sessionID string) (domain.MappingReviewResult, error) {
@@ -169,7 +169,7 @@ func (s *Store) InspectMappingReview(ctx context.Context, id, sessionID string) 
 	if e = tx.Commit(ctx); e != nil {
 		return domain.MappingReviewResult{}, e
 	}
-	return domain.MappingReviewResult{Review: stored.review, Status: status, MappingConflict: snap.Conflict, PrincipalType: "LOCAL_OPERATOR_SESSION"}, nil
+	return domain.MappingReviewResult{Review: stored.review, Status: status, MappingConflict: snap.Conflict, PrincipalType: auditPrincipal(sessionID)}, nil
 }
 
 type storedMappingReview struct {

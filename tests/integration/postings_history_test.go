@@ -118,20 +118,26 @@ func TestPostingCorrelationScopeAndCurrentMappings(t *testing.T) {
 	ctx := context.Background()
 	db, tenant := postingStore(t)
 	at := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
-	accountA, accountB := "seller-A-"+tenant, "seller-B-"+tenant
+	accountA, accountB, accountC := "seller-A-"+tenant, "seller-B-"+tenant, "seller-C-"+tenant
 	tenantB := tenant + "-other"
 	moy := "moy-" + tenant
+	moyB := "moy-other-" + tenant
 	t.Cleanup(func() {
 		for _, q := range []string{`DELETE FROM product_mapping_history WHERE tenant_id IN ($1,$2)`, `DELETE FROM warehouse_mapping_history WHERE tenant_id IN ($1,$2)`, `DELETE FROM product_mappings WHERE tenant_id IN ($1,$2)`, `DELETE FROM warehouse_mappings WHERE tenant_id IN ($1,$2)`, `DELETE FROM ozon_posting_batches WHERE tenant_id IN ($1,$2)`, `DELETE FROM ozon_posting_identities WHERE tenant_id IN ($1,$2)`} {
 			if _, err := db.Pool.Exec(ctx, q, tenant, tenantB); err != nil {
 				t.Error(err)
 			}
 		}
-		if _, err := db.Pool.Exec(ctx, `DELETE FROM source_imports WHERE account_id IN ($1,$2,$3)`, accountA, accountB, moy); err != nil {
+		if _, err := db.Pool.Exec(ctx, `DELETE FROM source_imports WHERE account_id IN ($1,$2,$3,$4,$5)`, accountA, accountB, accountC, moy, moyB); err != nil {
 			t.Error(err)
 		}
 	})
-	for _, account := range []string{accountA, accountB} {
+	for _, c := range []struct{ tenant, provider, account string }{{tenant, "ozon", accountA}, {tenant, "ozon", accountB}, {tenant, "moysklad", moy}, {tenantB, "ozon", accountC}, {tenantB, "moysklad", moyB}} {
+		if err := db.RegisterStockConnection(ctx, c.tenant, c.provider, c.account, "synthetic fixture", true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, account := range []string{accountA, accountB, accountC} {
 		b := domain.OzonImport{Account: account, StartedAt: at, FinishedAt: at, Products: []domain.OzonProduct{{ProductID: "1", OfferID: "matched", SKU: "11"}, {ProductID: "2", OfferID: "conflicting", SKU: "22"}, {ProductID: "3", OfferID: "suggestion", SKU: "33"}, {ProductID: "4", OfferID: "other-scope", SKU: "44"}, {ProductID: "5", OfferID: "no-sku", SKU: ""}}}
 		if _, err := db.SaveOzonImport(ctx, b, "fixture"); err != nil {
 			t.Fatal(err)
@@ -141,9 +147,17 @@ func TestPostingCorrelationScopeAndCurrentMappings(t *testing.T) {
 	if _, err := db.SaveInventoryImport(ctx, ms, "fixture"); err != nil {
 		t.Fatal(err)
 	}
+	ms.Account = moyB
+	if _, err := db.SaveInventoryImport(ctx, ms, "fixture"); err != nil {
+		t.Fatal(err)
+	}
 	insertProduct := func(tenantID, account, product, offer, target string) {
 		t.Helper()
-		_, err := db.Pool.Exec(ctx, `INSERT INTO product_mappings(tenant_id,ozon_account,ozon_product_id,ozon_offer_id,moysklad_account,target_kind,target_id,version,provenance) VALUES($1,$2,$3,$4,$5,'product',$6,1,'fixture')`, tenantID, account, product, offer, moy, target)
+		moyAccount := moy
+		if tenantID == tenantB {
+			moyAccount = moyB
+		}
+		_, err := db.Pool.Exec(ctx, `INSERT INTO product_mappings(tenant_id,ozon_account,ozon_product_id,ozon_offer_id,moysklad_account,target_kind,target_id,version,provenance) VALUES($1,$2,$3,$4,$5,'product',$6,1,'fixture')`, tenantID, account, product, offer, moyAccount, target)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -151,10 +165,10 @@ func TestPostingCorrelationScopeAndCurrentMappings(t *testing.T) {
 	insertProduct(tenant, accountA, "1", "matched", "mapped-1")
 	insertProduct(tenant, accountA, "2", "conflicting", "mapped-2")
 	insertProduct(tenant, accountA, "5", "no-sku", "mapped-5")
-	insertProduct(tenantB, accountA, "4", "other-scope", "other-tenant")
+	insertProduct(tenantB, accountC, "4", "other-scope", "other-tenant")
 	insertProduct(tenant, accountB, "4", "other-scope", "other-account")
-	for _, spec := range []struct{ t, a, source string }{{tenant, accountA, "warehouse-A"}, {tenantB, accountA, "warehouse-other-tenant"}, {tenant, accountB, "warehouse-other-account"}} {
-		_, err := db.Pool.Exec(ctx, `INSERT INTO warehouse_mappings(tenant_id,moysklad_account,ozon_account,moysklad_warehouse_id,ozon_warehouse_id,status,version,provenance) VALUES($1,$2,$3,$4,'w1','active',1,'fixture')`, spec.t, moy, spec.a, spec.source)
+	for _, spec := range []struct{ t, a, m, source string }{{tenant, accountA, moy, "warehouse-A"}, {tenantB, accountC, moyB, "warehouse-other-tenant"}, {tenant, accountB, moy, "warehouse-other-account"}} {
+		_, err := db.Pool.Exec(ctx, `INSERT INTO warehouse_mappings(tenant_id,moysklad_account,ozon_account,moysklad_warehouse_id,ozon_warehouse_id,status,version,provenance) VALUES($1,$2,$3,$4,'w1','active',1,'fixture')`, spec.t, spec.m, spec.a, spec.source)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -162,7 +176,7 @@ func TestPostingCorrelationScopeAndCurrentMappings(t *testing.T) {
 	lines := []domain.PostingLine{{OfferID: "matched", SKU: "11", Quantity: 1}, {OfferID: "suggestion", SKU: "33", Quantity: 2}, {OfferID: "conflicting", SKU: "99", Quantity: 3}, {OfferID: "other-scope", SKU: "44", Quantity: 1}, {OfferID: "no-sku", SKU: "55", Quantity: 1}, {OfferID: "", SKU: "404", Quantity: 1}}
 	p := postingFixture("same-posting", "active", at, lines...)
 	p.WarehouseID = "w1"
-	for _, scope := range []struct{ t, a string }{{tenant, accountA}, {tenant, accountB}, {tenantB, accountA}} {
+	for _, scope := range []struct{ t, a string }{{tenant, accountA}, {tenant, accountB}, {tenantB, accountC}} {
 		if _, err := db.SavePostings(ctx, postingBatch(scope.t, scope.a, at, p)); err != nil {
 			t.Fatal(err)
 		}
@@ -199,12 +213,12 @@ func TestPostingCorrelationScopeAndCurrentMappings(t *testing.T) {
 	if len(b) != 1 || b[0].Warehouse.WarehouseID == nil || *b[0].Warehouse.WarehouseID != "warehouse-other-account" || b[0].Lines[0].Correlation.Status != "unmatched" || b[0].Lines[3].Correlation.Status != "confirmed" {
 		t.Fatalf("account separation %+v", b)
 	}
-	other := read(tenantB, accountA, moy)
+	other := read(tenantB, accountC, moyB)
 	if len(other) != 1 || other[0].Warehouse.WarehouseID == nil || *other[0].Warehouse.WarehouseID != "warehouse-other-tenant" || other[0].Lines[0].Correlation.Status != "unmatched" {
 		t.Fatalf("tenant separation %+v", other)
 	}
 	// Distinct identities in another scope cannot be attached to this batch.
-	for i, bad := range []struct{ tenant, account string }{{tenantB, accountA}, {tenant, accountB}} {
+	for i, bad := range []struct{ tenant, account string }{{tenantB, accountC}, {tenant, accountB}} {
 		number := fmt.Sprintf("foreign-posting-%d", i)
 		if _, err := db.Pool.Exec(ctx, `INSERT INTO ozon_posting_identities(tenant_id,account_id,posting_number,order_id) VALUES($1,$2,$3,'order-id')`, bad.tenant, bad.account, number); err != nil {
 			t.Fatal(err)

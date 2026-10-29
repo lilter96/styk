@@ -47,6 +47,11 @@ func TestProductMatching(t *testing.T) {
 	if _, err = db.SaveInventoryImport(ctx, msnap, "m1"); err != nil {
 		t.Fatal(err)
 	}
+	for _, c := range []struct{ source, account string }{{"ozon", scope.OzonAccount}, {"moysklad", scope.MoyskladAccount}} {
+		if err = db.RegisterStockConnection(ctx, scope.Tenant, c.source, c.account, "synthetic fixture", true); err != nil {
+			t.Fatal(err)
+		}
+	}
 	data, err := db.MatchData(ctx, scope)
 	if err != nil {
 		t.Fatal(err)

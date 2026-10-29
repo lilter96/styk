@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/identity"
 	"github.com/lilter96/styk/internal/postgres"
 	"github.com/lilter96/styk/internal/testpublication"
@@ -47,6 +48,16 @@ func TestIdentitySessionsAndMembership(t *testing.T) {
 	if _, err = store.Session(ctx, token); err != nil {
 		t.Fatal(err)
 	}
+	expired, expiredToken, err := store.CreateSession(ctx, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Pool.Exec(ctx, `UPDATE saas_sessions SET created_at=clock_timestamp()-interval '9 hours',expires_at=clock_timestamp()-interval '1 second' WHERE audit_id=$1`, expired.AuditID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.Session(ctx, expiredToken); !errors.Is(err, identity.ErrAuth) {
+		t.Fatalf("expired session remained active: %v", err)
+	}
 	if err = store.SetMembership(ctx, session, workspace.ID, b.Email, "VIEWER"); err != nil {
 		t.Fatal(err)
 	}
@@ -84,8 +95,9 @@ func TestLegacyWorkspaceRequiresExplicitSingleClaim(t *testing.T) {
 	}
 	ctx := context.Background()
 	scope := testpublication.Scope()
-	if _, err = db.Pool.Exec(ctx, `INSERT INTO saas_workspaces(id,name,legacy_unclaimed) VALUES($1,'Existing test workspace',true)`, scope.Tenant); err != nil {
-		t.Fatal(err)
+	var unclaimed bool
+	if err = db.Pool.QueryRow(ctx, `SELECT legacy_unclaimed FROM saas_workspaces WHERE id=$1`, scope.Tenant).Scan(&unclaimed); err != nil || !unclaimed {
+		t.Fatal("legacy workspace was not reserved as unclaimed")
 	}
 	a, _, err := store.Register(ctx, "claim-a@example.test", "long-password-owner", "A")
 	if err != nil {
@@ -193,6 +205,66 @@ func TestPasswordResetInvalidatesSessionsAndOldAuthentications(t *testing.T) {
 	}
 }
 
+func TestMerchantMutationRechecksRoleInTransaction(t *testing.T) {
+	db, _ := controlledFixture(t)
+	store, err := identity.New(db.Pool, 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	a, workspace, err := store.Register(ctx, "guard-a@example.test", "long-password-owner", "A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _, err := store.Register(ctx, "guard-b@example.test", "long-password-owner", "B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifyTestEmail(t, store, a.Email)
+	verifyTestEmail(t, store, b.Email)
+	a, err = store.Authenticate(ctx, a.Email, "long-password-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err = store.Authenticate(ctx, b.Email, "long-password-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sa, _, err := store.CreateSession(ctx, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sb, _, err := store.CreateSession(ctx, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	account := "guard-ozon-account"
+	if err = db.RegisterStockConnection(ctx, workspace.ID, "ozon", account, "MERCHANT_SESSION:"+sa.AuditID, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = db.SubmitCatalogImport(ctx, workspace.ID, "ozon", account, "unauthorized-import", sb.AuditID, domain.DefaultOzonImportLimits()); err == nil {
+		t.Fatal("foreign actor created a durable import")
+	}
+	if err = store.SetMembership(ctx, sa, workspace.ID, b.Email, "OPERATOR"); err != nil {
+		t.Fatal(err)
+	}
+	op, _, err := db.SubmitCatalogImport(ctx, workspace.ID, "ozon", account, "authorized-import", sb.AuditID, domain.DefaultOzonImportLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.SetMembership(ctx, sa, workspace.ID, b.Email, ""); err != nil {
+		t.Fatal(err)
+	}
+	staleContext := identity.WithSession(ctx, sb)
+	if err = db.CancelCatalogImport(staleContext, workspace.ID, "ozon", account, op.ID); err == nil {
+		t.Fatal("revoked operator cancelled queued work")
+	}
+	persisted, err := db.GetCatalogOperation(ctx, workspace.ID, "ozon", account, op.ID)
+	if err != nil || persisted.State != "QUEUED" {
+		t.Fatalf("revoked mutation changed operation: %+v %v", persisted, err)
+	}
+}
+
 func verifyTestEmail(t *testing.T, store *identity.Store, email string) {
 	t.Helper()
 	ctx := context.Background()
@@ -200,11 +272,40 @@ func verifyTestEmail(t *testing.T, store *identity.Store, email string) {
 	if err != nil || address != email || token == "" {
 		t.Fatalf("verification intent: %v", err)
 	}
-	if err = store.VerifyEmail(ctx, token); err != nil {
+	if err = store.VerifyEmail(ctx, token, "long-password-owner"); err != nil {
 		t.Fatal(err)
 	}
-	if err = store.VerifyEmail(ctx, token); !errors.Is(err, identity.ErrAuth) {
+	if err = store.VerifyEmail(ctx, token, "long-password-owner"); !errors.Is(err, identity.ErrAuth) {
 		t.Fatalf("verification token reused: %v", err)
+	}
+}
+
+func TestEmailVerificationReplacesUnverifiedPassword(t *testing.T) {
+	db, _ := controlledFixture(t)
+	store, err := identity.New(db.Pool, 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	user, _, err := store.Register(ctx, "mailbox-owner@example.test", "attacker-chosen-password", "Unsolicited workspace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, token, err := store.CreateVerification(ctx, user.Email)
+	if err != nil || token == "" {
+		t.Fatal("verification was not issued")
+	}
+	if err = store.VerifyEmail(ctx, token, "mailbox-owner-password"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.Authenticate(ctx, user.Email, "attacker-chosen-password"); !errors.Is(err, identity.ErrAuth) {
+		t.Fatalf("unverified password remained usable: %v", err)
+	}
+	if _, _, err = store.CreateSession(ctx, user); !errors.Is(err, identity.ErrAuth) {
+		t.Fatalf("pre-verification identity created a session: %v", err)
+	}
+	if _, err = store.Authenticate(ctx, user.Email, "mailbox-owner-password"); err != nil {
+		t.Fatal(err)
 	}
 }
 

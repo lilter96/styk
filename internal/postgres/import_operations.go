@@ -14,17 +14,19 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/lilter96/styk/internal/credentials"
 	"github.com/lilter96/styk/internal/domain"
 )
 
 var (
-	ErrImportScope         = errors.New("import account not registered")
-	ErrImportConflict      = errors.New("import already active")
-	ErrImportIdempotency   = errors.New("import idempotency conflict")
-	ErrImportNotFound      = errors.New("import operation not found")
-	ErrImportClaimLost     = errors.New("import claim not owned")
-	ErrImportRunning       = errors.New("active cancellation unsupported")
-	ErrImportCommitUnknown = errors.New("import commit outcome unknown")
+	ErrImportScope             = errors.New("import account not registered")
+	ErrImportConflict          = errors.New("import already active")
+	ErrImportIdempotency       = errors.New("import idempotency conflict")
+	ErrImportNotFound          = errors.New("import operation not found")
+	ErrImportClaimLost         = errors.New("import claim not owned")
+	ErrImportRunning           = errors.New("active cancellation unsupported")
+	ErrImportCommitUnknown     = errors.New("import commit outcome unknown")
+	ErrImportCredentialChanged = errors.New("import credential changed during traversal")
 )
 var importKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
 
@@ -38,7 +40,7 @@ func (s *Store) SubmitOzonImport(ctx context.Context, tenant, account, key, sess
 }
 
 func (s *Store) SubmitCatalogImport(ctx context.Context, tenant, provider, account, key, session string, limits domain.ImportLimits) (domain.ImportOperation, bool, error) {
-	return s.submitCatalogImport(ctx, tenant, provider, account, key, session, "LOCAL_OPERATOR_SESSION", limits)
+	return s.submitCatalogImport(ctx, tenant, provider, account, key, session, auditPrincipal(session), limits)
 }
 
 // SubmitScheduledCatalogImport is called only by the scheduler after loading an
@@ -229,6 +231,9 @@ func (s *Store) CancelCatalogImport(ctx context.Context, tenant, provider, accou
 		return err
 	}
 	defer tx.Rollback(context.Background())
+	if err = requireContextActor(ctx, tx, tenant, false); err != nil {
+		return err
+	}
 	var state string
 	err = tx.QueryRow(ctx, `SELECT t.state FROM outbox_tasks t JOIN ozon_import_operations o ON o.id=t.import_operation_id WHERE o.id=$1 AND o.tenant_id=$2 AND o.account_id=$3 AND o.provider=$4 FOR UPDATE OF t`, id, tenant, account, provider).Scan(&state)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -342,16 +347,28 @@ func (s *Store) FailImport(ctx context.Context, t domain.Task, outcome, resource
 // CommitClaimedOzonImport commits source evidence, operation linkage and task
 // completion together while the task row is locked and the lease is valid.
 func (s *Store) CommitClaimedOzonImport(ctx context.Context, t domain.Task, snap domain.OzonImport, fingerprint string, counts domain.ImportCounts, timeout time.Duration) error {
-	return s.commitCatalog(ctx, t, "ozon", snap.Account, snap.StartedAt, counts, timeout, func(ctx context.Context, tx pgx.Tx, notBefore *time.Time) (int64, bool, error) {
+	return s.commitClaimedOzon(ctx, t, snap, fingerprint, counts, timeout, nil)
+}
+func (s *Store) CommitClaimedOzonImportWithRevision(ctx context.Context, t domain.Task, snap domain.OzonImport, fingerprint string, counts domain.ImportCounts, timeout time.Duration, revision int64) error {
+	return s.commitClaimedOzon(ctx, t, snap, fingerprint, counts, timeout, &revision)
+}
+func (s *Store) commitClaimedOzon(ctx context.Context, t domain.Task, snap domain.OzonImport, fingerprint string, counts domain.ImportCounts, timeout time.Duration, revision *int64) error {
+	return s.commitCatalog(ctx, t, "ozon", snap.Account, snap.StartedAt, counts, timeout, revision, func(ctx context.Context, tx pgx.Tx, notBefore *time.Time) (int64, bool, error) {
 		return saveOzonImportTx(ctx, tx, snap, fingerprint, notBefore)
 	})
 }
 func (s *Store) CommitClaimedMoyskladImport(ctx context.Context, t domain.Task, snap domain.InventoryImport, fingerprint string, counts domain.ImportCounts, timeout time.Duration) error {
-	return s.commitCatalog(ctx, t, "moysklad", snap.Account, snap.StartedAt, counts, timeout, func(ctx context.Context, tx pgx.Tx, notBefore *time.Time) (int64, bool, error) {
+	return s.commitClaimedMoysklad(ctx, t, snap, fingerprint, counts, timeout, nil)
+}
+func (s *Store) CommitClaimedMoyskladImportWithRevision(ctx context.Context, t domain.Task, snap domain.InventoryImport, fingerprint string, counts domain.ImportCounts, timeout time.Duration, revision int64) error {
+	return s.commitClaimedMoysklad(ctx, t, snap, fingerprint, counts, timeout, &revision)
+}
+func (s *Store) commitClaimedMoysklad(ctx context.Context, t domain.Task, snap domain.InventoryImport, fingerprint string, counts domain.ImportCounts, timeout time.Duration, revision *int64) error {
+	return s.commitCatalog(ctx, t, "moysklad", snap.Account, snap.StartedAt, counts, timeout, revision, func(ctx context.Context, tx pgx.Tx, notBefore *time.Time) (int64, bool, error) {
 		return saveInventoryImportTx(ctx, tx, snap, fingerprint, notBefore)
 	})
 }
-func (s *Store) commitCatalog(ctx context.Context, t domain.Task, provider, snapAccount string, started time.Time, counts domain.ImportCounts, timeout time.Duration, save func(context.Context, pgx.Tx, *time.Time) (int64, bool, error)) error {
+func (s *Store) commitCatalog(ctx context.Context, t domain.Task, provider, snapAccount string, started time.Time, counts domain.ImportCounts, timeout time.Duration, revision *int64, save func(context.Context, pgx.Tx, *time.Time) (int64, bool, error)) error {
 	if timeout <= 0 || timeout > 10*time.Second {
 		return errors.New("invalid persistence timeout")
 	}
@@ -369,15 +386,26 @@ func (s *Store) commitCatalog(ctx context.Context, t domain.Task, provider, snap
 	if err = lockImportClaim(ctx, tx, t); err != nil {
 		return err
 	}
-	var account string
+	if revision != nil {
+		key := credentials.ScopeKey(credentials.Scope{Provider: provider, Account: snapAccount})
+		if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, key); err != nil {
+			return err
+		}
+	}
+	var account, tenant string
 	var includeHistory bool
 	var registered time.Time
-	err = tx.QueryRow(ctx, `SELECT o.account_id,c.include_import_history,c.registered_at FROM ozon_import_operations o JOIN stock_connections c ON c.tenant_id=o.tenant_id AND c.source=o.provider AND c.account_id=o.account_id WHERE o.id=$1 AND o.provider=$2 FOR SHARE OF c`, t.ImportOperationID, provider).Scan(&account, &includeHistory, &registered)
+	err = tx.QueryRow(ctx, `SELECT o.account_id,o.tenant_id,c.include_import_history,c.registered_at FROM ozon_import_operations o JOIN stock_connections c ON c.tenant_id=o.tenant_id AND c.source=o.provider AND c.account_id=o.account_id WHERE o.id=$1 AND o.provider=$2 FOR SHARE OF c`, t.ImportOperationID, provider).Scan(&account, &tenant, &includeHistory, &registered)
 	if err != nil {
 		return err
 	}
 	if account != snapAccount {
 		return ErrImportScope
+	}
+	if revision != nil {
+		if err = checkImportCredential(ctx, tx, credentials.Scope{Tenant: tenant, Provider: provider, Account: account}, *revision); err != nil {
+			return err
+		}
 	}
 	var notBefore *time.Time
 	if !includeHistory {
@@ -404,6 +432,19 @@ func (s *Store) commitCatalog(ctx context.Context, t domain.Task, provider, snap
 		return fmt.Errorf("%w: %w", ErrImportCommitUnknown, err)
 	}
 	return nil
+}
+
+func checkImportCredential(ctx context.Context, tx pgx.Tx, scope credentials.Scope, expected int64) error {
+	var revision int64
+	var enabled bool
+	err := tx.QueryRow(ctx, `SELECT revision,enabled FROM connection_credentials WHERE tenant_id=$1 AND provider=$2 AND account_id=$3 FOR SHARE`, scope.Tenant, scope.Provider, scope.Account).Scan(&revision, &enabled)
+	if errors.Is(err, pgx.ErrNoRows) && expected == 0 {
+		return nil
+	}
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && (!enabled || revision != expected)) {
+		return ErrImportCredentialChanged
+	}
+	return err
 }
 
 // ResolveImportCommit waits for any prior transaction's task lock before

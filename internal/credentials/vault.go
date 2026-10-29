@@ -159,19 +159,27 @@ type Resolver struct {
 }
 
 func (r Resolver) Resolve(ctx context.Context, scope Scope) (string, error) {
+	secret, _, err := r.ResolveWithRevision(ctx, scope)
+	return secret, err
+}
+
+// ResolveWithRevision reports the exact stored revision used for a read.
+// Revision zero denotes the explicitly registered environment fallback.
+func (r Resolver) ResolveWithRevision(ctx context.Context, scope Scope) (string, int64, error) {
 	if r.Store == nil || !scope.Valid() {
-		return "", ErrUnavailable
+		return "", 0, ErrUnavailable
 	}
 	record, err := r.Store.LoadCredential(ctx, scope)
 	if err == nil {
-		return r.Vault.Decrypt(record)
+		secret, decryptErr := r.Vault.Decrypt(record)
+		return secret, record.Revision, decryptErr
 	}
 	if !errors.Is(err, ErrNotFound) {
-		return "", ErrUnavailable
+		return "", 0, ErrUnavailable
 	}
 	owned, err := r.Store.CredentialConnectionOwned(ctx, scope)
 	if err != nil || !owned {
-		return "", ErrOwnership
+		return "", 0, ErrOwnership
 	}
 	var account, secret string
 	if scope.Provider == "ozon" {
@@ -180,8 +188,8 @@ func (r Resolver) Resolve(ctx context.Context, scope Scope) (string, error) {
 		account, secret = os.Getenv("MOYSKLAD_ACCOUNT_ID"), os.Getenv("MOYSKLAD_TOKEN")
 	}
 	if account != scope.Account || strings.TrimSpace(secret) == "" || strings.ContainsAny(secret, "\r\n\x00") {
-		return "", ErrUnavailable
+		return "", 0, ErrUnavailable
 	}
-	return secret, nil
+	return secret, 0, nil
 }
 func ScopeKey(s Scope) string { b, _ := json.Marshal(s); return fmt.Sprintf("credential:%s", b) }
