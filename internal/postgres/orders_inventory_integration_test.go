@@ -35,7 +35,7 @@ func orderInventoryTestDB(t *testing.T) *Store {
 		dsn = strings.TrimSpace(string(raw))
 	}
 	u, err := url.Parse(dsn)
-	if err != nil || u.Scheme != "postgres" || (u.Hostname() != "127.0.0.1" && u.Hostname() != "localhost") || u.Path != "/styk_orders_store_test" {
+	if err != nil || u.Scheme != "postgres" || (u.Hostname() != "127.0.0.1" && u.Hostname() != "localhost") || (u.Path != "/styk_orders_store_test" && u.Path != "/styk_orders_release_test") {
 		t.Fatal("inventory attribution tests require dedicated localhost orders test database")
 	}
 	return orderInventoryIsolatedSchema(t, u)
