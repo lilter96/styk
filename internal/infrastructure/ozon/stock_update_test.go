@@ -2,12 +2,14 @@ package ozon
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -25,6 +27,38 @@ func stockTestClient(t *testing.T, h http.HandlerFunc) *Client {
 		t.Fatal(err)
 	}
 	return c
+}
+
+func TestControlledClientNegotiatesHTTP1WithHTTP2CapableServer(t *testing.T) {
+	t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", "true")
+	var calls atomic.Int32
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.ProtoMajor != 1 || r.URL.Path != stockUpdatePath {
+			t.Errorf("unexpected protocol or path: %s %s", r.Proto, r.URL.Path)
+		}
+		fmt.Fprint(w, `{"result":[{"product_id":2764544165,"warehouse_id":1020001323428000,"updated":true,"errors":[]}]}`)
+	}))
+	server.EnableHTTP2 = true
+	server.StartTLS()
+	t.Cleanup(server.Close)
+	c, err := NewControlledTestStockClient(testpublication.Scope(), "synthetic-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Only this package test substitutes a local TLS server and trust root.
+	c.base, err = url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport := c.http.Transport.(*http.Transport)
+	pool := x509.NewCertPool()
+	pool.AddCert(server.Certificate())
+	transport.TLSClientConfig.RootCAs = pool
+	result, err := c.UpdateStocks(context.Background(), []StockUpdate{{testpublication.OzonProduct, testpublication.OzonWarehouse, 1}})
+	if err != nil || calls.Load() != 1 || len(result) != 1 || result[0].State != "SUCCEEDED" {
+		t.Fatalf("HTTP/1 negotiation: calls=%d result=%+v err=%v", calls.Load(), result, err)
+	}
 }
 
 func TestControlledLiveClientIsFixedToOneAccountAndTarget(t *testing.T) {

@@ -67,6 +67,17 @@ func NewControlledTestStockClient(scope domain.StockSyncScope, key string) (*Cli
 	transport := base.Clone()
 	transport.Proxy = nil
 	transport.DisableKeepAlives = true
+	// Disabling the HTTP/2 handler alone does not stop ALPN from negotiating
+	// h2. In that case an HTTP/1 request is written to an HTTP/2 connection,
+	// and even a read produces a malformed-response transport error. Advertise
+	// only HTTP/1.1 as well, retaining the single-use connection boundary.
+	transport.ForceAttemptHTTP2 = false
+	if transport.TLSClientConfig == nil {
+		transport.TLSClientConfig = &tls.Config{}
+	} else {
+		transport.TLSClientConfig = transport.TLSClientConfig.Clone()
+	}
+	transport.TLSClientConfig.NextProtos = []string{"http/1.1"}
 	transport.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
 	c.http.Transport = transport
 	c.controlledTestScope = &scope
