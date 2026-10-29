@@ -195,6 +195,7 @@ func (c *Client) get(ctx context.Context, path string, q url.Values) ([]byte, er
 			hc = b.http
 		}
 		resp, err := hc.Do(req)
+		observeCatalogRequest(ctx, http.MethodGet, path, resp, err)
 		if err == nil && resp.StatusCode == http.StatusTooManyRequests && b != nil {
 			b.counts.RateLimitResponses++
 		}

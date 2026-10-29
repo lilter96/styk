@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/lilter96/styk/internal/catalog"
@@ -155,6 +156,7 @@ func (c *CatalogClient) dispatchCatalog(ctx context.Context, cmd catalog.Command
 	}
 	b, _ := ctx.Value(budgetKey{}).(*budget)
 	resp, err := b.http.Do(req)
+	observeCatalogRequest(ctx, req.Method, strings.TrimPrefix(req.URL.Path, c.client.base.Path), resp, err)
 	if err != nil {
 		return catalogUnknown(cmd, 0)
 	}
