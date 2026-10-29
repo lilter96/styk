@@ -18,13 +18,16 @@ type importAPI struct {
 	db                *postgres.Store
 	configuredAccount string
 	configured        bool
+	moyAccount        string
+	moyConfigured     bool
 }
 
 var importIdempotencyPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
 
 func newImportAPI(db *postgres.Store) *importAPI {
 	account, key := os.Getenv("OZON_CLIENT_ID"), os.Getenv("OZON_API_KEY")
-	return &importAPI{db: db, configuredAccount: account, configured: validConnectionTenant(account) && strings.TrimSpace(key) != "" && !strings.ContainsAny(account+key, "\r\n")}
+	moyAccount, token := os.Getenv("MOYSKLAD_ACCOUNT_ID"), os.Getenv("MOYSKLAD_TOKEN")
+	return &importAPI{db: db, moyAccount: moyAccount, moyConfigured: validConnectionTenant(moyAccount) && strings.TrimSpace(token) != "" && !strings.ContainsAny(moyAccount+token, "\r\n"), configuredAccount: account, configured: validConnectionTenant(account) && strings.TrimSpace(key) != "" && !strings.ContainsAny(account+key, "\r\n")}
 }
 func importError(w http.ResponseWriter, err error) {
 	switch {
@@ -44,6 +47,7 @@ func (a *importAPI) create(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Tenant      string               `json:"tenant"`
 		Account     string               `json:"ozon_account"`
+		MoyAccount  string               `json:"moysklad_account"`
 		Type        string               `json:"operation_type"`
 		Key         string               `json:"idempotency_key"`
 		Acknowledge bool                 `json:"acknowledge"`
@@ -51,21 +55,33 @@ func (a *importAPI) create(w http.ResponseWriter, r *http.Request) {
 	}
 	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 	d.DisallowUnknownFields()
-	if d.Decode(&in) != nil || d.Decode(&struct{}{}) != io.EOF || !validConnectionTenant(in.Tenant) || !validConnectionTenant(in.Account) || in.Type != domain.OzonCatalogImport || !in.Acknowledge || !importIdempotencyPattern.MatchString(in.Key) {
+	decodeErr := d.Decode(&in)
+	provider := "ozon"
+	if in.Type == domain.MoyskladCatalogImport {
+		provider = "moysklad"
+	}
+	invalidPair := in.Account != "" && in.MoyAccount != "" || provider == "ozon" && in.MoyAccount != "" || provider == "moysklad" && in.Account != ""
+	if provider == "moysklad" {
+		in.Account = in.MoyAccount
+	}
+	if decodeErr != nil || d.Decode(&struct{}{}) != io.EOF || invalidPair || !validConnectionTenant(in.Tenant) || !validConnectionTenant(in.Account) || (in.Type != domain.OzonCatalogImport && in.Type != domain.MoyskladCatalogImport) || !in.Acknowledge || !importIdempotencyPattern.MatchString(in.Key) {
 		writeError(w, 400, "INVALID_REQUEST")
 		return
 	}
 	// Only the locally configured account is eligible; an external ID from the
 	// browser is not ownership evidence and never supplies marketplace credentials.
-	if !a.configured || in.Account != a.configuredAccount {
+	if (provider == "ozon" && (!a.configured || in.Account != a.configuredAccount)) || (provider == "moysklad" && (!a.moyConfigured || in.Account != a.moyAccount)) {
 		writeError(w, 403, "ACCOUNT_NOT_CONFIGURED")
 		return
 	}
 	limits := domain.DefaultOzonImportLimits()
+	if provider == "moysklad" {
+		limits = domain.DefaultMoyskladImportLimits()
+	}
 	if in.Limits != nil {
 		limits = *in.Limits
 	}
-	if !limits.Valid() {
+	if !limits.ValidFor(provider) {
 		writeError(w, 400, "INVALID_LIMITS")
 		return
 	}
@@ -74,7 +90,7 @@ func (a *importAPI) create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 401, "UNAUTHORIZED")
 		return
 	}
-	op, replay, err := a.db.SubmitOzonImport(r.Context(), in.Tenant, in.Account, in.Key, session, limits)
+	op, replay, err := a.db.SubmitCatalogImport(r.Context(), in.Tenant, provider, in.Account, in.Key, session, limits)
 	if err != nil {
 		importError(w, err)
 		return
@@ -88,17 +104,25 @@ func (a *importAPI) create(w http.ResponseWriter, r *http.Request) {
 		IdempotentReplay bool                   `json:"idempotent_replay"`
 	}{op, replay})
 }
-func importQuery(r *http.Request) (string, string, bool) {
+func importQuery(r *http.Request) (string, string, string, bool) {
 	tenant, account := r.URL.Query().Get("tenant"), r.URL.Query().Get("ozon_account")
-	return tenant, account, validConnectionTenant(tenant) && validConnectionTenant(account)
+	provider := "ozon"
+	moy := r.URL.Query().Get("moysklad_account")
+	if moy != "" && account != "" {
+		return "", "", "", false
+	}
+	if moy != "" {
+		provider, account = "moysklad", moy
+	}
+	return tenant, provider, account, validConnectionTenant(tenant) && validConnectionTenant(account)
 }
 func (a *importAPI) get(w http.ResponseWriter, r *http.Request) {
-	tenant, account, ok := importQuery(r)
+	tenant, provider, account, ok := importQuery(r)
 	if !ok {
 		writeError(w, 400, "INVALID_SCOPE")
 		return
 	}
-	op, err := a.db.GetImportOperation(r.Context(), tenant, account, r.PathValue("id"))
+	op, err := a.db.GetCatalogOperation(r.Context(), tenant, provider, account, r.PathValue("id"))
 	if err != nil {
 		importError(w, err)
 		return
@@ -106,7 +130,7 @@ func (a *importAPI) get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, op)
 }
 func (a *importAPI) list(w http.ResponseWriter, r *http.Request) {
-	tenant, account, ok := importQuery(r)
+	tenant, provider, account, ok := importQuery(r)
 	if !ok {
 		writeError(w, 400, "INVALID_SCOPE")
 		return
@@ -131,7 +155,7 @@ func (a *importAPI) list(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "INVALID_REQUEST")
 		return
 	}
-	rows, more, err := a.db.ListImportOperations(r.Context(), tenant, account, limit, offset)
+	rows, more, err := a.db.ListCatalogOperations(r.Context(), tenant, provider, account, limit, offset)
 	if err != nil {
 		importError(w, err)
 		return
@@ -146,15 +170,22 @@ func (a *importAPI) cancel(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Tenant      string `json:"tenant"`
 		Account     string `json:"ozon_account"`
+		MoyAccount  string `json:"moysklad_account"`
 		Acknowledge bool   `json:"acknowledge"`
 	}
 	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 	d.DisallowUnknownFields()
-	if d.Decode(&in) != nil || d.Decode(&struct{}{}) != io.EOF || !validConnectionTenant(in.Tenant) || !validConnectionTenant(in.Account) || !in.Acknowledge {
+	decodeErr := d.Decode(&in)
+	provider := "ozon"
+	invalidPair := in.Account != "" && in.MoyAccount != ""
+	if in.MoyAccount != "" {
+		provider, in.Account = "moysklad", in.MoyAccount
+	}
+	if invalidPair || decodeErr != nil || d.Decode(&struct{}{}) != io.EOF || !validConnectionTenant(in.Tenant) || !validConnectionTenant(in.Account) || !in.Acknowledge {
 		writeError(w, 400, "INVALID_REQUEST")
 		return
 	}
-	if err := a.db.CancelQueuedImport(r.Context(), in.Tenant, in.Account, r.PathValue("id")); err != nil {
+	if err := a.db.CancelCatalogImport(r.Context(), in.Tenant, provider, in.Account, r.PathValue("id")); err != nil {
 		importError(w, err)
 		return
 	}

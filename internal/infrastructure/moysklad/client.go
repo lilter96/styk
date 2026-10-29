@@ -164,6 +164,14 @@ func (c *Client) get(ctx context.Context, path string, q url.Values) ([]byte, er
 	if !allowedReadPath(path) {
 		return nil, errors.New("MoySklad read path is not allowlisted")
 	}
+	b, _ := ctx.Value(budgetKey{}).(*budget)
+	if err := b.add("requests"); err != nil {
+		return nil, err
+	}
+	bodyLimit := int64(maxBody)
+	if b != nil && b.limits.ResponseBytes < bodyLimit {
+		bodyLimit = b.limits.ResponseBytes
+	}
 	u := c.base.ResolveReference(&url.URL{Path: path})
 	u.RawQuery = q.Encode()
 	for attempt := 0; attempt < c.attempts; attempt++ {
@@ -176,7 +184,17 @@ func (c *Client) get(ctx context.Context, path string, q url.Values) ([]byte, er
 		}
 		req.Header.Set("Authorization", "Bearer "+c.token)
 		req.Header.Set("Accept", "application/json;charset=utf-8")
-		resp, err := c.http.Do(req)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if err := b.add("attempts"); err != nil {
+			return nil, err
+		}
+		hc := c.http
+		if b != nil {
+			hc = b.http
+		}
+		resp, err := hc.Do(req)
 		var retry bool
 		var delay time.Duration
 		var last error
@@ -184,16 +202,16 @@ func (c *Client) get(ctx context.Context, path string, q url.Values) ([]byte, er
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			last = errors.New("MoySklad transport error")
+			last = ErrTransport
 			retry = true
 		} else {
-			data, readErr := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
+			data, readErr := io.ReadAll(io.LimitReader(resp.Body, bodyLimit+1))
 			closeErr := resp.Body.Close()
 			if readErr != nil || closeErr != nil {
-				last = errors.New("MoySklad response read error")
+				last = ErrTransport
 				retry = true
-			} else if len(data) > maxBody {
-				return nil, errors.New("MoySklad response exceeds size limit")
+			} else if int64(len(data)) > bodyLimit {
+				return nil, &LimitError{"response_bytes"}
 			} else if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 				delay := rateDelay(resp.Header, resp.StatusCode, time.Now())
 				if delay > c.maxRetryAfter {
@@ -254,8 +272,18 @@ type page struct {
 }
 
 func (c *Client) pages(ctx context.Context, path string, extra url.Values, consume func(json.RawMessage) error) error {
+	b, _ := ctx.Value(budgetKey{}).(*budget)
 	offset, total := 0, -1
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := b.report(ctx, path); err != nil {
+			return err
+		}
+		if err := b.add("pages"); err != nil {
+			return err
+		}
 		q := url.Values{}
 		for k, v := range extra {
 			q[k] = v
@@ -269,6 +297,9 @@ func (c *Client) pages(ctx context.Context, path string, extra url.Values, consu
 		var p page
 		if err = json.Unmarshal(data, &p); err != nil {
 			return fmt.Errorf("decode %s page: %w", path, err)
+		}
+		if b != nil {
+			b.counts.CompletedRequests++
 		}
 		if p.Meta == nil || p.Rows == nil || p.Meta.Size == nil || p.Meta.Offset == nil || p.Meta.Limit == nil {
 			return fmt.Errorf("%s: incomplete page metadata or rows", path)
@@ -289,6 +320,15 @@ func (c *Client) pages(ctx context.Context, path string, extra url.Values, consu
 			}
 		}
 		offset += n
+		if n == 0 && offset < total {
+			return fmt.Errorf("%s: incomplete pagination", path)
+		}
+		if b != nil {
+			b.counts.CompletedPages++
+			if err := b.report(ctx, path); err != nil {
+				return err
+			}
+		}
 		if offset == total {
 			return nil
 		}
@@ -363,6 +403,7 @@ func (c *Client) Read(ctx context.Context, account string) (domain.InventoryImpo
 	if strings.TrimSpace(account) == "" {
 		return domain.InventoryImport{}, errors.New("account identifier required")
 	}
+	b, _ := ctx.Value(budgetKey{}).(*budget)
 	snap := domain.InventoryImport{Account: account, StartedAt: time.Now().UTC()}
 	seen := map[string]bool{}
 	for _, kind := range []string{"product", "variant", "store"} {
@@ -389,6 +430,10 @@ func (c *Client) Read(ctx context.Context, account string) (domain.InventoryImpo
 				if err != nil {
 					return fmt.Errorf("invalid variant product reference: %w", err)
 				}
+			}
+			resource := map[string]string{"product": "products", "variant": "variants", "store": "warehouses"}[kind]
+			if err := b.add(resource); err != nil {
+				return err
 			}
 			snap.Entities = append(snap.Entities, domain.ExternalEntity{Kind: kind, ID: e.ID, Name: e.Name, Code: e.Code, Article: e.Article, ParentID: parent, SourceUpdated: e.Updated})
 			return nil
@@ -417,6 +462,9 @@ func (c *Client) Read(ctx context.Context, account string) (domain.InventoryImpo
 		stockSeen[key] = true
 		if row.Stock == nil || row.Reserve == nil || row.InTransit == nil || row.Quantity == nil {
 			return errors.New("stock row missing values")
+		}
+		if err := b.add("observations"); err != nil {
+			return err
 		}
 		snap.Stock = append(snap.Stock, domain.StockObservation{Kind: row.Meta.Type, ExternalID: id, SourceHref: row.Meta.Href, Stock: number(row.Stock), Reserve: number(row.Reserve), InTransit: number(row.InTransit), Quantity: number(row.Quantity), FreeStock: number(row.FreeStock)})
 		return nil
@@ -463,6 +511,9 @@ func (c *Client) Read(ctx context.Context, account string) (domain.InventoryImpo
 			}
 			if len(snap.WarehouseStock) >= maxRows {
 				return errors.New("warehouse stock observation limit exceeded")
+			}
+			if err := b.add("warehouse_observations"); err != nil {
+				return err
 			}
 			snap.WarehouseStock = append(snap.WarehouseStock, domain.WarehouseStockObservation{Kind: row.Meta.Type, ExternalID: id, SourceHref: row.Meta.Href, WarehouseID: storeID, WarehouseHref: store.Meta.Href, Stock: number(store.Stock), Reserve: number(store.Reserve), InTransit: number(store.InTransit)})
 		}

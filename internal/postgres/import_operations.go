@@ -34,16 +34,24 @@ func validImportScope(tenant, account string) bool {
 
 // SubmitOzonImport stores submission identity and the outbox task atomically.
 func (s *Store) SubmitOzonImport(ctx context.Context, tenant, account, key, session string, limits domain.ImportLimits) (domain.ImportOperation, bool, error) {
+	return s.SubmitCatalogImport(ctx, tenant, "ozon", account, key, session, limits)
+}
+
+func (s *Store) SubmitCatalogImport(ctx context.Context, tenant, provider, account, key, session string, limits domain.ImportLimits) (domain.ImportOperation, bool, error) {
+	operationType, taskType := domain.OzonCatalogImport, domain.OzonCatalogTask
+	if provider == "moysklad" {
+		operationType, taskType = domain.MoyskladCatalogImport, domain.MoyskladCatalogTask
+	}
 	if !validImportScope(tenant, account) || !importKeyPattern.MatchString(key) || session == "" || len(session) > 128 {
 		return domain.ImportOperation{}, false, errors.New("invalid import request")
 	}
-	if !limits.Valid() {
+	if !limits.ValidFor(provider) {
 		return domain.ImportOperation{}, false, errors.New("invalid server limits")
 	}
 	payload, err := json.Marshal(struct {
 		Tenant, Account, Type string
 		Limits                domain.ImportLimits
-	}{tenant, account, domain.OzonCatalogImport, limits})
+	}{tenant, account, operationType, limits})
 	if err != nil {
 		return domain.ImportOperation{}, false, err
 	}
@@ -63,14 +71,14 @@ func (s *Store) SubmitOzonImport(ctx context.Context, tenant, account, key, sess
 	}
 	defer tx.Rollback(context.Background())
 	var registered bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_connections WHERE tenant_id=$1 AND source='ozon' AND account_id=$2)`, tenant, account).Scan(&registered); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_connections WHERE tenant_id=$1 AND source=$3 AND account_id=$2)`, tenant, account, provider).Scan(&registered); err != nil {
 		return domain.ImportOperation{}, false, err
 	}
 	if !registered {
 		return domain.ImportOperation{}, false, ErrImportScope
 	}
 	var inserted string
-	err = tx.QueryRow(ctx, `INSERT INTO ozon_import_operations(id,tenant_id,account_id,operation_type,idempotency_key,request_fingerprint,principal_type,session_audit_id,limits) VALUES($1,$2,$3,$4,$5,$6,'LOCAL_OPERATOR_SESSION',$7,$8) ON CONFLICT(tenant_id,idempotency_key) DO NOTHING RETURNING id`, id, tenant, account, domain.OzonCatalogImport, key, fingerprint, session, rawLimits).Scan(&inserted)
+	err = tx.QueryRow(ctx, `INSERT INTO ozon_import_operations(id,tenant_id,account_id,operation_type,idempotency_key,request_fingerprint,principal_type,session_audit_id,limits,provider) VALUES($1,$2,$3,$4,$5,$6,'LOCAL_OPERATOR_SESSION',$7,$8,$9) ON CONFLICT(tenant_id,idempotency_key) DO NOTHING RETURNING id`, id, tenant, account, operationType, key, fingerprint, session, rawLimits, provider).Scan(&inserted)
 	replay := false
 	if errors.Is(err, pgx.ErrNoRows) {
 		var existingFingerprint, existingAccount string
@@ -85,10 +93,10 @@ func (s *Store) SubmitOzonImport(ctx context.Context, tenant, account, key, sess
 		return domain.ImportOperation{}, false, err
 	}
 	if !replay {
-		_, err = tx.Exec(ctx, `INSERT INTO outbox_tasks(operation_key,observation_id,max_attempts,task_type,import_operation_id,import_tenant_id,import_account_id) VALUES($1,NULL,3,'ozon_catalog_import',$2,$3,$4)`, "ozon-import:"+id, id, tenant, account)
+		_, err = tx.Exec(ctx, `INSERT INTO outbox_tasks(operation_key,observation_id,max_attempts,task_type,import_operation_id,import_tenant_id,import_account_id) VALUES($1,NULL,3,$5,$2,$3,$4)`, provider+"-import:"+id, id, tenant, account, taskType)
 		if err != nil {
 			var pg *pgconn.PgError
-			if errors.As(err, &pg) && pg.ConstraintName == "outbox_one_active_ozon_catalog" {
+			if errors.As(err, &pg) && (pg.ConstraintName == "outbox_one_active_catalog" || pg.ConstraintName == "outbox_one_active_ozon_catalog") {
 				return domain.ImportOperation{}, false, ErrImportConflict
 			}
 			return domain.ImportOperation{}, false, err
@@ -97,7 +105,7 @@ func (s *Store) SubmitOzonImport(ctx context.Context, tenant, account, key, sess
 	if err = tx.Commit(ctx); err != nil {
 		return domain.ImportOperation{}, false, err
 	}
-	op, err := s.GetImportOperation(ctx, tenant, account, id)
+	op, err := s.GetCatalogOperation(ctx, tenant, provider, account, id)
 	return op, replay, err
 }
 
@@ -144,31 +152,37 @@ func scanImport(row pgx.Row) (domain.ImportOperation, error) {
 	return v, nil
 }
 func (s *Store) GetImportOperation(ctx context.Context, tenant, account, id string) (domain.ImportOperation, error) {
+	return s.GetCatalogOperation(ctx, tenant, "ozon", account, id)
+}
+func (s *Store) GetCatalogOperation(ctx context.Context, tenant, provider, account, id string) (domain.ImportOperation, error) {
 	if !validImportScope(tenant, account) || len(id) != 32 {
 		return domain.ImportOperation{}, ErrImportNotFound
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
-	v, err := scanImport(s.Pool.QueryRow(ctx, `SELECT `+importColumns+` FROM ozon_import_operations o JOIN outbox_tasks t ON t.import_operation_id=o.id JOIN stock_connections c ON c.tenant_id=o.tenant_id AND c.source=o.provider AND c.account_id=o.account_id WHERE o.tenant_id=$1 AND o.account_id=$2 AND o.id=$3`, tenant, account, id))
+	v, err := scanImport(s.Pool.QueryRow(ctx, `SELECT `+importColumns+` FROM ozon_import_operations o JOIN outbox_tasks t ON t.import_operation_id=o.id JOIN stock_connections c ON c.tenant_id=o.tenant_id AND c.source=o.provider AND c.account_id=o.account_id WHERE o.tenant_id=$1 AND o.account_id=$2 AND o.id=$3 AND o.provider=$4`, tenant, account, id, provider))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return v, ErrImportNotFound
 	}
 	return v, err
 }
 func (s *Store) ListImportOperations(ctx context.Context, tenant, account string, limit, offset int) ([]domain.ImportOperation, bool, error) {
+	return s.ListCatalogOperations(ctx, tenant, "ozon", account, limit, offset)
+}
+func (s *Store) ListCatalogOperations(ctx context.Context, tenant, provider, account string, limit, offset int) ([]domain.ImportOperation, bool, error) {
 	if !validImportScope(tenant, account) || limit < 1 || limit > 50 || offset < 0 || offset > 10000 {
 		return nil, false, errors.New("invalid import scope")
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
 	var registered bool
-	if err := s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_connections WHERE tenant_id=$1 AND source='ozon' AND account_id=$2)`, tenant, account).Scan(&registered); err != nil {
+	if err := s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_connections WHERE tenant_id=$1 AND source=$3 AND account_id=$2)`, tenant, account, provider).Scan(&registered); err != nil {
 		return nil, false, err
 	}
 	if !registered {
 		return nil, false, ErrImportScope
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT `+importColumns+` FROM ozon_import_operations o JOIN outbox_tasks t ON t.import_operation_id=o.id WHERE o.tenant_id=$1 AND o.account_id=$2 ORDER BY o.created_at DESC,o.id DESC LIMIT $3 OFFSET $4`, tenant, account, limit+1, offset)
+	rows, err := s.Pool.Query(ctx, `SELECT `+importColumns+` FROM ozon_import_operations o JOIN outbox_tasks t ON t.import_operation_id=o.id WHERE o.tenant_id=$1 AND o.account_id=$2 AND o.provider=$5 ORDER BY o.created_at DESC,o.id DESC LIMIT $3 OFFSET $4`, tenant, account, limit+1, offset, provider)
 	if err != nil {
 		return nil, false, err
 	}
@@ -191,6 +205,9 @@ func (s *Store) ListImportOperations(ctx context.Context, tenant, account string
 	return list, more, nil
 }
 func (s *Store) CancelQueuedImport(ctx context.Context, tenant, account, id string) error {
+	return s.CancelCatalogImport(ctx, tenant, "ozon", account, id)
+}
+func (s *Store) CancelCatalogImport(ctx context.Context, tenant, provider, account, id string) error {
 	if !validImportScope(tenant, account) || len(id) != 32 {
 		return ErrImportNotFound
 	}
@@ -202,7 +219,7 @@ func (s *Store) CancelQueuedImport(ctx context.Context, tenant, account, id stri
 	}
 	defer tx.Rollback(context.Background())
 	var state string
-	err = tx.QueryRow(ctx, `SELECT t.state FROM outbox_tasks t JOIN ozon_import_operations o ON o.id=t.import_operation_id WHERE o.id=$1 AND o.tenant_id=$2 AND o.account_id=$3 FOR UPDATE OF t`, id, tenant, account).Scan(&state)
+	err = tx.QueryRow(ctx, `SELECT t.state FROM outbox_tasks t JOIN ozon_import_operations o ON o.id=t.import_operation_id WHERE o.id=$1 AND o.tenant_id=$2 AND o.account_id=$3 AND o.provider=$4 FOR UPDATE OF t`, id, tenant, account, provider).Scan(&state)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrImportNotFound
 	}
@@ -227,7 +244,7 @@ func (s *Store) CancelQueuedImport(ctx context.Context, tenant, account, id stri
 // lockImportClaim serializes claim replacement, progress and final persistence.
 func lockImportClaim(ctx context.Context, tx pgx.Tx, t domain.Task) error {
 	var id int64
-	err := tx.QueryRow(ctx, `SELECT id FROM outbox_tasks WHERE id=$1 AND import_operation_id=$2 AND task_type='ozon_catalog_import' AND state='running' AND claim_token=$3 AND lease_until>clock_timestamp() FOR UPDATE`, t.ID, t.ImportOperationID, t.ClaimToken).Scan(&id)
+	err := tx.QueryRow(ctx, `SELECT id FROM outbox_tasks WHERE id=$1 AND import_operation_id=$2 AND task_type IN ('ozon_catalog_import','moysklad_catalog_import') AND state='running' AND claim_token=$3 AND lease_until>clock_timestamp() FOR UPDATE`, t.ID, t.ImportOperationID, t.ClaimToken).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrImportClaimLost
 	}
@@ -255,7 +272,7 @@ func (s *Store) ImportForClaim(ctx context.Context, t domain.Task) (domain.Impor
 }
 func (s *Store) ImportProgress(ctx context.Context, t domain.Task, phase string, counts domain.ImportCounts) error {
 	switch phase {
-	case "READING_PRODUCTS", "READING_WAREHOUSES", "READING_STOCK", "PERSISTING":
+	case "READING_PRODUCTS", "READING_VARIANTS", "READING_WAREHOUSES", "READING_STOCK", "READING_AGGREGATE_STOCK", "READING_WAREHOUSE_STOCK", "PERSISTING":
 	default:
 		return errors.New("invalid import phase")
 	}
@@ -314,6 +331,16 @@ func (s *Store) FailImport(ctx context.Context, t domain.Task, outcome, resource
 // CommitClaimedOzonImport commits source evidence, operation linkage and task
 // completion together while the task row is locked and the lease is valid.
 func (s *Store) CommitClaimedOzonImport(ctx context.Context, t domain.Task, snap domain.OzonImport, fingerprint string, counts domain.ImportCounts, timeout time.Duration) error {
+	return s.commitCatalog(ctx, t, "ozon", snap.Account, snap.StartedAt, counts, timeout, func(ctx context.Context, tx pgx.Tx, notBefore *time.Time) (int64, bool, error) {
+		return saveOzonImportTx(ctx, tx, snap, fingerprint, notBefore)
+	})
+}
+func (s *Store) CommitClaimedMoyskladImport(ctx context.Context, t domain.Task, snap domain.InventoryImport, fingerprint string, counts domain.ImportCounts, timeout time.Duration) error {
+	return s.commitCatalog(ctx, t, "moysklad", snap.Account, snap.StartedAt, counts, timeout, func(ctx context.Context, tx pgx.Tx, notBefore *time.Time) (int64, bool, error) {
+		return saveInventoryImportTx(ctx, tx, snap, fingerprint, notBefore)
+	})
+}
+func (s *Store) commitCatalog(ctx context.Context, t domain.Task, provider, snapAccount string, started time.Time, counts domain.ImportCounts, timeout time.Duration, save func(context.Context, pgx.Tx, *time.Time) (int64, bool, error)) error {
 	if timeout <= 0 || timeout > 10*time.Second {
 		return errors.New("invalid persistence timeout")
 	}
@@ -334,21 +361,21 @@ func (s *Store) CommitClaimedOzonImport(ctx context.Context, t domain.Task, snap
 	var account string
 	var includeHistory bool
 	var registered time.Time
-	err = tx.QueryRow(ctx, `SELECT o.account_id,c.include_import_history,c.registered_at FROM ozon_import_operations o JOIN stock_connections c ON c.tenant_id=o.tenant_id AND c.source=o.provider AND c.account_id=o.account_id WHERE o.id=$1 FOR SHARE OF c`, t.ImportOperationID).Scan(&account, &includeHistory, &registered)
+	err = tx.QueryRow(ctx, `SELECT o.account_id,c.include_import_history,c.registered_at FROM ozon_import_operations o JOIN stock_connections c ON c.tenant_id=o.tenant_id AND c.source=o.provider AND c.account_id=o.account_id WHERE o.id=$1 AND o.provider=$2 FOR SHARE OF c`, t.ImportOperationID, provider).Scan(&account, &includeHistory, &registered)
 	if err != nil {
 		return err
 	}
-	if account != snap.Account {
+	if account != snapAccount {
 		return ErrImportScope
 	}
 	var notBefore *time.Time
 	if !includeHistory {
 		notBefore = &registered
-		if snap.StartedAt.Before(registered) {
+		if started.Before(registered) {
 			return errors.New("import predates the account registration")
 		}
 	}
-	id, created, err := saveOzonImportTx(ctx, tx, snap, fingerprint, notBefore)
+	id, created, err := save(ctx, tx, notBefore)
 	if err != nil {
 		return err
 	}

@@ -35,9 +35,31 @@ type importFixture struct {
 }
 
 func TestImportReconcilesLostDatabaseCommitResponse(t *testing.T) {
+	for _, provider := range []string{"ozon", "moysklad"} {
+		t.Run(provider, func(t *testing.T) {
+			reconcileLostImportCommit(t, provider)
+		})
+	}
+}
+func reconcileLostImportCommit(t *testing.T, provider string) {
 	f := newImportFixture(t)
-	op := f.submit(t, "lost-commit", domain.DefaultOzonImportLimits())
-	task := f.claim(t)
+	if provider == "moysklad" {
+		if err := f.db.RegisterStockConnection(context.Background(), f.tenant, provider, f.account, "synthetic operator", false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var op domain.ImportOperation
+	if provider == "moysklad" {
+		op = submitMoy(t, f, "lost-commit", domain.DefaultMoyskladImportLimits())
+	} else {
+		op = f.submit(t, "lost-commit", domain.DefaultOzonImportLimits())
+	}
+	var task domain.Task
+	if provider == "moysklad" {
+		task = claimMoy(t, f, time.Second)
+	} else {
+		task = f.claim(t)
+	}
 	dbURL, err := url.Parse(os.Getenv("TEST_DATABASE_URL"))
 	if err != nil {
 		t.Fatal(err)
@@ -115,7 +137,12 @@ func TestImportReconcilesLostDatabaseCommitResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = proxyDB.CommitClaimedOzonImport(context.Background(), task, snap, fingerprint, domain.ImportCounts{}, time.Second)
+	if provider == "moysklad" {
+		ms, fp := moyEmpty(f)
+		err = proxyDB.CommitClaimedMoyskladImport(context.Background(), task, ms, fp, domain.ImportCounts{}, time.Second)
+	} else {
+		err = proxyDB.CommitClaimedOzonImport(context.Background(), task, snap, fingerprint, domain.ImportCounts{}, time.Second)
+	}
 	if !errors.Is(err, postgres.ErrImportCommitUnknown) {
 		t.Fatalf("commit was not reported uncertain: %v", err)
 	}
@@ -128,12 +155,15 @@ func TestImportReconcilesLostDatabaseCommitResponse(t *testing.T) {
 	if err != nil || !resolved {
 		t.Fatalf("committed result not reconciled: %v", err)
 	}
-	got := f.inspect(t, op.ID)
+	got, err := f.db.GetCatalogOperation(context.Background(), f.tenant, provider, f.account, op.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got.State != "SUCCEEDED" || got.BatchID == nil {
 		t.Fatal("durable success missing after lost response")
 	}
 	var n int
-	if err = f.db.Pool.QueryRow(context.Background(), `SELECT count(*) FROM source_imports WHERE source='ozon' AND account_id=$1`, f.account).Scan(&n); err != nil || n != 1 {
+	if err = f.db.Pool.QueryRow(context.Background(), `SELECT count(*) FROM source_imports WHERE source=$2 AND account_id=$1`, f.account, provider).Scan(&n); err != nil || n != 1 {
 		t.Fatal("unexpected duplicate batch")
 	}
 }
@@ -451,7 +481,23 @@ func TestImportLeaseFencingAndCommitReconciliation(t *testing.T) {
 	}
 }
 func TestImportAPIRejectsUnscopedAndUnacknowledgedRequests(t *testing.T) {
+	for _, provider := range []string{"ozon", "moysklad"} {
+		t.Run(provider, func(t *testing.T) { testCatalogImportAPI(t, provider) })
+	}
+}
+func testCatalogImportAPI(t *testing.T, provider string) {
 	f := newImportFixture(t)
+	if provider == "moysklad" {
+		if err := f.db.RegisterStockConnection(context.Background(), f.tenant, provider, f.account, "synthetic operator", false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	field := "ozon_account"
+	if provider == "moysklad" {
+		field = "moysklad_account"
+	}
+	t.Setenv("MOYSKLAD_ACCOUNT_ID", f.account)
+	t.Setenv("MOYSKLAD_TOKEN", "synthetic-secret-never-expose")
 	t.Setenv("OZON_CLIENT_ID", f.account)
 	t.Setenv("OZON_API_KEY", "synthetic-secret-never-expose")
 	secret := strings.Repeat("s", 32)
@@ -472,6 +518,10 @@ func TestImportAPIRejectsUnscopedAndUnacknowledgedRequests(t *testing.T) {
 		return w
 	}
 	input := fmt.Sprintf(`{"tenant":%q,"ozon_account":%q,"operation_type":"OZON_CATALOG_IMPORT","idempotency_key":"api-key","acknowledge":true}`, f.tenant, f.account)
+	if provider == "moysklad" {
+		input = strings.ReplaceAll(input, "ozon_account", "moysklad_account")
+		input = strings.ReplaceAll(input, domain.OzonCatalogImport, domain.MoyskladCatalogImport)
+	}
 	if w := call("POST", "/api/imports", input, "http://127.0.0.1:5173", nil); w.Code != 401 {
 		t.Fatal("unauthenticated submission")
 	}
@@ -495,7 +545,7 @@ func TestImportAPIRejectsUnscopedAndUnacknowledgedRequests(t *testing.T) {
 	if w := call("POST", "/api/imports", bad, "http://127.0.0.1:5173", cookie); w.Code != 400 {
 		t.Fatal("missing acknowledgement accepted")
 	}
-	bad = strings.Replace(input, "OZON_CATALOG_IMPORT", "MOYSKLAD_IMPORT", 1)
+	bad = strings.ReplaceAll(strings.ReplaceAll(input, "OZON_CATALOG_IMPORT", "UNSUPPORTED_IMPORT"), "MOYSKLAD_CATALOG_IMPORT", "UNSUPPORTED_IMPORT")
 	if w := call("POST", "/api/imports", bad, "http://127.0.0.1:5173", cookie); w.Code != 400 {
 		t.Fatal("unsupported import accepted")
 	}
@@ -519,13 +569,16 @@ func TestImportAPIRejectsUnscopedAndUnacknowledgedRequests(t *testing.T) {
 		t.Fatal("submission replay failed")
 	}
 	changed := domain.DefaultOzonImportLimits()
+	if provider == "moysklad" {
+		changed = domain.DefaultMoyskladImportLimits()
+	}
 	changed.Pages--
 	raw, _ := json.Marshal(changed)
 	bad = strings.TrimSuffix(input, "}") + `,"limits":` + string(raw) + `}`
 	if w := call("POST", "/api/imports", bad, "http://127.0.0.1:5173", cookie); w.Code != 409 || !strings.Contains(w.Body.String(), "IDEMPOTENCY_CONFLICT") {
 		t.Fatal("different payload reused key")
 	}
-	scope := url.Values{"tenant": {f.tenant}, "ozon_account": {f.account}}
+	scope := url.Values{"tenant": {f.tenant}, field: {f.account}}
 	list := call("GET", "/api/imports?"+scope.Encode(), "", "", cookie)
 	if list.Code != 200 || !strings.Contains(list.Body.String(), result.Operation.ID) || strings.Contains(list.Body.String(), "synthetic-secret") || strings.Contains(list.Body.String(), secret) {
 		t.Fatal("scoped list missing")
@@ -535,16 +588,29 @@ func TestImportAPIRejectsUnscopedAndUnacknowledgedRequests(t *testing.T) {
 		t.Fatal("cross tenant operation exposed")
 	}
 	scope.Set("tenant", f.tenant)
-	scope.Set("ozon_account", f.account+"-other")
+	scope.Set(field, f.account+"-other")
 	if w := call("GET", "/api/imports/"+result.Operation.ID+"?"+scope.Encode(), "", "", cookie); w.Code != 404 {
 		t.Fatal("cross account operation exposed")
 	}
 	cancelBody := fmt.Sprintf(`{"tenant":%q,"ozon_account":%q,"acknowledge":true}`, f.tenant, f.account)
+	if provider == "moysklad" {
+		cancelBody = strings.ReplaceAll(cancelBody, "ozon_account", "moysklad_account")
+	}
 	if w := call("POST", "/api/imports/"+result.Operation.ID+"/cancel", cancelBody, "http://127.0.0.1:5173", cookie); w.Code != 204 {
 		t.Fatal("queued cancellation failed")
 	}
-	second := f.submit(t, "running", domain.DefaultOzonImportLimits())
-	task := f.claim(t)
+	if provider == "moysklad" {
+		cancelBody = strings.ReplaceAll(cancelBody, "ozon_account", "moysklad_account")
+	}
+	var second domain.ImportOperation
+	var task domain.Task
+	if provider == "moysklad" {
+		second = submitMoy(t, f, "running", domain.DefaultMoyskladImportLimits())
+		task = claimMoy(t, f, time.Second)
+	} else {
+		second = f.submit(t, "running", domain.DefaultOzonImportLimits())
+		task = f.claim(t)
+	}
 	if w := call("POST", "/api/imports/"+second.ID+"/cancel", cancelBody, "http://127.0.0.1:5173", cookie); w.Code != 409 || !strings.Contains(w.Body.String(), "CANCELLATION_UNAVAILABLE") {
 		t.Fatal("running cancellation accepted")
 	}

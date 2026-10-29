@@ -1,5 +1,7 @@
 # Durable Ozon catalog import operations V1
 
+The shared operation API and worker now also support `MOYSKLAD_CATALOG_IMPORT`; see [MoySklad backend contracts](moysklad-import-management-backend-v1.md). Ozon request fields and idempotency semantics remain compatible. Migration 22 generalizes the existing operation table and provider-scopes active-task uniqueness without adding a queue. The historical SQL table name is retained. MoySklad uses `moysklad_account` instead of `ozon_account` for the same endpoints; requests selecting both are rejected.
+
 This is a local, authenticated operator API and a read-only worker operation, also available through the [local import screen](import-management-ui-v1.md). It does not provide production tenant authorization, scheduling, order synchronization or marketplace writes. `OZON_CATALOG_IMPORT` uses the existing bounded catalog traversal: product lists for `ALL` and `ARCHIVED`, warehouse listing and FBS stock observations. A completed traversal is not exhaustive account visibility or a point-in-time source snapshot; missing rows are unknown.
 
 ## API and ownership

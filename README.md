@@ -79,6 +79,8 @@ Successful imports are atomic and stored in `source_imports`, `ozon_import_batch
 
 Authenticated local operators can explicitly queue a bounded `OZON_CATALOG_IMPORT` on the existing outbox worker. The operation is scoped to a registered account, supports idempotent submission and queued cancellation, and commits its completed batch and fenced task result atomically. It performs read-only API requests and does not establish a source snapshot or enable stock publication. Configure the API and a matching worker with the same Ozon account credentials; see [durable import operations](docs/import-management-backend-v1.md) for limits, recovery, deployment and security details.
 
+The same backend API and worker also support `MOYSKLAD_CATALOG_IMPORT`, using locally configured `MOYSKLAD_ACCOUNT_ID` and `MOYSKLAD_TOKEN`. It imports products, variants, warehouses, aggregate stock and warehouse stock through the existing reader, with frozen budgets, fenced atomic persistence and eligible batch deduplication. Use `moysklad_account` in the existing import endpoints; the React action remains Ozon-only. See [MoySklad durable imports](docs/moysklad-import-management-backend-v1.md) for migration 22, request fields, source scoping and recovery. Upgrade workers before submitting this task type. Customer orders, recurring imports and stock publication are not part of this operation.
+
 ## Product matching V1
 
 After importing both sources and applying migrations, inspect candidates with the local administrative CLI:

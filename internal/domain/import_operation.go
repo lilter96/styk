@@ -4,18 +4,22 @@ import "time"
 
 const OzonCatalogImport = "OZON_CATALOG_IMPORT"
 const OzonCatalogTask = "ozon_catalog_import"
+const MoyskladCatalogImport = "MOYSKLAD_CATALOG_IMPORT"
+const MoyskladCatalogTask = "moysklad_catalog_import"
 
 // ImportLimits are chosen server-side and frozen for each operation.
 type ImportLimits struct {
-	Requests          int   `json:"requests"`
-	Attempts          int   `json:"attempts"`
-	Pages             int   `json:"pages"`
-	Products          int   `json:"products"`
-	Warehouses        int   `json:"warehouses"`
-	Observations      int   `json:"observations"`
-	ResponseBytes     int64 `json:"response_bytes"`
-	DurationNS        int64 `json:"duration_ns"`
-	DatabaseTimeoutNS int64 `json:"database_timeout_ns"`
+	Variants              int   `json:"variants,omitempty"`
+	WarehouseObservations int   `json:"warehouse_observations,omitempty"`
+	Requests              int   `json:"requests"`
+	Attempts              int   `json:"attempts"`
+	Pages                 int   `json:"pages"`
+	Products              int   `json:"products"`
+	Warehouses            int   `json:"warehouses"`
+	Observations          int   `json:"observations"`
+	ResponseBytes         int64 `json:"response_bytes"`
+	DurationNS            int64 `json:"duration_ns"`
+	DatabaseTimeoutNS     int64 `json:"database_timeout_ns"`
 }
 
 func DefaultOzonImportLimits() ImportLimits {
@@ -28,14 +32,16 @@ func (l ImportLimits) Valid() bool {
 }
 
 type ImportCounts struct {
-	Requests          int `json:"requests"`
-	Attempts          int `json:"attempts"`
-	Pages             int `json:"pages"`
-	CompletedRequests int `json:"completed_requests"`
-	CompletedPages    int `json:"completed_pages"`
-	Products          int `json:"products"`
-	Warehouses        int `json:"warehouses"`
-	Observations      int `json:"observations"`
+	Variants              int `json:"variants,omitempty"`
+	WarehouseObservations int `json:"warehouse_observations,omitempty"`
+	Requests              int `json:"requests"`
+	Attempts              int `json:"attempts"`
+	Pages                 int `json:"pages"`
+	CompletedRequests     int `json:"completed_requests"`
+	CompletedPages        int `json:"completed_pages"`
+	Products              int `json:"products"`
+	Warehouses            int `json:"warehouses"`
+	Observations          int `json:"observations"`
 }
 type ImportOperation struct {
 	ID               string       `json:"id"`
@@ -60,4 +66,23 @@ type ImportOperation struct {
 	BatchID          *int64       `json:"batch_id"`
 	BatchCreated     *bool        `json:"batch_created"`
 	ElapsedMS        int64        `json:"elapsed_ms"`
+}
+
+func DefaultMoyskladImportLimits() ImportLimits {
+	l := DefaultOzonImportLimits()
+	l.Variants = 1000
+	l.WarehouseObservations = 10000
+	return l
+}
+func (l ImportLimits) ValidFor(provider string) bool {
+	if !l.Valid() {
+		return false
+	}
+	switch provider {
+	case "ozon":
+		return l.Variants == 0 && l.WarehouseObservations == 0
+	case "moysklad":
+		return l.Variants > 0 && l.Variants <= 1000 && l.WarehouseObservations > 0 && l.WarehouseObservations <= 10000
+	}
+	return false
 }

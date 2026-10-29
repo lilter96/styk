@@ -10,14 +10,17 @@ import (
 
 	"github.com/lilter96/styk/internal/application"
 	"github.com/lilter96/styk/internal/domain"
+	"github.com/lilter96/styk/internal/infrastructure/moysklad"
 	"github.com/lilter96/styk/internal/infrastructure/ozon"
 	"github.com/lilter96/styk/internal/postgres"
 )
 
 type Runner struct {
-	Store   *postgres.Store
-	Account string
-	Client  *ozon.Client
+	MoyskladAccount string
+	MoyskladClient  *moysklad.Client
+	Store           *postgres.Store
+	Account         string
+	Client          *ozon.Client
 }
 
 func counts(c ozon.Counts) domain.ImportCounts {
@@ -63,10 +66,12 @@ func (r Runner) ProcessImport(parent context.Context, t domain.Task, lease time.
 	if err != nil {
 		return err
 	}
-	if !op.Limits.Valid() {
+	if !op.Limits.ValidFor(op.Provider) {
 		return r.Store.FailImport(attempt, t, "CONFIGURATION_UNAVAILABLE", "", domain.ImportCounts{})
 	}
-	if r.Client == nil || r.Account == "" || r.Account != op.Account {
+	isMoy := op.Provider == "moysklad" && op.Type == domain.MoyskladCatalogImport && t.Type == domain.MoyskladCatalogTask
+	isOzon := op.Provider == "ozon" && op.Type == domain.OzonCatalogImport && t.Type == domain.OzonCatalogTask
+	if (!isMoy && !isOzon) || (isMoy && (r.MoyskladClient == nil || r.MoyskladAccount != op.Account)) || (isOzon && (r.Client == nil || r.Account != op.Account)) {
 		return r.Store.FailImport(attempt, t, "CONFIGURATION_UNAVAILABLE", "", domain.ImportCounts{})
 	}
 	if op.AttemptStartedAt == nil {
@@ -83,8 +88,22 @@ func (r Runner) ProcessImport(parent context.Context, t domain.Task, lease time.
 		return nil
 	}
 	started := time.Now()
-	snap, c, readErr := r.Client.ReadBoundedProgress(ctx, l, progress)
-	observed := counts(c)
+	var observed domain.ImportCounts
+	var snap domain.OzonImport
+	var moySnap domain.InventoryImport
+	var readErr error
+	if isMoy {
+		moySnap, observed, readErr = r.MoyskladClient.ReadBoundedProgress(ctx, op.Account, op.Limits, func(ctx context.Context, phase string, c domain.ImportCounts) error {
+			if e := r.Store.ImportProgress(ctx, t, phase, c); e != nil {
+				return errors.Join(errProgress, e)
+			}
+			return nil
+		})
+	} else {
+		var c ozon.Counts
+		snap, c, readErr = r.Client.ReadBoundedProgress(ctx, l, progress)
+		observed = counts(c)
+	}
 	if readErr != nil {
 		if parent.Err() != nil {
 			return parent.Err()
@@ -92,9 +111,17 @@ func (r Runner) ProcessImport(parent context.Context, t domain.Task, lease time.
 		if errors.Is(readErr, postgres.ErrImportClaimLost) {
 			return postgres.ErrImportClaimLost
 		}
-		execution := ozon.Result(started, c, readErr)
+		execution := ozon.Result(started, ozon.Counts{}, readErr)
 		outcome := string(execution.Outcome)
 		resource := execution.LimitingResource
+		var ml *moysklad.LimitError
+		var ma *moysklad.APIError
+		if errors.As(readErr, &ml) {
+			outcome, resource = "LIMIT_REACHED", ml.Resource
+		}
+		if errors.As(readErr, &ma) || errors.Is(readErr, moysklad.ErrTransport) {
+			outcome = "API_FAILURE"
+		}
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) || (errors.Is(readErr, context.DeadlineExceeded) && !errors.Is(readErr, errProgress)) {
 			outcome, resource = "LIMIT_REACHED", "duration"
 		} else if errors.Is(readErr, errProgress) {
@@ -102,7 +129,12 @@ func (r Runner) ProcessImport(parent context.Context, t domain.Task, lease time.
 		}
 		return r.Store.FailImport(attempt, t, outcome, resource, observed)
 	}
-	fingerprint, err := application.OzonFingerprint(&snap)
+	var fingerprint string
+	if isMoy {
+		fingerprint, err = application.InventoryFingerprint(&moySnap)
+	} else {
+		fingerprint, err = application.OzonFingerprint(&snap)
+	}
 	if err != nil {
 		return r.Store.FailImport(attempt, t, "INVALID_RESPONSE", "", observed)
 	}
@@ -133,7 +165,11 @@ func (r Runner) ProcessImport(parent context.Context, t domain.Task, lease time.
 		}
 		return err
 	}
-	err = r.Store.CommitClaimedOzonImport(ctx, t, snap, fingerprint, observed, time.Duration(op.Limits.DatabaseTimeoutNS))
+	if isMoy {
+		err = r.Store.CommitClaimedMoyskladImport(ctx, t, moySnap, fingerprint, observed, time.Duration(op.Limits.DatabaseTimeoutNS))
+	} else {
+		err = r.Store.CommitClaimedOzonImport(ctx, t, snap, fingerprint, observed, time.Duration(op.Limits.DatabaseTimeoutNS))
+	}
 	if err == nil {
 		return nil
 	}

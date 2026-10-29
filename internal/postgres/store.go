@@ -70,15 +70,18 @@ func (s *Store) Submit(ctx context.Context, o domain.Observation, max int) (int6
 	return id, nil
 }
 func (s *Store) Claim(ctx context.Context, lease time.Duration) (*domain.Task, error) {
-	return s.claim(ctx, lease, "", true)
+	return s.claim(ctx, lease, "", "", true)
 }
 
 // ClaimForWorker dispatches an import only to a worker configured for the
 // same Ozon account; mock tasks remain available to every worker.
 func (s *Store) ClaimForWorker(ctx context.Context, lease time.Duration, account string) (*domain.Task, error) {
-	return s.claim(ctx, lease, account, false)
+	return s.claim(ctx, lease, account, "", false)
 }
-func (s *Store) claim(ctx context.Context, lease time.Duration, account string, all bool) (*domain.Task, error) {
+func (s *Store) ClaimForCatalogWorker(ctx context.Context, lease time.Duration, ozonAccount, moyskladAccount string) (*domain.Task, error) {
+	return s.claim(ctx, lease, ozonAccount, moyskladAccount, false)
+}
+func (s *Store) claim(ctx context.Context, lease time.Duration, account, moyskladAccount string, all bool) (*domain.Task, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
 	var b [16]byte
@@ -94,14 +97,14 @@ func (s *Store) claim(ctx context.Context, lease time.Duration, account string, 
 	defer tx.Rollback(context.Background())
 	// An expired read-only import may be traversed again; only its fenced
 	// persistence transaction may publish a batch or a terminal result.
-	err = tx.QueryRow(ctx, `WITH candidate AS (SELECT id FROM outbox_tasks WHERE (state='pending' AND available_at<=clock_timestamp() OR state='running' AND lease_until<=clock_timestamp()) AND attempts<max_attempts AND ($3 OR task_type='mock' OR (task_type='ozon_catalog_import' AND import_account_id=$4)) ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE outbox_tasks t SET state='running', attempts=t.attempts+1, claim_token=$1, lease_until=clock_timestamp()+$2::interval, updated_at=clock_timestamp() FROM candidate WHERE t.id=candidate.id RETURNING t.id,t.operation_key,COALESCE(t.observation_id,0),t.attempts,t.max_attempts,t.claim_token,t.task_type,COALESCE(t.import_operation_id,'')`, token, lease.String(), all, account).Scan(&t.ID, &t.OperationKey, &t.ObservationID, &t.Attempts, &t.MaxAttempts, &t.ClaimToken, &t.Type, &t.ImportOperationID)
+	err = tx.QueryRow(ctx, `WITH candidate AS (SELECT id FROM outbox_tasks WHERE (state='pending' AND available_at<=clock_timestamp() OR state='running' AND lease_until<=clock_timestamp()) AND attempts<max_attempts AND ($3 OR task_type='mock' OR (task_type='ozon_catalog_import' AND import_account_id=$4) OR (task_type='moysklad_catalog_import' AND import_account_id=$5)) ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE outbox_tasks t SET state='running', attempts=t.attempts+1, claim_token=$1, lease_until=clock_timestamp()+$2::interval, updated_at=clock_timestamp() FROM candidate WHERE t.id=candidate.id RETURNING t.id,t.operation_key,COALESCE(t.observation_id,0),t.attempts,t.max_attempts,t.claim_token,t.task_type,COALESCE(t.import_operation_id,'')`, token, lease.String(), all, account, moyskladAccount).Scan(&t.ID, &t.OperationKey, &t.ObservationID, &t.Attempts, &t.MaxAttempts, &t.ClaimToken, &t.Type, &t.ImportOperationID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("claim task: %w", err)
 	}
-	if t.Type == domain.OzonCatalogTask {
+	if t.Type == domain.OzonCatalogTask || t.Type == domain.MoyskladCatalogTask {
 		if _, err = tx.Exec(ctx, `UPDATE ozon_import_operations SET started_at=COALESCE(started_at,clock_timestamp()),attempt_started_at=clock_timestamp(),progress_at=clock_timestamp(),phase='READING_PRODUCTS',counters='{}'::jsonb WHERE id=$1`, t.ImportOperationID); err != nil {
 			return nil, fmt.Errorf("start import attempt: %w", err)
 		}
@@ -143,7 +146,7 @@ func (s *Store) ExpireExhausted(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("expire tasks: %w", err)
 	}
-	_, err = tx.Exec(ctx, `WITH expired AS (UPDATE outbox_tasks SET state='failed',last_error='LEASE_EXHAUSTED',claim_token=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE task_type='ozon_catalog_import' AND state='running' AND lease_until<=clock_timestamp() AND attempts>=max_attempts RETURNING import_operation_id) UPDATE ozon_import_operations o SET phase='FAILED',outcome='LEASE_EXHAUSTED',finished_at=clock_timestamp() FROM expired e WHERE o.id=e.import_operation_id`)
+	_, err = tx.Exec(ctx, `WITH expired AS (UPDATE outbox_tasks SET state='failed',last_error='LEASE_EXHAUSTED',claim_token=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE task_type IN ('ozon_catalog_import','moysklad_catalog_import') AND state='running' AND lease_until<=clock_timestamp() AND attempts>=max_attempts RETURNING import_operation_id) UPDATE ozon_import_operations o SET phase='FAILED',outcome='LEASE_EXHAUSTED',finished_at=clock_timestamp() FROM expired e WHERE o.id=e.import_operation_id`)
 	if err != nil {
 		return fmt.Errorf("expire import tasks: %w", err)
 	}
@@ -154,7 +157,7 @@ func (s *Store) ExpireExhausted(ctx context.Context) error {
 func (s *Store) RenewImportClaim(ctx context.Context, t domain.Task, lease time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
-	tag, err := s.Pool.Exec(ctx, `UPDATE outbox_tasks SET lease_until=clock_timestamp()+$3::interval,updated_at=clock_timestamp() WHERE id=$1 AND claim_token=$2 AND task_type='ozon_catalog_import' AND state='running' AND lease_until>clock_timestamp()`, t.ID, t.ClaimToken, lease.String())
+	tag, err := s.Pool.Exec(ctx, `UPDATE outbox_tasks SET lease_until=clock_timestamp()+$3::interval,updated_at=clock_timestamp() WHERE id=$1 AND claim_token=$2 AND task_type IN ('ozon_catalog_import','moysklad_catalog_import') AND state='running' AND lease_until>clock_timestamp()`, t.ID, t.ClaimToken, lease.String())
 	if err != nil {
 		return fmt.Errorf("renew import claim: %w", err)
 	}

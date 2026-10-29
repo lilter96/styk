@@ -27,6 +27,19 @@ func (i Importer) Run(ctx context.Context, account string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("collect MoySklad data: %w", err)
 	}
+	fingerprint, err := InventoryFingerprint(&snap)
+	if err != nil {
+		return false, err
+	}
+	created, err := i.Store.SaveInventoryImport(ctx, snap, fingerprint)
+	if err != nil {
+		return false, fmt.Errorf("persist import: %w", err)
+	}
+	return created, nil
+}
+
+// InventoryFingerprint preserves the existing canonical deduplication rules.
+func InventoryFingerprint(snap *domain.InventoryImport) (string, error) {
 	sort.Slice(snap.Entities, func(a, b int) bool {
 		x, y := snap.Entities[a], snap.Entities[b]
 		if x.Kind != y.Kind {
@@ -57,12 +70,8 @@ func (i Importer) Run(ctx context.Context, account string) (bool, error) {
 		WarehouseStock []domain.WarehouseStockObservation
 	}{snap.Entities, snap.Stock, snap.WarehouseStock})
 	if err != nil {
-		return false, fmt.Errorf("encode import fingerprint: %w", err)
+		return "", fmt.Errorf("encode import fingerprint: %w", err)
 	}
 	sum := sha256.Sum256(canonical)
-	created, err := i.Store.SaveInventoryImport(ctx, snap, hex.EncodeToString(sum[:]))
-	if err != nil {
-		return false, fmt.Errorf("persist import: %w", err)
-	}
-	return created, nil
+	return hex.EncodeToString(sum[:]), nil
 }

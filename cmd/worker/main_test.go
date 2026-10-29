@@ -17,3 +17,22 @@ func TestCatalogClientRequiresValidLocalSettings(t *testing.T) {
 		t.Fatal("invalid rate configuration accepted")
 	}
 }
+
+func TestMoyskladCatalogClientRequiresValidLocalSettings(t *testing.T) {
+	for _, name := range []string{"MOYSKLAD_HTTP_TIMEOUT", "MOYSKLAD_REQUEST_INTERVAL", "MOYSKLAD_RETRY_BACKOFF", "MOYSKLAD_MAX_RETRY_AFTER", "MOYSKLAD_MAX_ATTEMPTS"} {
+		t.Setenv(name, "")
+	}
+	if moyskladCatalogClient("", "synthetic-token") != nil || moyskladCatalogClient("synthetic", "") != nil {
+		t.Fatal("missing configuration accepted")
+	}
+	if moyskladCatalogClient("synthetic", "synthetic-token") == nil {
+		t.Fatal("valid local client unavailable")
+	}
+	for _, name := range []string{"MOYSKLAD_HTTP_TIMEOUT", "MOYSKLAD_REQUEST_INTERVAL", "MOYSKLAD_RETRY_BACKOFF", "MOYSKLAD_MAX_RETRY_AFTER", "MOYSKLAD_MAX_ATTEMPTS"} {
+		t.Setenv(name, "invalid")
+		if moyskladCatalogClient("synthetic", "synthetic-token") != nil {
+			t.Fatal("invalid local settings accepted", name)
+		}
+		t.Setenv(name, "")
+	}
+}
