@@ -31,6 +31,11 @@ import (
 const catalogBrowserOrigin = "http://127.0.0.1:15180"
 const catalogBrowserSourceName = "Название из МойСклад"
 const catalogBrowserOzonDescription = "Описание из Ozon для смешанного направления"
+const catalogBrowserUnmappedID = "8080000001"
+const catalogBrowserUnmappedOffer = "CATALOG-UNMAPPED"
+const catalogBrowserUnmappedName = "Новый товар Ozon без соответствия"
+const catalogBrowserUnmappedDescription = "Описание нового товара из Ozon"
+const catalogBrowserCreatedID = "11111111-1111-4111-8111-111111111111"
 
 // The browser calls the real merchant API and worker, using real catalog
 // adapters against deterministic loopback JSON and an isolated PostgreSQL schema.
@@ -70,7 +75,8 @@ func catalogBrowserTestRoutes(handler http.Handler, simulator *catalogBrowserPro
 		simulator.mu.Lock()
 		defer simulator.mu.Unlock()
 		simulator.encode(w, map[string]any{"moy_writes": simulator.moyWrites, "ozon_writes": simulator.ozonWrites,
-			"polls": simulator.polls, "ozon_name": simulator.ozonName, "moy_description": simulator.moyDescription})
+			"polls": simulator.polls, "ozon_name": simulator.ozonName, "moy_description": simulator.moyDescription,
+			"moy_creates": simulator.moyCreates, "marker_lookups": simulator.markerLookups, "created_readbacks": simulator.createdReadbacks})
 	})
 	mux.Handle("/", handler)
 	return mux
@@ -101,7 +107,8 @@ func seedCatalogBrowserNames(t *testing.T, db *postgres.Store) {
 	}
 	archived := false
 	market := domain.OzonImport{Account: scope.OzonAccount, StartedAt: now.Add(-time.Second), FinishedAt: now,
-		Products: []domain.OzonProduct{{ProductID: testpublication.OzonProduct, OfferID: testpublication.OzonOffer, SKU: testpublication.OzonSKU, Name: "Старое название Ozon", Archived: &archived}}}
+		Products: []domain.OzonProduct{{ProductID: testpublication.OzonProduct, OfferID: testpublication.OzonOffer, SKU: testpublication.OzonSKU, Name: "Старое название Ozon", Archived: &archived},
+			{ProductID: catalogBrowserUnmappedID, OfferID: catalogBrowserUnmappedOffer, SKU: "8080000002", Name: catalogBrowserUnmappedName, Archived: &archived}}}
 	if _, err := db.SaveOzonImport(context.Background(), market, "catalog-browser-market"); err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +152,8 @@ func assertCatalogBrowserEffects(t *testing.T, db *postgres.Store, simulator *ca
 		t.Fatal("approved mixed field values were not observed in provider readback")
 	}
 	var reconciled int
-	if err := db.Pool.QueryRow(context.Background(), `SELECT count(*) FROM catalog_sync_work WHERE state='RECONCILED' AND tenant_id=$1`, testpublication.Tenant).Scan(&reconciled); err != nil || reconciled != 2 {
-		t.Fatalf("normal worker did not durably reconcile both commands: count=%d err=%v", reconciled, err)
+	if err := db.Pool.QueryRow(context.Background(), `SELECT count(*) FROM catalog_sync_work WHERE state='RECONCILED' AND tenant_id=$1`, testpublication.Tenant).Scan(&reconciled); err != nil || reconciled != 3 {
+		t.Fatalf("normal worker did not durably reconcile mixed updates and creation: count=%d err=%v", reconciled, err)
 	}
+	assertCatalogBrowserCreation(t, db, simulator)
 }

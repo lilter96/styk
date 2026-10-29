@@ -12,6 +12,9 @@ const scope = {
 };
 const sourceName = "Название из МойСклад";
 const ozonDescription = "Описание из Ozon для смешанного направления";
+const unmappedName = "Новый товар Ozon без соответствия";
+const unmappedDescription = "Описание нового товара из Ozon";
+const createdID = "11111111-1111-4111-8111-111111111111";
 const password = "synthetic-catalog-browser-password";
 const aEmail = "catalog-stack-a@example.test";
 const bEmail = "catalog-stack-b@example.test";
@@ -23,7 +26,8 @@ type Preview = {
   decisions: {
     enrollment_id: string;
     ready: boolean;
-    validation: unknown[];
+    validation: { code: string }[];
+    target_absent?: boolean;
     plan: {
       changes: { field: string; target: { account: { provider: string } } }[];
       noop: boolean;
@@ -34,7 +38,11 @@ type Preview = {
 type Operation = {
   id: string;
   state: string;
-  targets: { state: string; receipt: { task_id?: string } }[];
+  targets: {
+    state: string;
+    receipt: { task_id?: string };
+    created_target?: { id: string };
+  }[];
 };
 
 test("merchant catalog review dispatches mixed fields through the real stack and survives reload", async ({
@@ -140,8 +148,9 @@ test("merchant catalog review dispatches mixed fields through the real stack and
         { timeout: 25_000, intervals: [100, 250, 500] },
       )
       .toBe(true);
-    expect(await providerState(a)).toMatchObject({
-      moy_writes: 1,
+    const processing = await providerState(a);
+    expect(processing.moy_writes).toBeLessThanOrEqual(1);
+    expect(processing).toMatchObject({
       ozon_writes: 1,
       polls: 0,
       ozon_name: "Старое название Ozon",
@@ -196,11 +205,115 @@ test("merchant catalog review dispatches mixed fields through the real stack and
       ozon_writes: 1,
     });
     await screenshots(a);
+    await creationFlow(a);
   } finally {
     await aContext.close();
     await bContext.close();
   }
 });
+
+async function creationFlow(page: Page) {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page
+    .getByLabel(`Выбрать товар ${sourceName}`, { exact: true })
+    .uncheck();
+  await page
+    .getByRole("combobox", { name: /Список товаров/ })
+    .selectOption("ozon");
+  const row = page.locator("tbody tr").filter({ hasText: "CATALOG-UNMAPPED" });
+  await row
+    .getByRole("button", { name: "Создать в МойСклад", exact: true })
+    .click();
+  await expect(
+    page.getByLabel("Название нового товара", { exact: true }),
+  ).toHaveValue(unmappedName);
+  await page
+    .getByLabel("Описание нового товара", { exact: true })
+    .fill(unmappedDescription);
+  const preview = await review(page);
+  expect(preview.decisions[0]).toMatchObject({
+    ready: true,
+    target_absent: true,
+    validation: [],
+  });
+  expect(preview.decisions[0].commands).toHaveLength(1);
+  expect(preview.decisions[0].commands[0]).toMatchObject({
+    action: "create",
+    target: { account: { provider: "moysklad" }, id: "" },
+    values: {
+      name: { state: "known", data: unmappedName },
+      description: { state: "known", data: unmappedDescription },
+    },
+  });
+  expect(await providerState(page)).toMatchObject({ moy_creates: 0 });
+  await expect(
+    page.getByText("Будет создан новый товар", { exact: true }),
+  ).toBeVisible();
+  await capture(page, "catalog-create-preview.png");
+  await page
+    .getByLabel(`Подтвердить изменения товара ${unmappedName}`, { exact: true })
+    .check();
+  await page.getByLabel(/Я проверил изменения выбранных товаров/).check();
+  const approved = page.waitForResponse(
+    (response) =>
+      response.url().includes("/api/catalog-sync/approve") &&
+      response.request().method() === "POST",
+  );
+  await page
+    .getByRole("button", { name: "Отправить изменения (1)", exact: true })
+    .click();
+  const response = await approved;
+  expect(response.status(), await response.text()).toBe(200);
+  const operation = (await response.json()) as Operation;
+  await expect
+    .poll(
+      async () =>
+        (await operations(page)).find((item) => item.id === operation.id)
+          ?.targets[0],
+      { timeout: 25_000, intervals: [250, 500, 1000] },
+    )
+    .toMatchObject({ state: "RECONCILED", created_target: { id: createdID } });
+  const session = await (
+    await page.request.get(`${origin}/api/session`)
+  ).json();
+  const replay = await page.request.post(`${origin}/api/catalog-sync/approve`, {
+    headers: { Origin: origin, "X-STYK-CSRF": session.csrf },
+    data: response.request().postDataJSON(),
+  });
+  expect(replay.status(), await replay.text()).toBe(200);
+  expect((await replay.json()).id).toBe(operation.id);
+  expect(await operations(page)).toHaveLength(2);
+  expect(await providerState(page)).toMatchObject({
+    moy_creates: 1,
+    moy_writes: 1,
+    ozon_writes: 1,
+  });
+  await page.reload();
+  await page
+    .getByRole("combobox", { name: /Список товаров/ })
+    .selectOption("ozon");
+  await page
+    .getByLabel(`Выбрать товар ${unmappedName}`, { exact: true })
+    .check();
+  const repeated = await review(page);
+  expect(repeated.decisions[0].ready).toBe(false);
+  expect(repeated.decisions[0].commands || []).toHaveLength(0);
+  expect(repeated.decisions[0].validation.map((issue) => issue.code)).toContain(
+    "CREATED_TARGET_REQUIRES_MAPPING",
+  );
+  await expect(
+    page.getByText(
+      "Товар уже создан. Подтвердите соответствие товаров перед дальнейшей синхронизацией.",
+      { exact: false },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Отправить изменения (0)", exact: true }),
+  ).toBeDisabled();
+  expect(await providerState(page)).toMatchObject({ moy_creates: 1 });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await capture(page, "catalog-created-pending-mapping-mobile.png");
+}
 
 async function configureMixedFields(page: Page) {
   await page
@@ -366,10 +479,18 @@ async function register(page: Page, email: string) {
 async function login(page: Page, email: string) {
   await page.getByLabel("Электронная почта", { exact: true }).fill(email);
   await page.getByLabel("Пароль", { exact: true }).fill(password);
+  const signedIn = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/session") &&
+      response.request().method() === "POST",
+    { timeout: 20_000 },
+  );
   await page.getByRole("button", { name: "Войти", exact: true }).click();
+  const response = await signedIn;
+  expect(response.status()).toBe(204);
   await expect(
     page.getByRole("link", { name: "Каталог", exact: true }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 20_000 });
 }
 
 async function selectAccounts(page: Page) {

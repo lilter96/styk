@@ -5,7 +5,6 @@ package integration
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -19,6 +18,8 @@ type catalogBrowserProvider struct {
 	moyName, moyDescription, ozonName, ozonDescription string
 	pendingName                                        string
 	moyWrites, ozonWrites, polls                       int
+	moyCreates, markerLookups, createdReadbacks        int
+	createCode, createSyncID, lastMarker               string
 }
 
 func (p *catalogBrowserProvider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -55,17 +56,15 @@ func (p *catalogBrowserProvider) moy(w http.ResponseWriter, r *http.Request) {
 			p.moyDescription = body["description"].(string)
 		}
 		p.encode(w, p.moyProduct(r))
-	case "/entity/product", "/entity/variant":
-		rows := make([]any, 0, 1)
-		if r.URL.Path == "/entity/product" && r.URL.Query().Get("offset") != "1" {
-			rows = append(rows, p.moyProduct(r))
-		}
-		limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
-		if err != nil || limit < 1 {
-			p.fail(w, "unbounded MoySklad catalog traversal")
+	case "/entity/product/" + catalogBrowserCreatedID:
+		if p.moyCreates != 1 || r.Method != http.MethodGet {
+			p.fail(w, "unexpected created-product readback")
 			return
 		}
-		p.encode(w, map[string]any{"meta": map[string]any{"size": len(rows), "offset": 0, "limit": limit}, "rows": rows})
+		p.createdReadbacks++
+		p.encode(w, p.createdMoyProduct(r))
+	case "/entity/product", "/entity/variant":
+		p.moyCollection(w, r)
 	default:
 		p.fail(w, "unexpected MoySklad catalog endpoint "+r.URL.Path)
 	}
@@ -80,11 +79,11 @@ func (p *catalogBrowserProvider) moyProduct(r *http.Request) map[string]any {
 func (p *catalogBrowserProvider) ozon(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/v3/product/info/list":
-		p.encode(w, map[string]any{"items": []any{p.ozonInfo()}})
+		p.ozonInformation(w, r)
 	case "/v4/product/info/attributes":
-		p.encode(w, map[string]any{"total": "1", "result": []any{p.ozonAttributes()}})
+		p.ozonAttributeInformation(w, r)
 	case "/v1/product/info/description":
-		p.encode(w, map[string]any{"result": map[string]any{"id": json.Number(testpublication.OzonProduct), "offer_id": testpublication.OzonOffer, "description": p.ozonDescription}})
+		p.ozonDescriptionInformation(w, r)
 	case "/v1/description-category/attribute":
 		p.encode(w, map[string]any{"result": []any{p.schemaAttribute(4180, "string"), p.schemaAttribute(4191, "multiline")}})
 	case "/v1/product/attributes/update":
@@ -111,13 +110,13 @@ func (p *catalogBrowserProvider) ozonPoll(w http.ResponseWriter, r *http.Request
 	p.encode(w, map[string]any{"result": map[string]any{"total": 1, "items": []any{map[string]any{"offer_id": testpublication.OzonOffer, "product_id": json.Number(testpublication.OzonProduct), "status": "imported", "errors": []any{}}}}})
 }
 
-func (p *catalogBrowserProvider) ozonInfo() map[string]any {
-	return map[string]any{"id": json.Number(testpublication.OzonProduct), "offer_id": testpublication.OzonOffer,
-		"sku": json.Number(testpublication.OzonSKU), "name": p.ozonName, "price": "100.00", "currency_code": "RUB", "is_archived": false, "images": []any{}, "vat": "0"}
+func (p *catalogBrowserProvider) ozonInfo(fact catalogBrowserOzonFact) map[string]any {
+	return map[string]any{"id": json.Number(fact.id), "offer_id": fact.offer,
+		"sku": json.Number(fact.sku), "name": fact.name, "price": "100.00", "currency_code": "RUB", "is_archived": false, "images": []any{}, "vat": "0"}
 }
 
-func (p *catalogBrowserProvider) ozonAttributes() map[string]any {
-	return map[string]any{"id": json.Number(testpublication.OzonProduct), "offer_id": testpublication.OzonOffer,
+func (p *catalogBrowserProvider) ozonAttributes(fact catalogBrowserOzonFact) map[string]any {
+	return map[string]any{"id": json.Number(fact.id), "offer_id": fact.offer,
 		"description_category_id": 7, "type_id": 8, "height": 1, "width": 2, "depth": 3,
 		"dimension_unit": "mm", "weight": 4, "weight_unit": "g", "attributes": []any{}, "barcodes": []any{}}
 }
