@@ -102,6 +102,8 @@ Ozon announced a buyer-isolated [Seller API sandbox](https://dev.ozon.ru/start/5
 
 The latest observed target state remains **0/0/0**, with no positive write or restoration attempt and no unknown external write outcome from this phase. Acceptance of positive stock, 0-to-1 and 1-to-0 transitions, absolute-versus-additive behavior and propagation delay are **NOT_TESTED**. The prior zero-to-zero response cannot establish those semantics. No STYK adapter or publication gate was changed.
 
+In the subsequent continuation, the owner clarified that the HTTP 403 applies to the Ozon Delivery information method and does not, by itself, invalidate unrelated stock permissions. That method was not retried. No additional provider requests or writes were made: the existing `OZON` showcase observation and the owner’s pending clarification did not establish which control excludes real purchases after a positive stock update. A provider-enforced restriction applicable to this exact offer while stock is positive, or another verifiable buyer-isolated target, remains necessary before the transition can be attempted.
+
 ## Safety and verification
 
 The normal application real-host publication hold remains enabled. An authenticated local enable request returned HTTP 503 `STOCK_PUBLICATION_DISABLED`. The worker was started with no publication or simulator flags; the source adapter still restricts write-enabled clients to an explicit loopback simulator. PostgreSQL contained zero publication operations, zero publication targets and zero active outbox tasks after the lab. No recurring synchronization or automatic marketplace publication was enabled. An already in-flight request or other host's processes were not assessed.
