@@ -60,6 +60,8 @@ type StockSyncTarget struct {
 	SourcePhysical          *string          `json:"source_physical,omitempty"`
 	SourceReserve           *string          `json:"source_reserve,omitempty"`
 	MarketplaceFree         *int64           `json:"marketplace_free,omitempty"`
+	MarketplacePresent      *int64           `json:"marketplace_present,omitempty"`
+	MarketplaceReserved     *int64           `json:"marketplace_reserved,omitempty"`
 	Status                  string           `json:"status"`
 	Checks                  []StockSyncCheck `json:"checks"`
 	// Decision is persisted as an immutable snapshot but is removed from public

@@ -18,6 +18,8 @@ type Target = {
   source_physical?: string;
   source_reserve?: string;
   marketplace_free?: number;
+  marketplace_present?: number;
+  marketplace_reserved?: number;
   status: string;
   checks: Check[];
   source_import_id?: number;
@@ -876,7 +878,8 @@ export function StockSyncControls({
                         МойСклад: {target.source_physical ?? "неизвестно"} шт. ·
                         резерв: {target.source_reserve ?? "неизвестно"} шт. ·
                         Ozon свободно: {target.marketplace_free ?? "неизвестно"}{" "}
-                        шт.
+                        шт. · резерв:{" "}
+                        {target.marketplace_reserved ?? "неизвестно"} шт.
                       </p>
                       <dl>
                         <div>

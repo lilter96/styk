@@ -339,7 +339,7 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 			checks = append(checks, domain.StockSyncCheck{Code: "TEST_TARGET_ALLOWED", Passed: testAllowed, Message: "Тестовая пара, подтверждённые соответствия и ограничение количества проверены."})
 		}
 		ready := d.Status == domain.StockReady && validIDs && stockComplete && qtyValid && settled && sourceIdentity && productIdentity && warehouseIdentity && orderingValid && validStockValues && sourceTraversalFresh && marketTraversalFresh && beforeTraversal && testAllowed
-		item := domain.StockSyncTarget{SettlementOperationID: settlementID, SettlementObservedAt: settlementAt, ProductID: t.pid, WarehouseID: t.wid, SourceItemID: t.item, SourceWarehouseID: t.sourceWarehouse, SourceImportID: e.Source.ImportID, SourcePhysical: e.Source.Physical, SourceReserve: e.Source.Reserve, MarketplaceFree: e.Marketplace.FreeStock, Status: string(d.Status), Checks: checks, Decision: d}
+		item := domain.StockSyncTarget{SettlementOperationID: settlementID, SettlementObservedAt: settlementAt, ProductID: t.pid, WarehouseID: t.wid, SourceItemID: t.item, SourceWarehouseID: t.sourceWarehouse, SourceImportID: e.Source.ImportID, SourcePhysical: e.Source.Physical, SourceReserve: e.Source.Reserve, MarketplaceFree: e.Marketplace.FreeStock, MarketplacePresent: e.Marketplace.Present, MarketplaceReserved: e.Marketplace.Reserved, Status: string(d.Status), Checks: checks, Decision: d}
 		if e.ProductMapping != nil {
 			item.ProductMappingVersion = e.ProductMapping.Version
 		}
