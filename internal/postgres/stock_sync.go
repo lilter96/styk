@@ -260,7 +260,12 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 				e.Proofs[p.Code] = domain.StockProof{State: domain.ProofAttested, EvidenceClass: "OPERATOR_ATTESTED", Reference: "operator-attested: " + p.Reference, AsOf: p.AsOf, ValidUntil: p.ValidUntil}
 			}
 		}
+		guard, guardErr := loadOrderInventoryGuard(ctx, tx, r, e.Source, now)
+		if guardErr != nil {
+			return review, guardErr
+		}
 		d := commitment.Evaluate(r, e, now)
+		guard.Apply(&d)
 		checks := syncChecks(d)
 		if a.AutomaticPolicyRevision != 0 {
 			if automaticTarget != nil {

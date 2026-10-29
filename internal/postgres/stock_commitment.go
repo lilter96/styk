@@ -163,7 +163,12 @@ func (s *Store) calculateStock(ctx context.Context, r domain.StockCalculationReq
 	if err = loadStockCustomerOrders(ctx, tx, r, &e); err != nil {
 		return domain.StockDecision{}, err
 	}
+	guard, guardErr := loadOrderInventoryGuard(ctx, tx, r, e.Source, now)
+	if guardErr != nil {
+		return domain.StockDecision{}, guardErr
+	}
 	d := commitment.Evaluate(r, e, now)
+	guard.Apply(&d)
 	if d.Status == domain.StockReady {
 		return domain.StockDecision{}, errors.New("current imports cannot establish the required readiness proofs")
 	}

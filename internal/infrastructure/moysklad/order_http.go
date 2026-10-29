@@ -2,6 +2,7 @@ package moysklad
 
 import (
 	"context"
+	"crypto/tls"
 	"net/http"
 	"time"
 
@@ -34,6 +35,13 @@ func orderHTTPTransport(source http.RoundTripper) (http.RoundTripper, func()) {
 	clone := transport.Clone()
 	clone.DisableKeepAlives = true
 	clone.ForceAttemptHTTP2 = false
+	if clone.TLSClientConfig == nil {
+		clone.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	} else {
+		clone.TLSClientConfig = clone.TLSClientConfig.Clone()
+	}
+	clone.TLSClientConfig.NextProtos = []string{"http/1.1"}
+	clone.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
 	clone.Protocols = new(http.Protocols)
 	clone.Protocols.SetHTTP1(true)
 	return clone, clone.CloseIdleConnections
