@@ -54,6 +54,23 @@ func TestConsoleScopedAuthenticatedReads(t *testing.T) {
 	if !strings.Contains(w.Body.String(), `"match_status":"CONFIRMED"`) {
 		t.Fatal("confirmed matching status not computed")
 	}
+	w = request("GET", "/api/moysklad-products?"+q.Encode()+"&search=offer", "", cookie)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"kind":"variant"`) || !strings.Contains(w.Body.String(), `"article":"offer"`) {
+		t.Fatal("scoped target search failed")
+	}
+	w = request("GET", "/api/product-mapping-history?"+q.Encode()+"&product=product", "", cookie)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"version":1`) || !strings.Contains(w.Body.String(), `"provenance":"fixture product confirmation"`) {
+		t.Fatal("mapping audit history missing")
+	}
+	badScope := url.Values{"tenant": {f.req.Pool.Tenant + "-other"}, "ozon_account": {f.req.Target.OzonAccount}, "moysklad_account": {f.req.Pool.MoyskladAccount}}
+	w = request("GET", "/api/moysklad-products?"+badScope.Encode(), "", cookie)
+	if w.Code != 404 || strings.Contains(w.Body.String(), "offer") {
+		t.Fatal("cross-tenant search exposed")
+	}
+	w = request("GET", "/api/product-mapping-history?"+badScope.Encode()+"&product=product", "", cookie)
+	if w.Code != 404 || strings.Contains(w.Body.String(), "fixture product confirmation") {
+		t.Fatal("cross-tenant history exposed")
+	}
 	q.Set("search", "absent")
 	w = request("GET", "/api/products?"+q.Encode(), "", cookie)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"items":[]`) {
@@ -192,5 +209,32 @@ func TestConsoleProductPagination(t *testing.T) {
 	first, second := page("0"), page("50")
 	if len(first.Items) != 50 || !first.HasNext || len(second.Items) != 4 || second.HasNext || first.Items[49].ProductID == second.Items[0].ProductID {
 		t.Fatal("invalid product pagination")
+	}
+}
+
+func TestConsoleHistoryRespectsImportHistoryRegistration(t *testing.T) {
+	f := newStockFixtureWithHistory(t, false)
+	secret := strings.Repeat("s", 32)
+	h, err := console.Handler(f.store, secret, "http://127.0.0.1:5173")
+	if err != nil {
+		t.Fatal(err)
+	}
+	login := httptest.NewRequest("POST", "http://127.0.0.1:8080/api/session", strings.NewReader(fmt.Sprintf(`{"secret":%q}`, secret)))
+	login.RemoteAddr = "127.0.0.1:1234"
+	login.Header.Set("Origin", "http://127.0.0.1:5173")
+	login.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, login)
+	if w.Code != 204 {
+		t.Fatal("login failed")
+	}
+	q := url.Values{"tenant": {f.req.Pool.Tenant}, "ozon_account": {f.req.Target.OzonAccount}, "moysklad_account": {f.req.Pool.MoyskladAccount}, "product": {"product"}}
+	r := httptest.NewRequest("GET", "http://127.0.0.1:8080/api/product-mapping-history?"+q.Encode(), nil)
+	r.RemoteAddr = "127.0.0.1:1234"
+	r.AddCookie(w.Result().Cookies()[0])
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"items":[]`) {
+		t.Fatal("pre-registration mapping history was exposed")
 	}
 }

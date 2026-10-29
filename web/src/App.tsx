@@ -1,3 +1,4 @@
+import { ProductReview } from "./ProductReview";
 import { useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { NavLink, Route, Routes } from "react-router-dom";
@@ -276,6 +277,7 @@ export function Overview({
   );
 }
 export function Products({ scope }: { scope: Scope }) {
+  const [review, setReview] = useState<Product | null>(null);
   const [search, setSearch] = useState(""),
     [archived, setArchived] = useState(""),
     [mapping, setMapping] = useState(""),
@@ -315,6 +317,14 @@ export function Products({ scope }: { scope: Scope }) {
           Read only
         </span>
       </div>
+      {review && (
+        <ProductReview
+          key={review.product_id}
+          product={review}
+          scope={scope}
+          close={() => setReview(null)}
+        />
+      )}
       <div className="toolbar">
         <label>
           <span>Search</span>
@@ -384,7 +394,15 @@ export function Products({ scope }: { scope: Scope }) {
               <tbody>
                 {q.data.items.map((p) => (
                   <tr key={p.product_id}>
-                    <td className="primary-cell">{p.offer_id}</td>
+                    <td className="primary-cell">
+                      {p.offer_id}
+                      <button
+                        className="link-button"
+                        onClick={() => setReview(p)}
+                      >
+                        Review
+                      </button>
+                    </td>
                     <td>{p.product_id}</td>
                     <td>{p.sku ?? "Unknown"}</td>
                     <td>

@@ -80,6 +80,8 @@ func Handler(db *postgres.Store, secret, origin string) (http.Handler, error) {
 		writeJSON(w, report)
 	}))
 	mux.HandleFunc("GET /api/products", a.authorized(products(db)))
+	mux.HandleFunc("GET /api/moysklad-products", a.authorized(searchTargets(db)))
+	mux.HandleFunc("GET /api/product-mapping-history", a.authorized(mappingHistory(db)))
 	mux.HandleFunc("GET /api/warehouses", a.authorized(warehouses(db)))
 	mux.HandleFunc("GET /api/stock", a.authorized(stock(db)))
 	return mux, nil
