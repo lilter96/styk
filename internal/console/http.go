@@ -45,6 +45,7 @@ func handlerWithConnections(db *postgres.Store, secret, origin string, connectio
 	}
 	registerCredentialRoutes(mux, a, db, connections)
 	registerStockSyncRoutes(mux, a, db, connections)
+	registerOrderEvidenceRoutes(mux, a, db, connections)
 	imports := newImportAPI(db)
 	mux.HandleFunc("POST /api/session", a.login)
 	mux.HandleFunc("DELETE /api/session", a.authorized(a.logout))

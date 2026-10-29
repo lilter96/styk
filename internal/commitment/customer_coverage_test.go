@@ -87,3 +87,33 @@ func TestStandingTestAssumptionIsExplicitBoundedAndNotFreshEvidence(t *testing.T
 		t.Fatal("long validity was applied to purported provider evidence")
 	}
 }
+
+func TestObservedOrderReserveIsNotSubtractedTwice(t *testing.T) {
+	r, e, now := provenFixture()
+	ten, three, zero := "10", "3", "0"
+	e.Source.Physical, e.Source.Reserve = &ten, &three
+	r.Policy.SafetyStock, e.Unreflected = "0", &zero
+	batch := int64(9)
+	e.CustomerOrders = &domain.StockCustomerOrderEvidence{BatchID: &batch, Positions: []domain.StockObservedOrderPosition{{OrderID: "order", PositionID: "position", Quantity: &three, Reserve: &three, Shipped: &zero}}}
+	e.Proofs[ProofCustomerOrders] = domain.StockProof{State: domain.ProofAttested, EvidenceClass: "OPERATOR_ATTESTED", Reference: "test operator accepts uncertain attribution", AsOf: *e.Source.ObservedAt, ValidUntil: now.Add(5 * time.Minute)}
+	r.Policy.AcceptOperatorAttested = true
+	d := Evaluate(r, e, now)
+	if d.Status != domain.StockReady || d.Quantity == nil || *d.Quantity != "7" {
+		t.Fatalf("reservation not counted once: %+v", d)
+	}
+	e.CustomerOrders.Positions[0].Reserve = nil
+	d = Evaluate(r, e, now)
+	if d.Status != domain.StockReady || d.Evidence.CustomerOrders.Positions[0].Reserve != nil {
+		t.Fatalf("attested unknown was converted to zero: %+v", d)
+	}
+	delete(e.Proofs, ProofCustomerOrders)
+	if d = Evaluate(r, e, now); d.Status == domain.StockReady || d.Quantity != nil {
+		t.Fatalf("unknown attribution was accepted without coverage: %+v", d)
+	}
+	negative := "-1"
+	e.CustomerOrders.Positions[0].Reserve = &negative
+	e.Proofs[ProofCustomerOrders] = domain.StockProof{State: domain.ProofAttested, EvidenceClass: "OPERATOR_ATTESTED", Reference: "operator test", AsOf: *e.Source.ObservedAt, ValidUntil: now.Add(5 * time.Minute)}
+	if d = Evaluate(r, e, now); d.Status != domain.StockBlocked || d.Quantity != nil {
+		t.Fatalf("negative observed reserve accepted: %+v", d)
+	}
+}

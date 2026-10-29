@@ -121,9 +121,48 @@ type StockEvidence struct {
 }
 
 type StockCustomerOrderEvidence struct {
-	BatchID      *int64
-	Correlations []OrderCorrelation
-	Truncated    bool
+	BatchID           *int64
+	Correlations      []OrderCorrelation
+	Truncated         bool
+	WindowFrom        *time.Time                   `json:"window_from,omitempty"`
+	WindowTo          *time.Time                   `json:"window_to,omitempty"`
+	FinishedAt        *time.Time                   `json:"finished_at,omitempty"`
+	Positions         []StockObservedOrderPosition `json:"positions,omitempty"`
+	Postings          []StockObservedPostingLine   `json:"postings,omitempty"`
+	PostingBatchID    *int64                       `json:"posting_batch_id,omitempty"`
+	PostingWindowFrom *time.Time                   `json:"posting_window_from,omitempty"`
+	PostingWindowTo   *time.Time                   `json:"posting_window_to,omitempty"`
+}
+
+// These are bounded observations, not proof that all obligations were seen
+// or that an order is disjoint from the source stock reservation.
+type StockObservedOrderPosition struct {
+	OrderID       string    `json:"order_id"`
+	PositionID    string    `json:"position_id"`
+	ItemKind      string    `json:"item_kind"`
+	ItemID        string    `json:"item_id"`
+	WarehouseID   *string   `json:"warehouse_id,omitempty"`
+	StateID       *string   `json:"state_id,omitempty"`
+	SourceUpdated *string   `json:"source_updated,omitempty"`
+	SourceDeleted *string   `json:"source_deleted,omitempty"`
+	SourceMoment  *string   `json:"source_moment,omitempty"`
+	Applicable    *bool     `json:"applicable,omitempty"`
+	Quantity      *string   `json:"quantity"`
+	Reserve       *string   `json:"reserve"`
+	Shipped       *string   `json:"shipped"`
+	ObservedAt    time.Time `json:"observed_at"`
+}
+
+type StockObservedPostingLine struct {
+	PostingNumber   string     `json:"posting_number"`
+	Status          string     `json:"status"`
+	WarehouseID     string     `json:"warehouse_id"`
+	OfferID         string     `json:"offer_id"`
+	SKU             string     `json:"sku"`
+	Quantity        int64      `json:"quantity"`
+	ObservedAt      time.Time  `json:"observed_at"`
+	SourceCreatedAt *time.Time `json:"source_created_at,omitempty"`
+	SourceUpdatedAt *time.Time `json:"source_updated_at,omitempty"`
 }
 
 type StockDecisionStatus string

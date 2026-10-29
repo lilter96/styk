@@ -164,3 +164,29 @@ func TestBoundedGETsDoNotUseTransparentTransportReplay(t *testing.T) {
 		t.Fatal("unexpected network attempts", c, err)
 	}
 }
+
+func TestBoundedCustomerOrdersStopBeforeAnotherRequest(t *testing.T) {
+	var attempts atomic.Int32
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		if r.URL.Path != "/entity/customerorder" || r.URL.Query().Get("limit") != "100" {
+			t.Errorf("unexpected order request %s %s", r.URL.Path, r.URL.RawQuery)
+			http.Error(w, "invalid", 500)
+			return
+		}
+		if _, err := fmt.Fprintf(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"id":%q,"accountId":"test-account"}]}`, testOrderA); err != nil {
+			t.Errorf("write synthetic response: %v", err)
+		}
+	}))
+	defer s.Close()
+	limits := domain.DefaultMoyskladImportLimits()
+	limits.Requests = 1
+	limits.Attempts = 1
+	limits.Pages = 2
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	got, counts, err := orderClient(t, s).ReadCustomerOrdersBounded(context.Background(), "tenant", "test-account", now.Add(-time.Hour), now, limits)
+	var limit *LimitError
+	if !errors.As(err, &limit) || attempts.Load() != 1 || counts.Attempts != 1 || len(got.Orders) != 0 || !got.StartedAt.IsZero() {
+		t.Fatalf("partial order traversal escaped budget: attempts=%d counts=%+v batch=%+v err=%v", attempts.Load(), counts, got, err)
+	}
+}

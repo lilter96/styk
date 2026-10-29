@@ -103,13 +103,31 @@ func Evaluate(req domain.StockCalculationRequest, e domain.StockEvidence, now ti
 		}
 		add("CUSTOMER_ORDER_IMPORT_MISSING", "A scoped customer-order traversal or accepted, explicitly classified coverage assumption was recorded.", coverage.Reference, orders.BatchID != nil || coverageVerified, false)
 		add("CUSTOMER_ORDER_EVIDENCE_TRUNCATED", "The bounded customer-order evidence was not truncated.", "", !orders.Truncated, false)
-		add("CUSTOMER_ORDER_DETAILS_WITHOUT_BATCH", "Observed order details have a durable scoped batch reference.", "", orders.BatchID != nil || len(orders.Correlations) == 0, true)
+		add("CUSTOMER_ORDER_DETAILS_WITHOUT_BATCH", "Observed order details have a durable scoped batch reference.", "", orders.BatchID != nil || (len(orders.Correlations) == 0 && len(orders.Positions) == 0), true)
 		if orders.BatchID != nil {
 			add("CUSTOMER_ORDER_POSTING_EVIDENCE_MISSING", "A relevant scoped posting observation was considered.", "", len(orders.Correlations) > 0 || coverageVerified, false)
 			add("CUSTOMER_ORDER_BASELINE_INCLUSION_UNKNOWN", "Position reserve inclusion in the stock baseline is proven.", coverage.Reference, coverageVerified, false)
 			states := map[domain.OrderCorrelationStatus]bool{}
 			reserveObserved := false
 			reserveValid := true
+			positionReserveKnown := true
+			positionValuesValid := true
+			for _, p := range orders.Positions {
+				if p.Reserve == nil {
+					positionReserveKnown = false
+				} else {
+					reserveObserved = true
+				}
+				for _, v := range []*string{p.Quantity, p.Reserve, p.Shipped} {
+					if v != nil {
+						if _, ok := wholeNonnegative(*v); !ok {
+							positionValuesValid = false
+						}
+					}
+				}
+			}
+			add("CUSTOMER_ORDER_POSITION_RESERVE_UNKNOWN", "Position reserve is observed or its uncertainty is covered by an accepted assertion.", coverage.Reference, positionReserveKnown || coverageVerified, false)
+			add("CUSTOMER_ORDER_POSITION_QUANTITY_INVALID", "Observed position quantities are nonnegative whole pieces.", "", positionValuesValid, true)
 			for _, c := range orders.Correlations {
 				states[c.Status] = true
 				if c.Truncated {

@@ -274,8 +274,14 @@ type page struct {
 	Rows *[]json.RawMessage `json:"rows"`
 }
 
+type orderPageSizeKey struct{}
+
 func (c *Client) pages(ctx context.Context, path string, extra url.Values, consume func(json.RawMessage) error) error {
 	b, _ := ctx.Value(budgetKey{}).(*budget)
+	pageSize := c.pageSize
+	if v, ok := ctx.Value(orderPageSizeKey{}).(int); ok && v >= 1 && v <= 1000 {
+		pageSize = v
+	}
 	offset, total := 0, -1
 	for {
 		if err := ctx.Err(); err != nil {
@@ -291,7 +297,7 @@ func (c *Client) pages(ctx context.Context, path string, extra url.Values, consu
 		for k, v := range extra {
 			q[k] = v
 		}
-		q.Set("limit", strconv.Itoa(c.pageSize))
+		q.Set("limit", strconv.Itoa(pageSize))
 		q.Set("offset", strconv.Itoa(offset))
 		data, err := c.get(ctx, path, q)
 		if err != nil {

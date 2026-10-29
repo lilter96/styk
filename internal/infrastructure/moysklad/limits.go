@@ -98,3 +98,34 @@ func (c *Client) ReadBoundedProgress(ctx context.Context, account string, l doma
 	}
 	return snap, b.counts, err
 }
+
+// ReadCustomerOrdersBounded uses the same request, response and duration
+// limits as a catalog traversal. Incomplete traversals never return a batch.
+func (c *Client) ReadCustomerOrdersBounded(ctx context.Context, tenant, account string, since, until time.Time, l domain.ImportLimits) (domain.CustomerOrderImport, domain.ImportCounts, error) {
+	if !l.ValidFor("moysklad") {
+		return domain.CustomerOrderImport{}, domain.ImportCounts{}, errors.New("invalid MoySklad limits")
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(l.DurationNS))
+	defer cancel()
+	hc := *c.http
+	transport := hc.Transport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	if tr, ok := transport.(*http.Transport); ok {
+		clone := tr.Clone()
+		clone.DisableKeepAlives = true
+		hc.Transport = clone
+		defer clone.CloseIdleConnections()
+	}
+	b := &budget{limits: l, http: &hc}
+	ctx = context.WithValue(ctx, orderPageSizeKey{}, 100)
+	snap, err := c.ReadCustomerOrders(context.WithValue(ctx, budgetKey{}, b), tenant, account, since, until)
+	if ctx.Err() != nil {
+		err = ctx.Err()
+	}
+	if err != nil {
+		return domain.CustomerOrderImport{}, b.counts, err
+	}
+	return snap, b.counts, nil
+}
