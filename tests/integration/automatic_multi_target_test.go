@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -104,6 +105,15 @@ func TestAutomaticMultipleTargetsScopesAndUnknownIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := automaticMultiScope(t, db, "one", true)
+	// Target 105 is absent from the stock response, while target 102 remains
+	// independently publishable. This must not be interpreted as zero.
+	filtered := a.market.Stocks[:0]
+	for _, row := range a.market.Stocks {
+		if row.ProductID != "105" {
+			filtered = append(filtered, row)
+		}
+	}
+	a.market.Stocks = filtered
 	var writes atomic.Int32
 	var mu sync.Mutex
 	market := map[string]int64{}
@@ -305,6 +315,14 @@ func TestAutomaticMultipleTargetsScopesAndUnknownIsolation(t *testing.T) {
 	}
 	if len(done.Unresolved) != 1 || done.Unresolved[0].ProductID != "101" || done.Unresolved[0].State != "UNKNOWN" || done.Unresolved[0].OperationID != first.LastCycle.PublicationID {
 		t.Fatalf("earlier unknown target disappeared after another publication: %+v", done.Unresolved)
+	}
+	results, ok := done.LastCycle.Metrics["target_results"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing target results: %+v", done.LastCycle.Metrics)
+	}
+	missing, ok := results["105:201"].(map[string]any)
+	if !ok || missing["outcome"] != "BLOCKED" || !strings.Contains(fmt.Sprint(missing["checks"]), "OZON_STOCK_BASELINE_REQUIRED") {
+		t.Fatalf("missing observation not independently blocked: %+v", results["105:201"])
 	}
 	op, err := db.StockPublication(ctx, a.scope, second.LastCycle.PublicationID)
 	if err != nil || len(op.Targets) != 1 || op.Targets[0].ProductID != "102" || op.Targets[0].WarehouseID != "202" || op.Targets[0].ReadbackQuantity == nil || *op.Targets[0].ReadbackQuantity != "4" {
