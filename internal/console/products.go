@@ -63,7 +63,7 @@ func products(db *postgres.Store) http.HandlerFunc {
 			writeError(w, 404, "SCOPE_NOT_REGISTERED")
 			return
 		}
-		rows, e := tx.Query(ctx, `WITH latest AS (SELECT i.id FROM source_imports i JOIN ozon_import_batches b ON b.import_id=i.id AND b.traversal_status='completed' JOIN stock_connections c ON c.source=i.source AND c.account_id=i.account_id AND c.tenant_id=$1 WHERE i.source='ozon' AND i.account_id=$2 AND (c.include_import_history OR i.started_at>=c.registered_at) ORDER BY i.id DESC LIMIT 1), source_latest AS (SELECT i.id FROM source_imports i JOIN stock_connections c ON c.tenant_id=$1 AND c.source=i.source AND c.account_id=i.account_id WHERE i.source='moysklad' AND i.account_id=$3 AND (c.include_import_history OR i.started_at>=c.registered_at) ORDER BY i.id DESC LIMIT 1) SELECT p.product_id,p.offer_id,p.sku,p.archived,CASE WHEN m.moysklad_account=$3 THEN m.target_kind END,CASE WHEN m.moysklad_account=$3 THEN m.target_id END FROM ozon_product_observations p JOIN latest l ON l.id=p.import_id LEFT JOIN product_mappings m ON m.tenant_id=$1 AND m.ozon_account=$2 AND m.ozon_product_id=p.product_id WHERE length($3::text)>0 AND ($4='' OR p.offer_id ILIKE '%'||$4||'%' OR p.product_id ILIKE '%'||$4||'%' OR p.sku ILIKE '%'||$4||'%' OR EXISTS(SELECT 1 FROM source_entities s JOIN source_latest sl ON sl.id=s.import_id WHERE s.kind IN ('product','variant') AND (s.name ILIKE '%'||$4||'%' OR s.article ILIKE '%'||$4||'%' OR s.code ILIKE '%'||$4||'%') AND ((m.moysklad_account=$3 AND s.kind=m.target_kind AND s.external_id=m.target_id) OR (btrim(p.offer_id,$8)<>'' AND (btrim(s.article,$8)=btrim(p.offer_id,$8) OR btrim(s.code,$8)=btrim(p.offer_id,$8)))))) AND ($5='' OR p.archived::text=$5) AND ($7='' OR ($7='confirmed' AND m.moysklad_account=$3) OR ($7='unconfirmed' AND (m.ozon_product_id IS NULL OR m.moysklad_account<>$3))) ORDER BY p.product_id LIMIT 51 OFFSET $6`, tenant, account, moy, search, archived, offset, mappingFilter, matchTrimChars)
+		rows, e := tx.Query(ctx, productPageQuery, tenant, account, moy, search, archived, offset, mappingFilter, matchTrimChars)
 		if e != nil {
 			writeError(w, 503, "PRODUCTS_UNAVAILABLE")
 			return
@@ -72,10 +72,13 @@ func products(db *postgres.Store) http.HandlerFunc {
 		type item struct {
 			ProductID      string      `json:"product_id"`
 			OfferID        string      `json:"offer_id"`
+			Name           *string     `json:"name,omitempty"`
 			SKU            *string     `json:"sku"`
 			Archived       *bool       `json:"archived"`
 			TargetKind     *string     `json:"target_kind"`
 			TargetID       *string     `json:"target_id"`
+			TargetName     *string     `json:"target_name,omitempty"`
+			TargetArticle  *string     `json:"target_article,omitempty"`
 			Status         string      `json:"match_status"`
 			Candidates     []candidate `json:"candidates"`
 			CandidateCount int         `json:"candidate_count"`
@@ -84,7 +87,7 @@ func products(db *postgres.Store) http.HandlerFunc {
 		items := []item{}
 		for rows.Next() {
 			var v item
-			if rows.Scan(&v.ProductID, &v.OfferID, &v.SKU, &v.Archived, &v.TargetKind, &v.TargetID) != nil {
+			if rows.Scan(&v.ProductID, &v.OfferID, &v.SKU, &v.Archived, &v.TargetKind, &v.TargetID, &v.Name, &v.TargetName, &v.TargetArticle) != nil {
 				writeError(w, 503, "PRODUCTS_UNAVAILABLE")
 				return
 			}
@@ -148,6 +151,49 @@ func products(db *postgres.Store) http.HandlerFunc {
 		}{items, hasNext, offset})
 	}
 }
+
+// Materialize searched source records once per request. The membership tests
+// retain both confirmed-target and normalized candidate search semantics without
+// rescanning the source catalog for every Ozon product.
+const productPageQuery = `
+WITH latest AS (
+  SELECT i.id FROM source_imports i
+  JOIN ozon_import_batches b ON b.import_id=i.id AND b.traversal_status='completed'
+  JOIN stock_connections c ON c.source=i.source AND c.account_id=i.account_id AND c.tenant_id=$1
+  WHERE i.source='ozon' AND i.account_id=$2 AND (c.include_import_history OR i.started_at>=c.registered_at)
+  ORDER BY i.id DESC LIMIT 1
+), source_latest AS (
+  SELECT i.id FROM source_imports i
+  JOIN stock_connections c ON c.tenant_id=$1 AND c.source=i.source AND c.account_id=i.account_id
+  WHERE i.source='moysklad' AND i.account_id=$3 AND (c.include_import_history OR i.started_at>=c.registered_at)
+  ORDER BY i.id DESC LIMIT 1
+), searched_targets AS MATERIALIZED (
+  SELECT s.kind,s.external_id,btrim(s.article,$8) AS article,btrim(s.code,$8) AS code
+  FROM source_entities s JOIN source_latest sl ON sl.id=s.import_id
+  WHERE $4<>'' AND s.kind IN ('product','variant')
+    AND (s.name ILIKE '%'||$4||'%' OR s.article ILIKE '%'||$4||'%' OR s.code ILIKE '%'||$4||'%')
+), page AS (
+  SELECT p.product_id,p.offer_id,p.sku,p.archived,
+    CASE WHEN m.moysklad_account=$3 THEN m.target_kind END AS target_kind,
+    CASE WHEN m.moysklad_account=$3 THEN m.target_id END AS target_id,NULLIF(p.name,'') AS name
+  FROM ozon_product_observations p JOIN latest l ON l.id=p.import_id
+  LEFT JOIN product_mappings m ON m.tenant_id=$1 AND m.ozon_account=$2 AND m.ozon_product_id=p.product_id
+  WHERE length($3::text)>0 AND (
+    $4='' OR p.offer_id ILIKE '%'||$4||'%' OR p.product_id ILIKE '%'||$4||'%' OR p.sku ILIKE '%'||$4||'%'
+    OR p.name ILIKE '%'||$4||'%'
+    OR (m.moysklad_account=$3 AND (m.target_kind,m.target_id) IN (SELECT kind,external_id FROM searched_targets))
+    OR (btrim(p.offer_id,$8)<>'' AND (
+      btrim(p.offer_id,$8) IN (SELECT article FROM searched_targets)
+      OR btrim(p.offer_id,$8) IN (SELECT code FROM searched_targets)))
+  ) AND ($5='' OR p.archived::text=$5)
+    AND ($7='' OR ($7='confirmed' AND m.moysklad_account=$3)
+      OR ($7='unconfirmed' AND (m.ozon_product_id IS NULL OR m.moysklad_account<>$3)))
+  ORDER BY p.product_id LIMIT 51 OFFSET $6
+)
+SELECT page.product_id,page.offer_id,page.sku,page.archived,page.target_kind,page.target_id,page.name,NULLIF(mapped.name,''),NULLIF(mapped.article,'')
+FROM page LEFT JOIN source_entities mapped ON mapped.import_id=(SELECT id FROM source_latest)
+  AND mapped.kind=page.target_kind AND mapped.external_id=page.target_id
+ORDER BY page.product_id`
 
 type candidate struct {
 	Kind     string   `json:"kind"`
