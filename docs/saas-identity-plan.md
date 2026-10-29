@@ -60,6 +60,13 @@ production deployment/security review remain outstanding. Rollback migrations
 refuse to delete identity, audit or merchant-draft history; restore a verified
 backup instead of forcing a destructive downgrade.
 
+The two-session browser integration test also runs an isolated second merchant
+against literal-loopback providers. Its disposable schema removes the live-only
+policy check solely to exercise the existing simulator; no real provider is
+contacted. The simulator uses the older publication queue rather than the
+controlled real-account outbox, so that test does not establish a second
+merchant's real publication eligibility or production rollout readiness.
+
 The local development database was migrated from version 32 to 38 on
 2026-10-29. Counts before and after were unchanged: 2 connections, 4 product
 mappings, 1 warehouse mapping, 33 source imports, 20 publications and 1

@@ -13,6 +13,8 @@ const aMoy = "2928cf35-d30a-11f1-0a80-1b9000000355";
 const aOzon = "1549477";
 const bMoy = "00000000-0000-4000-8000-000000000002";
 const bOzon = "987654321";
+const simulatedWorkspace = "synthetic-auto-browser-b";
+const simulation = process.env.STYK_MERCHANT_AUTOSIM === "1";
 
 test("two merchants register, import independently and switch only through membership", async ({
   browser,
@@ -48,6 +50,15 @@ test("two merchants register, import independently and switch only through membe
     data: { email: aEmail },
   });
   expect(claim.status()).toBe(204);
+  if (simulation) {
+    const claimB = await b.request.post(`${testAPI}/__test/claim`, {
+      headers: { "X-Test-Secret": testSecret },
+      data: { email: bEmail, workspace: simulatedWorkspace },
+    });
+    expect(claimB.status()).toBe(204);
+    await b.reload();
+    await selectWorkspace(b, simulatedWorkspace);
+  }
   await a.reload();
   await selectWorkspace(a, aTenant);
   await selectAccounts(a, aMoy, aOzon);
@@ -115,54 +126,91 @@ test("two merchants register, import independently and switch only through membe
     name: "Настроить автоматическую синхронизацию?",
   });
   await settings.getByLabel(/Подтверждаю выбранные настройки/).check();
-  await settings.getByRole("button", { name: "Сохранить настройки" }).click();
+  await settings
+    .getByRole("button", {
+      name: simulation
+        ? "Включить автоматическую проверку"
+        : "Сохранить настройки",
+    })
+    .click();
   await expect(settings).toBeHidden();
-  await expect(automatic.getByText("Ожидает активации")).toBeVisible();
+  if (!simulation)
+    await expect(automatic.getByText("Ожидает активации")).toBeVisible();
 
   const bSession = await (await b.request.get(`${origin}/api/session`)).json();
-  const bTenant = bSession.workspaces[0].id as string;
-  const draft = await (
-    await b.request.get(
-      `${origin}/api/stock-sync/automatic?tenant=${encodeURIComponent(bTenant)}&moysklad_account=${bMoy}&ozon_account=${bOzon}`,
-    )
-  ).json();
-  expect(draft.publication_available).toBe(false);
-  expect(draft.policy.enabled).toBe(false);
-  expect(draft.policy.targets).toHaveLength(1);
-  const unauthorizedEnable = await b.request.post(
-    `${origin}/api/stock-sync/automatic`,
-    {
-      headers: { Origin: origin, "X-STYK-CSRF": bSession.csrf },
-      data: {
-        tenant: bTenant,
-        moysklad_account: bMoy,
-        ozon_account: bOzon,
-        enabled: true,
-        acknowledge: true,
-        idempotency_key: "browser-enable-not-authorized",
-        interval_seconds: 60,
-        valid_minutes: 60,
-        ozon_product_id: "202",
-        ozon_warehouse_id: "1020001323428000",
-        safety_stock: "0",
-        unreflected: "0",
-        unseen_bound: "0",
-        maximum: 2,
+  const bTenant = simulation
+    ? simulatedWorkspace
+    : (bSession.workspaces[0].id as string);
+  const autoURL = `${origin}/api/stock-sync/automatic?tenant=${encodeURIComponent(bTenant)}&moysklad_account=${bMoy}&ozon_account=${bOzon}`;
+  if (simulation) {
+    await expect
+      .poll(
+        async () =>
+          (await (await b.request.get(autoURL)).json()).last_cycle?.outcome,
+        { timeout: 45_000, intervals: [500, 1000, 2000] },
+      )
+      .toBe("RECONCILED");
+    const reconciled = await (await b.request.get(autoURL)).json();
+    expect(reconciled.last_cycle.publication_id).toMatch(/^[a-f0-9]{32}$/);
+    expect(reconciled.last_cycle.metrics.external_writes).toBe(1);
+    expect(reconciled.last_cycle.metrics.reconciled_operations).toBe(1);
+    expect(reconciled.candidates[0]).toMatchObject({
+      ozon_product_id: "202",
+      ozon_warehouse_id: "1020001323428000",
+      source_physical: "2",
+      source_reserve: "0",
+      last_state: "RECONCILED",
+      readback_quantity: "2",
+    });
+    await expect(
+      automatic.getByText("Последняя отправка сверена с данными Ozon."),
+    ).toBeVisible();
+  } else {
+    const draft = await (await b.request.get(autoURL)).json();
+    expect(draft.publication_available).toBe(false);
+    expect(draft.policy.enabled).toBe(false);
+    expect(draft.policy.targets).toHaveLength(1);
+    const unauthorizedEnable = await b.request.post(
+      `${origin}/api/stock-sync/automatic`,
+      {
+        headers: { Origin: origin, "X-STYK-CSRF": bSession.csrf },
+        data: {
+          tenant: bTenant,
+          moysklad_account: bMoy,
+          ozon_account: bOzon,
+          enabled: true,
+          acknowledge: true,
+          idempotency_key: "browser-enable-not-authorized",
+          interval_seconds: 60,
+          valid_minutes: 60,
+          ozon_product_id: "202",
+          ozon_warehouse_id: "1020001323428000",
+          safety_stock: "0",
+          unreflected: "0",
+          unseen_bound: "0",
+          maximum: 2,
+        },
       },
-    },
-  );
-  expect(unauthorizedEnable.status()).toBeGreaterThanOrEqual(400);
+    );
+    expect(unauthorizedEnable.status()).toBeGreaterThanOrEqual(400);
+  }
   const shots =
     process.env.STYK_MERCHANT_SCREENSHOTS_DIR ||
     "/tmp/styk-merchant-workspaces";
   mkdirSync(shots, { recursive: true });
   await b.screenshot({
-    path: join(shots, "configured-desktop.png"),
+    path: join(
+      shots,
+      simulation ? "simulator-desktop.png" : "configured-desktop.png",
+    ),
     fullPage: true,
   });
   await b.setViewportSize({ width: 390, height: 844 });
   await b.screenshot({
-    path: join(shots, "configured-mobile.png"),
+    path: join(
+      shots,
+      simulation ? "simulator-mobile.png" : "configured-mobile.png",
+    ),
     fullPage: true,
   });
   await b.setViewportSize({ width: 1440, height: 900 });

@@ -19,7 +19,10 @@ const (
 	browserOzon       = "987654321"
 )
 
-type merchantFakeProvider struct{ writes atomic.Int32 }
+type merchantFakeProvider struct {
+	writes atomic.Int32
+	stockB atomic.Int32
+}
 
 func merchantFakeReply(w http.ResponseWriter, format string, args ...any) {
 	if _, err := fmt.Fprintf(w, format, args...); err != nil {
@@ -43,8 +46,10 @@ func (p *merchantFakeProvider) ozon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	product, offer, sku := "2764544165", "ATEST-897677", "2889277907"
+	var stock int32
 	if account == browserOzon {
 		product, offer, sku = "202", "B-TEST-OFFER", "203"
+		stock = p.stockB.Load()
 	}
 	switch r.URL.Path {
 	case "/v3/product/list":
@@ -65,10 +70,22 @@ func (p *merchantFakeProvider) ozon(w http.ResponseWriter, r *http.Request) {
 	case "/v2/warehouse/list":
 		merchantFakeReply(w, `{"warehouses":[{"warehouse_id":1020001323428000,"name":"Тестовый FBS","status":"created","is_rfbs":false}],"has_next":false,"cursor":""}`)
 	case "/v2/product/info/stocks-by-warehouse/fbs":
-		merchantFakeReply(w, `{"products":[{"product_id":%s,"offer_id":%q,"sku":%s,"warehouse_id":1020001323428000,"present":0,"reserved":0,"free_stock":0}],"has_next":false,"cursor":""}`, product, offer, sku)
+		merchantFakeReply(w, `{"products":[{"product_id":%s,"offer_id":%q,"sku":%s,"warehouse_id":1020001323428000,"present":%d,"reserved":0,"free_stock":%d}],"has_next":false,"cursor":""}`, product, offer, sku, stock, stock)
 	case "/v2/products/stocks":
+		var request struct {
+			Stocks []struct {
+				ProductID   int64 `json:"product_id"`
+				WarehouseID int64 `json:"warehouse_id"`
+				Stock       int32 `json:"stock"`
+			} `json:"stocks"`
+		}
+		if account != browserOzon || json.NewDecoder(r.Body).Decode(&request) != nil || len(request.Stocks) != 1 || request.Stocks[0].ProductID != 202 || request.Stocks[0].WarehouseID != 1020001323428000 || request.Stocks[0].Stock < 0 || request.Stocks[0].Stock > 10 {
+			http.Error(w, "synthetic write target not allowed", http.StatusForbidden)
+			return
+		}
+		p.stockB.Store(request.Stocks[0].Stock)
 		p.writes.Add(1)
-		http.Error(w, "synthetic writes not authorized by this test", http.StatusForbidden)
+		merchantFakeReply(w, `{"result":[{"product_id":202,"warehouse_id":1020001323428000,"updated":true,"errors":[]}]}`)
 	default:
 		http.Error(w, "unknown synthetic Ozon method", http.StatusNotFound)
 	}
