@@ -303,6 +303,7 @@ function OrdersAccount({
           )}
           <OrdersPostings
             scope={scope}
+            freshnessSeconds={config.data.source_freshness_seconds}
             selected={selected}
             disabled={busy !== null}
             uncertain={uncertain}

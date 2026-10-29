@@ -11,6 +11,19 @@ export type OrderField<T> = {
   value?: T;
 };
 export type OrderMoney = { amount: string; currency: string };
+export type OrderDeliveryCapability = {
+  id: string;
+  revision: number;
+  warehouse_id: string;
+  delivery_method_id: string;
+  scheme: string;
+  carrier: OrderField<string>;
+  destination: OrderField<string>;
+  express: OrderField<boolean>;
+  verified_dimensions: string[];
+  observed_at: string;
+  valid_until: string;
+};
 export type OrderLine = {
   identity: { provider_line_id?: string; sku?: string; offer_id?: string };
   quantity: string;
@@ -29,6 +42,9 @@ export type OrderPosting = {
   substatus: OrderField<string>;
   scheme: OrderField<string>;
   warehouse_id: OrderField<string>;
+  delivery_method_id?: OrderField<string>;
+  delivery_profile?: OrderDeliveryCapability;
+  available_actions?: string[] | null;
   lines: OrderLine[];
   financial: {
     order_total: OrderField<OrderMoney>;

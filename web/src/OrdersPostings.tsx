@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./api";
+import { OrdersActionEligibility } from "./OrdersActionEligibility";
 import {
   knownOrderField,
   orderDate,
@@ -63,6 +64,7 @@ export function OrdersPostings({
   uncertain,
   links,
   onSelected,
+  freshnessSeconds = 300,
 }: {
   scope: OrderScope;
   selected: string[];
@@ -70,6 +72,7 @@ export function OrdersPostings({
   uncertain: string[];
   links: Record<string, string>;
   onSelected: (numbers: string[]) => void;
+  freshnessSeconds?: number;
 }) {
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
@@ -233,6 +236,13 @@ export function OrdersPostings({
                   запрещена до сверки.
                 </p>
               )}
+              <details>
+                <summary>Условия для действий в Ozon</summary>
+                <OrdersActionEligibility
+                  posting={posting}
+                  freshnessSeconds={freshnessSeconds}
+                />
+              </details>
               {(parent || posting.child_posting_numbers?.length > 0) && (
                 <div className="orders-split">
                   {parent && (
