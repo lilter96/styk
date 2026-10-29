@@ -1,0 +1,56 @@
+{
+  "context": {
+    "employee": {
+      "meta": {
+        "href": "https://example.invalid/sanitized",
+        "mediaType": "TEST",
+        "metadataHref": "https://example.invalid/sanitized",
+        "type": "TEST"
+      }
+    }
+  },
+  "meta": {
+    "href": "https://example.invalid/sanitized",
+    "limit": 1,
+    "mediaType": "TEST",
+    "metadataHref": "https://example.invalid/sanitized",
+    "offset": 1,
+    "size": 1,
+    "type": "TEST"
+  },
+  "rows": [
+    {
+      "accountId": "00000000-0000-4000-8000-000000000001",
+      "archived": false,
+      "description": "[redacted]",
+      "externalCode": "TEST",
+      "group": {
+        "meta": {
+          "href": "https://example.invalid/sanitized",
+          "mediaType": "TEST",
+          "metadataHref": "https://example.invalid/sanitized",
+          "type": "TEST"
+        }
+      },
+      "id": "00000000-0000-4000-8000-000000000001",
+      "meta": {
+        "href": "https://example.invalid/sanitized",
+        "mediaType": "TEST",
+        "metadataHref": "https://example.invalid/sanitized",
+        "type": "TEST"
+      },
+      "name": "TEST",
+      "owner": {
+        "meta": {
+          "href": "https://example.invalid/sanitized",
+          "mediaType": "TEST",
+          "metadataHref": "https://example.invalid/sanitized",
+          "type": "TEST"
+        }
+      },
+      "shared": false,
+      "type": "TEST",
+      "updated": "2026-10-30 03:00:00.000"
+    }
+  ]
+}

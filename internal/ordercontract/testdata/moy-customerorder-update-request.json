@@ -1,0 +1,127 @@
+{
+  "agent": {
+    "meta": {
+      "href": "https://example.invalid/sanitized",
+      "mediaType": "TEST",
+      "metadataHref": "https://example.invalid/sanitized",
+      "type": "TEST"
+    }
+  },
+  "applicable": false,
+  "attributes": [
+    {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "meta": {
+        "href": "https://example.invalid/sanitized",
+        "mediaType": "TEST",
+        "type": "TEST"
+      },
+      "name": "TEST",
+      "type": "TEST",
+      "value": "TEST"
+    }
+  ],
+  "code": "TEST",
+  "deliveryPlannedMoment": "2026-10-30 03:00:00.000",
+  "description": "[redacted]",
+  "externalCode": "TEST",
+  "moment": "2026-10-30 03:00:00.000",
+  "name": "TEST",
+  "organization": {
+    "meta": {
+      "href": "https://example.invalid/sanitized",
+      "mediaType": "TEST",
+      "metadataHref": "https://example.invalid/sanitized",
+      "type": "TEST"
+    }
+  },
+  "positions": [
+    {
+      "assortment": {
+        "meta": {
+          "href": "https://example.invalid/sanitized",
+          "mediaType": "TEST",
+          "type": "TEST"
+        }
+      },
+      "discount": 1,
+      "pack": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "quantity": 1,
+        "uom": {
+          "meta": {
+            "href": "https://example.invalid/sanitized",
+            "mediaType": "TEST",
+            "type": "TEST"
+          }
+        }
+      },
+      "price": 1,
+      "quantity": 1,
+      "reserve": 1,
+      "taxSystem": "TEST",
+      "vat": 1,
+      "vatEnabled": false
+    }
+  ],
+  "rate": {
+    "currency": {
+      "meta": {
+        "href": "https://example.invalid/sanitized",
+        "mediaType": "TEST",
+        "metadataHref": "https://example.invalid/sanitized",
+        "type": "TEST"
+      }
+    },
+    "value": 1
+  },
+  "salesChannel": {
+    "meta": {
+      "href": "https://example.invalid/sanitized",
+      "mediaType": "TEST",
+      "type": "TEST"
+    }
+  },
+  "shipmentAddress": "[redacted]",
+  "shipmentAddressFull": {
+    "addInfo": "[redacted]",
+    "apartment": "[redacted]",
+    "city": "[redacted]",
+    "comment": "[redacted]",
+    "country": {
+      "meta": {
+        "href": "https://example.invalid/sanitized",
+        "mediaType": "[redacted]",
+        "metadataHref": "https://example.invalid/sanitized",
+        "type": "[redacted]"
+      }
+    },
+    "house": "[redacted]",
+    "postalCode": "[redacted]",
+    "region": {
+      "meta": {
+        "href": "https://example.invalid/sanitized",
+        "mediaType": "[redacted]",
+        "metadataHref": "https://example.invalid/sanitized",
+        "type": "[redacted]"
+      }
+    },
+    "street": "[redacted]"
+  },
+  "state": {
+    "meta": {
+      "href": "https://example.invalid/sanitized",
+      "mediaType": "TEST",
+      "type": "TEST"
+    }
+  },
+  "store": {
+    "meta": {
+      "href": "https://example.invalid/sanitized",
+      "mediaType": "TEST",
+      "type": "TEST"
+    }
+  },
+  "vatEnabled": false,
+  "vatIncluded": false
+}

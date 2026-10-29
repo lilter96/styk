@@ -1,0 +1,15 @@
+{
+  "cursor": "TEST",
+  "filter": {
+    "since": "TEST",
+    "to": "TEST"
+  },
+  "limit": 1,
+  "sort_dir": "TEST",
+  "with": {
+    "analytics_data": false,
+    "barcodes": false,
+    "financial_data": false,
+    "legal_info": false
+  }
+}

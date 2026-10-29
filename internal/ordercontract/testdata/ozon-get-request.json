@@ -1,0 +1,9 @@
+{
+  "posting_number": "TEST-0001-1",
+  "with": {
+    "analytics_data": false,
+    "barcodes": false,
+    "financial_data": false,
+    "legal_info": false
+  }
+}

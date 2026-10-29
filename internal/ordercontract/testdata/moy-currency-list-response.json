@@ -1,0 +1,22 @@
+{
+  "meta": {
+    "href": "https://example.invalid/sanitized",
+    "limit": 1,
+    "mediaType": "TEST",
+    "offset": 1,
+    "size": 1,
+    "type": "TEST"
+  },
+  "rows": [
+    {
+      "archived": false,
+      "id": "00000000-0000-4000-8000-000000000001",
+      "meta": {
+        "href": "https://example.invalid/sanitized",
+        "mediaType": "TEST",
+        "type": "TEST"
+      },
+      "name": "TEST"
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "attributes": [
+    {
+      "meta": {
+        "href": "https://example.invalid/sanitized",
+        "mediaType": "TEST",
+        "type": "TEST"
+      },
+      "name": "TEST",
+      "required": false,
+      "type": "TEST"
+    }
+  ],
+  "createShared": false,
+  "meta": {
+    "href": "https://example.invalid/sanitized",
+    "mediaType": "TEST"
+  },
+  "states": [
+    {
+      "accountId": "00000000-0000-4000-8000-000000000001",
+      "color": 1,
+      "entityType": "TEST",
+      "id": "00000000-0000-4000-8000-000000000001",
+      "meta": {
+        "href": "https://example.invalid/sanitized",
+        "mediaType": "TEST",
+        "type": "TEST"
+      },
+      "name": "TEST",
+      "stateType": "TEST"
+    }
+  ]
+}

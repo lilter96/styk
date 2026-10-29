@@ -1,0 +1,277 @@
+{
+  "accountId": "00000000-0000-4000-8000-000000000001",
+  "agent": {
+    "meta": {
+      "href": "https://example.invalid/sanitized",
+      "mediaType": "TEST",
+      "metadataHref": "https://example.invalid/sanitized",
+      "type": "TEST"
+    }
+  },
+  "agentAccount": {
+    "meta": {
+      "href": "https://example.invalid/sanitized",
+      "mediaType": "TEST",
+      "type": "TEST"
+    }
+  },
+  "applicable": false,
+  "attributes": [
+    {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "meta": {
+        "href": "https://example.invalid/sanitized",
+        "mediaType": "TEST",
+        "type": "TEST"
+      },
+      "name": "TEST",
+      "type": "TEST",
+      "value": "TEST"
+    }
+  ],
+  "code": "TEST",
+  "contract": {
+    "meta": {
+      "href": "https://example.invalid/sanitized",
+      "mediaType": "TEST",
+      "type": "TEST"
+    }
+  },
+  "created": "2026-10-30 03:00:00.000",
+  "deleted": "TEST",
+  "deliveryPlannedMoment": "2026-10-30 03:00:00.000",
+  "demands": [
+    {
+      "meta": {
+        "href": "https://example.invalid/sanitized",
+        "mediaType": "TEST",
+        "type": "TEST"
+      }
+    }
+  ],
+  "description": "[redacted]",
+  "externalCode": "TEST",
+  "files": {
+    "meta": {
+      "href": "https://example.invalid/sanitized",
+      "mediaType": "TEST",
+      "type": "TEST"
+    }
+  },
+  "group": {
+    "meta": {
+      "href": "https://example.invalid/sanitized",
+      "mediaType": "TEST",
+      "metadataHref": "https://example.invalid/sanitized",
+      "type": "TEST"
+    }
+  },
+  "id": "00000000-0000-4000-8000-000000000001",
+  "invoicedSum": 1,
+  "invoicesOut": [
+    {
+      "meta": {
+        "href": "https://example.invalid/sanitized",
+        "mediaType": "TEST",
+        "type": "TEST"
+      }
+    }
+  ],
+  "meta": {
+    "href": "https://example.invalid/sanitized",
+    "mediaType": "TEST",
+    "metadataHref": "https://example.invalid/sanitized",
+    "type": "TEST"
+  },
+  "moment": "2026-10-30 03:00:00.000",
+  "moves": [
+    {
+      "meta": {
+        "href": "https://example.invalid/sanitized",
+        "mediaType": "TEST",
+        "type": "TEST"
+      }
+    }
+  ],
+  "name": "TEST",
+  "organization": {
+    "meta": {
+      "href": "https://example.invalid/sanitized",
+      "mediaType": "TEST",
+      "metadataHref": "https://example.invalid/sanitized",
+      "type": "TEST"
+    }
+  },
+  "organizationAccount": {
+    "meta": {
+      "href": "https://example.invalid/sanitized",
+      "mediaType": "TEST",
+      "type": "TEST"
+    }
+  },
+  "owner": {
+    "meta": {
+      "href": "https://example.invalid/sanitized",
+      "mediaType": "TEST",
+      "metadataHref": "https://example.invalid/sanitized",
+      "type": "TEST"
+    }
+  },
+  "payedSum": 1,
+  "payments": [
+    {
+      "meta": {
+        "href": "https://example.invalid/sanitized",
+        "mediaType": "TEST",
+        "type": "TEST"
+      }
+    }
+  ],
+  "positions": {
+    "meta": {
+      "href": "https://example.invalid/sanitized",
+      "limit": 1,
+      "mediaType": "TEST",
+      "metadataHref": "https://example.invalid/sanitized",
+      "offset": 1,
+      "size": 1,
+      "type": "TEST"
+    },
+    "rows": [
+      {
+        "accountId": "00000000-0000-4000-8000-000000000001",
+        "assortment": {
+          "meta": {
+            "href": "https://example.invalid/sanitized",
+            "mediaType": "TEST",
+            "type": "TEST"
+          }
+        },
+        "discount": 1,
+        "id": "00000000-0000-4000-8000-000000000001",
+        "pack": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "quantity": 1,
+          "uom": {
+            "meta": {
+              "href": "https://example.invalid/sanitized",
+              "mediaType": "TEST",
+              "type": "TEST"
+            }
+          }
+        },
+        "price": 1,
+        "quantity": 1,
+        "reserve": 1,
+        "shipped": 1,
+        "taxSystem": "TEST",
+        "vat": 1,
+        "vatEnabled": false
+      }
+    ]
+  },
+  "prepayments": [
+    {
+      "meta": {
+        "href": "https://example.invalid/sanitized",
+        "mediaType": "TEST",
+        "type": "TEST"
+      }
+    }
+  ],
+  "printed": false,
+  "productionTasks": [
+    {
+      "meta": {
+        "href": "https://example.invalid/sanitized",
+        "mediaType": "TEST",
+        "type": "TEST"
+      }
+    }
+  ],
+  "project": {
+    "meta": {
+      "href": "https://example.invalid/sanitized",
+      "mediaType": "TEST",
+      "type": "TEST"
+    }
+  },
+  "published": false,
+  "purchaseOrders": [
+    {
+      "meta": {
+        "href": "https://example.invalid/sanitized",
+        "mediaType": "TEST",
+        "type": "TEST"
+      }
+    }
+  ],
+  "rate": {
+    "currency": {
+      "meta": {
+        "href": "https://example.invalid/sanitized",
+        "mediaType": "TEST",
+        "metadataHref": "https://example.invalid/sanitized",
+        "type": "TEST"
+      }
+    },
+    "value": 1
+  },
+  "reservedSum": 1,
+  "salesChannel": {
+    "meta": {
+      "href": "https://example.invalid/sanitized",
+      "mediaType": "TEST",
+      "type": "TEST"
+    }
+  },
+  "shared": false,
+  "shipmentAddress": "[redacted]",
+  "shipmentAddressFull": {
+    "addInfo": "[redacted]",
+    "apartment": "[redacted]",
+    "city": "[redacted]",
+    "comment": "[redacted]",
+    "country": {
+      "meta": {
+        "href": "https://example.invalid/sanitized",
+        "mediaType": "[redacted]",
+        "metadataHref": "https://example.invalid/sanitized",
+        "type": "[redacted]"
+      }
+    },
+    "house": "[redacted]",
+    "postalCode": "[redacted]",
+    "region": {
+      "meta": {
+        "href": "https://example.invalid/sanitized",
+        "mediaType": "[redacted]",
+        "metadataHref": "https://example.invalid/sanitized",
+        "type": "[redacted]"
+      }
+    },
+    "street": "[redacted]"
+  },
+  "shippedSum": 1,
+  "state": {
+    "meta": {
+      "href": "https://example.invalid/sanitized",
+      "mediaType": "TEST",
+      "type": "TEST"
+    }
+  },
+  "store": {
+    "meta": {
+      "href": "https://example.invalid/sanitized",
+      "mediaType": "TEST",
+      "type": "TEST"
+    }
+  },
+  "sum": 1,
+  "syncId": "00000000-0000-4000-8000-000000000001",
+  "taxSystem": "TEST",
+  "updated": "2026-10-30 03:00:00.000",
+  "vatEnabled": false,
+  "vatIncluded": false,
+  "vatSum": 1
+}

@@ -1,0 +1,21 @@
+{
+  "additional_data": [
+    {
+      "posting_number": "TEST-0001-1",
+      "products": [
+        {
+          "currency_code": "TEST",
+          "is_blr_traceable": false,
+          "name": "TEST",
+          "offer_id": "TEST",
+          "price": "TEST",
+          "quantity": 1,
+          "sku": 1
+        }
+      ]
+    }
+  ],
+  "result": [
+    "TEST"
+  ]
+}

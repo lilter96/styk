@@ -1,0 +1,177 @@
+{
+  "cursor": "TEST",
+  "has_next": false,
+  "postings": [
+    {
+      "addressee": {
+        "name": "[redacted]",
+        "phone": "[redacted]"
+      },
+      "analytics_data": {
+        "city": "TEST",
+        "delivery_date_begin": "2026-10-30 03:00:00.000",
+        "delivery_date_end": "2026-10-30 03:00:00.000",
+        "delivery_type": "TEST",
+        "is_legal": false,
+        "is_premium": false,
+        "region": "TEST",
+        "tpl_provider": "TEST",
+        "tpl_provider_id": 1,
+        "warehouse": "TEST",
+        "warehouse_id": 1
+      },
+      "available_actions": [
+        "TEST"
+      ],
+      "barcodes": {
+        "lower_barcode": "TEST",
+        "upper_barcode": "TEST"
+      },
+      "cancellation": {
+        "affect_cancellation_rating": false,
+        "cancel_reason": "TEST",
+        "cancel_reason_id": 1,
+        "cancellation_initiator": "TEST",
+        "cancellation_type": "TEST",
+        "cancelled_after_ship": false
+      },
+      "customer": {
+        "address": {
+          "address_tail": "[redacted]",
+          "city": "[redacted]",
+          "comment": "[redacted]",
+          "country": "[redacted]",
+          "district": "[redacted]",
+          "latitude": 1,
+          "longitude": 1,
+          "provider_pvz_code": "[redacted]",
+          "pvz_code": 1,
+          "region": "[redacted]",
+          "zip_code": "[redacted]"
+        },
+        "customer_id": 1,
+        "name": "[redacted]",
+        "phone": "[redacted]"
+      },
+      "delivering_date": "2026-10-30 03:00:00.000",
+      "delivery_method": {
+        "id": 1,
+        "name": "TEST",
+        "tpl_provider": "TEST",
+        "tpl_provider_id": 1,
+        "warehouse": "TEST",
+        "warehouse_id": 1
+      },
+      "fact_delivery_date": "2026-10-30 03:00:00.000",
+      "financial_data": {
+        "cluster_from": "TEST",
+        "cluster_to": "TEST",
+        "posting_services": {
+          "marketplace_service_item_deliv_to_customer": 1,
+          "marketplace_service_item_direct_flow_trans": 1,
+          "marketplace_service_item_dropoff_ff": 1,
+          "marketplace_service_item_dropoff_pvz": 1,
+          "marketplace_service_item_dropoff_sc": 1,
+          "marketplace_service_item_fulfillment": 1,
+          "marketplace_service_item_pickup": 1,
+          "marketplace_service_item_return_after_deliv_to_customer": 1,
+          "marketplace_service_item_return_flow_trans": 1,
+          "marketplace_service_item_return_not_deliv_to_customer": 1,
+          "marketplace_service_item_return_part_goods_customer": 1
+        },
+        "products": [
+          {
+            "actions": [
+              "TEST"
+            ],
+            "client_price": "TEST",
+            "commission_amount": 1,
+            "commission_percent": 1,
+            "commissions_currency_code": "TEST",
+            "currency_code": "TEST",
+            "item_services": {
+              "marketplace_service_item_deliv_to_customer": 1,
+              "marketplace_service_item_direct_flow_trans": 1,
+              "marketplace_service_item_dropoff_ff": 1,
+              "marketplace_service_item_dropoff_pvz": 1,
+              "marketplace_service_item_dropoff_sc": 1,
+              "marketplace_service_item_fulfillment": 1,
+              "marketplace_service_item_pickup": 1,
+              "marketplace_service_item_return_after_deliv_to_customer": 1,
+              "marketplace_service_item_return_flow_trans": 1,
+              "marketplace_service_item_return_not_deliv_to_customer": 1,
+              "marketplace_service_item_return_part_goods_customer": 1
+            },
+            "old_price": 1,
+            "payout": 1,
+            "picking": {
+              "amount": 1,
+              "moment": "2026-10-30 03:00:00.000",
+              "tag": "TEST"
+            },
+            "price": 1,
+            "product_id": 1,
+            "quantity": 1,
+            "total_discount_percent": 1,
+            "total_discount_value": 1
+          }
+        ]
+      },
+      "in_process_at": "2026-10-30 03:00:00.000",
+      "is_express": false,
+      "is_multibox": false,
+      "multi_box_qty": 1,
+      "optional": {
+        "products_with_possible_mandatory_mark": [
+          1
+        ]
+      },
+      "order_id": 1,
+      "order_number": "TEST",
+      "parent_posting_number": "TEST-0001-1",
+      "pickup_code_verified_at": "TEST",
+      "posting_number": "TEST-0001-1",
+      "products": [
+        {
+          "offer_id": "TEST",
+          "quantity": 1,
+          "sku": 1
+        }
+      ],
+      "quantum_id": 1,
+      "requirements": {
+        "products_requiring_country": [
+          "TEST"
+        ],
+        "products_requiring_gtd": [
+          "TEST"
+        ],
+        "products_requiring_mandatory_mark": [
+          "TEST"
+        ],
+        "products_requiring_rnpt": [
+          "TEST"
+        ]
+      },
+      "scanit": "TEST",
+      "shipment_date": "2026-10-30 03:00:00.000",
+      "shipment_date_without_delay": "2026-10-30 03:00:00.000",
+      "status": "TEST",
+      "substatus": "TEST",
+      "tariffication": [
+        {
+          "current_tariff_charge": "TEST",
+          "current_tariff_charge_currency_code": "TEST",
+          "current_tariff_rate": 1,
+          "current_tariff_type": "TEST",
+          "next_tariff_charge": "TEST",
+          "next_tariff_charge_currency_code": "TEST",
+          "next_tariff_rate": 1,
+          "next_tariff_starts_at": "TEST",
+          "next_tariff_type": "TEST"
+        }
+      ],
+      "tracking_number": "TEST"
+    }
+  ]
+}
