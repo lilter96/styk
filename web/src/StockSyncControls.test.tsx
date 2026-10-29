@@ -38,6 +38,7 @@ function setup({
   deploymentUnavailable = false,
   omitAvailability = false,
   testAccount = false,
+  attestationFails = false,
 }: {
   ready?: boolean;
   lost?: boolean;
@@ -48,6 +49,7 @@ function setup({
   deploymentUnavailable?: boolean;
   omitAvailability?: boolean;
   testAccount?: boolean;
+  attestationFails?: boolean;
 } = {}) {
   let accepted = 0;
   const calls: { path: string; method: string; body: string }[] = [];
@@ -124,6 +126,10 @@ function setup({
       );
     }
     const value = JSON.parse(body);
+    if (path.endsWith("/preview") && value.attestations && attestationFails)
+      return new Response('{"error":"STOCK_SYNC_UNAVAILABLE"}', {
+        status: 503,
+      });
     if (path.endsWith("/preview"))
       return new Response(
         JSON.stringify({
@@ -408,6 +414,18 @@ it("records explicit test assumptions without calling them independent proof", a
   expect(sent.attestations[0].proofs[0].reference).toContain(
     "OPERATOR_ATTESTED",
   );
+});
+it("does not claim test assumptions were saved after a failed review", async () => {
+  setup({ ready: false, testAccount: true, attestationFails: true });
+  const dialog = await openEnable();
+  fireEvent.click(
+    within(dialog).getByLabelText(/Подтверждаю эти тестовые допущения/),
+  );
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Записать тестовые допущения" }),
+  );
+  await within(dialog).findByText(/Не удалось проверить условия отправки/);
+  expect(within(dialog).queryByText(/Допущения записаны/)).toBeNull();
 });
 it("rejects expired reviews and unavailable state without creating an enable request", async () => {
   const { calls } = setup({ expired: true });

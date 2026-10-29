@@ -133,7 +133,9 @@ export function useStockSyncSubmission() {
       }));
       setMessage(
         intent.kind === "enable"
-          ? "Синхронизация включена. Результат отправки появится после ответа Ozon."
+          ? data.test_account_mode
+            ? "Отправка поставлена в очередь. Проверьте результат и остаток Ozon."
+            : "Синхронизация включена. Результат отправки появится после ответа Ozon."
           : intent.kind === "disable"
             ? "Отключение записано. Уже отправленный запрос может ещё выполняться."
             : "Состояние остатков проверено без повторной отправки.",
@@ -427,7 +429,7 @@ export function StockSyncControls({
     }
   }, [commands.completed?.sequence, scopeKey]);
   async function preview(withEvidence = false, testInput?: TestAttestation[]) {
-    if (previewBusy) return;
+    if (previewBusy) return false;
     setPreviewBusy(true);
     setMessage("");
     setAck(false);
@@ -487,6 +489,7 @@ export function StockSyncControls({
         );
       setReview(result);
       setOpen("enable");
+      return true;
     } catch (error) {
       setMessage(
         error instanceof ApiError
@@ -496,11 +499,12 @@ export function StockSyncControls({
             ? error.message
             : "Не удалось проверить условия отправки.",
       );
+      return false;
     } finally {
       setPreviewBusy(false);
     }
   }
-  function attestTestConditions() {
+  async function attestTestConditions() {
     if (!testAck || !view?.test_account_mode || review?.targets.length !== 1)
       return;
     const now = new Date();
@@ -523,8 +527,7 @@ export function StockSyncControls({
         })),
       },
     ];
-    setTestAttestations(attestations);
-    void preview(false, attestations);
+    if (await preview(false, attestations)) setTestAttestations(attestations);
   }
   const scopedPending =
     commands.pending && sameScope(commands.pending.scope, scope);
@@ -602,25 +605,30 @@ export function StockSyncControls({
             </span>
           </div>
           <p>
-            {uncertainOperation
-              ? "Уточните результат предыдущей отправки. Повторная отправка в Ozon не запускается автоматически."
-              : settlementRequired
-                ? "При проверке Ozon вернул ожидаемый остаток. Это не подтверждает актуальность ответа или завершение прежнего запроса. Автоматическая отправка остановлена; перед включением нужна новая проверка."
-                : inFlightDuringHold
-                  ? "Ранее отправленный запрос ещё обрабатывается и может изменить остатки. Новые отправки недоступны."
-                  : deploymentBlocked
-                    ? "Отправка остатков временно недоступна: проверка безопасности ещё не завершена."
-                    : blocked
-                      ? "Новые отправки приостановлены: нужно заново проверить условия и актуальность данных."
-                      : view?.last_confirmed_at
-                        ? `Последнее подтверждённое обновление — ${new Date(view.last_confirmed_at).toLocaleString("ru-RU")}.`
-                        : active
-                          ? "Отправка выполняется только для проверенных данных и подтверждённых соответствий."
-                          : "Остатки в Ozon изменятся только после явного включения и проверки условий."}
+            {readbackRequired
+              ? "Ozon ответил на запрос, но текущий остаток ещё не подтверждён. Уточните результат без повторной отправки."
+              : state === "RECONCILING"
+                ? "Ozon ответил на запрос. Проверяем фактический остаток."
+                : uncertainOperation
+                  ? "Уточните результат предыдущей отправки. Повторная отправка в Ozon не запускается автоматически."
+                  : settlementRequired
+                    ? "При проверке Ozon вернул ожидаемый остаток. Это не подтверждает актуальность ответа или завершение прежнего запроса. Автоматическая отправка остановлена; перед включением нужна новая проверка."
+                    : inFlightDuringHold
+                      ? "Ранее отправленный запрос ещё обрабатывается и может изменить остатки. Новые отправки недоступны."
+                      : deploymentBlocked
+                        ? "Отправка остатков временно недоступна: проверка безопасности ещё не завершена."
+                        : blocked
+                          ? "Новые отправки приостановлены: нужно заново проверить условия и актуальность данных."
+                          : view?.last_confirmed_at
+                            ? `Последнее подтверждённое обновление — ${new Date(view.last_confirmed_at).toLocaleString("ru-RU")}.`
+                            : active
+                              ? "Отправка выполняется только для проверенных данных и подтверждённых соответствий."
+                              : "Остатки в Ozon изменятся только после явного включения и проверки условий."}
           </p>
           {view?.last_operation && (
             <p>
-              Отправлено: {view.last_operation.targets[0]?.quantity ?? "—"} шт.
+              Количество в запросе:{" "}
+              {view.last_operation.targets[0]?.quantity ?? "—"} шт.
               {view.last_operation.targets[0]?.readback_quantity !==
                 undefined && (
                 <>
