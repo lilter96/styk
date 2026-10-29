@@ -425,6 +425,48 @@ func (s *Store) RecordStockReadback(ctx context.Context, scope domain.StockSyncS
 	return tx.Commit(ctx)
 }
 
+// RecordUnknownStockReadback preserves a read-only observation without
+// releasing the UNKNOWN write fence. Even a matching value does not prove the
+// original request has finished or caused the observation.
+func (s *Store) RecordUnknownStockReadback(ctx context.Context, scope domain.StockSyncScope, operationID string, targetID int64, observed *int64, now time.Time) error {
+	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
+	defer cancel()
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(context.Background())
+	if err = syncLock(ctx, tx, scope); err != nil {
+		return err
+	}
+	var desired string
+	err = tx.QueryRow(ctx, `SELECT t.quantity FROM stock_publication_targets t JOIN stock_publications p ON p.id=t.operation_id WHERE p.id=$1 AND p.tenant_id=$2 AND p.moysklad_account=$3 AND p.ozon_account=$4 AND t.id=$5 AND t.state='UNKNOWN' FOR UPDATE OF t`, operationID, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, targetID).Scan(&desired)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.ErrStockSyncStale
+	}
+	if err != nil {
+		return err
+	}
+	var value any
+	var at any
+	outcome := "UNAVAILABLE"
+	if observed != nil && *observed >= 0 {
+		value = strconv.FormatInt(*observed, 10)
+		at = now
+		outcome = "MISMATCH"
+		if value == desired {
+			outcome = "MATCH"
+		}
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO stock_publication_readbacks(target_id,observed_at,quantity,outcome) VALUES($1,$2,$3,$4)`, targetID, now, value, outcome); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE stock_publication_targets SET readback_quantity=COALESCE($2,readback_quantity),readback_at=COALESCE($3,readback_at) WHERE id=$1`, targetID, value, at); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 func (s *Store) StockPublication(ctx context.Context, scope domain.StockSyncScope, id string) (domain.StockPublication, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()

@@ -198,6 +198,15 @@ func (r Runner) Reconcile(ctx context.Context, scope domain.StockSyncScope, id s
 			}
 			continue
 		}
+		if scope == testpublication.Scope() {
+			var observed *int64
+			if readErr == nil {
+				observed = &quantity
+			}
+			if err = r.Store.RecordUnknownStockReadback(ctx, scope, id, t.ID, observed, time.Now().UTC()); err != nil {
+				return domain.StockSyncView{}, err
+			}
+		}
 		if readErr != nil {
 			if ctx.Err() != nil {
 				break

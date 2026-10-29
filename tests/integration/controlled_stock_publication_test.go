@@ -284,3 +284,37 @@ func TestControlledStockPublicationReadbackMismatchIsFenced(t *testing.T) {
 		t.Fatalf("readback audit: %d %v", outcomes, err)
 	}
 }
+
+func TestControlledUnknownReadbackIsAuditedWithoutResending(t *testing.T) {
+	db, review := controlledFixture(t)
+	ctx := context.Background()
+	v := controlledEnable(t, db, review)
+	var writes, reads atomic.Int32
+	client := publicationClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v2/products/stocks" {
+			writes.Add(1)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		reads.Add(1)
+		fmt.Fprint(w, `{"products":[{"product_id":2764544165,"warehouse_id":1020001323428000,"offer_id":"ATEST-897677","free_stock":0,"reserved":0,"present":0}],"has_next":false,"cursor":""}`)
+	})
+	runner := stocksync.Runner{Enabled: true, ControlledTest: true, Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return client, nil }}
+	if _, err := runner.RunNext(ctx); err != nil {
+		t.Fatal(err)
+	}
+	view, err := runner.Reconcile(ctx, review.StockSyncScope, v.LastOperation.ID)
+	if err != nil || view.LastOperation == nil || view.LastOperation.State != "UNKNOWN" || view.LastOperation.Targets[0].ReadbackQuantity == nil || *view.LastOperation.Targets[0].ReadbackQuantity != "0" {
+		t.Fatalf("unknown readback: %+v %v", view.LastOperation, err)
+	}
+	if _, err = runner.RunNext(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if writes.Load() != 1 || reads.Load() != 1 {
+		t.Fatalf("unexpected requests: %d writes %d reads", writes.Load(), reads.Load())
+	}
+	var outcome string
+	if err = db.Pool.QueryRow(ctx, `SELECT outcome FROM stock_publication_readbacks WHERE target_id=$1`, view.LastOperation.Targets[0].ID).Scan(&outcome); err != nil || outcome != "MISMATCH" {
+		t.Fatalf("readback audit: %s %v", outcome, err)
+	}
+}
