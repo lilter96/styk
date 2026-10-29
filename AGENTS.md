@@ -1,3 +1,46 @@
+# Go Development Guidelines
+
+## Commands & Verification
+Always run and pass these checks before completing any task:
+- `golangci-lint run`
+- `go test -race ./...`
+- `go build ./...`
+
+## Code Style & Architecture
+- **Keep happy path left-aligned**: Return early, avoid nested `if-else` chains.
+- **Function size**: Keep functions under 40 lines. Split complex workflows into private helper steps.
+- **Domain logic**: Keep business conditions inside domain methods (e.g., `pool.IsValid()`), not multi-line boolean chains.
+- **Packages**: Use lowercase, single-word names. Never create `util`, `common`, or `helpers`.
+- **Layout**: Put private app code in `internal/`, entry points in `cmd/`.
+
+## Interfaces & Composition
+- **Accept interfaces, return concrete types** (structs or pointers to structs).
+- Define small, consumer-side interfaces (1–3 methods, `-er` suffix).
+- Avoid premature abstractions or mock wrappers if standard types suffice.
+
+## Error Handling
+- Never ignore errors: always check `if err != nil`.
+- Wrap errors with context: `fmt.Errorf("action description: %w", err)`.
+- Inspect errors with `errors.Is` and `errors.As`; never compare error strings (`err.Error() == "..."`).
+- Declare sentinel errors at package level: `var ErrNotFound = errors.New(...)`.
+- Never use `panic` in business/library logic.
+
+## Concurrency & Context
+- Pass `ctx context.Context` as the first argument in all I/O, database, and blocking functions.
+- Never store `context.Context` inside a struct.
+- Every goroutine must have an explicit exit guarantee via `context`, `sync.WaitGroup`, or `errgroup`.
+- Share memory by communicating (channels); do not communicate by sharing memory.
+
+## Testing
+- Use standard table-driven tests (`tests := []struct{ name string, ... }`).
+- Execute subtests using `t.Run(tc.name, func(t *testing.T) { ... })`.
+- Call `t.Parallel()` in unit tests that do not share mutable state.
+
+## Memory & Types
+- Preallocate slices and maps when capacity is predictable: `make([]T, 0, cap)`.
+- Use `strings.Builder` for multi-step string building.
+- Prefer standard `int64` / `float64`; do not introduce `math/big` unless explicitly required by spec.
+
 # Project guidance
 
 STYK is a modular monolith: domain types carry business meaning, application orchestrates work, postgres owns SQL and transactions, and transport exposes only health endpoints. Keep API and worker independent entry points; do not add generic repositories or premature services.
