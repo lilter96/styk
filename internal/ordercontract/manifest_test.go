@@ -29,13 +29,33 @@ func TestManifestAndEveryFieldHaveSanitizedFixtureCoverage(t *testing.T) {
 
 func checkContractFixture(t *testing.T, manifest Manifest, contract Contract) {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("testdata", contract.Fixture))
+	fixtures := map[string]map[string]bool{
+		contract.Fixture: checkedFixturePaths(t, manifest, contract, contract.Fixture),
+	}
+	for _, field := range contract.Fields {
+		paths, loaded := fixtures[field.Fixture]
+		if !loaded {
+			paths = checkedFixturePaths(t, manifest, contract, field.Fixture)
+			fixtures[field.Fixture] = paths
+		}
+		if !paths[field.Path] {
+			t.Errorf("field has no fixture coverage: %s in %s", field.Path, field.Fixture)
+		}
+	}
+}
+
+func checkedFixturePaths(t *testing.T, manifest Manifest, contract Contract, name string) map[string]bool {
+	t.Helper()
+	if filepath.Base(name) != name {
+		t.Fatal("fixture must be in testdata")
+	}
+	data, err := os.ReadFile(filepath.Join("testdata", name))
 	if err != nil {
 		t.Fatal(err)
 	}
 	report := manifest.Validate(contract.Endpoint, contract.Direction, data)
-	if !report.Valid {
-		t.Fatalf("fixture failed: %+v", report)
+	if !report.Valid || report.SchemaVerified != (contract.SchemaStatus == "official_verified") {
+		t.Fatalf("fixture %s failed: %+v", name, report)
 	}
 	var value any
 	if err := json.Unmarshal(data, &value); err != nil {
@@ -43,11 +63,7 @@ func checkContractFixture(t *testing.T, manifest Manifest, contract Contract) {
 	}
 	paths := make(map[string]bool)
 	fixturePaths(value, "$", paths)
-	for _, field := range contract.Fields {
-		if field.Fixture != contract.Fixture || !paths[field.Path] {
-			t.Errorf("field has no fixture coverage: %s", field.Path)
-		}
-	}
+	return paths
 }
 
 func fixturePaths(value any, path string, paths map[string]bool) {

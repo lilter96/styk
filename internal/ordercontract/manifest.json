@@ -40,12 +40,12 @@
     },
     {
       "id": "ozon_news638",
-      "url": "https://dev.ozon.ru/news/638/",
+      "url": "https://dev.ozon.ru/news/638-Novyi-protsess-dostavki-zakazov-v-punkty-vydachi-PVZ/",
       "checked_at": "2026-10-30",
-      "status": "inaccessible",
-      "sha256": "01cff63672ae5950e035156189292d84026424e1aa9ff0700a09c64f3ea0acfa",
+      "status": "official_notice_verified",
+      "sha256": "8e551c51b100c40376cc51702c15ae77f2956c18dfeaac82e2177e26a61f20dd",
       "hash_basis": "evidence_summary_utf8",
-      "evidence": "The supplied short URL returned no accessible document. No endpoint, field, or transition guarantee is inferred from this source."
+      "evidence": "Official notice 638 and its 2025-10-30 update distinguish non-express hybrid Ozon pickup-point delivery. Positive tpl_provider_id identifies the Ozon partner route. A null provider_id identifies seller delivery; a label is mandatory using posting available actions, and the seller changes only Delivering before automatic later statuses. The notice does not verify complete request schemas, action tokens or predecessor status enums."
     },
     {
       "id": "ozon_schema",
@@ -136,6 +136,15 @@
       "sha256": "2c2b85dad1bff1401c96ddc4ed17b9676e9ddfeebe868663a3096a6fc55e669b",
       "hash_basis": "evidence_summary_utf8",
       "evidence": "Official lowercase saleschannel document verifies list discovery and the marketplace channel type. The customerorder native reference uses camelCase salesChannel. Downloaded source content SHA-256: 7bd9096fb73501666549c267dc70db2ce948741aa75992b289dc16ceac8ebb67."
+    },
+    {
+      "id": "moy_customerorder_metadata_observation",
+      "url": "https://api.moysklad.ru/api/remap/1.2/entity/customerorder/metadata",
+      "checked_at": "2026-10-30",
+      "status": "authorized_observed_shape",
+      "sha256": "f78973173f065c942e5d351c154d973f6faa13e493df684344692bed8ad9bb7b",
+      "hash_basis": "evidence_summary_utf8",
+      "evidence": "Authorized 2026-10-30 HTTP200 observation reported customerorder metadata attributes as a MetaArray object with meta href, size, limit, offset, type and mediaType. Only sanitized field shape is retained; no account IDs or source payload are stored. Missing or nonzero size requires separate bounded attribute discovery; metadata href must be checked against the exact configured customerorder metadata/attributes endpoint before use. This observation does not verify a complete provider schema. Sanitized fixture SHA-256: b73254b73b238dddf29fcf2d7e56a3032e8724cadd9397e8fed0997b59543b08."
     }
   ],
   "contracts": [
@@ -15285,13 +15294,14 @@
       "method": "GET",
       "version": "1.2",
       "direction": "response",
-      "schema_status": "official_verified",
-      "coverage": "documented_field_allowlist",
+      "schema_status": "partial_unverified",
+      "coverage": "documented_legacy_array_and_observed_metaarray_allowlist",
       "sources": [
         "moy_customerorder",
-        "moy_general"
+        "moy_general",
+        "moy_customerorder_metadata_observation"
       ],
-      "sha256": "02a4b5a8b55477b6223c38195ff1eddae72b8938efae30d7b51ce35e5a703575",
+      "sha256": "a41173a3a0407ed3b9bfb93e23bb8f5e1d5ce333fc141c1ac5ae908035ed2882",
       "fixture": "moy-customerorder-metadata-response.json",
       "fields": [
         {
@@ -15315,20 +15325,155 @@
         {
           "path": "$.attributes",
           "types": [
-            "array"
+            "array",
+            "object"
           ],
           "presence": "optional",
           "nullable": false,
           "sources": [
-            "moy_customerorder"
+            "moy_customerorder",
+            "moy_customerorder_metadata_observation"
           ],
-          "verification": "official_field_verified",
-          "semantics": "Exact source field $.attributes; retain presence independently of zero and empty values",
+          "verification": "documented_array_and_observed_metaarray_shape",
+          "semantics": "Legacy documented attribute definitions array or observed MetaArray reference object. Presence and zero size are distinct from unknown size. Follow only the exact configured customerorder metadata/attributes endpoint after independent origin/path validation; do not assume unknown size is empty.",
           "destination": "customerorder.attributes (reviewed attribute ID and type required)",
           "classification": "custom",
           "read_only": false,
           "privacy": "customer_personal",
           "fixture": "moy-customerorder-metadata-response.json"
+        },
+        {
+          "path": "$.attributes.meta",
+          "types": [
+            "object"
+          ],
+          "presence": "required",
+          "nullable": false,
+          "sources": [
+            "moy_customerorder_metadata_observation",
+            "moy_general"
+          ],
+          "verification": "authorized_observed_shape",
+          "semantics": "Observed MetaArray metadata container. This shape does not establish complete provider-schema verification.",
+          "destination": "STYK read-only attribute-definition discovery metadata; never send as customerorder attributes values",
+          "classification": "read_only",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "moy-customerorder-metadata-metaarray-response.json"
+        },
+        {
+          "path": "$.attributes.meta.href",
+          "types": [
+            "string"
+          ],
+          "presence": "required",
+          "nullable": false,
+          "sources": [
+            "moy_customerorder_metadata_observation",
+            "moy_general"
+          ],
+          "verification": "authorized_observed_shape",
+          "semantics": "Observed collection reference. Validate against the exact configured customerorder metadata/attributes origin and path before any follow-up read; this structural validator does not authorize a URL.",
+          "destination": "STYK read-only attribute-definition discovery metadata; never send as customerorder attributes values",
+          "classification": "read_only",
+          "read_only": true,
+          "privacy": "operational_identifier",
+          "fixture": "moy-customerorder-metadata-metaarray-response.json"
+        },
+        {
+          "path": "$.attributes.meta.limit",
+          "types": [
+            "integer"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "moy_customerorder_metadata_observation",
+            "moy_general"
+          ],
+          "verification": "authorized_observed_shape",
+          "semantics": "Observed page limit; apply independent configured bounds to discovery.",
+          "destination": "STYK read-only attribute-definition discovery metadata; never send as customerorder attributes values",
+          "classification": "read_only",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "moy-customerorder-metadata-metaarray-response.json"
+        },
+        {
+          "path": "$.attributes.meta.mediaType",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "moy_customerorder_metadata_observation",
+            "moy_general"
+          ],
+          "verification": "authorized_observed_shape",
+          "semantics": "Observed metadata media type; this snapshot is application/json.",
+          "destination": "STYK read-only attribute-definition discovery metadata; never send as customerorder attributes values",
+          "classification": "read_only",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "moy-customerorder-metadata-metaarray-response.json"
+        },
+        {
+          "path": "$.attributes.meta.offset",
+          "types": [
+            "integer"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "moy_customerorder_metadata_observation",
+            "moy_general"
+          ],
+          "verification": "authorized_observed_shape",
+          "semantics": "Observed pagination offset; this integration accepts only the initial collection reference.",
+          "destination": "STYK read-only attribute-definition discovery metadata; never send as customerorder attributes values",
+          "classification": "read_only",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "moy-customerorder-metadata-metaarray-response.json"
+        },
+        {
+          "path": "$.attributes.meta.size",
+          "types": [
+            "integer"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "moy_customerorder_metadata_observation",
+            "moy_general"
+          ],
+          "verification": "authorized_observed_shape",
+          "semantics": "Observed collection count. Explicit zero can establish an empty collection; absence is unknown and requires bounded independent discovery. No complete pagination or snapshot guarantee is inferred.",
+          "destination": "STYK read-only attribute-definition discovery metadata; never send as customerorder attributes values",
+          "classification": "read_only",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "moy-customerorder-metadata-metaarray-response.json"
+        },
+        {
+          "path": "$.attributes.meta.type",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "moy_customerorder_metadata_observation",
+            "moy_general"
+          ],
+          "verification": "authorized_observed_shape",
+          "semantics": "Observed metadata entity type; verify expected attributemetadata independently.",
+          "destination": "STYK read-only attribute-definition discovery metadata; never send as customerorder attributes values",
+          "classification": "read_only",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "moy-customerorder-metadata-metaarray-response.json"
         },
         {
           "path": "$.attributes[]",
@@ -19849,6 +19994,7 @@
     "MoySklad response fields include read-only aggregates and metadata. Write contracts allow only reviewed native/custom fields; positions updates replace the complete collection; syncId immutability is not idempotency.",
     "Native dictionary discovery responses use a small documented reference subset. Expanded records with additional keys require review rather than silent acceptance. Sales channel uses the documented lowercase discovery resource and camelCase native customerorder reference.",
     "No status transition is available solely because a posting endpoint exists. Carrier-managed status writes, Express and PVZ transitions require independent workflow verification.",
-    "Contract SHA256 is over canonical compact JSON of the ordered field rules; Source SHA256 is over the recorded evidence summary. Downloaded source byte hashes are recorded in evidence when obtainable."
+    "Contract SHA256 is over canonical compact JSON of the ordered field rules; Source SHA256 is over the recorded evidence summary. Downloaded source byte hashes are recorded in evidence when obtainable.",
+    "Customerorder metadata attributes accepts the documented legacy array and an authorized observed MetaArray object. The combined profile is partial_unverified; neither shape is a claim that the complete current provider schema was verified. Every field points to a sanitized fixture covering its own variant."
   ]
 }
