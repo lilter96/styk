@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"slices"
 	"time"
 
 	"github.com/lilter96/styk/internal/delivery"
 	"github.com/lilter96/styk/internal/orders"
+	"github.com/lilter96/styk/internal/providercall"
 )
 
 const (
@@ -93,12 +95,13 @@ func (c *OrdersClient) discoverOrderDelivery(ctx context.Context) (delivery.Disc
 		return result, err
 	}
 	result.Methods, err = c.readOrderMethods(ctx)
-	if err != nil {
+	denied := deliveryMethodsDenied(err)
+	if err != nil && !denied {
 		return result, err
 	}
 	result.Profiles = make([]delivery.Profile, 0, len(result.Warehouses)+len(result.Methods))
 	for _, warehouse := range result.Warehouses {
-		profile, classifyErr := delivery.Classify(result.Scope, warehouse, nil, evidence, checked)
+		profile, classifyErr := classifyDeliveryWarehouse(result.Scope, warehouse, evidence, checked, denied)
 		if classifyErr != nil {
 			return result, classifyErr
 		}
@@ -107,8 +110,21 @@ func (c *OrdersClient) discoverOrderDelivery(ctx context.Context) (delivery.Disc
 			return result, err
 		}
 	}
-	result.Complete = true
+	result.Complete = !denied
 	return result, nil
+}
+
+func deliveryMethodsDenied(err error) bool {
+	var api *APIError
+	return errors.Is(err, providercall.ErrMethodForbidden) || (errors.As(err, &api) && api.Status == http.StatusForbidden)
+}
+
+func classifyDeliveryWarehouse(scope delivery.Scope, warehouse delivery.Warehouse, evidence delivery.ContractEvidence, checked time.Time, denied bool) (delivery.Profile, error) {
+	profile, err := delivery.Classify(scope, warehouse, nil, evidence, checked)
+	if err != nil || !denied {
+		return profile, err
+	}
+	return delivery.WithDrift(profile, orders.Drift{Path: "$.delivery_methods", Code: "delivery_methods_access_denied"})
 }
 
 func appendDeliveryMethods(result *delivery.Discovery, warehouse delivery.Warehouse, evidence delivery.ContractEvidence) error {
