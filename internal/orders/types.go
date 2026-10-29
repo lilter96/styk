@@ -65,7 +65,18 @@ type EvidenceRevision struct {
 	ObservedAt        time.Time        `json:"observed_at"`
 	Origin            Origin           `json:"origin"`
 	SourceCommandID   string           `json:"source_command_id,omitempty"`
+	CollectionID      string           `json:"collection_id,omitempty"`
+	LocalSequence     int64            `json:"local_sequence,omitempty"`
+	CollectionKind    CollectionKind   `json:"collection_kind,omitempty"`
+	CheckedAt         time.Time        `json:"checked_at,omitempty"`
 }
+
+type CollectionKind string
+
+const (
+	CollectionSnapshot     CollectionKind = "snapshot"
+	CollectionSerialDetail CollectionKind = "serial_fresh_detail"
+)
 
 type Order struct {
 	Scope             Scope         `json:"scope"`
@@ -117,11 +128,12 @@ type CapabilityRef struct {
 }
 
 type Cancellation struct {
-	ReasonID      Field[string] `json:"reason_id"`
-	Reason        Field[string] `json:"reason"`
-	Type          Field[string] `json:"type"`
-	Initiator     Field[string] `json:"initiator"`
-	AfterShipment Field[bool]   `json:"after_shipment"`
+	ReasonID       Field[string] `json:"reason_id"`
+	Reason         Field[string] `json:"-"`
+	ReasonPresence Presence      `json:"reason_presence"`
+	Type           Field[string] `json:"type"`
+	Initiator      Field[string] `json:"initiator"`
+	AfterShipment  Field[bool]   `json:"after_shipment"`
 }
 
 // ProtectedCustomer is a reference to separately protected PII, never customer
