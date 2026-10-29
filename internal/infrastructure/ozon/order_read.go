@@ -55,6 +55,12 @@ func (c *OrdersClient) ReadOrderPosting(ctx context.Context, scope orders.Scope,
 		return orders.Posting{}, errOrderPayload
 	}
 	posting.Drift = c.orderDrift(orderGetPath, data, posting.Drift)
+	if c.options.ResolveDelivery {
+		posting, err = c.EnrichDelivery(ctx, scope, posting)
+		if err != nil {
+			return orders.Posting{}, err
+		}
+	}
 	return finishOrderPosting(posting)
 }
 

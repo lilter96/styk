@@ -3,8 +3,10 @@ package ozon
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
+	"github.com/lilter96/styk/internal/delivery"
 	"github.com/lilter96/styk/internal/ordercontract"
 	"github.com/lilter96/styk/internal/orders"
 )
@@ -20,16 +22,21 @@ type OrdersClient struct {
 	ReadonlyReaderRequest bool
 	options               OrderReadOptions
 	now                   func() time.Time
+	deliveryMu            sync.Mutex
+	deliveryCache         *delivery.Discovery
+	deliveryFlight        chan struct{}
 }
 
 // OrderReadOptions requests separately authorized optional provider groups.
 // CustomerPII remains transient and must be protected before a page is stored.
 type OrderReadOptions struct {
-	AnalyticsData bool `json:"analytics_data"`
-	FinancialData bool `json:"financial_data"`
-	LegalInfo     bool `json:"legal_info"`
-	Barcodes      bool `json:"barcodes"`
-	CustomerPII   bool `json:"-"`
+	AnalyticsData    bool              `json:"analytics_data"`
+	FinancialData    bool              `json:"financial_data"`
+	LegalInfo        bool              `json:"legal_info"`
+	Barcodes         bool              `json:"barcodes"`
+	CustomerPII      bool              `json:"-"`
+	ResolveDelivery  bool              `json:"-"`
+	DeliveryObserver delivery.Observer `json:"-"`
 }
 
 func NewOrderClient(client *Client, scope orders.Scope) (*OrdersClient, error) {
