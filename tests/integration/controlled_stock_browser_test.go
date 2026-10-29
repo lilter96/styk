@@ -32,7 +32,7 @@ func TestControlledStockPublicationBrowser(t *testing.T) {
 	if os.Getenv("STYK_CONTROLLED_BROWSER_E2E") != "1" {
 		t.Skip("browser E2E not requested")
 	}
-	db, _ := controlledFixture(t)
+	db, _ := controlledFixtureWithMapping(t, false)
 	scope := testpublication.Scope()
 	t.Setenv("OZON_CLIENT_ID", scope.OzonAccount)
 	t.Setenv("OZON_API_KEY", "synthetic-key")
@@ -145,5 +145,9 @@ func TestControlledStockPublicationBrowser(t *testing.T) {
 	var tasks int
 	if err = db.Pool.QueryRow(ctx, `SELECT count(*) FROM outbox_tasks WHERE task_type='stock_publication' AND state='succeeded' AND attempts=1`).Scan(&tasks); err != nil || tasks != 1 {
 		t.Fatalf("outbox count %d: %v", tasks, err)
+	}
+	var productAudits, warehouseAudits int
+	if err = db.Pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM product_mapping_confirmation_audits WHERE tenant_id=$1 AND evidence_class='OPERATOR_ATTESTED'), (SELECT count(*) FROM warehouse_mapping_confirmation_audits WHERE tenant_id=$1 AND evidence_class='OPERATOR_ATTESTED')`, scope.Tenant).Scan(&productAudits, &warehouseAudits); err != nil || productAudits != 1 || warehouseAudits != 1 {
+		t.Fatalf("browser mapping audits product=%d warehouse=%d: %v", productAudits, warehouseAudits, err)
 	}
 }

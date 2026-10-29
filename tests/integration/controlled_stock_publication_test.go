@@ -26,6 +26,10 @@ import (
 // Each case has its own migrated schema. These identifiers deliberately equal
 // the live allowlist, but the database and transport must be strictly local.
 func controlledFixture(t *testing.T) (*postgres.Store, domain.StockSyncReview) {
+	return controlledFixtureWithMapping(t, true)
+}
+
+func controlledFixtureWithMapping(t *testing.T, mapping bool) (*postgres.Store, domain.StockSyncReview) {
 	t.Helper()
 	u, err := url.Parse(os.Getenv("TEST_DATABASE_URL"))
 	if err != nil || (u.Hostname() != "127.0.0.1" && u.Hostname() != "localhost") || !strings.Contains(u.Path, "_test") {
@@ -70,6 +74,9 @@ func controlledFixture(t *testing.T) (*postgres.Store, domain.StockSyncReview) {
 	}
 	if _, err = db.SaveOzonImport(ctx, market, "controlled-synthetic-market"); err != nil {
 		t.Fatal(err)
+	}
+	if !mapping {
+		return db, domain.StockSyncReview{}
 	}
 	pr, err := db.CreateMappingReview(ctx, domain.MappingReviewRequest{Tenant: scope.Tenant, MoyskladAccount: scope.MoyskladAccount, OzonAccount: scope.OzonAccount, ProductID: testpublication.OzonProduct, TargetKind: "product", TargetID: testpublication.SourceProduct, Evidence: domain.MappingOperatorAttested, SessionID: "synthetic-session", Lifetime: time.Minute})
 	if err != nil {
