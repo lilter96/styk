@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ApiError, api, params, type ImportProvider } from "./api";
+import { ApiError, api, authFetch, params, type ImportProvider } from "./api";
 
 export type CredentialScope = {
   tenant: string;
@@ -115,7 +115,7 @@ export function useCredentialSubmission() {
     setMessage("");
     setCode("");
     try {
-      const response = await fetch(intent.path, {
+      const response = await authFetch(intent.path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: intent.body,

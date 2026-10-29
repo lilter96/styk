@@ -153,6 +153,45 @@ body {
   border-radius: 16px;
   background: #fff;
   box-shadow: 0 12px 32px #0f172a1a;
+  max-height: calc(100dvh - 80px);
+  overflow-y: auto;
+}
+.merchant-workspace-settings {
+  flex-basis: 100%;
+  color: #334155;
+  font-size: 14px;
+}
+.merchant-workspace-settings summary {
+  color: #2255c7;
+  cursor: pointer;
+  font-weight: 600;
+}
+.merchant-workspace-settings h3 {
+  font-size: 14px;
+  margin: 18px 0 10px;
+}
+.merchant-workspace-settings form {
+  margin: 12px 0;
+}
+.merchant-member {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #e2e8f0;
+  overflow-wrap: anywhere;
+}
+.merchant-member small {
+  display: block;
+  color: #64748b;
+}
+.publication-eligibility {
+  border-left: 3px solid #365fe1;
+  padding: 10px 14px;
+  background: #f1f5ff;
+  color: #253b71;
+  line-height: 1.5;
 }
 .workspace-popover .scope-panel {
   display: flex;

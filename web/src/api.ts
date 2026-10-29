@@ -1,3 +1,30 @@
+let csrfToken = "";
+
+// Kept only in memory; the authentication cookie itself remains HttpOnly.
+export function setCSRF(token: string) {
+  csrfToken = token;
+}
+
+export async function authFetch(path: string, init: RequestInit = {}) {
+  const method = (init.method || "GET").toUpperCase();
+  let options = init;
+  if (csrfToken && method !== "GET" && method !== "HEAD") {
+    const headers = new Headers(init.headers);
+    headers.set("X-STYK-CSRF", csrfToken);
+    options = { ...init, headers };
+  }
+  const response = await fetch(path, options);
+  if (
+    response.status === 401 &&
+    path !== "/api/session" &&
+    !path.startsWith("/api/verification") &&
+    !path.startsWith("/api/password-reset")
+  ) {
+    window.dispatchEvent(new Event("styk-session-expired"));
+  }
+  return response;
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -11,7 +38,7 @@ export class ApiError extends Error {
   }
 }
 export async function api<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const r = await fetch(path, { credentials: "same-origin", signal });
+  const r = await authFetch(path, { credentials: "same-origin", signal });
   if (!r.ok) throw await apiError(r);
   if (r.status === 204) return null as T;
   return r.json() as Promise<T>;
@@ -37,7 +64,7 @@ export async function post<T>(
   body: unknown,
   signal?: AbortSignal,
 ): Promise<T> {
-  const r = await fetch(path, {
+  const r = await authFetch(path, {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
@@ -169,7 +196,7 @@ export async function sendImportIntent(
   intent: ImportIntent,
   signal?: AbortSignal,
 ): Promise<ImportSubmission> {
-  const r = await fetch("/api/imports", {
+  const r = await authFetch("/api/imports", {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
@@ -288,7 +315,7 @@ export async function sendConfirmation(
   intent: ConfirmationIntent,
   signal?: AbortSignal,
 ): Promise<ConfirmationResult> {
-  const response = await fetch(
+  const response = await authFetch(
     `/api/${intent.kind}-mapping-reviews/${intent.reviewId}/confirm`,
     {
       method: "POST",

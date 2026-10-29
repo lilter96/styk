@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, ApiError, params, post } from "./api";
+import { api, ApiError, authFetch, params, post } from "./api";
 import { IntegrationDialog } from "./IntegrationDialog";
 import {
   AutomaticStockControls,
@@ -129,7 +129,7 @@ export function useStockSyncSubmission() {
     setMessage("");
     setCode("");
     try {
-      const response = await fetch(intent.path, {
+      const response = await authFetch(intent.path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: intent.body,
@@ -917,7 +917,7 @@ export function StockSyncControls({
             )}
         </div>
       </section>
-      {view?.test_account_mode && (
+      {view && (
         <AutomaticStockControls
           scope={scope}
           targets={view.targets}

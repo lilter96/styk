@@ -1027,3 +1027,28 @@ td {
 .stock-shadow-dialog .shadow-reason { color: #92400e; }
 .stock-shadow-dialog details { margin-top: 14px; line-height: 1.5; }
 @media (max-width: 520px) { .stock-shadow-dialog .shadow-heading { flex-direction: column; gap: 8px; } }
+
+.merchant-login-panel form small {
+  color: #657687;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+.merchant-auth-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin-top: 20px;
+}
+.login-panel .merchant-auth-links .text-action {
+  background: transparent;
+  color: #2255c7;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+}
+.merchant-auth-message {
+  color: #176146;
+  line-height: 1.5;
+  margin: 0;
+}

@@ -168,6 +168,26 @@ export function Integrations({
     enabled: !!tenant,
     retry: false,
   });
+  const eligibility = useQuery({
+    queryKey: [
+      "publication-eligibility",
+      tenant,
+      selected?.moy,
+      selected?.ozon,
+    ],
+    queryFn: ({ signal }) =>
+      api<{ state: string }>(
+        "/api/stock-sync/eligibility?" +
+          params({
+            tenant,
+            moysklad_account: selected?.moy || "",
+            ozon_account: selected?.ozon || "",
+          }),
+        signal,
+      ),
+    enabled: !!tenant && !!selected?.moy && !!selected?.ozon,
+    retry: false,
+  });
   function openSettings(provider: ImportProvider) {
     if (!uncertain) setMessage("");
     setSettingsProvider(provider);
@@ -373,6 +393,15 @@ export function Integrations({
           остатков.
         </p>
       </div>
+      {eligibility.data?.state && (
+        <p className="publication-eligibility" role="status">
+          {eligibility.data.state === "CONTROLLED_TEST_AVAILABLE"
+            ? "Тестовая публикация разрешена для этой пары аккаунтов."
+            : eligibility.data.state === "CONTROLLED_TEST_DISABLED"
+              ? "Тестовая публикация выключена. Чтение данных доступно."
+              : "Доступно чтение данных. Публикация остатков ожидает отдельной активации."}
+        </p>
+      )}
       {notice}
       {!settingsProvider && settingsFeedback}
       {query.isLoading && <p role="status">Загружаем интеграции…</p>}

@@ -38,7 +38,12 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
-function setup(status = "CURRENT", loseResponse = false, rejection = "") {
+function setup(
+  status = "CURRENT",
+  loseResponse = false,
+  rejection = "",
+  principal = "LOCAL_OPERATOR_SESSION",
+) {
   let confirmed = false;
   let count = 0;
   const mock = vi
@@ -83,7 +88,7 @@ function setup(status = "CURRENT", loseResponse = false, rejection = "") {
               existing_mapping_version: null,
             },
             status,
-            principal_type: "LOCAL_OPERATOR_SESSION",
+            principal_type: principal,
           }),
           { status: 200 },
         );
@@ -123,6 +128,36 @@ function setup(status = "CURRENT", loseResponse = false, rejection = "") {
   );
   return mock;
 }
+it("permits an authenticated merchant review", async () => {
+  const mock = setup("CURRENT", false, "", "MERCHANT_SESSION");
+  await create();
+  fireEvent.click(
+    screen.getByLabelText(/Подтверждаю соответствие выбранных складов/),
+  );
+  const button = screen.getByRole("button", {
+    name: "Подтвердить соответствие складов",
+  }) as HTMLButtonElement;
+  expect(button.disabled).toBe(false);
+  fireEvent.click(button);
+  await screen.findByText("Соответствие складов сохранено.");
+  expect(
+    mock.mock.calls.filter(([p]) => String(p).endsWith("/confirm")),
+  ).toHaveLength(1);
+});
+it("does not confirm a review with an unknown principal", async () => {
+  setup("CURRENT", false, "", "UNEXPECTED");
+  await create();
+  fireEvent.click(
+    screen.getByLabelText(/Подтверждаю соответствие выбранных складов/),
+  );
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Подтвердить соответствие складов",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+});
 async function create() {
   fireEvent.click(
     await screen.findByRole("button", { name: "Проверить пару складов" }),

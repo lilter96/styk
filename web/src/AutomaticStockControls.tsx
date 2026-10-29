@@ -32,6 +32,7 @@ export type AutomaticRecoveryTarget = {
 };
 type AutoView = {
   available: boolean;
+  publication_available?: boolean;
   policy?: {
     revision: number;
     enabled: boolean;
@@ -158,6 +159,7 @@ export function AutomaticStockControls({
     setMessage("");
   }, [scope.tenant, scope.moysklad_account, scope.ozon_account]);
   if (!data?.available) return null;
+  const canPublish = data.publication_available !== false;
   const keyFor = (t: Target) => `${t.ozon_product_id}:${t.ozon_warehouse_id}`;
   const allTargets = data.candidates ?? targets;
   const availableTargets = allTargets.filter(
@@ -307,14 +309,14 @@ export function AutomaticStockControls({
       setBusy(false);
     }
   }
-  function configure(turnOn: boolean) {
+  function configure(turnOn: boolean, draft = false) {
     if (pending || busy) return;
     const body = {
       ...scope,
       enabled: turnOn,
       acknowledge: true,
       idempotency_key: crypto.randomUUID(),
-      ...(turnOn && current
+      ...((turnOn || draft) && current
         ? {
             interval_seconds: Number(interval),
             valid_minutes: Number(validMinutes),
@@ -410,7 +412,9 @@ export function AutomaticStockControls({
               className={`connection-state ${needsAttention || expired ? "warning" : enabled ? "verified" : ""}`}
             >
               {!enabled
-                ? "Выключена"
+                ? canPublish
+                  ? "Выключена"
+                  : "Ожидает активации"
                 : expired
                   ? "Нужна проверка"
                   : activeCycle
@@ -429,7 +433,9 @@ export function AutomaticStockControls({
                 "Проверьте данные и настройки синхронизации."
               : enabled
                 ? "Остатки проверяются автоматически для выбранной тестовой пары."
-                : "Включите автоматическую проверку выбранного товара и склада."}
+                : canPublish
+                  ? "Включите автоматическую проверку выбранного товара и склада."
+                  : "Настройки можно сохранить. Отправка остатков ожидает отдельной активации."}
           </p>
           {cycle && (
             <p>
@@ -642,6 +648,20 @@ export function AutomaticStockControls({
             <button
               disabled={busy || !!pending || !availableTargets.length}
               onClick={() => {
+                const policy = data.policy;
+                const target = policy?.targets[0];
+                if (policy) setInterval(String(policy.interval_seconds));
+                if (target) {
+                  setSelected(
+                    policy?.targets.map(
+                      (t) => `${t.ozon_product_id}:${t.ozon_warehouse_id}`,
+                    ) || [],
+                  );
+                  setSafety(target.safety_stock);
+                  setUnreflected(target.unreflected);
+                  setBound(target.unseen_bound);
+                  setMaximum(String(target.maximum));
+                }
                 setAck(false);
                 setInitialConfirmed([]);
                 setOpen(true);
@@ -661,9 +681,9 @@ export function AutomaticStockControls({
         >
           <div className="provider-settings-body">
             <p>
-              Для выбранных тестовых аккаунтов STYK будет автоматически читать
-              остатки и отправлять изменения в Ozon. Положительный остаток может
-              быть доступен реальным покупателям.
+              {canPublish
+                ? "Для выбранных тестовых аккаунтов STYK будет автоматически читать остатки и отправлять изменения в Ozon. Положительный остаток может быть доступен реальным покупателям."
+                : "Сохраните правила для выбранных товаров. До отдельной активации STYK не будет автоматически отправлять остатки."}
             </p>
             {availableTargets.length > 1 ? (
               <fieldset className="integration-field">
@@ -823,8 +843,9 @@ export function AutomaticStockControls({
                 checked={ack}
                 onChange={(e) => setAck(e.target.checked)}
               />
-              Подтверждаю выбранные настройки и принимаю риск автоматической
-              отправки для тестовых аккаунтов.
+              {canPublish
+                ? "Подтверждаю выбранные настройки и принимаю риск автоматической отправки для тестовых аккаунтов."
+                : "Подтверждаю выбранные настройки. Отправка требует отдельной активации."}
             </label>
             <div className="provider-actions">
               <button
@@ -837,9 +858,11 @@ export function AutomaticStockControls({
                   busy ||
                   !!pending
                 }
-                onClick={() => configure(true)}
+                onClick={() => configure(canPublish, !canPublish)}
               >
-                Включить автоматическую проверку
+                {canPublish
+                  ? "Включить автоматическую проверку"
+                  : "Сохранить настройки"}
               </button>
               <button
                 className="secondary"

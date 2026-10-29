@@ -119,7 +119,9 @@ export function WarehouseReview({
     reviewed.ozon_warehouse_id === ozon &&
     reviewed.moysklad_import_id > 0 &&
     reviewed.ozon_import_id > 0 &&
-    durable.data?.principal_type === "LOCAL_OPERATOR_SESSION";
+    ["LOCAL_OPERATOR_SESSION", "MERCHANT_SESSION"].includes(
+      durable.data?.principal_type || "",
+    );
   async function createReview() {
     if (creating || active.pending || !eligible) return;
     setCreating(true);

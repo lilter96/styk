@@ -10,6 +10,8 @@ import {
 } from "./ImportSubmission";
 import { ProductMappingPage } from "./ProductMappingPage";
 import { WarehouseReview } from "./WarehouseReview";
+import { MerchantAuth } from "./MerchantAuth";
+import { WorkspaceSettings } from "./WorkspaceSettings";
 import {
   ConfirmationNotice,
   useConfirmation,
@@ -26,7 +28,9 @@ import {
 } from "react-router-dom";
 import {
   api,
+  authFetch,
   params,
+  setCSRF,
   type Account,
   type Batch,
   type Page,
@@ -36,6 +40,12 @@ import {
 } from "./api";
 
 type Scope = { tenant: string; moy: string; ozon: string };
+type MerchantSession = {
+  user: { id: string; email: string };
+  workspaces: { id: string; name: string; role: string }[];
+  csrf: string;
+  expires_at: string;
+};
 const stateLabels: Record<string, string> = {
   PASS: "В порядке",
   WARN: "Нужно проверить",
@@ -724,14 +734,60 @@ export function App() {
   ]);
   const session = useQuery({
     queryKey: ["session"],
-    queryFn: ({ signal }) => api<null>("/api/session", signal),
+    queryFn: async ({ signal }) => {
+      const value = await api<MerchantSession | null>("/api/session", signal);
+      setCSRF(value?.csrf || "");
+      return value;
+    },
+    retry: false,
+    refetchInterval: 15000,
+    refetchOnWindowFocus: true,
+  });
+  const authMode = useQuery({
+    queryKey: ["auth-mode"],
+    queryFn: ({ signal }) =>
+      api<{ mode: "local" | "merchant" }>("/api/auth-mode", signal),
+    enabled: session.isError,
     retry: false,
   });
   const [initialWorkspace] = useState(savedWorkspace);
+  const [workspaceOpen, setWorkspaceOpen] = useState(!initialWorkspace.tenant);
   const [tenant, setTenant] = useState(initialWorkspace.tenant),
     [chosen, setChosen] = useState(initialWorkspace.tenant),
     [moy, setMoy] = useState(initialWorkspace.moy),
-    [ozon, setOzon] = useState(initialWorkspace.ozon);
+    [ozon, setOzon] = useState(initialWorkspace.ozon),
+    [logoutError, setLogoutError] = useState("");
+  const permittedWorkspace =
+    !session.data ||
+    (!chosen && session.data.workspaces.length === 0) ||
+    session.data.workspaces.some((workspace) => workspace.id === chosen);
+  useEffect(() => {
+    if (chosen) setWorkspaceOpen(false);
+  }, [chosen]);
+  useEffect(() => {
+    if (!session.data || permittedWorkspace) return;
+    const next = session.data.workspaces[0]?.id || "";
+    setTenant(next);
+    setChosen(next);
+    setMoy("");
+    setOzon("");
+    client.removeQueries({
+      predicate: (query) =>
+        !["session", "auth-mode"].includes(String(query.queryKey[0])),
+    });
+  }, [session.data, permittedWorkspace, client]);
+  useEffect(() => {
+    const expired = () => {
+      setCSRF("");
+      client.removeQueries({
+        predicate: (query) =>
+          !["session", "auth-mode"].includes(String(query.queryKey[0])),
+      });
+      void client.invalidateQueries({ queryKey: ["session"] });
+    };
+    window.addEventListener("styk-session-expired", expired);
+    return () => window.removeEventListener("styk-session-expired", expired);
+  }, [client]);
   useEffect(() => {
     try {
       sessionStorage.setItem(
@@ -749,7 +805,7 @@ export function App() {
         "/api/registrations?" + params({ tenant: chosen }),
         signal,
       ),
-    enabled: session.isSuccess && !!chosen,
+    enabled: session.isSuccess && !!chosen && permittedWorkspace,
   });
   const scope = { tenant: chosen, moy, ozon };
   useEffect(() => {
@@ -773,7 +829,7 @@ export function App() {
     queryKey: ["diagnostics", scope],
     queryFn: ({ signal }) =>
       api<Report>("/api/diagnostics?" + scopeParams(scope), signal),
-    enabled: session.isSuccess && !!chosen,
+    enabled: session.isSuccess && !!chosen && permittedWorkspace,
   });
   if (session.isLoading)
     return (
@@ -797,41 +853,136 @@ export function App() {
             проверьте историю исходного аккаунта.
           </p>
         )}
-        <Login
-          onDone={() => {
-            void client.invalidateQueries({ queryKey: ["session"] });
-          }}
-        />
+        {authMode.isLoading ? (
+          <main className="login">
+            <Loading />
+          </main>
+        ) : authMode.data?.mode === "merchant" ? (
+          <MerchantAuth
+            onDone={() => {
+              void client.invalidateQueries({ queryKey: ["session"] });
+            }}
+          />
+        ) : authMode.data?.mode === "local" ? (
+          <Login
+            onDone={() => {
+              void client.invalidateQueries({ queryKey: ["session"] });
+            }}
+          />
+        ) : (
+          <main className="login">
+            <Failure error={authMode.error} />
+          </main>
+        )}
       </>
     );
+  if (session.data && !permittedWorkspace)
+    return (
+      <main className="login">
+        <Loading />
+      </main>
+    );
   async function logout() {
-    await fetch("/api/session", {
-      method: "DELETE",
-      credentials: "same-origin",
-    });
-    client.clear();
+    try {
+      const response = await authFetch("/api/session", {
+        method: "DELETE",
+        credentials: "same-origin",
+      });
+      if (!response.ok)
+        throw new Error("Не удалось завершить сессию. Повторите попытку.");
+      setCSRF("");
+      sessionStorage.removeItem("styk-workspace");
+      client.clear();
+      window.location.assign("/");
+    } catch {
+      setLogoutError("Не удалось завершить сессию. Повторите попытку.");
+    }
+  }
+  const pendingMutation =
+    !!confirmation.pending ||
+    !!importSubmission.pending ||
+    !!credentialSubmission.pending ||
+    !!stockSyncSubmission.pending;
+  function switchWorkspace(next: string) {
+    if (!next || pendingMutation) return;
+    try {
+      sessionStorage.setItem(
+        "styk-workspace",
+        JSON.stringify({ tenant: next, moy: "", ozon: "" }),
+      );
+    } catch {
+      void client.cancelQueries();
+      client.removeQueries({
+        predicate: (query) =>
+          !["session", "auth-mode"].includes(String(query.queryKey[0])),
+      });
+      void client.invalidateQueries({ queryKey: ["session"] });
+      setTenant(next);
+      setChosen(next);
+      setMoy("");
+      setOzon("");
+      return;
+    }
+    setCSRF("");
+    // The navigation destroys this query cache. Clearing it before navigation
+    // can trigger a render that writes the previous workspace back to storage.
     window.location.assign("/");
   }
+  const activeWorkspace = session.data?.workspaces.find(
+    (workspace) => workspace.id === chosen,
+  );
   const workspaceControls = (
     <div className="scope-panel">
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          setChosen(tenant.trim());
-          setMoy("");
-          setOzon("");
-        }}
-      >
-        <label>
-          Рабочее пространство
-          <input
-            value={tenant}
-            onChange={(e) => setTenant(e.target.value)}
-            placeholder="Идентификатор пространства"
-          />
-        </label>
-        <button className="secondary">Открыть пространство</button>
-      </form>
+      {session.data ? (
+        <>
+          <label>
+            Рабочее пространство
+            <select
+              value={chosen}
+              disabled={pendingMutation}
+              onChange={(event) => switchWorkspace(event.target.value)}
+            >
+              {session.data.workspaces.map((workspace) => (
+                <option key={workspace.id} value={workspace.id}>
+                  {workspace.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {(activeWorkspace || session.data.workspaces.length === 0) && (
+            <WorkspaceSettings
+              workspace={chosen}
+              role={activeWorkspace?.role || ""}
+              switchTo={switchWorkspace}
+            />
+          )}
+          {activeWorkspace?.role === "VIEWER" && (
+            <span>
+              Доступ только для просмотра. Изменения может внести оператор или
+              администратор.
+            </span>
+          )}
+        </>
+      ) : (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            setChosen(tenant.trim());
+            setMoy("");
+            setOzon("");
+          }}
+        >
+          <label>
+            Рабочее пространство
+            <input
+              value={tenant}
+              onChange={(e) => setTenant(e.target.value)}
+              placeholder="Идентификатор пространства"
+            />
+          </label>
+          <button className="secondary">Открыть пространство</button>
+        </form>
+      )}
       {accounts.isLoading && <span>Загружаем аккаунты…</span>}
       {accounts.error && <Failure error={accounts.error} />}{" "}
       {accounts.data && (
@@ -908,10 +1059,12 @@ export function App() {
         <details
           className="workspace-selector"
           key={chosen || "empty"}
-          open={!chosen}
+          open={workspaceOpen}
+          onToggle={(event) => setWorkspaceOpen(event.currentTarget.open)}
         >
           <summary>
-            Рабочее пространство <span aria-hidden="true">⌄</span>
+            {activeWorkspace?.name || "Рабочее пространство"}{" "}
+            <span aria-hidden="true">⌄</span>
           </summary>
           <div className="workspace-popover">
             {workspaceControls}
@@ -932,6 +1085,7 @@ export function App() {
                 Выйти
               </button>
             </div>
+            {logoutError && <p role="alert">{logoutError}</p>}
           </div>
         </details>
         <nav className="app-tabs" aria-label="Разделы">
