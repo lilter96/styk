@@ -55,3 +55,42 @@ func TestReadbackRequiresObservableExtensions(t *testing.T) {
 		t.Fatal("unobservable VAT was treated as verified")
 	}
 }
+
+func TestReadbackUsesExactDecimalFacts(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name, wanted, actual string
+		matches              bool
+	}{
+		{name: "provider precision", wanted: "25.2", actual: "25.20", matches: true},
+		{name: "integer precision", wanted: "0", actual: "0.0000", matches: true},
+		{name: "changed amount", wanted: "25.2", actual: "25.21"},
+		{name: "leading zeros rejected", wanted: "025.20", actual: "25.20"},
+		{name: "exponent rejected", wanted: "25.20", actual: "2.52e1"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			command := catalog.Command{Target: catalog.Identity{Account: catalog.Account{Provider: catalog.ProviderOzon}},
+				Values: map[catalog.Field]catalog.Value{catalog.FieldPrice: catalog.Text(tc.wanted)}, Extensions: map[string]catalog.Value{"vat": catalog.Text(tc.wanted)}}
+			product := catalog.Product{Fields: map[catalog.Field]catalog.Value{catalog.FieldPrice: catalog.Text(tc.actual)}, Extensions: map[string]catalog.Value{"vat": catalog.Text(tc.actual)}}
+			if matched := ReadbackMatches(command, product); matched != tc.matches {
+				t.Fatalf("decimal fact matched=%v, expected=%v", matched, tc.matches)
+			}
+		})
+	}
+}
+
+func TestNativeOzonAttributesRequireObservedNameAndDescription(t *testing.T) {
+	t.Parallel()
+	command := catalog.Command{Target: catalog.Identity{Account: catalog.Account{Provider: catalog.ProviderOzon}}, Values: map[catalog.Field]catalog.Value{
+		catalog.FieldAttributes: {State: catalog.StateKnown, Data: json.RawMessage(`[{"id":4180,"values":[{"value":"name"}]},{"id":4191,"values":[{"value":"description"}]}]`)}}}
+	product := catalog.Product{Fields: map[catalog.Field]catalog.Value{catalog.FieldName: catalog.Text("name"), catalog.FieldDescription: catalog.Text("description"), catalog.FieldAttributes: catalog.Empty()}}
+	if !ReadbackMatches(command, product) {
+		t.Fatal("observable native fields should verify native attribute requests")
+	}
+	product.Fields[catalog.FieldDescription] = catalog.Value{State: catalog.StateUnknown}
+	if ReadbackMatches(command, product) {
+		t.Fatal("missing native description was falsely verified")
+	}
+}

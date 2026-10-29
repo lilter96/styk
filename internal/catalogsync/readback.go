@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"strconv"
+	"strings"
 
 	"github.com/lilter96/styk/internal/catalog"
 )
@@ -15,13 +16,13 @@ import (
 func ReadbackMatches(command catalog.Command, observed catalog.Product) bool {
 	for field, value := range command.Values {
 		actual, ok := observed.Fields[field]
-		if !ok || !fieldMatches(command.Target.Account.Provider, field, value, actual) {
+		if !ok || !fieldMatches(command.Target.Account.Provider, field, value, actual, observed) {
 			return false
 		}
 	}
 	for extension, value := range command.Extensions {
 		actual, ok := observed.Extensions[extension]
-		if !ok || !catalog.EqualValue(value, actual) {
+		if !ok || !extensionMatches(command.Target.Account.Provider, extension, value, actual) {
 			return false
 		}
 	}
@@ -31,11 +32,24 @@ func ReadbackMatches(command catalog.Command, observed catalog.Product) bool {
 	return true
 }
 
-func fieldMatches(provider catalog.Provider, field catalog.Field, wanted, actual catalog.Value) bool {
-	if provider != catalog.ProviderOzon || field != catalog.FieldAttributes || wanted.State != catalog.StateKnown {
+func fieldMatches(provider catalog.Provider, field catalog.Field, wanted, actual catalog.Value, observed catalog.Product) bool {
+	if provider != catalog.ProviderOzon || wanted.State != catalog.StateKnown {
 		return catalog.EqualValue(wanted, actual)
 	}
-	return ozonAttributesMatch(wanted, actual)
+	if field == catalog.FieldAttributes {
+		return ozonAttributesMatch(wanted, actual, observed)
+	}
+	if field == catalog.FieldPrice {
+		return decimalFactsEqual(wanted, actual)
+	}
+	return catalog.EqualValue(wanted, actual)
+}
+
+func extensionMatches(provider catalog.Provider, key string, wanted, actual catalog.Value) bool {
+	if provider == catalog.ProviderOzon && key == "vat" {
+		return decimalFactsEqual(wanted, actual)
+	}
+	return catalog.EqualValue(wanted, actual)
 }
 
 type selectedAttribute struct {
@@ -49,22 +63,48 @@ type selectedAttributeValue struct {
 	Value             *string `json:"value"`
 }
 
-func ozonAttributesMatch(wanted, actual catalog.Value) bool {
+func ozonAttributesMatch(wanted, actual catalog.Value, product catalog.Product) bool {
 	selected, ok := decodeAttributes(wanted)
-	if !ok || len(selected) == 0 || len(selected) > 500 {
+	if !ok || len(selected) > 500 {
 		return false
 	}
-	observed, ok := decodeAttributes(actual)
+	observed, ok := observedAttributes(actual)
 	if !ok {
 		return false
 	}
 	for id, attribute := range selected {
 		current, ok := observed[id]
+		if id == 4180 || id == 4191 {
+			if !nativeAttributeMatches(attribute, product) {
+				return false
+			}
+			if !ok {
+				continue
+			}
+		}
 		if !ok || attribute.ComplexID != current.ComplexID || !attributeValuesMatch(attribute.Values, current.Values) {
 			return false
 		}
 	}
 	return true
+}
+
+func observedAttributes(actual catalog.Value) (map[int64]selectedAttribute, bool) {
+	if actual.State == catalog.StateEmpty && catalog.ValidateValue(actual) == nil {
+		return make(map[int64]selectedAttribute), true
+	}
+	return decodeAttributes(actual)
+}
+
+func nativeAttributeMatches(attribute selectedAttribute, product catalog.Product) bool {
+	if attribute.ComplexID != 0 || len(attribute.Values) != 1 || attribute.Values[0].DictionaryValueID != 0 || attribute.Values[0].Value == nil {
+		return false
+	}
+	field := catalog.FieldName
+	if attribute.ID == 4191 {
+		field = catalog.FieldDescription
+	}
+	return catalog.EqualValue(catalog.Text(*attribute.Values[0].Value), product.Fields[field])
 }
 
 func decodeAttributes(value catalog.Value) (map[int64]selectedAttribute, bool) {
@@ -178,9 +218,49 @@ func attributeValuesMatch(wanted, actual []selectedAttributeValue) bool {
 	}
 	for _, selected := range wanted {
 		current, ok := observed[attributeValueKey(selected)]
-		if !ok || (selected.Value != nil && (current.Value == nil || *current.Value != *selected.Value)) {
+		if !ok || (selected.DictionaryValueID == 0 && selected.Value != nil && (current.Value == nil || *current.Value != *selected.Value)) {
 			return false
 		}
 	}
 	return true
+}
+
+func decimalFactsEqual(wanted, actual catalog.Value) bool {
+	left, err := wanted.StringValue()
+	if err != nil {
+		return false
+	}
+	right, err := actual.StringValue()
+	if err != nil {
+		return false
+	}
+	a, ok := decimalFact(left)
+	if !ok {
+		return false
+	}
+	b, ok := decimalFact(right)
+	return ok && a == b
+}
+
+func decimalFact(value string) (string, bool) {
+	parts := strings.Split(value, ".")
+	if len(parts) > 2 || len(parts[0]) == 0 || len(parts[0]) > 12 || (len(parts[0]) > 1 && parts[0][0] == '0') {
+		return "", false
+	}
+	for _, part := range parts {
+		if part == "" || strings.Trim(part, "0123456789") != "" {
+			return "", false
+		}
+	}
+	if len(parts) == 1 {
+		return parts[0], true
+	}
+	if len(parts[1]) > 4 {
+		return "", false
+	}
+	fraction := strings.TrimRight(parts[1], "0")
+	if fraction == "" {
+		return parts[0], true
+	}
+	return parts[0] + "." + fraction, true
 }
