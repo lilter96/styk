@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -110,7 +111,7 @@ func (c *Client) call(ctx context.Context, method, path string, q url.Values, pa
 	if err != nil {
 		return errors.New("fixture transport failed")
 	}
-	defer response.Body.Close()
+	defer closeFixtureResponse(response.Body)
 	data, err := io.ReadAll(io.LimitReader(response.Body, (4<<20)+1))
 	if err != nil || len(data) > 4<<20 {
 		return errors.New("fixture response could not be read safely")
@@ -128,6 +129,14 @@ func (c *Client) call(ctx context.Context, method, path string, q url.Values, pa
 		return errors.New("fixture API returned trailing data")
 	}
 	return nil
+}
+
+func closeFixtureResponse(body io.Closer) {
+	if err := body.Close(); err != nil {
+		// A complete response remains usable. In particular, cleanup alone
+		// must not turn a confirmed creation into a resend instruction.
+		slog.Warn("fixture response cleanup unavailable")
+	}
 }
 
 type page struct {

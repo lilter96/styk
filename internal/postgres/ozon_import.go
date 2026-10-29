@@ -12,7 +12,7 @@ import (
 
 func (s *Store) SaveOzonImport(ctx context.Context, snap domain.OzonImport, fingerprint string) (bool, error) {
 	if snap.Account == "" {
-		return false, errors.New("Ozon account required")
+		return false, errors.New("ozon account required")
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
@@ -20,7 +20,7 @@ func (s *Store) SaveOzonImport(ctx context.Context, snap domain.OzonImport, fing
 	if err != nil {
 		return false, fmt.Errorf("begin Ozon import: %w", err)
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	_, created, err := saveOzonImportTx(ctx, tx, snap, fingerprint, nil)
 	if err != nil {
 		return false, err
@@ -39,7 +39,7 @@ func (s *Store) SaveOzonImport(ctx context.Context, snap domain.OzonImport, fing
 // notBefore excludes historical imports hidden by the tenant's registration.
 func saveOzonImportTx(ctx context.Context, tx pgx.Tx, snap domain.OzonImport, fingerprint string, notBefore *time.Time) (int64, bool, error) {
 	if snap.Account == "" {
-		return 0, false, errors.New("Ozon account required")
+		return 0, false, errors.New("ozon account required")
 	}
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "ozon:"+snap.Account); err != nil {
 		return 0, false, fmt.Errorf("lock Ozon import: %w", err)

@@ -305,7 +305,7 @@ func (a *stockSyncAPI) preview(w http.ResponseWriter, r *http.Request) {
 	if !decodeStockSync(w, r, &req) {
 		return
 	}
-	if !req.StockSyncScope.Valid() {
+	if !req.Valid() {
 		writeError(w, 400, "INVALID_SCOPE")
 		return
 	}
@@ -331,7 +331,7 @@ func (a *stockSyncAPI) mutate(w http.ResponseWriter, r *http.Request, action str
 	if !decodeStockSync(w, r, &req) {
 		return
 	}
-	if !req.StockSyncScope.Valid() || !req.Acknowledge || len(req.Key) < 16 || len(req.Key) > 128 || (action == "enable" && len(req.ReviewID) != 32) {
+	if !req.Valid() || !req.Acknowledge || len(req.Key) < 16 || len(req.Key) > 128 || (action == "enable" && len(req.ReviewID) != 32) {
 		writeError(w, 400, "INVALID_REQUEST")
 		return
 	}
@@ -356,7 +356,7 @@ func (a *stockSyncAPI) reconcile(w http.ResponseWriter, r *http.Request) {
 	if !decodeStockSync(w, r, &req) {
 		return
 	}
-	if !req.StockSyncScope.Valid() || !req.Acknowledge || len(r.PathValue("id")) != 32 {
+	if !req.Valid() || !req.Acknowledge || len(r.PathValue("id")) != 32 {
 		writeError(w, 400, "INVALID_REQUEST")
 		return
 	}

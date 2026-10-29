@@ -136,7 +136,7 @@ func (s *Store) CreateWarehouseReview(ctx context.Context, in domain.WarehouseRe
 	if err != nil {
 		return domain.WarehouseReviewResult{}, err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	if err = lockWarehouseReview(ctx, tx, scope); err != nil {
 		return domain.WarehouseReviewResult{}, err
 	}
@@ -176,7 +176,7 @@ func (s *Store) InspectWarehouseReview(ctx context.Context, id, sessionID string
 	if err != nil {
 		return domain.WarehouseReviewResult{}, err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	stored, err := loadWarehouseReview(ctx, tx, id, sessionID)
 	if err != nil {
 		return domain.WarehouseReviewResult{}, err

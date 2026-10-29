@@ -34,7 +34,7 @@ func (s *Store) SaveCustomerOrders(ctx context.Context, b domain.CustomerOrderIm
 	if err != nil {
 		return 0, fmt.Errorf("begin customer order import: %w", err)
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	if err = requireContextActor(ctx, tx, b.Tenant, false); err != nil {
 		return 0, err
 	}

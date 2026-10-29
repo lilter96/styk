@@ -115,7 +115,7 @@ func (s *Store) CreateMappingReview(ctx context.Context, in domain.MappingReview
 	if e != nil {
 		return domain.MappingReviewResult{}, e
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	if e = lockReview(ctx, tx, MatchScope{Tenant: in.Tenant, OzonAccount: in.OzonAccount, MoyskladAccount: in.MoyskladAccount}); e != nil {
 		return domain.MappingReviewResult{}, e
 	}
@@ -154,7 +154,7 @@ func (s *Store) InspectMappingReview(ctx context.Context, id, sessionID string) 
 	if e != nil {
 		return domain.MappingReviewResult{}, e
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	stored, e := loadMappingReview(ctx, tx, id, sessionID)
 	if e != nil {
 		return domain.MappingReviewResult{}, e

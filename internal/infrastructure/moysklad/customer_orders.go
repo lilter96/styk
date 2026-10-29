@@ -61,7 +61,7 @@ func (c *Client) ReadCustomerOrders(ctx context.Context, tenant, account string,
 	out := domain.CustomerOrderImport{Tenant: tenant, Account: account, Since: since.UTC(), Until: until.UTC(), StartedAt: time.Now().UTC()}
 	msk, err := time.LoadLocation("Europe/Moscow")
 	if err != nil {
-		return domain.CustomerOrderImport{}, errors.New("Moscow timezone is unavailable")
+		return domain.CustomerOrderImport{}, errors.New("moscow timezone is unavailable")
 	}
 	format := func(t time.Time) string { return t.In(msk).Format("2006-01-02 15:04:05.000") }
 	query := url.Values{"filter": {"updated>=" + format(since) + ";updated<" + format(until)}, "order": {"id,asc"}}

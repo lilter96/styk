@@ -30,7 +30,7 @@ func TestCustomerOrdersPagesAndNullableFields(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			writes.Add(1)
-			http.Error(w, "unexpected", 405)
+			http.Error(w, "unexpected", http.StatusMethodNotAllowed)
 			return
 		}
 		if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer mock-") {
@@ -46,19 +46,19 @@ func TestCustomerOrdersPagesAndNullableFields(t *testing.T) {
 			if offset == 1 {
 				id = testOrderB
 			}
-			fmt.Fprintf(w, `{"meta":{"size":2,"limit":1,"offset":%d},"rows":[{"id":%q,"accountId":"test-account","updated":"2026-10-29 13:00:00.000"}]}`, offset, id)
+			writeTestResponse(t, w, fmt.Sprintf(`{"meta":{"size":2,"limit":1,"offset":%d},"rows":[{"id":%q,"accountId":"test-account","updated":"2026-10-29 13:00:00.000"}]}`, offset, id))
 		case "/entity/customerorder/" + testOrderA, "/entity/customerorder/" + testOrderB:
 			id := strings.TrimPrefix(r.URL.Path, "/entity/customerorder/")
-			fmt.Fprintf(w, `{"id":%q,"accountId":"test-account","updated":"2026-10-29 13:00:00.000","created":"2026-10-29 12:00:00.000","deleted":"2026-10-29 14:00:00.000","applicable":false,"store":{"meta":{"type":"store","href":"/entity/store/60000000-0000-0000-0000-000000000001"}},"state":{"meta":{"type":"state","href":"/entity/customerorder/metadata/states/70000000-0000-0000-0000-000000000001"}},"agent":{"name":"sensitive-not-retained"},"shipmentAddress":"sensitive-not-retained","description":"sensitive-not-retained","externalCode":"posting-number-is-not-proof"}`, id)
+			writeTestResponse(t, w, fmt.Sprintf(`{"id":%q,"accountId":"test-account","updated":"2026-10-29 13:00:00.000","created":"2026-10-29 12:00:00.000","deleted":"2026-10-29 14:00:00.000","applicable":false,"store":{"meta":{"type":"store","href":"/entity/store/60000000-0000-0000-0000-000000000001"}},"state":{"meta":{"type":"state","href":"/entity/customerorder/metadata/states/70000000-0000-0000-0000-000000000001"}},"agent":{"name":"sensitive-not-retained"},"shipmentAddress":"sensitive-not-retained","description":"sensitive-not-retained","externalCode":"posting-number-is-not-proof"}`, id))
 		case "/entity/customerorder/" + testOrderA + "/positions":
 			offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 			if offset == 0 {
-				fmt.Fprint(w, `{"meta":{"size":2,"limit":1,"offset":0},"rows":[{"id":"30000000-0000-0000-0000-000000000001","accountId":"test-account","quantity":3.5,"reserve":0,"shipped":1,"assortment":{"meta":{"type":"variant","href":"/entity/variant/40000000-0000-0000-0000-000000000001"}},"pack":{"id":"80000000-0000-0000-0000-000000000001","quantity":2,"uom":{"meta":{"type":"uom","href":"/entity/uom/90000000-0000-0000-0000-000000000001"}}}}]}`)
+				writeTestResponse(t, w, `{"meta":{"size":2,"limit":1,"offset":0},"rows":[{"id":"30000000-0000-0000-0000-000000000001","accountId":"test-account","quantity":3.5,"reserve":0,"shipped":1,"assortment":{"meta":{"type":"variant","href":"/entity/variant/40000000-0000-0000-0000-000000000001"}},"pack":{"id":"80000000-0000-0000-0000-000000000001","quantity":2,"uom":{"meta":{"type":"uom","href":"/entity/uom/90000000-0000-0000-0000-000000000001"}}}}]}`)
 			} else {
-				fmt.Fprint(w, `{"meta":{"size":2,"limit":1,"offset":1},"rows":[{"id":"30000000-0000-0000-0000-000000000002","accountId":"test-account","quantity":1,"assortment":{"meta":{"type":"product","href":"/entity/product/50000000-0000-0000-0000-000000000001"}}}]}`)
+				writeTestResponse(t, w, `{"meta":{"size":2,"limit":1,"offset":1},"rows":[{"id":"30000000-0000-0000-0000-000000000002","accountId":"test-account","quantity":1,"assortment":{"meta":{"type":"product","href":"/entity/product/50000000-0000-0000-0000-000000000001"}}}]}`)
 			}
 		case "/entity/customerorder/" + testOrderB + "/positions":
-			fmt.Fprint(w, `{"meta":{"size":0,"limit":1,"offset":0},"rows":[]}`)
+			writeTestResponse(t, w, `{"meta":{"size":0,"limit":1,"offset":0},"rows":[]}`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -87,7 +87,7 @@ func TestCustomerOrdersEmptyAndReadAllowlist(t *testing.T) {
 	var calls atomic.Int32
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		fmt.Fprint(w, `{"meta":{"size":0,"limit":1,"offset":0},"rows":[]}`)
+		writeTestResponse(t, w, `{"meta":{"size":0,"limit":1,"offset":0},"rows":[]}`)
 	}))
 	defer s.Close()
 	c := orderClient(t, s)
@@ -122,11 +122,11 @@ func TestCustomerOrderMissingTimestampAndUnsupportedAssortment(t *testing.T) {
 			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
 				case "/entity/customerorder":
-					fmt.Fprintf(w, `{"meta":{"size":1,"limit":1,"offset":0},"rows":[{"id":%q,"accountId":"acct","updated":" "}]}`, testOrderA)
+					writeTestResponse(t, w, fmt.Sprintf(`{"meta":{"size":1,"limit":1,"offset":0},"rows":[{"id":%q,"accountId":"acct","updated":" "}]}`, testOrderA))
 				case "/entity/customerorder/" + testOrderA:
-					fmt.Fprintf(w, `{"id":%q,"accountId":"acct","updated":"2026-01-01 00:00:00"}`, testOrderA)
+					writeTestResponse(t, w, fmt.Sprintf(`{"id":%q,"accountId":"acct","updated":"2026-01-01 00:00:00"}`, testOrderA))
 				case "/entity/customerorder/" + testOrderA + "/positions":
-					fmt.Fprint(w, tc.positions)
+					writeTestResponse(t, w, tc.positions)
 				default:
 					http.NotFound(w, r)
 				}
@@ -161,11 +161,11 @@ func TestCustomerOrdersIncompleteAndDuplicatePagination(t *testing.T) {
 			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
 				case "/entity/customerorder":
-					fmt.Fprintf(w, `{"meta":{"size":1,"limit":1,"offset":0},"rows":[{"id":%q,"accountId":"acct","updated":"2026-01-01 00:00:00"}]}`, testOrderA)
+					writeTestResponse(t, w, fmt.Sprintf(`{"meta":{"size":1,"limit":1,"offset":0},"rows":[{"id":%q,"accountId":"acct","updated":"2026-01-01 00:00:00"}]}`, testOrderA))
 				case "/entity/customerorder/" + testOrderA:
-					fmt.Fprintf(w, `{"id":%q,"accountId":"acct","updated":%q}`, testOrderA, tc.detailUpdated)
+					writeTestResponse(t, w, fmt.Sprintf(`{"id":%q,"accountId":"acct","updated":%q}`, testOrderA, tc.detailUpdated))
 				default:
-					fmt.Fprint(w, tc.positionBody)
+					writeTestResponse(t, w, tc.positionBody)
 				}
 			}))
 			defer s.Close()
@@ -187,11 +187,11 @@ func TestCustomerOrdersDuplicateIdentifiersAndAccountMismatch(t *testing.T) {
 			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
 				case "/entity/customerorder":
-					fmt.Fprint(w, tc.list)
+					writeTestResponse(t, w, tc.list)
 				case "/entity/customerorder/" + testOrderA:
-					fmt.Fprint(w, tc.detail)
+					writeTestResponse(t, w, tc.detail)
 				default:
-					fmt.Fprint(w, `{"meta":{"size":0,"limit":1,"offset":0},"rows":[]}`)
+					writeTestResponse(t, w, `{"meta":{"size":0,"limit":1,"offset":0},"rows":[]}`)
 				}
 			}))
 			defer s.Close()
@@ -237,11 +237,11 @@ func TestCustomerOrderSameNameAcrossAccountsDoesNotEstablishIdentity(t *testing.
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch r.URL.Path {
 			case "/entity/customerorder":
-				fmt.Fprintf(w, `{"meta":{"size":1,"limit":1,"offset":0},"rows":[{"id":%q,"accountId":%q,"name":"same-order-name"}]}`, id, account)
+				writeTestResponse(t, w, fmt.Sprintf(`{"meta":{"size":1,"limit":1,"offset":0},"rows":[{"id":%q,"accountId":%q,"name":"same-order-name"}]}`, id, account))
 			case "/entity/customerorder/" + id:
-				fmt.Fprintf(w, `{"id":%q,"accountId":%q,"name":"same-order-name"}`, id, account)
+				writeTestResponse(t, w, fmt.Sprintf(`{"id":%q,"accountId":%q,"name":"same-order-name"}`, id, account))
 			default:
-				fmt.Fprint(w, `{"meta":{"size":0,"limit":1,"offset":0},"rows":[]}`)
+				writeTestResponse(t, w, `{"meta":{"size":0,"limit":1,"offset":0},"rows":[]}`)
 			}
 		}))
 		b, err := orderClient(t, s).ReadCustomerOrders(context.Background(), "tenant", account, start, start.Add(time.Hour))
@@ -260,7 +260,7 @@ func TestCustomerOrdersCancellationAndRetry(t *testing.T) {
 			w.WriteHeader(429)
 			return
 		}
-		fmt.Fprint(w, `{"meta":{"size":0,"limit":1,"offset":0},"rows":[]}`)
+		writeTestResponse(t, w, `{"meta":{"size":0,"limit":1,"offset":0},"rows":[]}`)
 	}))
 	defer s.Close()
 	c := orderClient(t, s)

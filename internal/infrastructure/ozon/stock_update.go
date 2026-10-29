@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -17,8 +18,8 @@ const stockUpdatePath = "/v2/products/stocks"
 
 var ErrStockWritesDisabled = errors.New("stock writes are disabled")
 
-var ErrStockWriteUnknown = errors.New("Ozon stock write outcome is unknown")
-var ErrStockReadbackUnavailable = errors.New("Ozon stock readback is unavailable")
+var ErrStockWriteUnknown = errors.New("ozon stock write outcome is unknown")
+var ErrStockReadbackUnavailable = errors.New("ozon stock readback is unavailable")
 
 type StockUpdate struct {
 	ProductID, WarehouseID string
@@ -151,7 +152,7 @@ func (c *Client) UpdateStocks(ctx context.Context, items []StockUpdate) ([]Stock
 	if err != nil {
 		return nil, &StockWriteError{}
 	}
-	defer resp.Body.Close()
+	defer closeStockResponse(resp.Body)
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20+1))
 	if err != nil || len(data) > 1<<20 {
 		return nil, &StockWriteError{HTTPStatus: resp.StatusCode}
@@ -206,6 +207,14 @@ func (c *Client) UpdateStocks(ctx context.Context, items []StockUpdate) ([]Stock
 		out = append(out, r)
 	}
 	return out, nil
+}
+
+func closeStockResponse(body io.Closer) {
+	if err := body.Close(); err != nil {
+		// Cleanup cannot revoke an acknowledged write or authorize a retry.
+		// The untrusted transport error must not reach logs or durable state.
+		slog.Warn("stock response cleanup unavailable")
+	}
 }
 
 // ReadStockQuantity is a bounded, read-only observation. Matching free stock

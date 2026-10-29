@@ -139,7 +139,7 @@ func (s *Store) ConfigureAutomaticStock(ctx context.Context, req domain.Automati
 	if err != nil {
 		return domain.AutomaticStockView{}, err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	if err = syncLock(ctx, tx, scope); err != nil {
 		return domain.AutomaticStockView{}, err
 	}
@@ -332,7 +332,7 @@ func (s *Store) RequestAutomaticCycle(ctx context.Context, scope domain.StockSyn
 	if err != nil {
 		return domain.AutomaticStockView{}, err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	if err = requireContextActor(ctx, tx, scope.Tenant, false); err != nil {
 		return domain.AutomaticStockView{}, err
 	}

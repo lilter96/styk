@@ -1,16 +1,54 @@
 package moyskladfixture
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
 )
+
+type fixtureCleanupBody struct {
+	*strings.Reader
+	closes int
+}
+
+func (b *fixtureCleanupBody) Close() error {
+	b.closes++
+	return errors.New("untrusted-cleanup-detail")
+}
+
+func TestFixtureResponseCleanupPreservesAcknowledgement(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	body := &fixtureCleanupBody{Reader: strings.NewReader(`{"id":"20000000-0000-0000-0000-000000000001"}`)}
+	calls := 0
+	c, err := NewClient(testAccount, "fixture-only", time.Second, 400*time.Millisecond, 1, roundTripFunc(func(*http.Request) (*http.Response, error) {
+		calls++
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: body}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct{ ID string }
+	if err := c.call(context.Background(), http.MethodPost, "entity/store", nil, map[string]string{"name": "synthetic"}, &result); err != nil {
+		t.Fatalf("cleanup revoked creation acknowledgement: %v", err)
+	}
+	if calls != 1 || body.closes != 1 || result.ID != "20000000-0000-0000-0000-000000000001" {
+		t.Fatalf("calls=%d closes=%d result=%+v", calls, body.closes, result)
+	}
+	if !strings.Contains(logs.String(), "fixture response cleanup unavailable") || strings.Contains(logs.String(), "untrusted-cleanup-detail") {
+		t.Fatal("cleanup diagnostic missing or contains untrusted detail")
+	}
+}
 
 type fakeTransport struct {
 	items         map[string]map[string]any

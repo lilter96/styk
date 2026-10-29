@@ -66,7 +66,7 @@ func (r MappingConfirmationRequest) Validate() error {
 		return ErrInvalidMappingConfirmation
 	}
 	for _, c := range r.IdempotencyKey {
-		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || strings.ContainsRune("._:-", c)) {
+		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && !strings.ContainsRune("._:-", c) {
 			return ErrInvalidMappingConfirmation
 		}
 	}

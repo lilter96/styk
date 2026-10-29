@@ -51,18 +51,19 @@ func OpenLock(directory, namespace string) (*Lock, error) {
 	}
 	f := os.NewFile(uintptr(fd), name)
 	if err = syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		f.Close()
-		return nil, errors.New("fixture namespace is already in use")
+		lockErr := errors.New("fixture namespace is already in use")
+		closeFixtureFile(f, &lockErr)
+		return nil, lockErr
 	}
 	return &Lock{directory: directory, namespace: namespace, lock: f}, nil
 }
 
-func (l *Lock) Close() error {
+func (l *Lock) Close() (err error) {
+	defer closeFixtureFile(l.lock, &err)
 	if err := syscall.Flock(int(l.lock.Fd()), syscall.LOCK_UN); err != nil {
-		l.lock.Close()
-		return err
+		return fmt.Errorf("unlock fixture namespace: %w", err)
 	}
-	return l.lock.Close()
+	return nil
 }
 
 func (l *Lock) path() string { return filepath.Join(l.directory, l.namespace+".json") }
@@ -139,13 +140,13 @@ func validateManifest(m Manifest, namespace string) error {
 	return nil
 }
 
-func (l *Lock) Load() (Manifest, error) {
+func (l *Lock) Load() (m Manifest, err error) {
 	fd, err := syscall.Open(l.path(), syscall.O_RDONLY|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		return Manifest{}, fmt.Errorf("open fixture manifest: %w", err)
 	}
 	f := os.NewFile(uintptr(fd), l.path())
-	defer f.Close()
+	defer closeFixtureFile(f, &err)
 	info, err := f.Stat()
 	if err != nil {
 		return Manifest{}, err
@@ -155,7 +156,6 @@ func (l *Lock) Load() (Manifest, error) {
 	}
 	dec := json.NewDecoder(io.LimitReader(f, 1<<20))
 	dec.DisallowUnknownFields()
-	var m Manifest
 	if err = dec.Decode(&m); err != nil {
 		return m, errors.New("invalid fixture manifest")
 	}
@@ -186,22 +186,14 @@ func (l *Lock) Create(account string) (Manifest, error) {
 		return m, fmt.Errorf("create fixture manifest: %w", err)
 	}
 	f := os.NewFile(uintptr(fd), l.path())
-	if _, err = f.Write(append(data, '\n')); err != nil {
-		f.Close()
-		return m, err
-	}
-	if err = f.Sync(); err != nil {
-		f.Close()
-		return m, err
-	}
-	if err = f.Close(); err != nil {
+	if err = writeFixtureFile(f, append(data, '\n')); err != nil {
 		return m, err
 	}
 	return m, syncDirectory(l.directory)
 }
 
 // Save uses a same-directory atomic replacement and fsyncs both file and directory.
-func (l *Lock) Save(m Manifest) error {
+func (l *Lock) Save(m Manifest) (err error) {
 	if err := validateManifest(m, l.namespace); err != nil {
 		return err
 	}
@@ -214,20 +206,16 @@ func (l *Lock) Save(m Manifest) error {
 		return err
 	}
 	name := f.Name()
-	defer os.Remove(name)
+	defer func() {
+		if removeErr := os.Remove(name); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			err = errors.Join(err, fmt.Errorf("remove temporary fixture manifest: %w", removeErr))
+		}
+	}()
 	if err = f.Chmod(0600); err != nil {
-		f.Close()
+		closeFixtureFile(f, &err)
 		return err
 	}
-	if _, err = f.Write(append(data, '\n')); err != nil {
-		f.Close()
-		return err
-	}
-	if err = f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	if err = f.Close(); err != nil {
+	if err = writeFixtureFile(f, append(data, '\n')); err != nil {
 		return err
 	}
 	if err = os.Rename(name, l.path()); err != nil {
@@ -236,11 +224,28 @@ func (l *Lock) Save(m Manifest) error {
 	return syncDirectory(l.directory)
 }
 
-func syncDirectory(path string) error {
+func syncDirectory(path string) (err error) {
 	d, err := os.Open(path)
 	if err != nil {
 		return err
 	}
-	defer d.Close()
+	defer closeFixtureFile(d, &err)
 	return d.Sync()
+}
+
+func writeFixtureFile(f *os.File, data []byte) (err error) {
+	defer closeFixtureFile(f, &err)
+	if _, err = f.Write(data); err != nil {
+		return fmt.Errorf("write fixture manifest: %w", err)
+	}
+	if err = f.Sync(); err != nil {
+		return fmt.Errorf("sync fixture manifest: %w", err)
+	}
+	return nil
+}
+
+func closeFixtureFile(f *os.File, result *error) {
+	if err := f.Close(); err != nil {
+		*result = errors.Join(*result, fmt.Errorf("close fixture file: %w", err))
+	}
 }

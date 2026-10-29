@@ -123,7 +123,7 @@ func (s *Store) changeCredential(ctx context.Context, scope credentials.Scope, n
 	if err != nil {
 		return zero, false, credentials.ErrUnavailable
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	if err = requireMerchantActor(ctx, tx, scope.Tenant, principal, true); err != nil {
 		return zero, false, credentials.ErrUnavailable
 	}

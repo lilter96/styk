@@ -25,7 +25,7 @@ func (s *Store) CorrelateCustomerOrder(ctx context.Context, scope OrderCorrelati
 	if err != nil {
 		return domain.OrderCorrelation{}, fmt.Errorf("begin correlation: %w", err)
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	r, err := correlateCustomerOrder(ctx, tx, scope, postingID, batchID)
 	if err != nil {
 		return r, err

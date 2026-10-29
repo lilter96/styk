@@ -3,7 +3,6 @@ package ozon
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -20,7 +19,7 @@ func TestDoctorProbeIsOneReadOnlyPOST(t *testing.T) {
 		if json.NewDecoder(r.Body).Decode(&b) != nil || b.Limit != 1 || r.Method != "POST" || r.URL.Path != "/v3/product/list" || r.Header.Get("Client-Id") != "selected" {
 			t.Error("unsafe probe")
 		}
-		fmt.Fprint(w, `{"result":{"items":[]}}`)
+		writeTestResponse(t, w, `{"result":{"items":[]}}`)
 	}))
 	defer s.Close()
 	c, err := New(Options{BaseURL: s.URL, ClientID: "selected", APIKey: "synthetic", Timeout: time.Second, Interval: time.Millisecond, Backoff: time.Millisecond, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 1})

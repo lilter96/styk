@@ -34,9 +34,9 @@ func TestPostingV4Pages(t *testing.T) {
 				t.Errorf("incorrect v4 page request: %+v", request)
 			}
 			if list == 1 {
-				fmt.Fprint(w, `{"postings":[{"posting_number":"p1"}],"has_next":true,"cursor":"a"}`)
+				writeTestResponse(t, w, `{"postings":[{"posting_number":"p1"}],"has_next":true,"cursor":"a"}`)
 			} else {
-				fmt.Fprint(w, `{"postings":[{"posting_number":"p2"}],"has_next":false}`)
+				writeTestResponse(t, w, `{"postings":[{"posting_number":"p2"}],"has_next":false}`)
 			}
 		case "/v3/posting/fbs/get":
 			var request struct {
@@ -45,7 +45,7 @@ func TestPostingV4Pages(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 				t.Error(err)
 			}
-			fmt.Fprintf(w, `{"result":{"posting_number":%q,"order_id":5,"order_number":"order","status":"unknown_new","products":[{"offer_id":"a","sku":10,"quantity":2}],"customer":{"name":"PRIVATE_SENTINEL"}}}`, request.PostingNumber)
+			writeTestResponse(t, w, fmt.Sprintf(`{"result":{"posting_number":%q,"order_id":5,"order_number":"order","status":"unknown_new","products":[{"offer_id":"a","sku":10,"quantity":2}],"customer":{"name":"PRIVATE_SENTINEL"}}}`, request.PostingNumber))
 		default:
 			t.Error("unexpected path")
 		}
@@ -65,7 +65,7 @@ func TestPostingV4Pages(t *testing.T) {
 }
 func TestPostingRejectLegacyWrapper(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"result":{"postings":[],"has_next":false}}`)
+		writeTestResponse(t, w, `{"result":{"postings":[],"has_next":false}}`)
 	}))
 	defer s.Close()
 	now := time.Now()
@@ -78,7 +78,7 @@ func TestPostingEmptyAndWindowValidation(t *testing.T) {
 	var calls int
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		fmt.Fprint(w, `{"postings":[],"has_next":false}`)
+		writeTestResponse(t, w, `{"postings":[],"has_next":false}`)
 	}))
 	defer s.Close()
 	c := newTestClient(t, s)
@@ -119,9 +119,9 @@ func TestPostingDetailCancellationAndUnknownFields(t *testing.T) {
 				}
 				switch r.URL.Path {
 				case "/v4/posting/fbs/list":
-					fmt.Fprint(w, `{"postings":[{"posting_number":"p"}],"has_next":false}`)
+					writeTestResponse(t, w, `{"postings":[{"posting_number":"p"}],"has_next":false}`)
 				case "/v3/posting/fbs/get":
-					fmt.Fprintf(w, `{"result":{"posting_number":"p","order_id":1,"order_number":"order","status":"new_unknown","in_process_at":"2026-01-02T00:00:00Z","parent_posting_number":"parent","fact_delivery_date":"2026-01-03T00:00:00Z","shipment_date_without_delay":"2026-01-04T00:00:00Z",%s"products":[{"offer_id":"a","sku":99,"quantity":2}]}}`, tc.extra)
+					writeTestResponse(t, w, fmt.Sprintf(`{"result":{"posting_number":"p","order_id":1,"order_number":"order","status":"new_unknown","in_process_at":"2026-01-02T00:00:00Z","parent_posting_number":"parent","fact_delivery_date":"2026-01-03T00:00:00Z","shipment_date_without_delay":"2026-01-04T00:00:00Z",%s"products":[{"offer_id":"a","sku":99,"quantity":2}]}}`, tc.extra))
 				default:
 					t.Errorf("unexpected endpoint %s", r.URL.Path)
 				}
@@ -167,9 +167,9 @@ func TestPostingRejectIncompleteTraversalAndDuplicates(t *testing.T) {
 				if r.URL.Path == "/v4/posting/fbs/list" {
 					page++
 					if page == 1 {
-						fmt.Fprint(w, tc.first)
+						writeTestResponse(t, w, tc.first)
 					} else {
-						fmt.Fprint(w, tc.second)
+						writeTestResponse(t, w, tc.second)
 					}
 					return
 				}
@@ -180,7 +180,7 @@ func TestPostingRejectIncompleteTraversalAndDuplicates(t *testing.T) {
 					if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 						t.Error(err)
 					}
-					fmt.Fprintf(w, `{"result":{"posting_number":%q,"order_id":1,"order_number":"order","status":"active","products":[]}}`, req.PostingNumber)
+					writeTestResponse(t, w, fmt.Sprintf(`{"result":{"posting_number":%q,"order_id":1,"order_number":"order","status":"active","products":[]}}`, req.PostingNumber))
 					return
 				}
 				t.Error("write or unknown endpoint")

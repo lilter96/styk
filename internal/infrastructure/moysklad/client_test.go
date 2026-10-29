@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -29,18 +30,18 @@ func TestReadPaginationAndValues(t *testing.T) {
 		switch r.URL.Path {
 		case "/entity/product":
 			if offset == "0" {
-				fmt.Fprint(w, `{"meta":{"size":2,"limit":1,"offset":0},"rows":[{"id":"p1","accountId":"acct","name":"Item","unknown":7}]}`)
+				writeTestResponse(t, w, `{"meta":{"size":2,"limit":1,"offset":0},"rows":[{"id":"p1","accountId":"acct","name":"Item","unknown":7}]}`)
 			} else {
-				fmt.Fprint(w, `{"meta":{"size":2,"limit":1,"offset":1},"rows":[{"id":"p2"}]}`)
+				writeTestResponse(t, w, `{"meta":{"size":2,"limit":1,"offset":1},"rows":[{"id":"p2"}]}`)
 			}
 		case "/entity/variant":
-			fmt.Fprint(w, `{"meta":{"size":1,"limit":1,"offset":0},"rows":[{"id":"v1","product":{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/p1","type":"product"}}}]}`)
+			writeTestResponse(t, w, `{"meta":{"size":1,"limit":1,"offset":0},"rows":[{"id":"v1","product":{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/p1","type":"product"}}}]}`)
 		case "/entity/store":
-			fmt.Fprint(w, `{"meta":{"size":1,"limit":1,"offset":0},"rows":[{"id":"s1"}]}`)
+			writeTestResponse(t, w, `{"meta":{"size":1,"limit":1,"offset":0},"rows":[{"id":"s1"}]}`)
 		case "/report/stock/bystore":
-			fmt.Fprint(w, `{"meta":{"size":0,"limit":1,"offset":0},"rows":[]}`)
+			writeTestResponse(t, w, `{"meta":{"size":0,"limit":1,"offset":0},"rows":[]}`)
 		case "/report/stock/all":
-			fmt.Fprint(w, `{"meta":{"size":1,"limit":1,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/p1","type":"product"},"stock":4.25,"reserve":2,"inTransit":1,"quantity":3.25}]}`)
+			writeTestResponse(t, w, `{"meta":{"size":1,"limit":1,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/p1","type":"product"},"stock":4.25,"reserve":2,"inTransit":1,"quantity":3.25}]}`)
 		default:
 			t.Error("unexpected path")
 		}
@@ -64,7 +65,7 @@ func TestStockReportHrefWithExpandQueryUsesEntityPathIdentity(t *testing.T) {
 func TestIncompleteAndDuplicates(t *testing.T) {
 	for _, tc := range []struct{ name, body string }{{"missing rows", `{"meta":{"size":0,"limit":1,"offset":0}}`}, {"empty interrupted", `{"meta":{"size":1,"limit":1,"offset":0},"rows":[]}`}, {"duplicate", `{"meta":{"size":2,"limit":2,"offset":0},"rows":[{"id":"x"},{"id":"x"}]}`}, {"missing id", `{"meta":{"size":1,"limit":1,"offset":0},"rows":[{}]}`}} {
 		t.Run(tc.name, func(t *testing.T) {
-			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, tc.body) }))
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { writeTestResponse(t, w, tc.body) }))
 			defer s.Close()
 			if _, err := client(t, s).Read(context.Background(), "acct"); err == nil {
 				t.Fatal("incomplete response accepted")
@@ -75,9 +76,9 @@ func TestIncompleteAndDuplicates(t *testing.T) {
 func TestIncompleteStock(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "stock") {
-			fmt.Fprint(w, `{"meta":{"size":1,"limit":1,"offset":0},"rows":[{"meta":{"href":"/entity/product/a","type":"product"},"stock":0}]}`)
+			writeTestResponse(t, w, `{"meta":{"size":1,"limit":1,"offset":0},"rows":[{"meta":{"href":"/entity/product/a","type":"product"},"stock":0}]}`)
 		} else {
-			fmt.Fprint(w, `{"meta":{"size":0,"limit":1,"offset":0},"rows":[]}`)
+			writeTestResponse(t, w, `{"meta":{"size":0,"limit":1,"offset":0},"rows":[]}`)
 		}
 	}))
 	defer s.Close()
@@ -139,7 +140,7 @@ func TestPageInterruptAndRetrySuccess(t *testing.T) {
 			return
 		}
 		if r.URL.Query().Get("offset") == "0" {
-			fmt.Fprint(w, `{"meta":{"size":2,"limit":1,"offset":0},"rows":[{"id":"p1"}]}`)
+			writeTestResponse(t, w, `{"meta":{"size":2,"limit":1,"offset":0},"rows":[{"id":"p1"}]}`)
 			return
 		}
 		requests.Add(1)
@@ -156,7 +157,7 @@ func TestPageInterruptAndRetrySuccess(t *testing.T) {
 			w.WriteHeader(http.StatusTooManyRequests)
 			return
 		}
-		fmt.Fprint(w, `{"meta":{"size":0,"limit":1,"offset":0},"rows":[]}`)
+		writeTestResponse(t, w, `{"meta":{"size":0,"limit":1,"offset":0},"rows":[]}`)
 	}))
 	defer retry.Close()
 	snap, err := client(t, retry).Read(context.Background(), "acct")
@@ -195,5 +196,12 @@ func TestMoyskladRateLimitWait(t *testing.T) {
 	_, err := client(t, s).Read(ctx, "acct")
 	if !errors.Is(err, context.DeadlineExceeded) || calls.Load() != 1 {
 		t.Fatalf("cancellation %v calls %d", err, calls.Load())
+	}
+}
+
+func writeTestResponse(t *testing.T, w io.Writer, body string) {
+	t.Helper()
+	if _, err := io.WriteString(w, body); err != nil {
+		t.Error("write synthetic response failed")
 	}
 }

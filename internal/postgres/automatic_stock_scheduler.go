@@ -253,7 +253,7 @@ func (s *Store) startAutomaticCycle(ctx context.Context, scope domain.StockSyncS
 	if err != nil {
 		return false, err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	if err = syncLock(ctx, tx, scope); err != nil {
 		return false, err
 	}
@@ -287,7 +287,7 @@ func (s *Store) evaluateAutomaticCycle(ctx context.Context, scope domain.StockSy
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	if err = syncLock(ctx, tx, scope); err != nil {
 		return err
 	}
@@ -540,7 +540,7 @@ func (s *Store) finishAutomaticTarget(ctx context.Context, scope domain.StockSyn
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	if err = syncLock(ctx, tx, scope); err != nil {
 		return err
 	}
@@ -562,7 +562,7 @@ func (s *Store) finishAutomaticCycle(ctx context.Context, scope domain.StockSync
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	if err = syncLock(ctx, tx, scope); err != nil {
 		return err
 	}

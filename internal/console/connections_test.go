@@ -3,7 +3,7 @@ package console
 import (
 	"bytes"
 	"context"
-	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -46,7 +46,7 @@ func TestProbeDoesNotExposeSecretsInResultsOrLogs(t *testing.T) {
 	const credential = "synthetic-never-log-this-token"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		fmt.Fprint(w, credential)
+		writeTestResponse(t, w, credential)
 	}))
 	defer server.Close()
 	client, err := moysklad.New(moysklad.Options{BaseURL: server.URL + "/", Token: credential, Timeout: time.Second, Interval: time.Millisecond, Backoff: time.Millisecond, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 1})
@@ -87,7 +87,7 @@ func TestConnectionProbesAreBoundedSanitizedAndRejectMismatch(t *testing.T) {
 					t.Error("unexpected Ozon operation")
 				}
 				w.WriteHeader(tc.status)
-				fmt.Fprint(w, tc.body)
+				writeTestResponse(t, w, tc.body)
 			}))
 			defer server.Close()
 			c := &connections{moyAccount: "selected", ozonAccount: "synthetic-client", checks: map[string]map[string]connectionCheck{}}
@@ -166,5 +166,12 @@ func TestConnectionMutationRequiresOriginAndJSON(t *testing.T) {
 		if w.Code != 403 {
 			t.Fatal("invalid origin accepted")
 		}
+	}
+}
+
+func writeTestResponse(t *testing.T, w io.Writer, body string) {
+	t.Helper()
+	if _, err := io.WriteString(w, body); err != nil {
+		t.Error("write synthetic response failed")
 	}
 }

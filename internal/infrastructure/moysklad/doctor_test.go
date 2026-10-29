@@ -18,7 +18,7 @@ func TestDoctorProbeBoundedReadAndAccount(t *testing.T) {
 				if r.Method != "GET" || r.URL.Path != "/entity/product" || r.URL.Query().Get("limit") != "1" {
 					t.Error("unbounded or unsafe probe")
 				}
-				fmt.Fprintf(w, `{"meta":{"size":1},"rows":[{"id":"item","accountId":%q}]}`, account)
+				writeTestResponse(t, w, fmt.Sprintf(`{"meta":{"size":1},"rows":[{"id":"item","accountId":%q}]}`, account))
 			}))
 			defer s.Close()
 			c, err := New(Options{BaseURL: s.URL + "/", Token: "synthetic", Timeout: time.Second, Interval: time.Millisecond, Backoff: time.Millisecond, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 1})
@@ -39,7 +39,7 @@ func TestCredentialIdentityUsesBoundedEmployeeRead(t *testing.T) {
 		if r.Method != "GET" || r.URL.Path != "/context/employee" || r.URL.RawQuery != "" {
 			t.Error("unexpected identity request")
 		}
-		fmt.Fprintf(w, `{"accountId":%q}`, account)
+		writeTestResponse(t, w, fmt.Sprintf(`{"accountId":%q}`, account))
 	}))
 	defer server.Close()
 	client, err := New(Options{BaseURL: server.URL, Token: "synthetic", Timeout: time.Second, Interval: time.Millisecond, Backoff: time.Millisecond, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 1})

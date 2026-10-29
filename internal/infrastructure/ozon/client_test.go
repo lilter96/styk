@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -34,23 +35,23 @@ func TestRead(t *testing.T) {
 		case productPath:
 			f := b["filter"].(map[string]any)
 			if f["visibility"] == "ARCHIVED" {
-				fmt.Fprint(w, `{"result":{"items":[{"product_id":3,"offer_id":"old","sku":33,"archived":true}],"total_items":1,"last_id":"arch"}}`)
+				writeTestResponse(t, w, `{"result":{"items":[{"product_id":3,"offer_id":"old","sku":33,"archived":true}],"total_items":1,"last_id":"arch"}}`)
 			} else if b["last_id"] == "" {
-				fmt.Fprint(w, `{"result":{"items":[{"product_id":1,"offer_id":"one","sku":11,"archived":false}],"total_items":2,"last_id":"p1"}}`)
+				writeTestResponse(t, w, `{"result":{"items":[{"product_id":1,"offer_id":"one","sku":11,"archived":false}],"total_items":2,"last_id":"p1"}}`)
 			} else {
-				fmt.Fprint(w, `{"result":{"items":[{"product_id":2,"offer_id":"two","sku":22,"archived":false}],"total_items":2,"last_id":"p2"}}`)
+				writeTestResponse(t, w, `{"result":{"items":[{"product_id":2,"offer_id":"two","sku":22,"archived":false}],"total_items":2,"last_id":"p2"}}`)
 			}
 		case warehousePath:
 			if b["cursor"] == "" {
-				fmt.Fprint(w, `{"warehouses":[{"warehouse_id":100,"name":"A","is_rfbs":false}],"has_next":true,"cursor":"w1"}`)
+				writeTestResponse(t, w, `{"warehouses":[{"warehouse_id":100,"name":"A","is_rfbs":false}],"has_next":true,"cursor":"w1"}`)
 			} else {
-				fmt.Fprint(w, `{"warehouses":[{"warehouse_id":200,"name":"B","is_rfbs":true}],"has_next":false,"cursor":""}`)
+				writeTestResponse(t, w, `{"warehouses":[{"warehouse_id":200,"name":"B","is_rfbs":true}],"has_next":false,"cursor":""}`)
 			}
 		case stockPath:
 			if b["cursor"] == "" {
-				fmt.Fprint(w, `{"products":[{"product_id":1,"offer_id":"one","sku":11,"warehouse_id":100,"present":3,"reserved":1,"free_stock":2}],"has_next":true,"cursor":"s1"}`)
+				writeTestResponse(t, w, `{"products":[{"product_id":1,"offer_id":"one","sku":11,"warehouse_id":100,"present":3,"reserved":1,"free_stock":2}],"has_next":true,"cursor":"s1"}`)
 			} else {
-				fmt.Fprint(w, `{"products":[{"product_id":1,"offer_id":"one","sku":11,"warehouse_id":200,"present":0,"reserved":0,"free_stock":0}],"has_next":false,"cursor":""}`)
+				writeTestResponse(t, w, `{"products":[{"product_id":1,"offer_id":"one","sku":11,"warehouse_id":200,"present":0,"reserved":0,"free_stock":0}],"has_next":false,"cursor":""}`)
 			}
 		default:
 			t.Error("unexpected path")
@@ -79,7 +80,7 @@ func TestStatus(t *testing.T) {
 				calls.Add(1)
 				w.Header().Set("Retry-After", "0")
 				w.WriteHeader(tc.status)
-				fmt.Fprint(w, `{"code":42}`)
+				writeTestResponse(t, w, `{"code":42}`)
 			}))
 			defer s.Close()
 			_, err := newTestClient(t, s).Read(context.Background())
@@ -116,7 +117,7 @@ func TestTimeout(t *testing.T) {
 func TestInvalidPages(t *testing.T) {
 	for _, body := range []string{`{}`, `{"result":{"items":[],"total_items":2}}`, `{"result":{"items":[{"product_id":1,"offer_id":"x"},{"product_id":2,"offer_id":"x"}],"total_items":2}}`, `{"result":{"items":[{"product_id":1,"offer_id":"x"}],"total_items":2}}`} {
 		t.Run(body, func(t *testing.T) {
-			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, body) }))
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { writeTestResponse(t, w, body) }))
 			defer s.Close()
 			if _, err := newTestClient(t, s).Read(context.Background()); err == nil {
 				t.Fatal("invalid page accepted")
@@ -129,9 +130,9 @@ func TestChangedPageCount(t *testing.T) {
 		var b map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&b)
 		if b["last_id"] == "" {
-			fmt.Fprint(w, `{"result":{"items":[{"product_id":1,"offer_id":"x"}],"last_id":"a","total_items":2}}`)
+			writeTestResponse(t, w, `{"result":{"items":[{"product_id":1,"offer_id":"x"}],"last_id":"a","total_items":2}}`)
 		} else {
-			fmt.Fprint(w, `{"result":{"items":[],"total_items":3}}`)
+			writeTestResponse(t, w, `{"result":{"items":[],"total_items":3}}`)
 		}
 	}))
 	defer s.Close()
@@ -158,14 +159,14 @@ func TestIncompleteStockAndCursor(t *testing.T) {
 					}
 					_ = json.NewDecoder(r.Body).Decode(&b)
 					if b.Filter.Visibility == "ARCHIVED" {
-						fmt.Fprint(w, `{"result":{"items":[],"total_items":0}}`)
+						writeTestResponse(t, w, `{"result":{"items":[],"total_items":0}}`)
 					} else {
-						fmt.Fprint(w, `{"result":{"items":[{"product_id":1,"offer_id":"one","sku":2}],"total_items":1}}`)
+						writeTestResponse(t, w, `{"result":{"items":[{"product_id":1,"offer_id":"one","sku":2}],"total_items":1}}`)
 					}
 				case warehousePath:
-					fmt.Fprint(w, `{"warehouses":[],"has_next":false}`)
+					writeTestResponse(t, w, `{"warehouses":[],"has_next":false}`)
 				case stockPath:
-					fmt.Fprint(w, body)
+					writeTestResponse(t, w, body)
 				default:
 					t.Error("unexpected path")
 				}
@@ -175,5 +176,12 @@ func TestIncompleteStockAndCursor(t *testing.T) {
 				t.Fatal("incomplete stock accepted")
 			}
 		})
+	}
+}
+
+func writeTestResponse(t *testing.T, w io.Writer, body string) {
+	t.Helper()
+	if _, err := io.WriteString(w, body); err != nil {
+		t.Error("write synthetic response failed")
 	}
 }

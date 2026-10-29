@@ -268,7 +268,7 @@ func Run(ctx context.Context, l *Lock, m *Manifest, account string, remote Remot
 			return fmt.Errorf("prepare %s failed before sending", o.Key)
 		}
 		matches, err := remote.search(ctx, *o)
-		if err != nil && !(o.Kind == "characteristic" && m.MultipleOrderProductOnly && errors.Is(err, ErrCoverageUnknown)) {
+		if err != nil && (o.Kind != "characteristic" || !m.MultipleOrderProductOnly || !errors.Is(err, ErrCoverageUnknown)) {
 			o.State = FailedBeforeSend
 			o.Note = "identity preflight incomplete"
 			if saveErr := l.Save(*m); saveErr != nil {

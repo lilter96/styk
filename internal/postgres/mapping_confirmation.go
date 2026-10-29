@@ -55,7 +55,7 @@ func (s *Store) ConfirmMappingReview(ctx context.Context, req domain.MappingConf
 	if err != nil {
 		return domain.MappingConfirmationResult{}, fmt.Errorf("begin confirmation: %w", err)
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	stored, err := loadMappingReview(ctx, tx, req.ReviewID, req.SessionID)
 	if err != nil {
 		return domain.MappingConfirmationResult{}, err

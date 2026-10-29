@@ -2,9 +2,12 @@ package console
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/lilter96/styk/internal/domain"
@@ -53,7 +56,7 @@ func products(db *postgres.Store) http.HandlerFunc {
 			writeError(w, 503, "DATABASE_UNAVAILABLE")
 			return
 		}
-		defer tx.Rollback(context.Background())
+		defer rollbackReadTransaction(tx)
 		var valid bool
 		if e := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_connections WHERE tenant_id=$1 AND source='ozon' AND account_id=$2) AND EXISTS(SELECT 1 FROM stock_connections WHERE tenant_id=$1 AND source='moysklad' AND account_id=$3)`, tenant, account, moy).Scan(&valid); e != nil {
 			writeError(w, 503, "DATABASE_UNAVAILABLE")
@@ -293,4 +296,12 @@ func matchingData(ctx context.Context, tx pgx.Tx, tenant, account, moy string, o
 		return nil, nil, true, true, nil
 	}
 	return targets, mappings, true, false, nil
+}
+
+func rollbackReadTransaction(tx pgx.Tx) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+		slog.Error("console read transaction rollback unavailable")
+	}
 }

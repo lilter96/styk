@@ -52,7 +52,7 @@ func (s *Store) Submit(ctx context.Context, o domain.Observation, max int) (int6
 	if err != nil {
 		return 0, fmt.Errorf("begin submission: %w", err)
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	var id int64
 	err = tx.QueryRow(ctx, `INSERT INTO inventory_observations(operation_key,source,sku,quantity) VALUES($1,$2,$3,$4) ON CONFLICT (operation_key) DO UPDATE SET operation_key=EXCLUDED.operation_key WHERE inventory_observations.source=EXCLUDED.source AND inventory_observations.sku=EXCLUDED.sku AND inventory_observations.quantity=EXCLUDED.quantity RETURNING id`, o.OperationKey, o.Source, o.SKU, o.Quantity).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -98,7 +98,7 @@ func (s *Store) claim(ctx context.Context, lease time.Duration, account, moyskla
 	if err != nil {
 		return nil, fmt.Errorf("begin task claim: %w", err)
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	// An expired read-only import may be traversed again; only its fenced
 	// persistence transaction may publish a batch or a terminal result.
 	storedPredicate := ""
@@ -129,7 +129,7 @@ func (s *Store) Finish(ctx context.Context, t domain.Task, result string, proces
 	if err != nil {
 		return fmt.Errorf("begin task completion: %w", err)
 	}
-	defer rollbackTask(tx)
+	defer rollbackTransaction(tx)
 	var id int64
 	err = tx.QueryRow(ctx, `SELECT id FROM outbox_tasks WHERE id=$1 AND task_type='mock' AND state='running' AND claim_token=$2 FOR UPDATE`, t.ID, t.ClaimToken).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -159,11 +159,11 @@ func (s *Store) Finish(ctx context.Context, t domain.Task, result string, proces
 	return nil
 }
 
-func rollbackTask(tx pgx.Tx) {
+func rollbackTransaction(tx pgx.Tx) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
-		slog.Error("task transaction rollback unavailable")
+		slog.Error("transaction rollback unavailable")
 	}
 }
 
@@ -175,7 +175,7 @@ func (s *Store) ExpireExhausted(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("begin task expiry: %w", err)
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	_, err = tx.Exec(ctx, `UPDATE outbox_tasks SET state='failed',last_error='final mock attempt lease expired',claim_token=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE task_type='mock' AND state='running' AND lease_until<=clock_timestamp() AND attempts>=max_attempts`)
 	if err != nil {
 		return fmt.Errorf("expire tasks: %w", err)
@@ -195,7 +195,7 @@ func (s *Store) RenewImportClaim(ctx context.Context, t domain.Task, lease time.
 	if err != nil {
 		return fmt.Errorf("begin import renewal: %w", err)
 	}
-	defer rollbackTask(tx)
+	defer rollbackTransaction(tx)
 	if err = lockImportClaim(ctx, tx, t); err != nil {
 		return err
 	}

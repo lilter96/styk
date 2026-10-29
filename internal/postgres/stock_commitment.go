@@ -26,7 +26,7 @@ func (s *Store) RegisterStockConnection(ctx context.Context, tenant, source, acc
 	if err != nil {
 		return fmt.Errorf("begin connection registration: %w", err)
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	if err = requireMerchantActor(ctx, tx, tenant, provenance, true); err != nil {
 		return err
 	}
@@ -108,7 +108,7 @@ func (s *Store) calculateStock(ctx context.Context, r domain.StockCalculationReq
 	if err != nil {
 		return domain.StockDecision{}, fmt.Errorf("begin stock calculation: %w", err)
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	// Match the import and confirmation lock order. Serializable isolation also
 	// protects the read from changes that do not use these application locks.
 	for _, key := range []string{"ozon:" + r.Target.OzonAccount, "moysklad:" + r.Pool.MoyskladAccount, "matching:" + r.Pool.Tenant, "warehouse-mapping:" + r.Pool.Tenant} {

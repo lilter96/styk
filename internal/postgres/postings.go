@@ -17,7 +17,7 @@ func (s *Store) SavePostings(ctx context.Context, b domain.PostingImport) (int64
 	if err != nil {
 		return 0, err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	if err = requireContextActor(ctx, tx, b.Tenant, false); err != nil {
 		return 0, err
 	}

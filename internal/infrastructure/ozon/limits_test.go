@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,7 +15,7 @@ import (
 
 func TestBoundedReadRejectsPartialTraversal(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"result":{"items":[{"product_id":1,"offer_id":"synthetic"}],"total_items":2,"last_id":"next"}}`)
+		writeTestResponse(t, w, `{"result":{"items":[{"product_id":1,"offer_id":"synthetic"}],"total_items":2,"last_id":"next"}}`)
 	}))
 	defer s.Close()
 	for _, tc := range []struct {
@@ -85,7 +84,7 @@ func TestBoundedCancellationSendsNoRequest(t *testing.T) {
 
 func TestBoundedPostingsDoesNotSkipRequiredDetail(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"postings":[{"posting_number":"synthetic"}],"has_next":false,"cursor":""}`)
+		writeTestResponse(t, w, `{"postings":[{"posting_number":"synthetic"}],"has_next":false,"cursor":""}`)
 	}))
 	defer s.Close()
 	l := Limits{Requests: 1, Attempts: 1, Pages: 1, Entities: 1, Products: 1, Warehouses: 1, Observations: 1, Postings: 1, ResponseBytes: 1024, Duration: time.Second}

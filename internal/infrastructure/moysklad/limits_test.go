@@ -58,7 +58,7 @@ func TestCatalogBudgetsStopBeforeNextSend(t *testing.T) {
 						row = `{"meta":{"href":"/entity/product/b","type":"product"},"stockByStore":[]}`
 					}
 				}
-				fmt.Fprintf(w, `{"meta":{"size":2,"limit":1,"offset":%s},"rows":[%s]}`, r.URL.Query().Get("offset"), row)
+				writeTestResponse(t, w, fmt.Sprintf(`{"meta":{"size":2,"limit":1,"offset":%s},"rows":[%s]}`, r.URL.Query().Get("offset"), row))
 			}))
 			defer srv.Close()
 			l := domain.DefaultMoyskladImportLimits()
@@ -156,7 +156,7 @@ func TestBoundedGETsDoNotUseTransparentTransportReplay(t *testing.T) {
 		if !r.Close {
 			t.Error("bounded transport reused a connection")
 		}
-		fmt.Fprint(w, `{"meta":{"size":0,"limit":1,"offset":0},"rows":[]}`)
+		writeTestResponse(t, w, `{"meta":{"size":0,"limit":1,"offset":0},"rows":[]}`)
 	}))
 	defer s.Close()
 	_, c, err := client(t, s).ReadBoundedProgress(context.Background(), "acct", domain.DefaultMoyskladImportLimits(), nil)

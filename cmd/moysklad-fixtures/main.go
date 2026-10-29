@@ -17,7 +17,7 @@ import (
 
 const manifestDir = ".local/moysklad-fixtures"
 
-func run() error {
+func run() (err error) {
 	f := flag.NewFlagSet("moysklad-fixtures", flag.ContinueOnError)
 	mode := f.String("mode", "plan", "plan, init, inspect, execute, resume, enable-shipment, enable-multiple, enable-variants or verify-stock")
 	namespace := f.String("namespace", "", "fixture namespace; generated for plan/init")
@@ -56,7 +56,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer l.Close()
+	defer func() {
+		if closeErr := l.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close fixture lock: %w", closeErr))
+		}
+	}()
 	account := os.Getenv("MOYSKLAD_ACCOUNT_ID")
 	if *mode == "init" {
 		m, err := l.Create(account)

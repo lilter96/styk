@@ -11,7 +11,7 @@ import (
 	"sort"
 )
 
-var ErrOzonPersistence = errors.New("Ozon persistence failed")
+var ErrOzonPersistence = errors.New("ozon persistence failed")
 
 type OzonReader interface {
 	Read(context.Context) (domain.OzonImport, error)

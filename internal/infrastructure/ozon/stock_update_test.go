@@ -1,12 +1,14 @@
 package ozon
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -18,6 +20,51 @@ import (
 
 	"github.com/lilter96/styk/internal/testpublication"
 )
+
+type stockCleanupBody struct {
+	*strings.Reader
+	closes int
+}
+
+func (b *stockCleanupBody) Close() error {
+	b.closes++
+	return errors.New("untrusted-cleanup-detail")
+}
+
+func TestStockResponseCleanupPreservesOutcome(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	tests := []struct {
+		name, body  string
+		wantUnknown bool
+	}{
+		{"acknowledged", `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]}]}`, false},
+		{"malformed", `{`, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			body := &stockCleanupBody{Reader: strings.NewReader(tc.body)}
+			calls := 0
+			c := stockTestClient(t, func(w http.ResponseWriter, r *http.Request) { t.Error("unexpected network call") })
+			c.http.Transport = transportFunc(func(*http.Request) (*http.Response, error) {
+				calls++
+				return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: body}, nil
+			})
+			result, err := c.UpdateStocks(context.Background(), []StockUpdate{{"123", "456", 1}})
+			if errors.Is(err, ErrStockWriteUnknown) != tc.wantUnknown || (!tc.wantUnknown && (err != nil || len(result) != 1 || result[0].State != "SUCCEEDED")) {
+				t.Fatalf("cleanup changed write outcome: result=%+v err=%v", result, err)
+			}
+			if calls != 1 || body.closes != 1 {
+				t.Fatalf("calls=%d closes=%d", calls, body.closes)
+			}
+		})
+	}
+	if !strings.Contains(logs.String(), "stock response cleanup unavailable") || strings.Contains(logs.String(), "untrusted-cleanup-detail") {
+		t.Fatal("cleanup diagnostic missing or contains untrusted detail")
+	}
+}
 
 func stockTestClient(t *testing.T, h http.HandlerFunc) *Client {
 	t.Helper()
@@ -40,7 +87,7 @@ func TestControlledClientNegotiatesHTTP1WithHTTP2CapableServer(t *testing.T) {
 				if r.ProtoMajor != 1 || r.URL.Path != stockUpdatePath {
 					t.Errorf("unexpected protocol or path: %s %s", r.Proto, r.URL.Path)
 				}
-				fmt.Fprint(w, `{"result":[{"product_id":2764544165,"warehouse_id":1020001323428000,"updated":true,"errors":[]}]}`)
+				writeTestResponse(t, w, `{"result":[{"product_id":2764544165,"warehouse_id":1020001323428000,"updated":true,"errors":[]}]}`)
 			}))
 			server.EnableHTTP2 = supportsHTTP2
 			server.StartTLS()
@@ -267,7 +314,7 @@ func TestStockWriteSingleAttemptAndAmbiguousResult(t *testing.T) {
 					t.Error("unexpected scoped request")
 				}
 				w.WriteHeader(status)
-				fmt.Fprint(w, "synthetic-private-key raw vendor response")
+				writeTestResponse(t, w, "synthetic-private-key raw vendor response")
 			})
 			_, err := c.UpdateStocks(context.Background(), []StockUpdate{{"123", "456", 8}})
 			if !errors.Is(err, ErrStockWriteUnknown) || calls.Load() != 1 || strings.Contains(err.Error(), "private-key") {
@@ -290,7 +337,7 @@ func TestStockWritePartialResultsAndFrozenPayload(t *testing.T) {
 		if _, exists := body.Stocks[0]["offer_id"]; exists {
 			t.Error("ambiguous product/offer precedence")
 		}
-		fmt.Fprint(w, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]},{"product_id":124,"warehouse_id":456,"updated":false,"errors":[{"code":"PRICE_IS_NOT_SENT","message":"synthetic-private-key"},{"code":"INVALID_ARGUMENT"},{"code":"synthetic-private-key"}]}]}`)
+		writeTestResponse(t, w, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]},{"product_id":124,"warehouse_id":456,"updated":false,"errors":[{"code":"PRICE_IS_NOT_SENT","message":"synthetic-private-key"},{"code":"INVALID_ARGUMENT"},{"code":"synthetic-private-key"}]}]}`)
 	})
 	result, err := c.UpdateStocks(context.Background(), []StockUpdate{{"123", "456", 0}, {"124", "456", 8}})
 	if err != nil || len(result) != 2 || result[0].State != "SUCCEEDED" || result[1].State != "UNKNOWN" || result[1].SafeError != "PRICE_IS_NOT_SENT" {
@@ -302,7 +349,7 @@ func TestStockWritePartialResultsAndFrozenPayload(t *testing.T) {
 }
 func TestStockWriteMissingMalformedOrDuplicateResultsAreUnknown(t *testing.T) {
 	for _, body := range []string{`{}`, `{"result":[]}`, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true}]}`, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]},{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]}]}`, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]},{"product_id":123,"warehouse_id":456}]}`, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]},{"product_id":999,"warehouse_id":456,"updated":true,"errors":[]}]}`} {
-		c := stockTestClient(t, func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, body) })
+		c := stockTestClient(t, func(w http.ResponseWriter, _ *http.Request) { writeTestResponse(t, w, body) })
 		result, err := c.UpdateStocks(context.Background(), []StockUpdate{{"123", "456", 8}})
 		if err == nil && (len(result) != 1 || result[0].State != "UNKNOWN") {
 			t.Fatalf("invalid response became success: %s %#v", body, result)
@@ -319,7 +366,7 @@ func TestStockWriteValidationPrecedesIOAndReadbackIsReadOnly(t *testing.T) {
 		if r.URL.Path != stockPath {
 			t.Error("reconciliation attempted a write")
 		}
-		fmt.Fprint(w, `{"products":[{"product_id":123,"warehouse_id":456,"offer_id":"offer","free_stock":8,"reserved":2,"present":10}],"has_next":false,"cursor":""}`)
+		writeTestResponse(t, w, `{"products":[{"product_id":123,"warehouse_id":456,"offer_id":"offer","free_stock":8,"reserved":2,"present":10}],"has_next":false,"cursor":""}`)
 	})
 	for _, items := range [][]StockUpdate{{}, {{"bad", "456", 8}}, {{"123", "456", -1}}, {{"123", "456", 8}, {"123", "456", 9}}} {
 		if _, err := c.UpdateStocks(context.Background(), items); err == nil {
@@ -386,7 +433,7 @@ func TestStockWriteTimeoutWhileServerContinuesIsUnknown(t *testing.T) {
 		close(started)
 		<-release
 		applied.Add(1)
-		fmt.Fprint(w, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]}]}`)
+		writeTestResponse(t, w, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]}]}`)
 		close(finished)
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -410,7 +457,7 @@ func TestStockReadbackRejectsIncompleteOrAmbiguousPages(t *testing.T) {
 		`{"products":[{"product_id":123,"warehouse_id":456,"offer_id":"offer","free_stock":8}]}`,
 		`{"products":[{"product_id":123,"warehouse_id":456,"offer_id":"offer","free_stock":8},{"product_id":123,"warehouse_id":456,"offer_id":"offer","free_stock":7}],"has_next":false}`,
 	} {
-		c := stockTestClient(t, func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, body) })
+		c := stockTestClient(t, func(w http.ResponseWriter, _ *http.Request) { writeTestResponse(t, w, body) })
 		if _, err := c.ReadStockQuantity(context.Background(), "123", "456", "offer"); !errors.Is(err, ErrStockReadbackUnavailable) {
 			t.Fatalf("ambiguous page accepted: %s", body)
 		}
@@ -421,7 +468,7 @@ func TestSyntheticStockWriteTransportDoesNotReuseConnections(t *testing.T) {
 	var ports []string
 	c := stockTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		ports = append(ports, r.RemoteAddr)
-		fmt.Fprint(w, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]}]}`)
+		writeTestResponse(t, w, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]}]}`)
 	})
 	for i := 0; i < 2; i++ {
 		if _, err := c.UpdateStocks(context.Background(), []StockUpdate{{"123", "456", 8}}); err != nil {

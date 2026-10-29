@@ -44,7 +44,7 @@ func warehouseReview(db *postgres.Store) http.HandlerFunc {
 			writeError(w, 503, "DATABASE_UNAVAILABLE")
 			return
 		}
-		defer tx.Rollback(context.Background())
+		defer rollbackReadTransaction(tx)
 		var valid bool
 		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_connections WHERE tenant_id=$1 AND source='moysklad' AND account_id=$2) AND EXISTS(SELECT 1 FROM stock_connections WHERE tenant_id=$1 AND source='ozon' AND account_id=$3)`, tenant, moy, ozon).Scan(&valid)
 		if err != nil {

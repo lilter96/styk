@@ -22,7 +22,7 @@ func (s *Store) ListPostings(ctx context.Context, scope domain.PostingReadScope)
 	if err != nil {
 		return nil, fmt.Errorf("begin posting read: %w", err)
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	rows, err := tx.Query(ctx, `SELECT b.id,o.id,o.posting_number,o.order_id,o.order_number,o.status,o.substatus,o.warehouse_id,o.in_process_at,o.shipment_date,o.delivering_date,o.parent_posting_number,o.fact_delivery_date,o.shipment_date_without_delay,o.observed_at,o.observed_time_basis,o.source_created_at,o.source_updated_at,o.cancellation_present,o.cancellation_reason,o.cancellation_reason_id,o.cancellation_type,o.cancellation_initiator,o.cancelled_after_ship, wm.moysklad_account,wm.moysklad_warehouse_id,wm.version
  FROM ozon_posting_batches b JOIN ozon_posting_observations o ON o.batch_id=b.id
  LEFT JOIN warehouse_mappings wm ON wm.tenant_id=b.tenant_id AND wm.ozon_account=b.account_id AND wm.moysklad_account=$3 AND wm.ozon_warehouse_id=o.warehouse_id AND wm.status='active' AND o.warehouse_id<>''

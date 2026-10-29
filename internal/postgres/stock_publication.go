@@ -84,7 +84,7 @@ func (s *Store) refreshStockScope(ctx context.Context, scope domain.StockSyncSco
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	if err = syncLock(ctx, tx, scope); err != nil {
 		return err
 	}
@@ -190,7 +190,7 @@ func (s *Store) nextStockPublication(ctx context.Context, now time.Time, control
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	var scope domain.StockSyncScope
 	var opID string
 	query := `SELECT p.id,p.tenant_id,p.moysklad_account,p.ozon_account FROM stock_publications p JOIN stock_sync_settings s USING(tenant_id,moysklad_account,ozon_account) WHERE s.enabled AND EXISTS(SELECT 1 FROM stock_publication_targets t WHERE t.operation_id=p.id AND t.state='QUEUED') AND NOT EXISTS(SELECT 1 FROM stock_publication_dispatch_clock clock WHERE clock.ozon_account=p.ozon_account AND clock.dispatched_at>$1::timestamptz-interval '1 second') AND NOT EXISTS(SELECT 1 FROM stock_publication_targets queued JOIN stock_publication_targets prior ON prior.ozon_account=queued.ozon_account AND prior.product_id=queued.product_id AND prior.warehouse_id=queued.warehouse_id WHERE queued.operation_id=p.id AND queued.state='QUEUED' AND prior.dispatched_at>$1::timestamptz-interval '30 seconds')`
@@ -327,7 +327,7 @@ func (s *Store) RecoverControlledStockPublications(ctx context.Context, now time
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	if err = syncLock(ctx, tx, scope); err != nil {
 		return err
 	}
@@ -373,7 +373,7 @@ func (s *Store) finishStockTargetResult(ctx context.Context, scope domain.StockS
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	if err = syncLock(ctx, tx, scope); err != nil {
 		return err
 	}
@@ -410,7 +410,7 @@ func (s *Store) RecordStockReadback(ctx context.Context, scope domain.StockSyncS
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	if err = requireContextActor(ctx, tx, scope.Tenant, false); err != nil {
 		return err
 	}
@@ -467,7 +467,7 @@ func (s *Store) RecordUnknownStockReadback(ctx context.Context, scope domain.Sto
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	if err = requireContextActor(ctx, tx, scope.Tenant, false); err != nil {
 		return err
 	}
@@ -509,7 +509,7 @@ func (s *Store) StockPublication(ctx context.Context, scope domain.StockSyncScop
 	if err != nil {
 		return domain.StockPublication{}, err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	return readPublication(ctx, tx, scope, id)
 }
 func (s *Store) MarkStockPublicationUnknown(ctx context.Context, scope domain.StockSyncScope, id string, now time.Time) error {

@@ -24,7 +24,7 @@ func (s *Store) TouchTestStockWorker(ctx context.Context, workerID string, now t
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	if err = syncLock(ctx, tx, scope); err != nil {
 		return err
 	}
@@ -47,7 +47,7 @@ func (s *Store) SupersedeTestUnknown(ctx context.Context, req domain.StockRecove
 	if err != nil {
 		return domain.StockSyncView{}, err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	if err = syncLock(ctx, tx, req.StockSyncScope); err != nil {
 		return domain.StockSyncView{}, err
 	}

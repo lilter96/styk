@@ -26,7 +26,7 @@ func (s *Store) ConfirmWarehouseReview(ctx context.Context, req domain.MappingCo
 	if err != nil {
 		return domain.MappingConfirmationResult{}, fmt.Errorf("begin warehouse confirmation: %w", err)
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	stored, err := loadWarehouseReview(ctx, tx, req.ReviewID, req.SessionID)
 	if err != nil {
 		return domain.MappingConfirmationResult{}, err

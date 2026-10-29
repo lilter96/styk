@@ -441,7 +441,7 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 	return review, nil
 }
 func (s *Store) PreviewStockSync(ctx context.Context, req domain.StockSyncPreviewRequest, now time.Time) (domain.StockSyncReview, error) {
-	if !req.StockSyncScope.Valid() {
+	if !req.Valid() {
 		return domain.StockSyncReview{}, domain.ErrStockSyncNotFound
 	}
 	now = now.UTC().Truncate(time.Microsecond)
@@ -454,7 +454,7 @@ func (s *Store) PreviewStockSync(ctx context.Context, req domain.StockSyncPrevie
 	if err != nil {
 		return domain.StockSyncReview{}, err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	if err = requireContextActor(ctx, tx, req.Tenant, false); err != nil {
 		return domain.StockSyncReview{}, err
 	}
@@ -605,7 +605,7 @@ func (s *Store) MutateStockSync(ctx context.Context, scope domain.StockSyncScope
 	if err != nil {
 		return domain.StockSyncView{}, err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	if err = requireContextActor(ctx, tx, scope.Tenant, true); err != nil {
 		return domain.StockSyncView{}, err
 	}
@@ -724,7 +724,7 @@ func (s *Store) StockSyncStatus(ctx context.Context, scope domain.StockSyncScope
 	if err != nil {
 		return domain.StockSyncView{}, err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	view := domain.StockSyncView{StockSyncScope: scope, State: "DISABLED", Checks: []domain.StockSyncCheck{}, Targets: []domain.StockSyncTarget{}}
 	var reviewID *string
 	var lastChecks []byte

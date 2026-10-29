@@ -211,7 +211,7 @@ func (c *connections) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session, _ := r.Context().Value(auditContextKey{}).(string)
-	metas := []credentials.Metadata{}
+	var metas []credentials.Metadata
 	{
 		var err error
 		metas, err = c.db.ListCredentialMetadata(r.Context(), tenant)

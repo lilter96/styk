@@ -17,7 +17,7 @@ func (s *Store) SaveInventoryImport(ctx context.Context, snap domain.InventoryIm
 	if err != nil {
 		return false, fmt.Errorf("begin import: %w", err)
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	_, created, err := saveInventoryImportTx(ctx, tx, snap, fingerprint, nil)
 	if err != nil {
 		return false, err

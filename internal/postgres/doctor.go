@@ -23,7 +23,7 @@ func (s *Store) Doctor(ctx context.Context, scope MatchScope, now time.Time, max
 	if err != nil {
 		return doctor.Report{}, err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	e := doctor.Evidence{}
 	refs := make([]domain.StockConnectionReference, 2)
 	for i, c := range []struct {

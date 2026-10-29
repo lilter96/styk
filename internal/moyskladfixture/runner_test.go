@@ -178,7 +178,9 @@ func TestManifestNamespaceLockAndPermissions(t *testing.T) {
 		t.Fatal("repeated namespace overwrote manifest")
 	}
 	if second, err := OpenLock(l.directory, testNamespace); err == nil {
-		second.Close()
+		if closeErr := second.Close(); closeErr != nil {
+			t.Errorf("close unexpected namespace lock: %v", closeErr)
+		}
 		t.Fatal("concurrent namespace lock succeeded")
 	}
 	info, err := os.Stat(l.path())

@@ -82,7 +82,7 @@ func (s *Store) submitCatalogImport(ctx context.Context, tenant, provider, accou
 	if err != nil {
 		return domain.ImportOperation{}, false, err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	var registered bool
 	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_connections WHERE tenant_id=$1 AND source=$3 AND account_id=$2)`, tenant, account, provider).Scan(&registered); err != nil {
 		return domain.ImportOperation{}, false, err
@@ -230,7 +230,7 @@ func (s *Store) CancelCatalogImport(ctx context.Context, tenant, provider, accou
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	if err = requireContextActor(ctx, tx, tenant, false); err != nil {
 		return err
 	}
@@ -288,7 +288,7 @@ func (s *Store) ImportForClaim(ctx context.Context, t domain.Task) (domain.Impor
 	if err != nil {
 		return domain.ImportOperation{}, err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	if err = lockImportClaim(ctx, tx, t); err != nil {
 		return domain.ImportOperation{}, err
 	}
@@ -317,7 +317,7 @@ func (s *Store) ImportProgress(ctx context.Context, t domain.Task, phase string,
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	if err = lockImportClaim(ctx, tx, t); err != nil {
 		return err
 	}
@@ -345,7 +345,7 @@ func (s *Store) FailImport(ctx context.Context, t domain.Task, outcome, resource
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	if err = lockImportClaim(ctx, tx, t); err != nil {
 		return err
 	}
@@ -400,7 +400,7 @@ func (s *Store) commitCatalog(ctx context.Context, t domain.Task, provider, snap
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	if err = lockImportClaim(ctx, tx, t); err != nil {
 		return err
 	}
@@ -474,7 +474,7 @@ func (s *Store) ResolveImportCommit(ctx context.Context, t domain.Task) (bool, e
 	if err != nil {
 		return false, err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	var state, token string
 	var batch *int64
 	err = tx.QueryRow(ctx, `SELECT t.state,COALESCE(t.claim_token,''),o.batch_id FROM outbox_tasks t JOIN ozon_import_operations o ON o.id=t.import_operation_id WHERE t.id=$1 AND o.id=$2 FOR UPDATE OF t`, t.ID, t.ImportOperationID).Scan(&state, &token, &batch)

@@ -105,7 +105,7 @@ func (s *Store) MatchData(ctx context.Context, scope MatchScope) (MatchData, err
 	if err != nil {
 		return MatchData{}, err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	d, err := loadMatchData(ctx, tx, scope)
 	if err != nil {
 		return d, err
@@ -130,7 +130,7 @@ func (s *Store) ConfirmMatch(ctx context.Context, scope MatchScope, productID, k
 	if err != nil {
 		return domain.MatchResult{}, err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	for _, key := range []string{"ozon:" + scope.OzonAccount, "moysklad:" + scope.MoyskladAccount, "matching:" + scope.Tenant} {
 		if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, key); err != nil {
 			return domain.MatchResult{}, fmt.Errorf("lock matching scope: %w", err)

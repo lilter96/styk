@@ -22,7 +22,7 @@ func (s *Store) ConfirmWarehouseMapping(ctx context.Context, scope MatchScope, m
 	if err != nil {
 		return false, err
 	}
-	defer tx.Rollback(context.Background())
+	defer rollbackTransaction(tx)
 	for _, key := range []string{"ozon:" + scope.OzonAccount, "moysklad:" + scope.MoyskladAccount, "warehouse-mapping:" + scope.Tenant} {
 		if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, key); err != nil {
 			return false, fmt.Errorf("lock warehouse mapping: %w", err)

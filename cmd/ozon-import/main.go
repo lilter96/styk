@@ -104,7 +104,7 @@ func run() error {
 	err = db.Pool.QueryRow(registrationCtx, `SELECT EXISTS(SELECT 1 FROM stock_connections WHERE tenant_id=$1 AND source='ozon' AND account_id=$2)`, *tenant, id).Scan(&registered)
 	cancelRegistration()
 	if err != nil || !registered {
-		return errors.New("Ozon account is not registered to tenant")
+		return errors.New("ozon account is not registered to tenant")
 	}
 	reader := &boundedReader{client: c, limits: ozon.Limits{Requests: *requests, Attempts: *attemptsLimit, Pages: *pages, Entities: *products + *warehouses, Products: *products, Warehouses: *warehouses, Observations: *stocks, Postings: 1, ResponseBytes: *bytes, Duration: *limitDuration}}
 	created, err := (application.OzonImporter{Reader: reader, Store: db}).Run(ctx)
