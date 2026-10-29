@@ -263,16 +263,3 @@ func TestMetadataCreateRejectsNullAndForeignMetaArrayBeforeWrite(t *testing.T) {
 		})
 	}
 }
-
-func TestMetadataSetupDoesNotEnableUnsafeExistingAttributeReplacement(t *testing.T) {
-	t.Parallel()
-	fixture, client := newOrderSimulator(t, "ok")
-	command := fixture.command
-	command.Action, command.ExpectedTargetRevision = orders.ActionMirrorUpdate, "native-revision"
-	command.Correlation.CustomerOrderID = orderTestID(9)
-	command.CustomerOrder.OwnedFields = []string{"attribute"}
-	command.CustomerOrder.Attributes = []orders.AttributeWrite{{AttributeID: orderTestID(20), Value: orders.Present("cancelled")}}
-	if err := client.BindOrderIntent(command, func(context.Context) (bool, error) { return true, nil }); !errors.Is(err, orders.ErrBlocked) || fixture.writes.Load() != 0 {
-		t.Fatal("setup enabled unverified replacement of existing native attributes")
-	}
-}

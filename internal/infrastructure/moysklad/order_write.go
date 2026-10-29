@@ -31,13 +31,13 @@ func (c *OrderClient) WriteOrder(ctx context.Context, command orders.Command) (o
 	if err = c.verifyAccount(ctx); err != nil {
 		return orderReceipt(command, orders.StateRejected, 0, "account_not_verified"), err
 	}
-	if err = c.orderPreflight(ctx, command); err != nil {
+	if err = c.orderPreflight(ctx, command, body); err != nil {
 		return orderReceipt(command, orders.StateRejected, 0, "preflight_blocked"), err
 	}
 	return c.dispatchOrder(ctx, command, body, authorize)
 }
 
-func (c *OrderClient) orderPreflight(ctx context.Context, command orders.Command) error {
+func (c *OrderClient) orderPreflight(ctx context.Context, command orders.Command, body map[string]any) error {
 	metadata, err := c.readOrderMetadata(ctx)
 	if err != nil {
 		return err
@@ -54,6 +54,9 @@ func (c *OrderClient) orderPreflight(ctx context.Context, command orders.Command
 			return orders.ErrConflict
 		}
 		return err
+	}
+	if body["attributes"] != nil {
+		return c.mergeOrderAttributeUpdate(ctx, command, body, metadata)
 	}
 	target, err := c.readCustomerOrder(ctx, command.Correlation)
 	if err != nil {
