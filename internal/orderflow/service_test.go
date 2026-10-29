@@ -42,6 +42,7 @@ func TestServiceRequiresExplicitNonFBOSchemeEvidence(t *testing.T) {
 		capability bool
 		ready      bool
 	}{{name: "missing", ready: false}, {name: "URL is not scheme", scheme: orders.Present("/v4/posting/fbs/list")},
+		{name: "malformed scheme presence", scheme: orders.Field[string]{Presence: orders.PresenceValue}},
 		{name: "FBO", scheme: orders.Present("FBO")}, {name: "explicit rFBS", scheme: orders.Present("rFBS"), ready: true},
 		{name: "verified warehouse", capability: true, ready: true}}
 	for _, test := range tests {
@@ -142,7 +143,10 @@ func TestServiceExistingOrderNoopAndScalarUpdatePreserveManualPositions(t *testi
 		command bool
 		ready   bool
 	}{{name: "already represented", ready: true}, {name: "state with manual position", command: true, ready: true, change: changeTargetStateAndPositions},
-		{name: "position replacement", change: func(target *orders.TargetObservation) { target.Positions[0].Quantity = "3" }}}
+		{name: "position replacement", change: func(target *orders.TargetObservation) { target.Positions[0].Quantity = "3" }},
+		{name: "malformed native field presence", change: func(target *orders.TargetObservation) {
+			target.Fields.Name = orders.Field[string]{Presence: orders.PresenceValue}
+		}}}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -196,5 +200,21 @@ func TestServiceApprovalSelectsReadyCommandsAndHonorsScopeGate(t *testing.T) {
 	}
 	if _, err = service.Config(context.Background(), review.Config.Scope); err != nil {
 		t.Fatalf("read-only configuration was gated: %v", err)
+	}
+}
+
+func TestServiceUnknownFenceBlocksOnlyItsPostingBeforeTargetReads(t *testing.T) {
+	t.Parallel()
+	review := flowReview(t, "healthy-posting")
+	fenced := review.Postings[0]
+	fenced.PostingNumber = "unknown-posting"
+	review.Postings = append(review.Postings, fenced)
+	review.ActivePostings = map[string]orders.State{fenced.PostingNumber: orders.StateUnknown}
+	preview := flowPreview(t, flowService(t, &flowStore{review: review}, flowResolver{}), review)
+	if !preview.Decisions[0].Ready || preview.Decisions[1].Ready || len(preview.Decisions[1].Commands) != 0 {
+		t.Fatalf("unknown target fenced independent work: %+v", preview.Decisions)
+	}
+	if !slices.ContainsFunc(preview.Decisions[1].Validation, func(value orders.Validation) bool { return value.Code == "target_fenced_unknown_or_pending" }) {
+		t.Fatal("unknown target fence was not explained")
 	}
 }

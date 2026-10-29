@@ -106,10 +106,30 @@ func validTarget(correlation orders.Correlation, target orders.TargetObservation
 	if !target.Complete || target.Scope != correlation.Scope || target.Revision == "" || target.ObservedAt.IsZero() || actual.Validate() != nil {
 		return false
 	}
+	if !validTargetFields(target.Fields) || !validTargetPositions(target.Positions) {
+		return false
+	}
 	if actual.Scope != correlation.Scope || actual.PostingNumber != correlation.PostingNumber || actual.SyncID != correlation.SyncID || actual.Marker != correlation.Marker || actual.CustomerOrderID == "" {
 		return false
 	}
 	return correlation.CustomerOrderID == "" || actual.CustomerOrderID == correlation.CustomerOrderID
+}
+
+func validTargetFields(fields orders.CustomerOrderWrite) bool {
+	if fields.Name.Validate() != nil || fields.Description.Validate() != nil || fields.Moment.Validate() != nil || fields.DeliveryAt.Validate() != nil {
+		return false
+	}
+	if fields.Applicable.Validate() != nil || fields.VATEnabled.Validate() != nil || fields.VATIncluded.Validate() != nil || fields.RateValue.Validate() != nil {
+		return false
+	}
+	seen := make(map[string]bool, len(fields.Attributes))
+	for _, attribute := range fields.Attributes {
+		if attribute.AttributeID == "" || seen[attribute.AttributeID] || attribute.Value.Validate() != nil {
+			return false
+		}
+		seen[attribute.AttributeID] = true
+	}
+	return true
 }
 
 func targetRepresents(command orders.Command, target orders.TargetObservation) bool {

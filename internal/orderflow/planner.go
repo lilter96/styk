@@ -90,6 +90,9 @@ func sourceValidation(posting orders.Posting, review orders.ReviewContext, now t
 	if !knownNonFBOScheme(posting, review.WarehouseMappings, now) {
 		result = append(result, orders.Validation{Field: "scheme", Code: "scheme_unverified_or_out_of_scope"})
 	}
+	if _, active := review.ActivePostings[posting.PostingNumber]; active {
+		result = append(result, orders.Validation{Field: "posting", Code: "target_fenced_unknown_or_pending"})
+	}
 	for _, drift := range posting.Drift {
 		if strings.HasPrefix(drift.Code, "ORDERING_") {
 			result = append(result, orders.Validation{Field: drift.Path, Code: "source_ordering_quarantined"})
@@ -99,6 +102,9 @@ func sourceValidation(posting orders.Posting, review orders.ReviewContext, now t
 }
 
 func knownNonFBOScheme(posting orders.Posting, mappings []orders.WarehouseMappingRef, now time.Time) bool {
+	if posting.Scheme.Validate() != nil {
+		return false
+	}
 	if posting.Scheme.IsKnown() {
 		return slices.Contains([]string{"FBS", "rFBS"}, *posting.Scheme.Value)
 	}

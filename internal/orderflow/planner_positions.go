@@ -6,6 +6,30 @@ import (
 	"github.com/lilter96/styk/internal/orders"
 )
 
+func validTargetPositions(positions []orders.TargetPosition) bool {
+	seen := make(map[string]bool, len(positions))
+	for _, position := range positions {
+		if position.ID == "" || seen[position.ID] || position.Quantity.Validate() != nil || !validPositionFields(position) {
+			return false
+		}
+		seen[position.ID] = true
+	}
+	return true
+}
+
+func validPositionFields(position orders.TargetPosition) bool {
+	if position.Price.Validate() != nil || position.Reserve.Validate() != nil || position.VAT.Validate() != nil {
+		return false
+	}
+	if position.Price.IsKnown() && position.Price.Value.Validate() != nil {
+		return false
+	}
+	if position.Reserve.IsKnown() && position.Reserve.Value.Validate() != nil {
+		return false
+	}
+	return !position.VAT.IsKnown() || position.VAT.Value.Validate() == nil
+}
+
 func positionsRepresented(wanted []orders.PositionWrite, actual []orders.TargetPosition) bool {
 	if len(wanted) != len(actual) {
 		return false
