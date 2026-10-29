@@ -14,6 +14,7 @@ import (
 	"github.com/lilter96/styk/internal/infrastructure/moysklad"
 	"github.com/lilter96/styk/internal/infrastructure/ozon"
 	"github.com/lilter96/styk/internal/postgres"
+	"github.com/lilter96/styk/internal/providercall"
 )
 
 type Runner struct {
@@ -89,6 +90,17 @@ func (r Runner) ProcessImport(parent context.Context, t domain.Task, lease time.
 		if isOzon && r.NewOzon != nil {
 			r.Client, resolveErr = r.NewOzon(op.Account, secret)
 			r.Account = op.Account
+		}
+		if resolveErr == nil {
+			gate, gateErr := providercall.New(r.Store, providercall.Options{SyntheticInterval: 20 * time.Millisecond})
+			callScope := providercall.Scope{Tenant: op.Tenant, Provider: op.Provider, Account: op.Account, CredentialRevision: revision}
+			if gateErr != nil {
+				resolveErr = gateErr
+			} else if isMoy && r.MoyskladClient != nil {
+				resolveErr = r.MoyskladClient.Coordinate(gate, callScope)
+			} else if isOzon && r.Client != nil {
+				resolveErr = r.Client.Coordinate(gate, callScope)
+			}
 		}
 		if resolveErr != nil {
 			return r.Store.FailImport(attempt, t, "CONFIGURATION_UNAVAILABLE", "", domain.ImportCounts{})

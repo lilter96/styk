@@ -13,7 +13,9 @@ import (
 	"github.com/lilter96/styk/internal/credentials"
 	"github.com/lilter96/styk/internal/infrastructure/moysklad"
 	"github.com/lilter96/styk/internal/postgres"
+	"github.com/lilter96/styk/internal/providercall"
 	"github.com/lilter96/styk/internal/testpublication"
+	"time"
 )
 
 type catalogAPI struct {
@@ -39,7 +41,11 @@ func registerCatalogRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c *c
 }
 
 func catalogFactory(c *connections) catalogprovider.Factory {
-	factory := catalogprovider.Factory{Credentials: &credentials.Resolver{Store: c.db, Vault: c.vault}}
+	gate, err := providercall.New(c.db, providercall.Options{SyntheticInterval: 20 * time.Millisecond})
+	if err != nil {
+		panic("invalid catalog provider coordinator")
+	}
+	factory := catalogprovider.Factory{Credentials: &credentials.Resolver{Store: c.db, Vault: c.vault}, Gate: gate}
 	if c.moyFactory != nil {
 		factory.NewMoysklad = func(_, secret string) (*moysklad.Client, error) { return c.moyFactory(secret) }
 	}

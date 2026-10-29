@@ -52,7 +52,7 @@ func (c *connections) resolveOzon(ctx context.Context, tenant, account string) (
 		if err != nil {
 			return nil, err
 		}
-		return c.newOzon(account, key)
+		return c.scopedOzon(scope, key, record.Revision)
 	}
 	if !errors.Is(err, credentials.ErrNotFound) {
 		return nil, err
@@ -68,7 +68,7 @@ func (c *connections) resolveOzon(ctx context.Context, tenant, account string) (
 	if err != nil {
 		return nil, err
 	}
-	return c.newOzon(account, key)
+	return c.scopedOzon(scope, key, 0)
 }
 func (c *connections) resolveMoy(ctx context.Context, tenant, account string) (*moysklad.Client, error) {
 	scope := credentials.Scope{Tenant: tenant, Provider: "moysklad", Account: account}
@@ -78,7 +78,7 @@ func (c *connections) resolveMoy(ctx context.Context, tenant, account string) (*
 		if err != nil {
 			return nil, err
 		}
-		return c.newMoy(key)
+		return c.scopedMoy(scope, key, record.Revision)
 	}
 	if !errors.Is(err, credentials.ErrNotFound) {
 		return nil, err
@@ -94,7 +94,7 @@ func (c *connections) resolveMoy(ctx context.Context, tenant, account string) (*
 	if err != nil {
 		return nil, err
 	}
-	return c.newMoy(key)
+	return c.scopedMoy(scope, key, 0)
 }
 
 func credentialError(w http.ResponseWriter, err error) {
@@ -188,6 +188,9 @@ func (a *credentialAPI) save(w http.ResponseWriter, r *http.Request) {
 		var client *moysklad.Client
 		client, err = a.c.newMoy(in.Secret)
 		if err == nil {
+			err = a.c.coordinate(client, credentials.Scope{Tenant: in.Tenant, Provider: provider, Account: account}, 0, in.Secret)
+		}
+		if err == nil {
 			var identity string
 			identity, err = client.Identity(ctx)
 			if err == nil {
@@ -202,6 +205,9 @@ func (a *credentialAPI) save(w http.ResponseWriter, r *http.Request) {
 	} else {
 		var client *ozon.Client
 		client, err = a.c.newOzon(account, in.Secret)
+		if err == nil {
+			err = a.c.coordinate(client, credentials.Scope{Tenant: in.Tenant, Provider: provider, Account: account}, 0, in.Secret)
+		}
 		if err == nil {
 			err = client.Probe(ctx)
 		}

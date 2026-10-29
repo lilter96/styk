@@ -16,6 +16,9 @@ type Config struct {
 }
 
 func Load() (Config, error) {
+	if mode := value("STYK_DATABASE_POOL_MODE", "direct"); mode != "direct" && mode != "session" {
+		return Config{}, fmt.Errorf("STYK_DATABASE_POOL_MODE must be direct or session: session advisory locks require a pinned backend")
+	}
 	c := Config{DatabaseURL: os.Getenv("DATABASE_URL"), HTTPAddr: value("HTTP_ADDR", "127.0.0.1:8080")}
 	var err error
 	for _, p := range []struct {

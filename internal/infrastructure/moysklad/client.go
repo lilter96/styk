@@ -27,7 +27,7 @@ var orderUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4
 
 func allowedReadPath(path string) bool {
 	switch path {
-	case "context/employee", "entity/product", "entity/variant", "entity/store", "report/stock/all", "report/stock/bystore", "entity/customerorder":
+	case "entity/customerorder/metadata", "entity/customerorder/metadata/attributes", "entity/organization", "entity/counterparty", "entity/currency", "entity/saleschannel", "context/employee", "entity/product", "entity/variant", "entity/store", "report/stock/all", "report/stock/bystore", "entity/customerorder":
 		return true
 	}
 	return orderReadPath.MatchString(path) || allowedCatalogReadPath(path)
@@ -40,6 +40,7 @@ type Options struct {
 	HTTPClient                                *http.Client
 }
 type Client struct {
+	coordinated                      bool
 	base                             *url.URL
 	token                            string
 	http                             *http.Client

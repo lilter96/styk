@@ -14,6 +14,7 @@ import (
 	"github.com/lilter96/styk/internal/catalogsync"
 	"github.com/lilter96/styk/internal/credentials"
 	"github.com/lilter96/styk/internal/postgres"
+	"github.com/lilter96/styk/internal/providercall"
 	"github.com/lilter96/styk/internal/testpublication"
 )
 
@@ -51,7 +52,11 @@ func newCatalogWork(db *postgres.Store, resolver *credentials.Resolver) (applica
 	if _, err := rand.Read(instance[:]); err != nil {
 		return nil, errors.New("catalog worker identity unavailable")
 	}
-	factory := catalogprovider.Factory{Credentials: resolver}
+	gate, err := providercall.New(db, providercall.Options{SyntheticInterval: 20 * time.Millisecond})
+	if err != nil {
+		return nil, err
+	}
+	factory := catalogprovider.Factory{Credentials: resolver, Gate: gate}
 	return &catalogWork{
 		publisher: catalogsync.Runner{Enabled: true, WorkerID: hex.EncodeToString(instance[:]), Store: db, Resolver: factory, AllowScope: catalogAllowed},
 		service:   catalogsync.Service{Store: db, Resolver: factory, AllowScope: catalogAllowed},

@@ -12,6 +12,7 @@ import (
 	"github.com/lilter96/styk/internal/infrastructure/ozon"
 	"github.com/lilter96/styk/internal/ozonjob"
 	"github.com/lilter96/styk/internal/postgres"
+	"github.com/lilter96/styk/internal/providercall"
 	"github.com/lilter96/styk/internal/stocksync"
 	"github.com/lilter96/styk/internal/testpublication"
 	"log/slog"
@@ -211,11 +212,19 @@ func run() error {
 			if tenant != scope.Tenant || account != scope.OzonAccount || !testpublication.Enabled(scope) {
 				return nil, errors.New("controlled test publication scope mismatch")
 			}
-			key, err := resolver.Resolve(ctx, credentials.Scope{Tenant: tenant, Provider: "ozon", Account: account})
+			key, revision, err := resolver.ResolveWithRevision(ctx, credentials.Scope{Tenant: tenant, Provider: "ozon", Account: account})
 			if err != nil {
 				return nil, err
 			}
-			return ozon.NewControlledTestStockClient(scope, key)
+			client, err := ozon.NewControlledTestStockClient(scope, key)
+			if err != nil {
+				return nil, err
+			}
+			gate, err := providercall.New(db, providercall.Options{SyntheticInterval: 20 * time.Millisecond})
+			if err != nil {
+				return nil, err
+			}
+			return client, client.Coordinate(gate, providercall.Scope{Tenant: tenant, Provider: "ozon", Account: account, CredentialRevision: revision})
 		}}
 	}
 	var automatic application.PublicationRunner

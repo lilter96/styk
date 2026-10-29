@@ -185,10 +185,17 @@ func (c *CatalogClient) catalogMutation(ctx context.Context, command catalog.Com
 	request.Header.Set("Api-Key", c.read.key)
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
-	allowed, err := authorize(ctx)
-	if err != nil || !allowed || !c.writeEnabled() || ctx.Err() != nil {
-		return nil, 0, ErrCatalogWritesDisabled
+	requestContext, err := c.read.authorizeRequest(ctx, func(check context.Context) error {
+		allowed, authErr := authorize(check)
+		if authErr != nil || !allowed || !c.writeEnabled() || check.Err() != nil {
+			return ErrCatalogWritesDisabled
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, 0, err
 	}
+	request = request.WithContext(requestContext)
 	if err := catalogMutationBudget(ctx, "attempts"); err != nil {
 		return nil, 0, err
 	}

@@ -41,6 +41,7 @@ type Options struct {
 	IncludeProductNames                       bool
 }
 type Client struct {
+	coordinated                               bool
 	base                                      *url.URL
 	id, key                                   string
 	http                                      *http.Client
@@ -193,7 +194,7 @@ func retryAfter(v string) (time.Duration, bool) {
 
 // Only these documented read operations can be invoked; POST does not imply a write.
 func (c *Client) post(ctx context.Context, path string, body any, out any) error {
-	if path != productPath && path != productInfoPath && path != warehousePath && path != stockPath && path != "/v4/posting/fbs/list" && path != "/v3/posting/fbs/get" && !catalogReadPath(path) {
+	if path != productPath && path != productInfoPath && path != warehousePath && path != stockPath && path != "/v4/posting/fbs/list" && path != "/v3/posting/fbs/get" && !catalogReadPath(path) && !orderReadPath(path) {
 		return errors.New("ozon operation not allowed")
 	}
 	b, _ := ctx.Value(budgetKey{}).(*budget)

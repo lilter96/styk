@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 
+	"github.com/lilter96/styk/internal/providercall"
 	"github.com/lilter96/styk/internal/testpublication"
 )
 
@@ -136,8 +137,12 @@ func (c *Client) UpdateStocks(ctx context.Context, items []StockUpdate) ([]Stock
 	if err := c.wait(ctx); err != nil {
 		return nil, err
 	}
-	if err := c.authorizeStockIntent(ctx, authorize); err != nil {
+	ctx, err = c.authorizeRequest(ctx, func(check context.Context) error { return c.authorizeStockIntent(check, authorize) })
+	if err != nil {
 		return nil, err
+	}
+	if len(items) == 1 {
+		ctx = providercall.WithTarget(ctx, items[0].ProductID+":"+items[0].WarehouseID)
 	}
 	u := c.base.ResolveReference(&url.URL{Path: stockUpdatePath})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(payload))

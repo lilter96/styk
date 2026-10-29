@@ -11,6 +11,7 @@ import (
 	"github.com/lilter96/styk/internal/credentials"
 	"github.com/lilter96/styk/internal/infrastructure/moysklad"
 	"github.com/lilter96/styk/internal/infrastructure/ozon"
+	"github.com/lilter96/styk/internal/providercall"
 )
 
 type Resolver interface {
@@ -19,6 +20,7 @@ type Resolver interface {
 
 type Factory struct {
 	Credentials Resolver
+	Gate        providercall.Gate
 	NewMoysklad func(string, string) (*moysklad.Client, error)
 	NewOzon     func(string, string) (*ozon.Client, error)
 }
@@ -40,6 +42,17 @@ func (f Factory) ResolveCatalog(ctx context.Context, scope catalog.Scope, accoun
 	client, err := f.client(scope, account, secret)
 	if err != nil {
 		return catalogsync.Binding{}, err
+	}
+	if f.Gate != nil {
+		coordinated, ok := client.(interface {
+			Coordinate(providercall.Gate, providercall.Scope) error
+		})
+		if !ok {
+			return catalogsync.Binding{}, catalogsync.ErrBlocked
+		}
+		if err := coordinated.Coordinate(f.Gate, providercall.Scope{Tenant: scope.Tenant, Provider: string(account.Provider), Account: account.ID, CredentialRevision: revision}); err != nil {
+			return catalogsync.Binding{}, err
+		}
 	}
 	return catalogsync.Binding{Scope: scope, Account: account, CredentialRevision: revision, Client: client}, nil
 }

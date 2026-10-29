@@ -151,9 +151,11 @@ func (c *CatalogClient) dispatchCatalog(ctx context.Context, cmd catalog.Command
 	if err := c.client.wait(ctx); err != nil {
 		return catalogRejected(cmd), err
 	}
-	if err := c.authorizeCatalog(ctx, cmd.Scope, authorize); err != nil {
+	requestContext, err := c.client.authorizeRequest(ctx, func(check context.Context) error { return c.authorizeCatalog(check, cmd.Scope, authorize) })
+	if err != nil {
 		return catalogRejected(cmd), err
 	}
+	req = req.WithContext(requestContext)
 	b, _ := ctx.Value(budgetKey{}).(*budget)
 	resp, err := b.http.Do(req)
 	observeCatalogRequest(ctx, req.Method, strings.TrimPrefix(req.URL.Path, c.client.base.Path), resp, err)
