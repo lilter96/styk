@@ -399,3 +399,17 @@
     padding-left: 12px;
   }
 }
+.catalog-sync .catalog-automatic-target {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 16px;
+}
+.catalog-automatic-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-left: 28px;
+}
+.catalog-automatic-target legend {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}

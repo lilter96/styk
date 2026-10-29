@@ -47,6 +47,11 @@ const config = {
   enabled: true,
   test_enabled: true,
   publication_available: true,
+  fields: [
+    { field: "name", writable: true },
+    { field: "description", writable: true },
+    { field: "price", writable: false },
+  ],
   interval_seconds: 300,
   rules: {
     name: "MOYSKLAD_AUTHORITATIVE",
@@ -453,4 +458,51 @@ test("an unmapped Ozon product gets an explicit stable creation request before s
     enrollment_ids: [creation.id],
     acknowledge: true,
   });
+});
+
+test("automatic publication requires an exact product and field allowlist plus separate consent", async ({
+  page,
+}) => {
+  const approvals = await openCatalog(page);
+  const saved: { config: CatalogConfig }[] = [];
+  page.on("request", (request) => {
+    if (
+      new URL(request.url()).pathname === "/api/catalog-sync/config" &&
+      request.method() === "POST"
+    )
+      saved.push(request.postDataJSON());
+  });
+  await page
+    .getByText("Автоматическая передача для связанных товаров", { exact: true })
+    .click();
+  const productChoice = page.getByRole("checkbox", {
+    name: "Автоматически передавать изменения товара source-1",
+    exact: true,
+  });
+  await expect(productChoice).not.toBeChecked();
+  await productChoice.check();
+  const save = page.getByRole("button", {
+    name: "Сохранить настройки",
+    exact: true,
+  });
+  await expect(save).toBeDisabled();
+  await page
+    .getByRole("group", { name: /source-1/ })
+    .getByRole("checkbox", { name: "Название · из МойСклад", exact: true })
+    .check();
+  await expect(save).toBeDisabled();
+  expect(saved).toHaveLength(0);
+  await page
+    .getByRole("checkbox", {
+      name: /Разрешаю автоматическую передачу выбранных полей/,
+    })
+    .check();
+  await save.click();
+  await expect.poll(() => saved.length).toBe(1);
+  expect(saved[0].config.targets).toEqual([
+    { ...enrollments[0], automatic: true, automatic_fields: ["name"] },
+    enrollments[1],
+  ]);
+  expect(approvals).toHaveLength(0);
+  await expect(save).toBeDisabled();
 });

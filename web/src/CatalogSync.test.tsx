@@ -1134,3 +1134,247 @@ it("direction presets keep unsupported fields excluded instead of blocking other
     category: "IGNORE",
   });
 });
+
+it("requires explicit product, field and consent before saving automatic changes", async () => {
+  const configured = configuration({
+    fields: [
+      { field: "name", writable: true },
+      { field: "description", writable: true },
+      { field: "price", writable: false },
+    ],
+  });
+  const fetcher = mockAPI((url, init) =>
+    url.pathname.endsWith("/config")
+      ? json(
+          init?.method === "POST"
+            ? { ...JSON.parse(init.body as string).config, revision: 2 }
+            : configured,
+        )
+      : undefined,
+  );
+  mount();
+  const automatic = await screen.findByLabelText(
+    "Автоматически передавать изменения товара source-1",
+  );
+  expect((automatic as HTMLInputElement).checked).toBe(false);
+  fireEvent.click(
+    screen.getByText("Автоматическая передача для связанных товаров"),
+  );
+  fireEvent.click(automatic);
+  const save = screen.getByRole("button", {
+    name: "Сохранить настройки",
+  }) as HTMLButtonElement;
+  expect(save.disabled).toBe(true);
+  fireEvent.click(screen.getByLabelText("Название · из МойСклад"));
+  expect(save.disabled).toBe(true);
+  expect(
+    fetcher.mock.calls.filter(([, init]) => init?.method === "POST"),
+  ).toHaveLength(0);
+  fireEvent.click(
+    screen.getByLabelText(/Разрешаю автоматическую передачу выбранных полей/),
+  );
+  fireEvent.click(save);
+  await waitFor(() =>
+    expect(
+      fetcher.mock.calls.filter(([, init]) => init?.method === "POST"),
+    ).toHaveLength(1),
+  );
+  const saved = fetcher.mock.calls.find(([, init]) => init?.method === "POST")!;
+  const body = JSON.parse(saved[1]!.body as string);
+  expect(body.config.targets).toEqual([
+    { ...enrollment(), automatic: true, automatic_fields: ["name"] },
+  ]);
+  expect(body.config.rules).toEqual(configured.rules);
+  expect(
+    fetcher.mock.calls.some(([url]) => String(url).includes("/approve")),
+  ).toBe(false);
+});
+
+it("lets an operator disable saved automation even when publication is unavailable", async () => {
+  const configured = configuration({
+    publication_available: false,
+    test_enabled: false,
+    targets: [{ ...enrollment(), automatic: true, automatic_fields: ["name"] }],
+  });
+  const fetcher = mockAPI((url, init) =>
+    url.pathname.endsWith("/config")
+      ? json(
+          init?.method === "POST"
+            ? { ...JSON.parse(init.body as string).config, revision: 2 }
+            : configured,
+        )
+      : undefined,
+  );
+  mount();
+  const automatic = await screen.findByLabelText(
+    "Автоматически передавать изменения товара source-1",
+  );
+  fireEvent.click(
+    screen.getByText("Автоматическая передача для связанных товаров"),
+  );
+  expect((automatic as HTMLInputElement).disabled).toBe(false);
+  fireEvent.click(automatic);
+  expect(
+    screen.queryByLabelText(/Разрешаю автоматическую передачу/),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Сохранить настройки" }));
+  await waitFor(() =>
+    expect(
+      fetcher.mock.calls.filter(([, init]) => init?.method === "POST"),
+    ).toHaveLength(1),
+  );
+  const saved = fetcher.mock.calls.find(([, init]) => init?.method === "POST")!;
+  expect(JSON.parse(saved[1]!.body as string).config.targets[0]).toEqual({
+    ...enrollment(),
+    automatic: false,
+    automatic_fields: ["name"],
+  });
+});
+
+it("never offers automation for creation and requires fresh consent after expanding fields", async () => {
+  const configured = configuration({
+    fields: [
+      { field: "name", writable: true },
+      { field: "description", writable: true },
+    ],
+    targets: [
+      { ...enrollment(), automatic: true, automatic_fields: ["name"] },
+      newCatalogCreation(product("new"), scope),
+    ],
+  });
+  mockAPI((url) =>
+    url.pathname.endsWith("/config") ? json(configured) : undefined,
+  );
+  mount();
+  await screen.findByLabelText(
+    "Автоматически передавать изменения товара source-1",
+  );
+  fireEvent.click(
+    screen.getByText("Автоматическая передача для связанных товаров"),
+  );
+  expect(
+    screen.queryByLabelText("Автоматически передавать изменения товара new"),
+  ).toBeNull();
+  expect(
+    screen.queryByLabelText(/Разрешаю автоматическую передачу/),
+  ).toBeNull();
+  fireEvent.click(screen.getByLabelText("Описание · из Ozon"));
+  fireEvent.click(screen.getByLabelText(/Разрешаю автоматическую передачу/));
+  const save = screen.getByRole("button", {
+    name: "Сохранить настройки",
+  }) as HTMLButtonElement;
+  expect(save.disabled).toBe(false);
+  fireEvent.change(screen.getByLabelText("Описание"), {
+    target: { value: "MOYSKLAD_AUTHORITATIVE" },
+  });
+  expect(
+    (
+      screen.getByLabelText(
+        /Разрешаю автоматическую передачу/,
+      ) as HTMLInputElement
+    ).checked,
+  ).toBe(false);
+  expect(save.disabled).toBe(true);
+});
+
+it("keeps unavailable policies collapsed and preserves their values when saving", async () => {
+  const configured = configuration({
+    fields: [
+      { field: "name", writable: true },
+      { field: "price", writable: false },
+    ],
+    rules: { name: "MOYSKLAD_AUTHORITATIVE", price: "IGNORE" },
+  });
+  const fetcher = mockAPI((url, init) =>
+    url.pathname.endsWith("/config")
+      ? json(
+          init?.method === "POST"
+            ? { ...JSON.parse(init.body as string).config, revision: 2 }
+            : configured,
+        )
+      : undefined,
+  );
+  mount();
+  await screen.findByLabelText("Название");
+  const details = screen
+    .getByText("Другие поля и ограничения")
+    .closest("details")!;
+  expect(details.open).toBe(false);
+  expect(details.contains(screen.getByLabelText("Цена"))).toBe(true);
+  fireEvent.change(screen.getByLabelText("Название"), {
+    target: { value: "OZON_AUTHORITATIVE" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Сохранить настройки" }));
+  await waitFor(() =>
+    expect(
+      fetcher.mock.calls.filter(([, init]) => init?.method === "POST"),
+    ).toHaveLength(1),
+  );
+  const saved = fetcher.mock.calls.find(([, init]) => init?.method === "POST")!;
+  expect(JSON.parse(saved[1]!.body as string).config.rules.price).toBe(
+    "IGNORE",
+  );
+});
+
+it.each([false, true])(
+  "cannot enable new automation with publication_available=%s when master sync is disabled",
+  async (publication_available) => {
+    mockAPI((url) =>
+      url.pathname.endsWith("/config")
+        ? json(
+            configuration({
+              enabled: false,
+              test_enabled: false,
+              publication_available,
+              fields: [{ field: "name", writable: true }],
+            }),
+          )
+        : undefined,
+    );
+    mount();
+    const checkbox = (await screen.findByLabelText(
+      "Автоматически передавать изменения товара source-1",
+    )) as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+    expect(checkbox.disabled).toBe(true);
+  },
+);
+
+it("requires consent when re-enabling the master switch with previously authorized automatic targets", async () => {
+  mockAPI((url) =>
+    url.pathname.endsWith("/config")
+      ? json(
+          configuration({
+            enabled: false,
+            test_enabled: false,
+            targets: [
+              { ...enrollment(), automatic: true, automatic_fields: ["name"] },
+            ],
+          }),
+        )
+      : undefined,
+  );
+  mount();
+  fireEvent.click(
+    await screen.findByLabelText(
+      "Разрешить синхронизацию каталога для выбранных аккаунтов",
+    ),
+  );
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Сохранить настройки",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.click(
+    screen.getByLabelText(/Разрешаю автоматическую передачу выбранных полей/),
+  );
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Сохранить настройки",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(false);
+});

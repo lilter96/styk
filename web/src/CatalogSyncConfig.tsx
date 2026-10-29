@@ -1,6 +1,10 @@
 import { useRef, useState, type FormEvent } from "react";
 import { post } from "./api";
 import {
+  CatalogSyncAutomation,
+  needsAutomaticConsent,
+} from "./CatalogSyncAutomation";
+import {
   fieldLabel,
   fieldLabels,
   configBody,
@@ -32,6 +36,8 @@ export function CatalogSyncConfig({
 }) {
   const [policies, setPolicies] = useState(config.rules);
   const [enabled, setEnabled] = useState(config.enabled);
+  const [targets, setTargets] = useState(config.targets);
+  const [automaticConsent, setAutomaticConsent] = useState(false);
   const [interval, setInterval] = useState(config.interval_seconds);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -43,9 +49,15 @@ export function CatalogSyncConfig({
       ...(config.fields || []).map((f) => f.field),
     ]),
   ];
-  function isDirty(next = policies, permission = enabled, seconds = interval) {
+  function isDirty(
+    next = policies,
+    permission = enabled,
+    seconds = interval,
+    products = targets,
+  ) {
     return (
       JSON.stringify(next) !== JSON.stringify(config.rules) ||
+      JSON.stringify(products) !== JSON.stringify(config.targets) ||
       permission !== config.enabled ||
       seconds !== config.interval_seconds ||
       (permission && config.publication_available === true) !==
@@ -53,7 +65,17 @@ export function CatalogSyncConfig({
     );
   }
   const dirty = isDirty();
+  const needsConsent = needsAutomaticConsent(
+    config,
+    targets,
+    policies,
+    enabled,
+  );
+  const automaticInvalid = targets.some(
+    (target) => target.automatic && !target.automatic_fields?.length,
+  );
   function change(next: Record<string, Authority>) {
+    setAutomaticConsent(false);
     setPolicies(next);
     onDirty(isDirty(next));
   }
@@ -72,7 +94,13 @@ export function CatalogSyncConfig({
   }
   async function save(event: FormEvent) {
     event.preventDefault();
-    if (lock.current || !dirty) return;
+    if (
+      lock.current ||
+      !dirty ||
+      automaticInvalid ||
+      (needsConsent && !automaticConsent)
+    )
+      return;
     if (!Number.isInteger(interval) || interval < 30 || interval > 86400) {
       setError("Укажите целый интервал от 30 до 86400 секунд.");
       return;
@@ -89,6 +117,7 @@ export function CatalogSyncConfig({
             ...config,
             scope: scopeBody(scope),
             rules: policies,
+            targets,
             enabled,
             test_enabled: enabled && config.publication_available === true,
             interval_seconds: interval,
@@ -109,6 +138,44 @@ export function CatalogSyncConfig({
       setBusy(false);
     }
   }
+  function visibleField(field: string) {
+    const capability = config.fields?.find((item) => item.field === field);
+    return capability
+      ? capability.writable
+      : ["name", "description"].includes(field);
+  }
+  function renderPolicy(field: string) {
+    const capability = config.fields?.find((item) => item.field === field);
+    return (
+      <div className="catalog-policy" key={field}>
+        <label htmlFor={`catalog-policy-${field}`}>{fieldLabel(field)}</label>
+        <select
+          id={`catalog-policy-${field}`}
+          value={policies[field] || "IGNORE"}
+          disabled={busy}
+          onChange={(event) =>
+            change({ ...policies, [field]: event.target.value as Authority })
+          }
+        >
+          {authorities.map((authority) => (
+            <option key={authority.value} value={authority.value}>
+              {authority.label}
+            </option>
+          ))}
+        </select>
+        {capability && !capability.writable && (
+          <small>
+            Передача пока не поддерживается. Проверка покажет пропуск.
+          </small>
+        )}
+        {policies[field] === "MANUAL" && (
+          <small>
+            Фактическое значение нужно указать для выбранного товара.
+          </small>
+        )}
+      </div>
+    );
+  }
   return (
     <section className="catalog-section" aria-labelledby="catalog-config-title">
       <h2 id="catalog-config-title">Источник данных для каждого поля</h2>
@@ -123,6 +190,7 @@ export function CatalogSyncConfig({
             checked={enabled}
             disabled={busy}
             onChange={(event) => {
+              setAutomaticConsent(false);
               setEnabled(event.target.checked);
               onDirty(isDirty(policies, event.target.checked));
             }}
@@ -133,24 +201,18 @@ export function CatalogSyncConfig({
           Настройка не подтверждает изменения товаров. Возможность отправки
           зависит от подключения и разрешений аккаунта.
         </p>
-        {config.targets.some((target) => target.automatic) && (
-          <div className="catalog-warning">
-            <p>
-              Для ранее разрешённых товаров включён автоматический режим. Он
-              передаёт только разрешённые поля.
-            </p>
-            <ul>
-              {config.targets
-                .filter((target) => target.automatic)
-                .map((target) => (
-                  <li key={target.id}>
-                    {target.source.offer_id || target.source.id}:{" "}
-                    {(target.automatic_fields || []).map(fieldLabel).join(", ")}
-                  </li>
-                ))}
-            </ul>
-          </div>
-        )}
+        <CatalogSyncAutomation
+          config={config}
+          targets={targets}
+          policies={policies}
+          enabled={enabled}
+          busy={busy}
+          onChange={(next) => {
+            setAutomaticConsent(false);
+            setTargets(next);
+            onDirty(isDirty(policies, enabled, interval, next));
+          }}
+        />
         <label>
           Интервал автоматических проверок, секунд
           <input
@@ -192,48 +254,41 @@ export function CatalogSyncConfig({
           <span>Для смешанного направления выберите источники по полям.</span>
         </div>
         <div className="catalog-policies">
-          {fields.map((field) => {
-            const capability = config.fields?.find(
-              (item) => item.field === field,
-            );
-            return (
-              <div className="catalog-policy" key={field}>
-                <label htmlFor={`catalog-policy-${field}`}>
-                  {fieldLabel(field)}
-                </label>
-                <select
-                  id={`catalog-policy-${field}`}
-                  value={policies[field] || "IGNORE"}
-                  disabled={busy}
-                  onChange={(event) =>
-                    change({
-                      ...policies,
-                      [field]: event.target.value as Authority,
-                    })
-                  }
-                >
-                  {authorities.map((authority) => (
-                    <option key={authority.value} value={authority.value}>
-                      {authority.label}
-                    </option>
-                  ))}
-                </select>
-                {capability && !capability.writable && (
-                  <small>
-                    Передача пока не поддерживается. Проверка покажет пропуск.
-                  </small>
-                )}
-                {policies[field] === "MANUAL" && (
-                  <small>
-                    Фактическое значение нужно указать для выбранного товара.
-                  </small>
-                )}
-              </div>
-            );
-          })}
+          {fields.filter((field) => visibleField(field)).map(renderPolicy)}
         </div>
+        <details className="catalog-facts">
+          <summary>Другие поля и ограничения</summary>
+          <div className="catalog-policies">
+            {fields.filter((field) => !visibleField(field)).map(renderPolicy)}
+          </div>
+        </details>
+        {needsConsent && (
+          <label className="catalog-check catalog-warning">
+            <input
+              type="checkbox"
+              checked={automaticConsent}
+              disabled={busy}
+              onChange={(event) => setAutomaticConsent(event.target.checked)}
+            />
+            Разрешаю автоматическую передачу выбранных полей указанных товаров
+            без отдельного подтверждения каждой отправки
+          </label>
+        )}
+        {automaticInvalid && (
+          <p className="catalog-error" role="alert">
+            Выберите хотя бы одно поле для каждого товара с автоматической
+            передачей.
+          </p>
+        )}
         <div className="catalog-actions">
-          <button disabled={busy || !dirty}>
+          <button
+            disabled={
+              busy ||
+              !dirty ||
+              automaticInvalid ||
+              (needsConsent && !automaticConsent)
+            }
+          >
             {busy ? "Сохраняем…" : "Сохранить настройки"}
           </button>
           <span role="status">
