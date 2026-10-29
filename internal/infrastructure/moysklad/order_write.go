@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/lilter96/styk/internal/orders"
@@ -208,5 +209,5 @@ func orderRejectedStatus(status int) bool {
 }
 
 func orderReceipt(command orders.Command, state orders.State, status int, code string) orders.Receipt {
-	return orders.Receipt{CommandID: command.ID, State: state, HTTPStatus: status, Code: code, ObservedAt: time.Now().UTC()}
+	return orders.Receipt{CommandID: command.ID, State: state, HTTPStatus: status, Code: strings.ToUpper(code), ObservedAt: time.Now().UTC()}
 }

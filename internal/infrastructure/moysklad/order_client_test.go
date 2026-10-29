@@ -290,3 +290,11 @@ func TestOrderJSONRejectsDuplicateAndDeepKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestAcknowledgedOrderReceiptUsesDurableSafeCode(t *testing.T) {
+	command := orderTestCommand(t)
+	receipt := orderReceipt(command, orders.StateAcknowledged, 200, "provider_acknowledged")
+	if receipt.Code != "PROVIDER_ACKNOWLEDGED" || receipt.State != orders.StateAcknowledged || receipt.HTTPStatus != 200 {
+		t.Fatal("acknowledgement was mislabeled as a provider error")
+	}
+}
