@@ -54,6 +54,7 @@ type Progress = Refresh & {
   credential_changed?: boolean;
   expired?: boolean;
   expires_at?: string;
+  continuation_supported?: boolean;
 };
 type Run = { scopeKey: string; hours: string; result: Refresh };
 const statusText: Record<string, string> = {
@@ -145,7 +146,9 @@ export function OrderEvidence({
     ? { scopeKey, hours: String(persisted.window_hours), result: persisted }
     : null;
   const currentRun =
-    persisted?.credential_changed || persisted?.expired
+    persisted?.credential_changed ||
+    persisted?.expired ||
+    persisted?.continuation_supported === false
       ? savedRun
       : run?.scopeKey === scopeKey
         ? run
@@ -173,13 +176,19 @@ export function OrderEvidence({
     ].includes("LIMIT_REACHED");
   const credentialChanged = !!persisted?.credential_changed;
   const expired = !!persisted?.expired;
+  const continuationUnsupported = persisted?.continuation_supported === false;
+  const incomplete =
+    !!currentRun &&
+    (currentRun.result.source_status !== "COMPLETED" ||
+      currentRun.result.posting_status !== "COMPLETED");
   const continuing =
     !!resumable &&
     currentRun.hours === selectedHours &&
     !credentialChanged &&
     !expired &&
     !conflict &&
-    !limited;
+    !limited &&
+    !continuationUnsupported;
   async function refresh() {
     if (busy) return;
     setBusy(true);
@@ -240,7 +249,8 @@ export function OrderEvidence({
       <p>
         Проверка охватывает ограниченный период. Отсутствие заказа в результатах
         не доказывает отсутствие обязательств; резерв заказа может уже входить в
-        резерв МойСклад.
+        резерв МойСклад. Наблюдения собирались в разное время и не являются
+        снимком состояния на один момент.
       </p>
       {query.isLoading && <p role="status">Загружаем сведения…</p>}
       {query.isError && (
@@ -253,7 +263,7 @@ export function OrderEvidence({
           <p>
             МойСклад:{" "}
             {query.data.source_batch_id
-              ? `проверено ${date(query.data.source_checked_at)}; изменения с ${date(query.data.source_from)} по ${date(query.data.source_to)}`
+              ? `проверка завершена ${date(query.data.source_checked_at)}; изменения с ${date(query.data.source_from)} по ${date(query.data.source_to)}`
               : "проверка заказов ещё не загружена"}
             .
           </p>
@@ -316,7 +326,7 @@ export function OrderEvidence({
             ? "Проверяем заказы…"
             : continuing
               ? "Продолжить проверку"
-              : resumable || limited
+              : resumable || limited || (continuationUnsupported && incomplete)
                 ? "Начать новую проверку"
                 : "Проверить заказы"}
         </button>
@@ -371,6 +381,12 @@ export function OrderEvidence({
             <p>
               Обнаружен конфликт данных. Следующий запрос начнёт проверку
               заново.
+            </p>
+          )}
+          {continuationUnsupported && incomplete && (
+            <p>
+              Для продолжения большой проверки нужны сохранённые подключения с
+              учётом изменений ключей. Следующий запрос начнёт проверку заново.
             </p>
           )}
           {credentialChanged && (

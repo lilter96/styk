@@ -61,6 +61,10 @@ it("shows observed reserve without treating missing order coverage as zero", asy
   expect(
     screen.getByText(/не доказывает отсутствие обязательств/),
   ).toBeTruthy();
+  expect(
+    screen.getByText(/не являются снимком состояния на один момент/),
+  ).toBeTruthy();
+  expect(screen.getByText(/проверка завершена/)).toBeTruthy();
   fireEvent.change(screen.getByLabelText("Период проверки"), {
     target: { value: "24" },
   });
@@ -303,6 +307,50 @@ it("explains that a conflict starts a new run", async () => {
   );
   fireEvent.click(screen.getByText("Заказы и резервы"));
   await screen.findByText(/Обнаружен конфликт данных/);
+  expect(
+    screen.getByRole("button", { name: "Начать новую проверку" }),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Продолжить проверку" }),
+  ).toBeNull();
+  client.clear();
+});
+
+it("does not offer continuation with unversioned credentials", async () => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        positions: [],
+        postings: [],
+        truncated: false,
+        progress: {
+          window_hours: 24,
+          from: "2026-10-28T10:00:00Z",
+          to: "2026-10-29T10:00:00Z",
+          source_status: "IN_PROGRESS",
+          posting_status: "COMPLETED",
+          continuation_supported: false,
+        },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    ),
+  );
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <OrderEvidence
+        scope={{ tenant: "t", moysklad_account: "m", ozon_account: "o" }}
+        product="1"
+        warehouse="2"
+      />
+    </QueryClientProvider>,
+  );
+  fireEvent.click(screen.getByText("Заказы и резервы"));
+  await screen.findByText(
+    /Для продолжения большой проверки нужны сохранённые подключения/,
+  );
   expect(
     screen.getByRole("button", { name: "Начать новую проверку" }),
   ).toBeTruthy();
