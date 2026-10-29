@@ -46,8 +46,8 @@ export function useImportSubmission() {
       setSessionLost(false);
       setMessage(
         value.idempotent_replay
-          ? "The existing import operation was recovered."
-          : "Import request accepted.",
+          ? "Ранее созданная загрузка найдена. Повторный запрос не создал новую."
+          : "Запрос на загрузку принят.",
       );
       void client.invalidateQueries({
         queryKey: [
@@ -73,7 +73,7 @@ export function useImportSubmission() {
         setSessionLost(true);
         setHistoryInspected(false);
         setMessage(
-          "Your session ended. The import may have been queued. Sign in and inspect history for the original tenant and account before requesting another import.",
+          "Сессия завершилась. Загрузка могла попасть в очередь. Войдите снова и проверьте историю исходного аккаунта в том же рабочем пространстве перед новым запросом.",
         );
         void client.invalidateQueries({ queryKey: ["session"] });
       } else if (code === "IDEMPOTENCY_CONFLICT") {
@@ -81,7 +81,7 @@ export function useImportSubmission() {
         setPending({ ...p });
         setHistoryInspected(false);
         setMessage(
-          "IDEMPOTENCY_CONFLICT: inspect the original account's import history before requesting another import.",
+          "IDEMPOTENCY_CONFLICT: Не удалось однозначно сопоставить запрос. Проверьте историю исходного аккаунта перед новой загрузкой.",
         );
       } else if (
         !p.uncertain &&
@@ -98,7 +98,7 @@ export function useImportSubmission() {
         ref.current = null;
         setPending(null);
         setMessage(
-          `${code}: the request was rejected. Review the account and import history.`,
+          `${code}: Запрос отклонён. Проверьте выбранный аккаунт и историю загрузок.`,
         );
         void client.invalidateQueries({
           queryKey: [
@@ -112,7 +112,7 @@ export function useImportSubmission() {
         p.uncertain = true;
         setPending({ ...p });
         setMessage(
-          "Submission outcome unknown: the import may already be queued or running. Retry the exact same request to reconcile it.",
+          "Результат отправки неизвестен: загрузка уже могла попасть в очередь или начаться. Повторите тот же запрос, чтобы уточнить результат без создания новой загрузки.",
         );
       }
     } finally {
@@ -137,7 +137,7 @@ export function useImportSubmission() {
       setSessionLost(true);
       setHistoryInspected(false);
       setMessage(
-        "The session ended. The import may have been queued. Sign in and inspect history for the original account before submitting another import.",
+        "Сессия завершилась. Загрузка могла попасть в очередь. Войдите снова и проверьте историю исходного аккаунта перед новым запросом.",
       );
     }
     void client.invalidateQueries({ queryKey: ["session"] });
@@ -191,53 +191,85 @@ export function ImportSubmissionNotice({
   )
     return null;
   const same = pending && sameImportScope(pending.intent.scope, scope);
+  const original = pending?.intent.scope;
+  const name =
+    (original?.provider || result?.operation.provider) === "moysklad"
+      ? "МойСклад"
+      : "Ozon";
+  const codedMessage = message.match(/^([A-Z_]+): (.*)$/s);
+  const visibleMessage = codedMessage?.[2] || message;
   return (
-    <div className="notice import-submission-notice" aria-live="polite">
+    <div
+      className={`notice import-submission-notice ${!pending && !codedMessage ? "is-success" : ""}`}
+      aria-live="polite"
+    >
       {pending && (
         <p>
-          Import request for tenant {pending.intent.scope.tenant},{" "}
-          {importProviders[pending.intent.scope.provider].name} account{" "}
-          {pending.intent.scope.account}.{" "}
-          {busy
-            ? "Request in progress; changing accounts does not cancel it."
-            : "The original request is held in memory."}
+          <strong>
+            {busy
+              ? `Отправляем запрос ${name}`
+              : `Проверяем результат запроса ${name}`}
+          </strong>
         </p>
       )}
-      {message && <p role="alert">{message}</p>}
-      {result && !pending && (
-        <p>
-          Operation {result.operation.id} · tenant {result.operation.tenant} ·
-          {result.operation.provider === "moysklad" ? "MoySklad" : "Ozon"}{" "}
-          account {result.operation.account}.
+      {pending && busy && (
+        <p>Смена аккаунта не отменяет отправленный запрос.</p>
+      )}
+      {visibleMessage && (
+        <p role={pending || codedMessage ? "alert" : "status"}>
+          {visibleMessage}
         </p>
       )}
       {pending && !busy && !same && (
-        <button onClick={() => restore(pending.intent.scope)}>
-          Return to original import scope
-        </button>
+        <>
+          <p>
+            Запрос относится к другому аккаунту. Вернитесь к нему для проверки
+            результата.
+          </p>
+          <button onClick={() => restore(pending.intent.scope)}>
+            Вернуться к исходному аккаунту
+          </button>
+        </>
       )}
       {pending &&
         !busy &&
         same &&
         !sessionLost &&
         !message.startsWith("IDEMPOTENCY_CONFLICT") && (
-          <button onClick={submission.retry}>Retry same import request</button>
+          <button onClick={submission.retry}>Повторить тот же запрос</button>
         )}
       {pending &&
         !busy &&
         same &&
         (sessionLost || message.startsWith("IDEMPOTENCY_CONFLICT")) && (
-          <p>Inspect scoped import history before continuing.</p>
+          <p>
+            Перед продолжением проверьте историю загрузок исходного аккаунта.
+          </p>
         )}
       {pending &&
         !busy &&
         same &&
         historyInspected &&
         (sessionLost || message.startsWith("IDEMPOTENCY_CONFLICT")) && (
-          <button onClick={submission.dismiss}>
-            I inspected import history
-          </button>
+          <button onClick={submission.dismiss}>История проверена</button>
         )}
+      {(original || codedMessage) && (
+        <details className="technical-details">
+          <summary>Технические детали</summary>
+          {original && (
+            <p>
+              Рабочее пространство: <code>{original.tenant}</code>
+              <br />
+              Аккаунт: <code>{original.account}</code>
+            </p>
+          )}
+          {codedMessage && (
+            <p>
+              Код ошибки: <code>{codedMessage[1]}</code>
+            </p>
+          )}
+        </details>
+      )}
     </div>
   );
 }

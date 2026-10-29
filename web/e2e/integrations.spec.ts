@@ -37,13 +37,13 @@ test("explicit local registration uses bounded synthetic providers", async ({
     .click();
   const moy = page
     .locator("article")
-    .filter({ has: page.getByRole("heading", { name: "MoySklad" }) });
-  await expect(moy.getByText("CONFIGURED_NOT_VERIFIED")).toBeVisible();
+    .filter({ has: page.getByRole("heading", { name: "МойСклад" }) });
   await expect(
-    moy.getByText(/Configured account ID: synthetic-moy-browser-/),
+    moy.getByText("Данные доступа настроены · доступ не проверен"),
   ).toBeVisible();
+  await moy.getByText("Настройки", { exact: true }).click();
   await expect(
-    moy.getByRole("button", { name: "Register account" }),
+    moy.getByRole("button", { name: "Добавить аккаунт" }),
   ).toBeDisabled();
   const response = await page.request.get(
     `${api}/api/integrations?tenant=browser-tenant`,
@@ -59,55 +59,72 @@ test("explicit local registration uses bounded synthetic providers", async ({
     (p) => p.provider === "moysklad",
   )!.account;
   const configuredOzon = providers.find((p) => p.provider === "ozon")!.account;
-  await moy.getByRole("button", { name: "Test connection" }).click();
-  await expect(moy.getByText("VERIFIED")).toBeVisible();
-  await expect(moy.getByText(/a returned product matched/)).toBeVisible();
+  await moy.getByRole("button", { name: "Проверить подключение" }).click();
+  await expect(moy.getByText(/Доступ проверен/)).toBeVisible();
+  await expect(
+    moy.getByText(/Полученный товар соответствует настроенному аккаунту/),
+  ).toBeVisible();
   let attempts = 0;
   await page.route("**/api/integrations/moysklad/register", async (route) => {
     attempts++;
     await route.fetch();
     await route.abort("failed");
   });
-  await moy.getByLabel(/I attest/).check();
-  await moy.getByRole("button", { name: "Register account" }).click();
-  await expect(page.getByText(/Registration outcome is unknown/)).toBeVisible();
+  await moy.getByLabel(/Подтверждаю, что этот аккаунт/).check();
+  await moy.getByRole("button", { name: "Добавить аккаунт" }).click();
+  await expect(page.getByText(/Результат добавления неизвестен/)).toBeVisible();
   await expect(
-    moy.getByRole("button", { name: "Register account" }),
+    moy.getByRole("button", { name: "Добавить аккаунт" }),
   ).toBeDisabled();
   await page
-    .getByRole("button", { name: "Check registration outcome" })
+    .getByRole("button", { name: "Проверить результат добавления" })
     .click();
-  await expect(moy.getByText("Configured account: REGISTERED")).toBeVisible();
+  await expect(
+    moy.getByText("Аккаунт добавлен", { exact: true }),
+  ).toBeVisible();
   expect(attempts).toBe(1);
   const ozon = page
     .locator("article")
     .filter({ has: page.getByRole("heading", { name: "Ozon" }) });
-  await ozon.getByRole("button", { name: "Test connection" }).click();
-  await expect(ozon.getByText("VERIFIED")).toBeVisible();
-  await expect(ozon.getByText(/not independently established/)).toBeVisible();
-  await ozon.getByLabel(/I attest/).check();
-  await ozon.getByRole("button", { name: "Register account" }).click();
-  await expect(ozon.getByText("Configured account: REGISTERED")).toBeVisible();
+  await ozon.getByText("Настройки", { exact: true }).click();
+  await ozon.getByRole("button", { name: "Проверить подключение" }).click();
+  await expect(ozon.getByText(/Доступ проверен/)).toBeVisible();
+  await expect(
+    ozon.getByText(/Принадлежность аккаунта не подтверждена независимо/),
+  ).toBeVisible();
+  await ozon.getByLabel(/Подтверждаю, что этот аккаунт/).check();
+  await ozon.getByRole("button", { name: "Добавить аккаунт" }).click();
+  await expect(
+    ozon.getByText("Аккаунт добавлен", { exact: true }),
+  ).toBeVisible();
   await page.reload();
-  await page.getByLabel("Tenant", { exact: true }).fill("browser-tenant");
-  await page.getByRole("button", { name: "Open workspace" }).click();
-  await expect(moy.getByText("Configured account: REGISTERED")).toBeVisible();
-  await expect(ozon.getByText("Configured account: REGISTERED")).toBeVisible();
-  const moySelector = page.getByRole("combobox", { name: "MoySklad" });
-  const ozonSelector = page.getByRole("combobox", { name: "Ozon" });
+  await expect(
+    moy.getByText("Аккаунт добавлен", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    ozon.getByText("Аккаунт добавлен", { exact: true }),
+  ).toBeVisible();
+  await moy.getByText("Настройки", { exact: true }).click();
+  await ozon.getByText("Настройки", { exact: true }).click();
+  const moySelector = moy.getByRole("combobox", { name: "МойСклад: аккаунт" });
+  const ozonSelector = ozon.getByRole("combobox", { name: "Ozon: аккаунт" });
   expect(configuredMoy).toMatch(/^synthetic-moy-browser-/);
   expect(configuredOzon).toMatch(/^synthetic-ozon-browser-/);
   await moySelector.selectOption(configuredMoy);
   await ozonSelector.selectOption(configuredOzon);
   await expect(moySelector).toHaveValue(configuredMoy);
   await expect(ozonSelector).toHaveValue(configuredOzon);
-  await page.getByLabel("Tenant", { exact: true }).fill("other-tenant");
-  await page.getByRole("button", { name: "Open workspace" }).click();
+  await page.locator(".workspace-selector > summary").click();
+  await page
+    .getByLabel("Рабочее пространство", { exact: true })
+    .fill("other-tenant");
+  await page.getByRole("button", { name: "Открыть пространство" }).click();
   await expect(
-    moy.getByText("Configured account: OWNERSHIP_CONFLICT"),
+    moy.getByText("Аккаунт недоступен", { exact: true }),
   ).toBeVisible();
-  await expect(moy.getByText(/reassignment is unavailable/)).toBeVisible();
-  await moy.getByRole("link", { name: "Products" }).click();
+  await moy.getByText("Настройки", { exact: true }).click();
+  await expect(moy.getByText(/Перенос недоступен/)).toBeVisible();
+  await moy.getByRole("link", { name: "Товары", exact: true }).click();
   await expect(page.getByRole("heading", { name: /Products/ })).toBeVisible();
   await page
     .getByRole("navigation")

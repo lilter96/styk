@@ -264,36 +264,84 @@ function setup(
     },
   };
 }
+async function primary(name = "Ozon") {
+  const panel = await screen.findByRole("region", {
+    name: `${name}: импорт данных`,
+  });
+  return within(panel).getByRole("button", {
+    name: /^(Загрузить|Обновить) данные$/,
+  }) as HTMLButtonElement;
+}
 async function openConfirm(name = "Ozon") {
+  const button = await primary(name);
+  await waitFor(() => expect(button.disabled).toBe(false));
+  fireEvent.click(button);
+  return screen.findByRole("dialog", { name: `Загрузить данные ${name}?` });
+}
+async function submit(name = "Ozon") {
+  const dialog = await openConfirm(name);
+  fireEvent.click(within(dialog).getByRole("checkbox"));
   fireEvent.click(
-    await screen.findByRole("button", { name: "Import catalog" }),
+    within(dialog).getByRole("button", { name: "Подтвердить загрузку" }),
   );
-  await screen.findByRole("dialog", { name: `Confirm ${name} catalog import` });
+}
+async function openHistory(container: HTMLElement = document.body, index = 0) {
+  let history: HTMLDetailsElement | null = null;
+  await waitFor(() => {
+    history = container.querySelector<HTMLDetailsElement>(".provider-history");
+    expect(history).toBeTruthy();
+    expect(history!.querySelectorAll(".history-entry").length).toBeGreaterThan(
+      index,
+    );
+  });
+  if (!history!.open) fireEvent.click(history!.querySelector("summary")!);
+  const row =
+    history!.querySelectorAll<HTMLDetailsElement>(".history-entry")[index];
+  if (!row.open) fireEvent.click(row.querySelector("summary")!);
+  fireEvent(row, new Event("toggle"));
+  return row;
+}
+function openTechnical(row: HTMLElement) {
+  const details = row.querySelector<HTMLDetailsElement>(".technical-details")!;
+  if (!details.open) fireEvent.click(details.querySelector("summary")!);
+  return details;
+}
+async function cancel() {
+  const progress = document.querySelector<HTMLElement>(".import-progress")!;
+  fireEvent.click(
+    within(progress).getByRole("button", { name: "Отменить загрузку" }),
+  );
+  const dialog = await screen.findByRole("dialog", {
+    name: "Отменить загрузку?",
+  });
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Подтвердить отмену" }),
+  );
 }
 it("requires acknowledgement and safely retries one immutable intent after switching accounts", async () => {
   const { fetcher } = setup({ lost: true });
-  await screen.findByText(/No import operations/);
+  await screen.findByText("Загрузок пока нет");
   expect(
     fetcher.mock.calls.filter(([, init]) => init?.method === "POST"),
   ).toHaveLength(0);
-  await openConfirm();
-  const button = screen.getByRole("button", {
-    name: "Confirm import",
+  const dialog = await openConfirm();
+  const button = within(dialog).getByRole("button", {
+    name: "Подтвердить загрузку",
   }) as HTMLButtonElement;
   expect(button.disabled).toBe(true);
-  fireEvent.click(screen.getByLabelText(/I explicitly request/));
+  fireEvent.click(within(dialog).getByRole("checkbox"));
   fireEvent.click(button);
   fireEvent.click(button);
-  await screen.findByText(/Submission outcome unknown/);
+  await screen.findByText(/Результат отправки неизвестен/);
   fireEvent.click(screen.getByText("Switch scope"));
   expect(
-    screen.queryByRole("button", { name: "Retry same import request" }),
+    screen.queryByRole("button", { name: "Повторить тот же запрос" }),
   ).toBeNull();
-  fireEvent.click(screen.getByText("Return to original import scope"));
+  fireEvent.click(screen.getByText("Вернуться к исходному аккаунту"));
   fireEvent.click(
-    screen.getByRole("button", { name: "Retry same import request" }),
+    screen.getByRole("button", { name: "Повторить тот же запрос" }),
   );
-  await screen.findByText(/existing import operation was recovered/);
+  await screen.findByText(/Ранее созданная загрузка найдена/);
   const calls = fetcher.mock.calls.filter(
     ([p, init]) => p === "/api/imports" && init?.method === "POST",
   );
@@ -310,24 +358,24 @@ it("reports when secure request identity cannot be generated", async () => {
     throw new Error("unavailable");
   });
   const { fetcher } = setup();
-  await openConfirm();
-  fireEvent.click(screen.getByLabelText(/I explicitly request/));
-  fireEvent.click(screen.getByRole("button", { name: "Confirm import" }));
-  await screen.findByText(/Secure request creation is unavailable/);
+  await submit();
+  await screen.findByText(/Браузер не может создать защищённый запрос/);
   expect(
     fetcher.mock.calls.filter(([, init]) => init?.method === "POST"),
   ).toHaveLength(0);
 });
-it("renders real progress, resets attempt-local counts, and refreshes queries after success", async () => {
-  const running = {
+it("renders actual attempt-local progress and refreshes source queries after success", async () => {
+  const running: ImportOperation = {
     ...base,
-    state: "RUNNING" as const,
+    state: "RUNNING",
     phase: "READING_STOCK",
     attempt: 1,
     counts: { ...base.counts, products: 8, completed_pages: 3 },
   };
-  const { client, invalidate } = setup({ initial: running });
-  await screen.findByText(/Products observed 8/);
+  const { client, invalidate, setOperation } = setup({ initial: running });
+  await screen.findByText(/Обнаружено товаров: 8/);
+  expect(screen.getByText("Получаем остатки…")).toBeTruthy();
+  expect(document.body.textContent).not.toContain("%");
   const key = [
     "import-detail",
     scope.tenant,
@@ -335,22 +383,28 @@ it("renders real progress, resets attempt-local counts, and refreshes queries af
     scope.account,
     base.id,
   ];
-  client.setQueryData(key, {
+  const retrying = {
     ...running,
     attempt: 2,
     counts: { ...running.counts, products: 2 },
-  });
-  await screen.findByText(/Products observed 2/);
-  expect(screen.getByText(/attempt 2\/3/)).toBeTruthy();
-  client.setQueryData(key, {
+  };
+  setOperation(retrying);
+  await client.refetchQueries({ queryKey: key, exact: true });
+  await screen.findByText(/Обнаружено товаров: 2/);
+  expect(screen.queryByText(/Обнаружено товаров: 8/)).toBeNull();
+  const row = await openHistory();
+  const technical = openTechnical(row);
+  expect(within(technical).getByText("2 из 3")).toBeTruthy();
+  const succeeded: ImportOperation = {
     ...running,
     state: "SUCCEEDED",
     phase: "COMPLETED",
     outcome: "COMPLETE_TRAVERSAL",
     batch_id: 42,
     batch_created: true,
-  });
-  await screen.findByText(/Completed batch:/);
+  };
+  setOperation(succeeded);
+  await client.refetchQueries({ queryKey: key, exact: true });
   await waitFor(() =>
     expect(
       invalidate.mock.calls.some(([arg]) =>
@@ -367,33 +421,18 @@ it("renders real progress, resets attempt-local counts, and refreshes queries af
 });
 it("does not offer another import while a newly queued result is newer than cached history", async () => {
   const { client } = setup();
-  await screen.findByText(/No import operations/);
-  await openConfirm();
-  fireEvent.click(screen.getByLabelText(/I explicitly request/));
-  fireEvent.click(screen.getByRole("button", { name: "Confirm import" }));
-  await screen.findByText("Import request accepted.");
+  await submit();
+  await screen.findByText("Запрос на загрузку принят.");
   client.setQueryData(
     ["import-history", scope.tenant, scope.provider, scope.account, 0],
-    {
-      items: [],
-      has_next: false,
-      offset: 0,
-    },
+    { items: [], has_next: false, offset: 0 },
   );
-  await waitFor(() =>
-    expect(
-      (
-        screen.getByRole("button", {
-          name: "Import catalog",
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(true),
-  );
+  await waitFor(async () => expect((await primary()).disabled).toBe(true));
 });
 for (const [state, outcome, description] of [
-  ["FAILED", "LIMIT_REACHED", "stopped the traversal"],
-  ["CANCELLED", "CANCELLED", "cancelled before"],
-  ["OUTCOME_UNKNOWN", null, "requires reconciliation"],
+  ["FAILED", "LIMIT_REACHED", /Достигнут лимит загрузки/],
+  ["CANCELLED", "CANCELLED", /Загрузка отменена до начала обработки/],
+  ["OUTCOME_UNKNOWN", null, /Не запускайте повторную загрузку/],
 ] as const)
   it(`displays ${state} without inventing a result`, async () => {
     setup({
@@ -404,94 +443,106 @@ for (const [state, outcome, description] of [
         limiting_resource: outcome === "LIMIT_REACHED" ? "pages" : null,
       },
     });
-    await screen.findByText(new RegExp(description, "i"));
-    if (state === "OUTCOME_UNKNOWN")
-      expect(
-        (
-          screen.getByRole("button", {
-            name: "Import catalog",
-          }) as HTMLButtonElement
-        ).disabled,
-      ).toBe(true);
-    expect(screen.queryByText(/Completed batch:/)).toBeNull();
+    await screen.findAllByText(description);
+    expect((await primary()).disabled).toBe(state === "OUTCOME_UNKNOWN");
+    expect(screen.queryByText("Последняя успешная загрузка")).toBeNull();
   });
 it("cancels only a queued operation after confirmation", async () => {
   const { fetcher } = setup({ initial: base });
-  await screen.findByText(/Waiting for an available worker/);
-  fireEvent.click(screen.getByRole("button", { name: "Cancel queued import" }));
-  await screen.findByRole("dialog", { name: "Cancel queued import" });
-  fireEvent.click(screen.getByRole("button", { name: "Confirm cancellation" }));
-  await screen.findByText(/Cancellation was recorded/);
-  expect(
-    fetcher.mock.calls.filter(([p]) => String(p).endsWith("/cancel")),
-  ).toHaveLength(1);
+  await screen.findByText("В очереди", { selector: ".import-progress strong" });
+  await cancel();
+  await screen.findByText("Загрузка отменена.");
+  const calls = fetcher.mock.calls.filter(([p]) =>
+    String(p).endsWith("/cancel"),
+  );
+  expect(calls).toHaveLength(1);
+  expect(JSON.parse(String(calls[0][1]?.body))).toEqual({
+    tenant: scope.tenant,
+    ozon_account: scope.account,
+    acknowledge: true,
+  });
 });
 it("reports a cancellation race and does not claim success", async () => {
   setup({ initial: base, cancelConflict: true });
-  await screen.findByText(/Waiting for an available worker/);
-  fireEvent.click(screen.getByRole("button", { name: "Cancel queued import" }));
-  fireEvent.click(screen.getByRole("button", { name: "Confirm cancellation" }));
-  await screen.findByText(/running imports cannot be cancelled/);
-  expect(screen.queryByText(/Cancellation was recorded/)).toBeNull();
-});
-it("paginates history without losing the newest scoped operation", async () => {
-  setup({
-    initial: { ...base, state: "FAILED", outcome: "API_FAILURE" },
-    pages: true,
-  });
-  await screen.findByText(/Import history/);
-  await waitFor(() =>
-    expect(
-      (
-        screen.getByRole("button", {
-          name: "Next imports",
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(false),
+  await screen.findByText("В очереди", { selector: ".import-progress strong" });
+  await cancel();
+  await screen.findByText(/Отменить можно только загрузку в очереди/);
+  expect(screen.queryByText("Загрузка отменена.")).toBeNull();
+  expect(document.querySelector(".import-progress")?.textContent).toContain(
+    "Обновляем данные Ozon",
   );
-  fireEvent.click(screen.getByRole("button", { name: "Next imports" }));
-  await screen.findByText("b".repeat(32));
-  expect(screen.getByText(/Latest operation:/).textContent).toContain(base.id);
 });
-it("requires history inspection after session expiration", async () => {
+it("paginates bounded history without losing the newest scoped operation", async () => {
+  const running: ImportOperation = {
+    ...base,
+    state: "RUNNING",
+    phase: "READING_PRODUCTS",
+  };
+  const { fetcher } = setup({ initial: running, pages: true });
+  await screen.findByText("Обновляем данные Ozon");
+  const history =
+    document.querySelector<HTMLDetailsElement>(".provider-history")!;
+  fireEvent.click(history.querySelector("summary")!);
+  const next = within(history).getByRole("button", { name: "Следующие" });
+  await waitFor(() => expect((next as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(next);
+  await within(history).findByText("Ошибка", { selector: ".history-result" });
+  const row = await openHistory();
+  const technical = openTechnical(row);
+  await within(technical).findByText("b".repeat(32));
+  expect(screen.getByText("Обновляем данные Ozon")).toBeTruthy();
+  expect((await primary()).disabled).toBe(true);
+  const urls = fetcher.mock.calls
+    .map(([p]) => String(p))
+    .filter((p) => p.startsWith("/api/imports?"));
+  expect(urls.some((p) => p.includes("offset=10"))).toBe(true);
+  expect(
+    urls.every(
+      (p) =>
+        p.includes("limit=10") &&
+        p.includes("tenant=tenant-a") &&
+        p.includes("ozon_account=ozon-a"),
+    ),
+  ).toBe(true);
+});
+it("requires scoped history inspection after session expiration", async () => {
   setup({ unauthorized: true });
-  await openConfirm();
-  fireEvent.click(screen.getByLabelText(/I explicitly request/));
-  fireEvent.click(screen.getByRole("button", { name: "Confirm import" }));
-  await screen.findByText(/Your session ended/);
-  expect(screen.queryByText("Retry same import request")).toBeNull();
+  await submit();
+  await screen.findByText(/Сессия завершилась/);
+  expect(screen.queryByText("Повторить тот же запрос")).toBeNull();
   fireEvent.click(
-    screen.getByRole("button", { name: "Refresh and inspect history" }),
+    screen.getByRole("button", { name: "Обновить и проверить историю" }),
   );
-  await screen.findByText("I inspected import history");
+  await screen.findByText("История проверена");
+  expect((await primary()).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "История проверена" }));
+  await waitFor(async () => expect((await primary()).disabled).toBe(false));
 });
 it("does not allow uncertainty dismissal when refreshing scoped history fails", async () => {
   const { setHistoryUnavailable } = setup({ unauthorized: true });
-  await openConfirm();
-  fireEvent.click(screen.getByLabelText(/I explicitly request/));
-  fireEvent.click(screen.getByRole("button", { name: "Confirm import" }));
-  await screen.findByText(/Your session ended/);
+  await submit();
+  await screen.findByText(/Сессия завершилась/);
   setHistoryUnavailable(true);
   fireEvent.click(
-    screen.getByRole("button", { name: "Refresh and inspect history" }),
+    screen.getByRole("button", { name: "Обновить и проверить историю" }),
   );
-  await screen.findByText(/Import history is unavailable/);
-  expect(screen.queryByText("I inspected import history")).toBeNull();
+  await screen.findByText(/История недоступна/);
+  expect(screen.queryByText("История проверена")).toBeNull();
+  expect((await primary()).disabled).toBe(true);
 });
 it("does not create a new intent on idempotency conflict", async () => {
   const { fetcher } = setup({ conflict: true });
-  await openConfirm();
-  fireEvent.click(screen.getByLabelText(/I explicitly request/));
-  fireEvent.click(screen.getByRole("button", { name: "Confirm import" }));
-  await screen.findByText(/IDEMPOTENCY_CONFLICT/);
-  expect(screen.queryByText("Retry same import request")).toBeNull();
+  await submit();
+  await screen.findByText(/Не удалось однозначно сопоставить запрос/);
+  expect(screen.queryByText("Повторить тот же запрос")).toBeNull();
+  const code = screen.getByText("IDEMPOTENCY_CONFLICT");
+  expect(code.closest("details")?.open).toBe(false);
   expect(
     fetcher.mock.calls.filter(
       ([p, init]) => p === "/api/imports" && init?.method === "POST",
     ),
   ).toHaveLength(1);
 });
-
 const moyBase: ImportOperation = {
   ...base,
   provider: "moysklad",
@@ -501,37 +552,21 @@ const moyBase: ImportOperation = {
 };
 it("submits MoySklad only after acknowledgement and preserves its exact intent across providers", async () => {
   const { fetcher, client } = setup({ provider: "moysklad", lost: true });
-  await screen.findByText(/No import operations/);
+  await screen.findByText("Загрузок пока нет");
   expect(fetcher.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
     false,
   );
-  await openConfirm("MoySklad");
-  expect(
-    within(screen.getByRole("dialog")).getByText(
-      /Customer orders are not imported/,
-    ),
-  ).toBeTruthy();
-  expect(
-    (
-      screen.getByRole("button", {
-        name: "Confirm import",
-      }) as HTMLButtonElement
-    ).disabled,
-  ).toBe(true);
-  fireEvent.click(screen.getByLabelText(/I explicitly request/));
-  const confirmButton = screen.getByRole("button", { name: "Confirm import" });
-  fireEvent.click(confirmButton);
-  fireEvent.click(confirmButton);
-  await screen.findByText(/Submission outcome unknown/);
+  await submit("МойСклад");
+  await screen.findByText(/Результат отправки неизвестен/);
   fireEvent.click(screen.getByText("Switch scope"));
-  expect(screen.queryByText("Retry same import request")).toBeNull();
-  fireEvent.click(screen.getByText("Return to original import scope"));
+  expect(screen.queryByText("Повторить тот же запрос")).toBeNull();
+  fireEvent.click(screen.getByText("Вернуться к исходному аккаунту"));
   fireEvent.click(screen.getByText("Switch provider"));
-  await screen.findByRole("region", { name: "Ozon catalog imports" });
-  expect(screen.queryByText("Retry same import request")).toBeNull();
-  fireEvent.click(screen.getByText("Return to original import scope"));
-  fireEvent.click(screen.getByText("Retry same import request"));
-  await screen.findByText(/existing import operation was recovered/);
+  await screen.findByRole("region", { name: "Ozon: импорт данных" });
+  expect(screen.queryByText("Повторить тот же запрос")).toBeNull();
+  fireEvent.click(screen.getByText("Вернуться к исходному аккаунту"));
+  fireEvent.click(screen.getByText("Повторить тот же запрос"));
+  await screen.findByText(/Ранее созданная загрузка найдена/);
   const calls = fetcher.mock.calls.filter(
     ([url, init]) => url === "/api/imports" && init?.method === "POST",
   );
@@ -547,38 +582,23 @@ it("submits MoySklad only after acknowledgement and preserves its exact intent a
   expect(body.ozon_account).toBeUndefined();
   expect(body.limits).toBeUndefined();
   expect(body.idempotency_key).toMatch(/^[0-9a-f-]{36}$/);
-  expect(
-    client
-      .getQueryCache()
-      .findAll()
-      .some(
-        (q) =>
-          JSON.stringify(q.queryKey) ===
-          JSON.stringify([
-            "import-history",
-            scope.tenant,
-            "moysklad",
-            scope.account,
-            0,
-          ]),
-      ),
-  ).toBe(true);
-  expect(
-    client
-      .getQueryCache()
-      .findAll()
-      .some(
-        (q) =>
-          JSON.stringify(q.queryKey) ===
-          JSON.stringify([
-            "import-history",
-            scope.tenant,
-            "ozon",
-            scope.account,
-            0,
-          ]),
-      ),
-  ).toBe(true);
+  for (const provider of ["moysklad", "ozon"])
+    expect(
+      client
+        .getQueryCache()
+        .findAll()
+        .some(
+          (q) =>
+            JSON.stringify(q.queryKey) ===
+            JSON.stringify([
+              "import-history",
+              scope.tenant,
+              provider,
+              scope.account,
+              0,
+            ]),
+        ),
+    ).toBe(true);
 });
 it("keeps MoySklad history readable when credentials are missing", async () => {
   setup({
@@ -590,17 +610,13 @@ it("keeps MoySklad history readable when credentials are missing", async () => {
       outcome: "CONFIGURATION_UNAVAILABLE",
     },
   });
-  await screen.findByText(/matching worker configuration is unavailable/);
-  expect(
-    (
-      screen.getByRole("button", {
-        name: "Import catalog",
-      }) as HTMLButtonElement
-    ).disabled,
-  ).toBe(true);
+  await screen.findAllByText(/Настройки выбранного аккаунта недоступны/);
+  expect((await primary("МойСклад")).disabled).toBe(true);
+  const row = await openHistory();
+  expect(row.open).toBe(true);
 });
-it("renders MoySklad stages and attempt-local observation counters", async () => {
-  const { client } = setup({
+it("renders MoySklad phases and attempt-local counters without inventing progress", async () => {
+  const { client, setOperation } = setup({
     provider: "moysklad",
     initial: {
       ...moyBase,
@@ -609,34 +625,44 @@ it("renders MoySklad stages and attempt-local observation counters", async () =>
       attempt: 1,
     },
   });
-  await screen.findByText(/variants observed 1/);
-  const key = [
-    "import-detail",
-    scope.tenant,
-    "moysklad",
-    scope.account,
-    base.id,
-  ];
-  for (const phase of [
-    "READING_PRODUCTS",
-    "READING_VARIANTS",
-    "READING_WAREHOUSES",
-    "READING_AGGREGATE_STOCK",
-    "READING_WAREHOUSE_STOCK",
-    "PERSISTING",
+  await screen.findByText("Загружаем варианты…");
+  const row = await openHistory();
+  const technical = openTechnical(row);
+  expect(within(technical).getByText(/вариантов 1/)).toBeTruthy();
+  for (const [phase, label] of [
+    ["READING_PRODUCTS", "Загружаем товары"],
+    ["READING_VARIANTS", "Загружаем варианты"],
+    ["READING_WAREHOUSES", "Загружаем склады"],
+    ["READING_AGGREGATE_STOCK", "Получаем остатки"],
+    ["READING_WAREHOUSE_STOCK", "Получаем остатки по складам"],
+    ["PERSISTING", "Сохраняем данные"],
   ]) {
-    client.setQueryData(key, {
+    const operation: ImportOperation = {
       ...moyBase,
       state: "RUNNING",
       phase,
       attempt: 2,
       counts: { ...moyBase.counts, variants: 0 },
+    };
+    setOperation(operation);
+    await client.refetchQueries({
+      queryKey: [
+        "import-detail",
+        scope.tenant,
+        "moysklad",
+        scope.account,
+        base.id,
+      ],
+      exact: true,
     });
-    await screen.findByText(new RegExp(`Phase: ${phase}`));
-    await screen.findByText(/variants observed 0/);
+    await screen.findByText(`${label}…`);
+    await within(technical).findByText(/вариантов 0/);
   }
-  expect(screen.getByText(/attempt-local/)).toBeTruthy();
-  expect(screen.getByText(/warehouse stock observations 2/)).toBeTruthy();
+  expect(
+    within(technical).getByText(/сбрасываются при новой попытке/),
+  ).toBeTruthy();
+  expect(within(technical).getByText(/записей по складам 2/)).toBeTruthy();
+  expect(document.body.textContent).not.toContain("%");
 });
 for (const state of [
   "QUEUED",
@@ -653,11 +679,13 @@ for (const state of [
         outcome: state === "FAILED" ? "API_FAILURE" : null,
       },
     });
-    await screen.findByRole("region", { name: "Import operation details" });
-    await screen.findByRole("heading", { name: /Operation / });
-    expect(screen.queryByText(/Completed batch:/)).toBeNull();
+    const row = await openHistory();
+    const technical = openTechnical(row);
+    expect(within(technical).getAllByText(state).length).toBeGreaterThan(0);
+    expect(screen.queryByText("Последняя успешная загрузка")).toBeNull();
+    expect(within(technical).queryByText("Пакет данных")).toBeNull();
   });
-it("shows MoySklad reused batch without claiming fresh timestamps and invalidates data", async () => {
+it("shows a reused MoySklad batch without claiming fresh timestamps and invalidates data", async () => {
   const { invalidate } = setup({
     provider: "moysklad",
     initial: {
@@ -669,7 +697,10 @@ it("shows MoySklad reused batch without claiming fresh timestamps and invalidate
       outcome: "COMPLETE_TRAVERSAL",
     },
   });
-  await screen.findByText(/observation timestamps unchanged/);
+  const technical = openTechnical(await openHistory());
+  expect(
+    within(technical).getByText(/Время наблюдения не изменилось/),
+  ).toBeTruthy();
   await waitFor(() =>
     expect(
       invalidate.mock.calls.some(([arg]) =>
@@ -677,14 +708,13 @@ it("shows MoySklad reused batch without claiming fresh timestamps and invalidate
       ),
     ).toBe(true),
   );
-  expect(screen.getByText(/variants observed 1/)).toBeTruthy();
+  expect(within(technical).getByText(/вариантов 1/)).toBeTruthy();
 });
 it("cancels a MoySklad queued operation using only its provider scope", async () => {
   const { fetcher } = setup({ provider: "moysklad", initial: moyBase });
-  await screen.findByText(/Waiting for an available worker/);
-  fireEvent.click(screen.getByRole("button", { name: "Cancel queued import" }));
-  fireEvent.click(screen.getByRole("button", { name: "Confirm cancellation" }));
-  await screen.findByText(/Cancellation was recorded/);
+  await screen.findByText("В очереди", { selector: ".import-progress strong" });
+  await cancel();
+  await screen.findByText("Загрузка отменена.");
   const call = fetcher.mock.calls.find(([url]) =>
     String(url).endsWith("/cancel"),
   )!;
@@ -696,13 +726,11 @@ it("cancels a MoySklad queued operation using only its provider scope", async ()
 });
 it("handles a MoySklad queued-to-running cancellation race", async () => {
   setup({ provider: "moysklad", initial: moyBase, cancelConflict: true });
-  await screen.findByText(/Waiting for an available worker/);
-  fireEvent.click(screen.getByRole("button", { name: "Cancel queued import" }));
-  fireEvent.click(screen.getByRole("button", { name: "Confirm cancellation" }));
-  await screen.findByText(/running imports cannot be cancelled/);
-  expect(screen.queryByText(/Cancellation was recorded/)).toBeNull();
+  await screen.findByText("В очереди", { selector: ".import-progress strong" });
+  await cancel();
+  await screen.findByText(/Отменить можно только загрузку в очереди/);
+  expect(screen.queryByText("Загрузка отменена.")).toBeNull();
 });
-
 it("keeps simultaneous histories isolated when both providers use the same account text", async () => {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -747,21 +775,18 @@ it("keeps simultaneous histories isolated when both providers use the same accou
     </QueryClientProvider>,
   );
   const moy = await screen.findByRole("region", {
-    name: "MoySklad catalog imports",
+    name: "МойСклад: импорт данных",
   });
   const ozon = await screen.findByRole("region", {
-    name: "Ozon catalog imports",
+    name: "Ozon: импорт данных",
   });
-  await within(moy).findByRole("heading", { name: /Operation m/ });
-  await within(ozon).findByRole("heading", { name: /Operation a/ });
-  expect(
-    within(ozon).queryByRole("heading", { name: /Operation m/ }),
-  ).toBeNull();
-  expect(
-    within(moy).queryByRole("heading", { name: /Operation a/ }),
-  ).toBeNull();
+  const moyTechnical = openTechnical(await openHistory(moy));
+  const ozonTechnical = openTechnical(await openHistory(ozon));
+  expect(within(moyTechnical).getByText("m".repeat(32))).toBeTruthy();
+  expect(within(ozonTechnical).getByText(base.id)).toBeTruthy();
+  expect(within(moyTechnical).queryByText(base.id)).toBeNull();
+  expect(within(ozonTechnical).queryByText("m".repeat(32))).toBeNull();
 });
-
 it("keeps the selected MoySklad account's prior persisted import visible after a failed operation", async () => {
   setup({
     provider: "moysklad",
@@ -774,10 +799,69 @@ it("keeps the selected MoySklad account's prior persisted import visible after a
       counts: { products: 9, variants: 2, warehouses: 3, stock_rows: 0 },
     },
   });
-  await screen.findByText("Latest completed import");
-  await screen.findByText(
-    /Products 9; variants 2; warehouses 3; warehouse stock rows 0/,
+  await screen.findByText("Последняя успешная загрузка");
+  const counts = document.querySelector<HTMLElement>(".catalog-counts")!;
+  expect(within(counts).getByText("9")).toBeTruthy();
+  expect(within(counts).getByText("2")).toBeTruthy();
+  expect(within(counts).getByText("3")).toBeTruthy();
+  await screen.findByText("Не удалось обновить данные");
+  expect((await primary("МойСклад")).textContent).toBe("Обновить данные");
+});
+it("keeps operation identifiers and diagnostics collapsed until requested and supports copying", async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText },
+  });
+  setup({
+    initial: {
+      ...base,
+      state: "SUCCEEDED",
+      phase: "COMPLETED",
+      batch_id: 42,
+      outcome: "COMPLETE_TRAVERSAL",
+      elapsed_ms: 1250,
+    },
+  });
+  await screen.findByText("Успешно", { selector: ".history-preview" });
+  const history =
+    document.querySelector<HTMLDetailsElement>(".provider-history")!;
+  const row = history.querySelector<HTMLDetailsElement>(".history-entry")!;
+  const technical =
+    row.querySelector<HTMLDetailsElement>(".technical-details")!;
+  expect(history.open).toBe(false);
+  expect(row.open).toBe(false);
+  expect(technical.open).toBe(false);
+  expect(within(technical).getByText(base.id)).toBeTruthy();
+  expect(history.querySelector("summary")?.textContent).not.toContain(base.id);
+  expect(row.querySelector("summary")?.textContent).not.toContain(
+    "COMPLETE_TRAVERSAL",
   );
-  await screen.findByText(/Import failed/);
-  expect(screen.queryByText(/Completed batch:/)).toBeNull();
+  expect(row.querySelector("summary")?.textContent).toContain(
+    "1,3 с за попытку",
+  );
+  await openHistory();
+  openTechnical(row);
+  fireEvent.click(
+    within(technical).getByRole("button", { name: "Скопировать: Операция" }),
+  );
+  await within(technical).findByText("Скопировано");
+  expect(writeText).toHaveBeenCalledWith(base.id);
+});
+
+it("uses total worker timestamps for history duration rather than attempt-local elapsed time", async () => {
+  setup({
+    initial: {
+      ...base,
+      state: "SUCCEEDED",
+      phase: "COMPLETED",
+      batch_id: 42,
+      outcome: "COMPLETE_TRAVERSAL",
+      started_at: "2026-01-01T00:00:01Z",
+      finished_at: "2026-01-01T00:00:05Z",
+      elapsed_ms: 1250,
+    },
+  });
+  const row = await openHistory();
+  expect(row.querySelector(".history-duration")?.textContent).toBe("4 с");
 });

@@ -1,5 +1,7 @@
 # MoySklad import management UI V1
 
+The current screen and Russian user workflow are documented in [Integrations UX V1](integrations-ux-v1.md). Backend and recovery details below remain applicable; screenshots and UI labels here describe the earlier version.
+
 The authenticated local Integrations screen supports both `MOYSKLAD_CATALOG_IMPORT` and `OZON_CATALOG_IMPORT` using one provider-aware import panel and the existing durable backend. Select a tenant and registered MoySklad account above the provider cards, then choose **Import catalog** in that account's panel. Inspect the read-only scope, acknowledge the request and confirm it. Opening the page, selecting accounts and testing a connection do not start an import.
 
 ## Local setup

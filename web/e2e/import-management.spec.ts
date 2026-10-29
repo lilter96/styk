@@ -6,8 +6,9 @@ test("operator queues, reconciles and observes a worker import without marketpla
 }) => {
   test.setTimeout(90_000);
   const provider = process.env.STYK_IMPORT_E2E_PROVIDER || "ozon";
-  const name = provider === "moysklad" ? "MoySklad" : "Ozon";
-  const other = provider === "moysklad" ? "Ozon" : "MoySklad";
+  const name = provider === "moysklad" ? "МойСклад" : "Ozon";
+  const initialName = provider === "moysklad" ? "MoySklad" : "Ozon";
+  const other = provider === "moysklad" ? "Ozon" : "МойСклад";
   const field = provider === "moysklad" ? "moysklad_account" : "ozon_account";
   const otherField =
     provider === "moysklad" ? "ozon_account" : "moysklad_account";
@@ -32,40 +33,38 @@ test("operator queues, reconciles and observes a worker import without marketpla
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.getByLabel("Tenant", { exact: true }).fill(tenant);
   await page.getByRole("button", { name: "Open workspace" }).click();
-  await page.getByRole("combobox", { name }).selectOption(account);
+  await page.getByRole("combobox", { name: initialName }).selectOption(account);
   await page
     .getByRole("navigation")
     .getByRole("link", { name: "Integrations" })
     .click();
-  const panel = page.getByRole("region", { name: `${name} catalog imports` });
-  await expect(
-    panel.getByText("No import operations for this account."),
-  ).toBeVisible();
+  const panel = page.getByRole("region", { name: `${name}: импорт данных` });
+  await expect(panel.getByText("Данные ещё не загружены")).toBeVisible();
   expect((await state()).operations).toBe(0);
 
   const submit = async () => {
-    await panel.getByRole("button", { name: "Import catalog" }).click();
+    await panel.getByRole("button", { name: "Загрузить данные" }).click();
     const dialog = page.getByRole("dialog", {
-      name: `Confirm ${name} catalog import`,
+      name: `Загрузить данные ${name}?`,
     });
     await expect(
-      dialog.getByRole("button", { name: "Confirm import" }),
+      dialog.getByRole("button", { name: "Подтвердить загрузку" }),
     ).toBeDisabled();
     await dialog.getByRole("checkbox").check();
-    await dialog.getByRole("button", { name: "Confirm import" }).click();
+    await dialog.getByRole("button", { name: "Подтвердить загрузку" }).click();
   };
   await submit();
   await expect(
-    panel.getByText("Waiting for an available worker."),
+    panel.getByText("Загрузка начнётся, когда освободится обработчик."),
   ).toBeVisible();
   expect(await state()).toMatchObject({ operations: 1, tasks: 1, batches: 0 });
-  await panel.getByRole("button", { name: "Cancel queued import" }).click();
+  await panel.getByRole("button", { name: "Отменить загрузку" }).click();
   await page
-    .getByRole("dialog", { name: "Cancel queued import" })
-    .getByRole("button", { name: "Confirm cancellation" })
+    .getByRole("dialog", { name: "Отменить загрузку?" })
+    .getByRole("button", { name: "Подтвердить отмену" })
     .click();
   await expect(
-    panel.getByText("Import was cancelled before execution."),
+    panel.getByText("Загрузка отменена до начала обработки."),
   ).toBeVisible();
   expect((await state()).batches).toBe(0);
 
@@ -81,25 +80,36 @@ test("operator queues, reconciles and observes a worker import without marketpla
     }
   });
   await submit();
-  await expect(page.getByText(/Submission outcome unknown/)).toBeVisible();
+  await expect(page.getByText(/Результат отправки неизвестен/)).toBeVisible();
   expect(await state()).toMatchObject({ operations: 2, tasks: 2, batches: 0 });
-  await page.getByRole("combobox", { name }).selectOption("");
-  await page.getByRole("combobox", { name: other }).selectOption(account);
+  const selectAccount = async (providerName: string, value: string) => {
+    const card = page.locator(".integration-card").filter({
+      has: page.getByRole("heading", { name: providerName, exact: true }),
+    });
+    const settings = card.locator("details.provider-settings");
+    if (!(await settings.evaluate((node) => (node as HTMLDetailsElement).open)))
+      await settings.locator(":scope > summary").click();
+    await card
+      .getByRole("combobox", { name: `${providerName}: аккаунт` })
+      .selectOption(value);
+  };
+  await selectAccount(name, "");
+  await selectAccount(other, account);
   const otherPanel = page.getByRole("region", {
-    name: `${other} catalog imports`,
+    name: `${other}: импорт данных`,
   });
+  await expect(otherPanel.getByText("Данные ещё не загружены")).toBeVisible();
   await expect(
-    otherPanel.getByText("No import operations for this account."),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Retry same import request" }),
+    page.getByRole("button", { name: "Повторить тот же запрос" }),
   ).toHaveCount(0);
   await page
-    .getByRole("button", { name: "Return to original import scope" })
+    .getByRole("button", { name: "Вернуться к исходному аккаунту" })
     .click();
-  await page.getByRole("button", { name: "Retry same import request" }).click();
+  await page.getByRole("button", { name: "Повторить тот же запрос" }).click();
   await expect(
-    page.getByText("The existing import operation was recovered."),
+    page.getByText(
+      "Ранее созданная загрузка найдена. Повторный запрос не создал новую.",
+    ),
   ).toBeVisible();
   expect(bodies).toHaveLength(2);
   expect(bodies[1]).toBe(bodies[0]);
@@ -119,22 +129,45 @@ test("operator queues, reconciles and observes a worker import without marketpla
   expect(await state()).toMatchObject({ operations: 2, tasks: 2, batches: 0 });
   await request.post(`${api}/__test/start-worker`);
   await expect.poll(async () => (await state()).started).toBe(true);
-  await expect(panel.getByText("Import in progress.")).toBeVisible({
+  await expect(panel.getByText(`Обновляем данные ${name}`)).toBeVisible({
     timeout: 10_000,
   });
-  await expect(panel.getByText(/READING_PRODUCTS/).first()).toBeVisible();
+  await expect(
+    panel.getByText("Загружаем товары…", { exact: true }),
+  ).toBeVisible();
   await request.post(`${api}/__test/release`);
   await expect(
-    panel.getByText("Catalog traversal completed and a batch is saved."),
-  ).toBeVisible({ timeout: 15_000 });
-  await expect(panel.getByText(/Completed batch:/)).toBeVisible();
-  await expect(
-    panel.getByText(
-      provider === "moysklad"
-        ? /Products observed 1; variants observed 1; warehouses observed 1; aggregate stock observations 1; warehouse stock observations 1/
-        : /Products observed 1; warehouses observed 1; stock observations 1/,
-    ),
-  ).toBeVisible();
+    panel.getByRole("button", { name: "Обновить данные", exact: true }),
+  ).toBeEnabled({ timeout: 15_000 });
+  const history = page.locator(
+    `details.provider-history[aria-label="${name}: история обновлений"]`,
+  );
+  const inspectSuccess = async () => {
+    if (!(await history.evaluate((node) => (node as HTMLDetailsElement).open)))
+      await history.locator(":scope > summary").click();
+    const entry = history
+      .locator("details.history-entry")
+      .filter({ hasText: "Успешно" })
+      .first();
+    await expect(entry).toBeVisible();
+    if (!(await entry.evaluate((node) => (node as HTMLDetailsElement).open)))
+      await entry.locator(":scope > summary").click();
+    await expect(
+      entry.getByText("Товары и остатки загружены", { exact: true }).last(),
+    ).toBeVisible();
+    await entry.locator("details.technical-details > summary").click();
+    await expect(
+      entry.getByText("Пакет данных", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      entry.getByText(
+        provider === "moysklad"
+          ? /Обнаружено: товаров 1, складов 1, записей об остатках 1, вариантов 1, записей по складам 1/
+          : /Обнаружено: товаров 1, складов 1, записей об остатках 1/,
+      ),
+    ).toBeVisible();
+  };
+  await inspectSuccess();
   expect(await state()).toMatchObject({
     operations: 2,
     tasks: 2,
@@ -146,28 +179,52 @@ test("operator queues, reconciles and observes a worker import without marketpla
     publication: 0,
   });
   await page.reload();
-  await expect(page.getByLabel("Tenant", { exact: true })).toHaveValue(tenant);
-  await expect(page.getByRole("combobox", { name })).toHaveValue(account);
+  await page.locator(".workspace-selector > summary").click();
   await expect(
-    panel.getByText("Catalog traversal completed and a batch is saved."),
-  ).toBeVisible();
-  await expect(panel.getByText(/Completed batch:/)).toBeVisible();
+    page.getByLabel("Рабочее пространство", { exact: true }),
+  ).toHaveValue(tenant);
+  await expect(page.getByRole("combobox", { name, exact: true })).toHaveValue(
+    account,
+  );
+  await page.locator(".workspace-selector > summary").click();
   await expect(
-    otherPanel.getByText("No import operations for this account."),
+    panel.getByText("Последняя успешная загрузка", { exact: true }),
   ).toBeVisible();
+  await inspectSuccess();
+  await expect(otherPanel.getByText("Данные ещё не загружены")).toBeVisible();
   // The same still-running worker must also execute the other provider.
-  await otherPanel.getByRole("button", { name: "Import catalog" }).click();
+  await otherPanel.getByRole("button", { name: "Загрузить данные" }).click();
   const otherDialog = page.getByRole("dialog", {
-    name: `Confirm ${other} catalog import`,
+    name: `Загрузить данные ${other}?`,
   });
   await otherDialog.getByRole("checkbox").check();
-  await otherDialog.getByRole("button", { name: "Confirm import" }).click();
+  await otherDialog
+    .getByRole("button", { name: "Подтвердить загрузку" })
+    .click();
   await expect(
-    otherPanel.getByText("Catalog traversal completed and a batch is saved."),
-  ).toBeVisible({ timeout: 15000 });
+    otherPanel.getByRole("button", { name: "Обновить данные", exact: true }),
+  ).toBeEnabled({ timeout: 15000 });
+  const otherHistoryPanel = page.locator(
+    `details.provider-history[aria-label="${other}: история обновлений"]`,
+  );
+  await otherHistoryPanel.locator(":scope > summary").click();
+  await expect(
+    otherHistoryPanel.getByText("Успешно", { exact: true }).last(),
+  ).toBeVisible();
+  await otherHistoryPanel.locator(":scope > summary").click();
+  await history.locator(":scope > summary").click();
   expect(JSON.parse(bodies[2])[otherField]).toBe(account);
   expect(JSON.parse(bodies[2])[field]).toBeUndefined();
-  await page.setViewportSize({ width: 1440, height: 1000 });
+  for (const settings of await page
+    .locator("details.provider-settings[open]")
+    .all())
+    await settings.locator(":scope > summary").click();
+  const html = await page.content();
+  expect(html).not.toContain("synthetic-import-key");
+  expect(html).not.toContain("synthetic-moy-import-token");
+  expect(await page.locator("body").innerText()).not.toContain(account);
+  expect(await page.locator("body").innerText()).not.toContain(tenant);
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.screenshot({
     path: `test-results/imports-${provider}.png`,
     fullPage: true,
@@ -179,7 +236,9 @@ test("operator queues, reconciles and observes a worker import without marketpla
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
-  await panel.getByRole("link", { name: "View latest warehouses" }).click();
+  await page
+    .getByRole("link", { name: "Сопоставить склады", exact: true })
+    .click();
   await expect(
     page.getByRole("heading", { name: /Warehouses/ }).first(),
   ).toBeVisible();

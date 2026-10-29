@@ -12,7 +12,13 @@ import {
 } from "./Confirmation";
 import { useEffect, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { NavLink, Route, Routes, useNavigate } from "react-router-dom";
+import {
+  NavLink,
+  Route,
+  Routes,
+  useNavigate,
+  useLocation,
+} from "react-router-dom";
 import {
   api,
   params,
@@ -821,6 +827,7 @@ export function App() {
   const confirmation = useConfirmation();
   const importSubmission = useImportSubmission();
   const navigate = useNavigate();
+  const integrationPage = useLocation().pathname === "/integrations";
   useEffect(() => {
     if (!confirmation.pending && !importSubmission.pending) return;
     const warn = (event: BeforeUnloadEvent) => {
@@ -901,8 +908,8 @@ export function App() {
         )}
         {importSubmission.sessionLost && (
           <p role="alert">
-            The previous import request may have been queued. Sign in and
-            inspect the original account's import history.
+            Предыдущий запрос на загрузку мог попасть в очередь. Войдите снова и
+            проверьте историю исходного аккаунта.
           </p>
         )}
         <Login
@@ -920,37 +927,165 @@ export function App() {
     client.clear();
     window.location.assign("/");
   }
+  const workspaceControls = (
+    <div className="scope-panel">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          setChosen(tenant.trim());
+          setMoy("");
+          setOzon("");
+        }}
+      >
+        <label>
+          {integrationPage ? "Рабочее пространство" : "Tenant"}
+          <input
+            value={tenant}
+            onChange={(e) => setTenant(e.target.value)}
+            placeholder={
+              integrationPage ? "Идентификатор пространства" : "Tenant ID"
+            }
+          />
+        </label>
+        <button className="secondary">
+          {integrationPage ? "Открыть пространство" : "Open workspace"}
+        </button>
+      </form>
+      {accounts.isLoading && (
+        <span>
+          {integrationPage ? "Загружаем аккаунты…" : "Loading accounts…"}
+        </span>
+      )}
+      {accounts.error && <Failure error={accounts.error} />}{" "}
+      {accounts.data && (
+        <>
+          <label>
+            {integrationPage ? "МойСклад" : "MoySklad"}
+            <select value={moy} onChange={(e) => setMoy(e.target.value)}>
+              <option value="">
+                {integrationPage ? "Выберите аккаунт" : "Select account"}
+              </option>
+              {accounts.data.accounts
+                .filter((a) => a.source === "moysklad")
+                .map((a, index) => (
+                  <option key={a.account} value={a.account}>
+                    {integrationPage
+                      ? `Аккаунт ${index + 1} · ${new Date(a.registered_at).toLocaleDateString("ru-RU")}`
+                      : a.account}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label>
+            Ozon
+            <select value={ozon} onChange={(e) => setOzon(e.target.value)}>
+              <option value="">
+                {integrationPage ? "Выберите аккаунт" : "Select account"}
+              </option>
+              {accounts.data.accounts
+                .filter((a) => a.source === "ozon")
+                .map((a, index) => (
+                  <option key={a.account} value={a.account}>
+                    {integrationPage
+                      ? `Аккаунт ${index + 1} · ${new Date(a.registered_at).toLocaleDateString("ru-RU")}`
+                      : a.account}
+                  </option>
+                ))}
+            </select>
+          </label>
+          {accounts.data.accounts.length === 0 && (
+            <span>
+              {integrationPage
+                ? "В этом пространстве пока нет аккаунтов."
+                : "No registered accounts for this tenant."}
+            </span>
+          )}
+          {accounts.data.truncated && (
+            <span>
+              {integrationPage
+                ? "Показана часть аккаунтов. Уточните нужный аккаунт у администратора."
+                : "Account list is truncated."}
+            </span>
+          )}
+        </>
+      )}
+    </div>
+  );
+  const importNotice = (
+    <ImportSubmissionNotice
+      submission={importSubmission}
+      scope={{
+        tenant: chosen,
+        provider:
+          importSubmission.pending?.intent.scope.provider ??
+          (importSubmission.result?.operation.provider === "moysklad"
+            ? "moysklad"
+            : "ozon"),
+        account:
+          (importSubmission.pending?.intent.scope.provider ??
+            importSubmission.result?.operation.provider) === "moysklad"
+            ? moy
+            : ozon,
+      }}
+      restore={(original) => {
+        setTenant(original.tenant);
+        setChosen(original.tenant);
+        if (original.provider === "moysklad") setMoy(original.account);
+        else setOzon(original.account);
+        navigate("/integrations");
+      }}
+    />
+  );
   return (
-    <div className="shell">
+    <div className={integrationPage ? "shell integration-shell" : "shell"}>
       <aside className="sidebar">
         <div className="brand">
           S<span>TYK</span>
-          <small>Integration workspace</small>
+          <small>
+            {integrationPage ? "Сервисы и данные" : "Integration workspace"}
+          </small>
         </div>
-        <p className="nav-title">Workspace</p>
+        <p className="nav-title">
+          {integrationPage ? "Рабочее пространство" : "Workspace"}
+        </p>
         <nav>
           <NavLink to="/" end>
-            <span>◫</span>Overview
+            <span>◫</span>
+            {integrationPage ? "Обзор" : "Overview"}
           </NavLink>
           <NavLink to="/integrations">
-            <span>◈</span>Integrations
+            <span>◈</span>
+            {integrationPage ? "Интеграции" : "Integrations"}
           </NavLink>
           <NavLink to="/products">
-            <span>◇</span>Products
+            <span>◇</span>
+            {integrationPage ? "Товары" : "Products"}
           </NavLink>
           <NavLink to="/warehouses">
-            <span>▤</span>Warehouses
+            <span>▤</span>
+            {integrationPage ? "Склады" : "Warehouses"}
           </NavLink>
           <NavLink to="/diagnostics">
-            <span>◉</span>Diagnostics
+            <span>◉</span>
+            {integrationPage ? "Диагностика" : "Diagnostics"}
           </NavLink>
         </nav>
         <div className="sidebar-foot">
-          <div className="sidebar-badge">Marketplace writes disabled</div>
+          <div className="sidebar-badge">
+            {integrationPage
+              ? "Публикация остатков выключена"
+              : "Marketplace writes disabled"}
+          </div>
           <p>
-            Observe first.
-            <br />
-            No external changes are made.
+            {integrationPage ? (
+              "Вы управляете загрузкой данных и подтверждаете соответствия."
+            ) : (
+              <>
+                Observe first.
+                <br />
+                No external changes are made.
+              </>
+            )}
           </p>
           <button
             disabled={
@@ -959,17 +1094,31 @@ export function App() {
             }
             onClick={() => void logout()}
           >
-            Sign out
+            {integrationPage ? "Выйти" : "Sign out"}
           </button>
         </div>
       </aside>
       <main className="main">
         <header className="topbar">
-          <span>
-            Workspace <b>/</b> {chosen || "Choose tenant"}
-          </span>
+          {integrationPage ? (
+            <details
+              className="workspace-selector"
+              key={chosen || "empty"}
+              open={!chosen}
+            >
+              <summary>
+                Рабочее пространство <span aria-hidden="true">⌄</span>
+              </summary>
+              <div className="workspace-popover">{workspaceControls}</div>
+            </details>
+          ) : (
+            <span>
+              Workspace <b>/</b> {chosen || "Choose tenant"}
+            </span>
+          )}
           <span className="operator">
-            <i /> Local operator
+            <i />
+            {integrationPage ? "STYK" : "Local operator"}
           </span>
         </header>
         <div className="content">
@@ -983,90 +1132,8 @@ export function App() {
               setOzon(original.ozon);
             }}
           />
-          <ImportSubmissionNotice
-            submission={importSubmission}
-            scope={{
-              tenant: chosen,
-              provider:
-                importSubmission.pending?.intent.scope.provider ??
-                (importSubmission.result?.operation.provider === "moysklad"
-                  ? "moysklad"
-                  : "ozon"),
-              account:
-                (importSubmission.pending?.intent.scope.provider ??
-                  importSubmission.result?.operation.provider) === "moysklad"
-                  ? moy
-                  : ozon,
-            }}
-            restore={(original) => {
-              setTenant(original.tenant);
-              setChosen(original.tenant);
-              if (original.provider === "moysklad") setMoy(original.account);
-              else setOzon(original.account);
-              navigate("/integrations");
-            }}
-          />
-          <div className="scope-panel">
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                setChosen(tenant.trim());
-                setMoy("");
-                setOzon("");
-              }}
-            >
-              <label>
-                Tenant
-                <input
-                  value={tenant}
-                  onChange={(e) => setTenant(e.target.value)}
-                  placeholder="Tenant ID"
-                />
-              </label>
-              <button className="secondary">Open workspace</button>
-            </form>
-            {accounts.isLoading && <span>Loading accounts…</span>}
-            {accounts.error && <Failure error={accounts.error} />}{" "}
-            {accounts.data && (
-              <>
-                <label>
-                  MoySklad
-                  <select value={moy} onChange={(e) => setMoy(e.target.value)}>
-                    <option value="">Select account</option>
-                    {accounts.data.accounts
-                      .filter((a) => a.source === "moysklad")
-                      .map((a) => (
-                        <option key={a.account} value={a.account}>
-                          {a.account}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                <label>
-                  Ozon
-                  <select
-                    value={ozon}
-                    onChange={(e) => setOzon(e.target.value)}
-                  >
-                    <option value="">Select account</option>
-                    {accounts.data.accounts
-                      .filter((a) => a.source === "ozon")
-                      .map((a) => (
-                        <option key={a.account} value={a.account}>
-                          {a.account}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                {accounts.data.accounts.length === 0 && (
-                  <span>No registered accounts for this tenant.</span>
-                )}
-                {accounts.data.truncated && (
-                  <span>Account list is truncated.</span>
-                )}
-              </>
-            )}
-          </div>
+          {!integrationPage && importNotice}
+          {!integrationPage && workspaceControls}
           <Routes>
             <Route
               path="/integrations"
@@ -1076,8 +1143,13 @@ export function App() {
                   tenant={chosen}
                   accounts={accounts.data?.accounts ?? []}
                   selected={{ moy, ozon }}
+                  onSelect={(provider, account) => {
+                    if (provider === "moysklad") setMoy(account);
+                    else setOzon(account);
+                  }}
                   report={report.data}
                   submission={importSubmission}
+                  notice={importNotice}
                 />
               }
             />

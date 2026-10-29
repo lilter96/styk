@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
   api,
-  importProviders,
   importAccount,
   sameImportScope,
   post,
@@ -16,13 +16,42 @@ import {
 import type { ImportSubmissionState } from "./ImportSubmission";
 
 const phaseLabels: Record<string, string> = {
-  READING_PRODUCTS: "Products",
-  READING_VARIANTS: "Variants",
-  READING_WAREHOUSES: "Warehouses",
-  READING_STOCK: "FBS stock",
-  READING_AGGREGATE_STOCK: "Aggregate stock",
-  READING_WAREHOUSE_STOCK: "Warehouse stock",
-  PERSISTING: "Save batch",
+  READING_PRODUCTS: "Загружаем товары",
+  READING_VARIANTS: "Загружаем варианты",
+  READING_WAREHOUSES: "Загружаем склады",
+  READING_STOCK: "Получаем остатки",
+  READING_AGGREGATE_STOCK: "Получаем остатки",
+  READING_WAREHOUSE_STOCK: "Получаем остатки по складам",
+  PERSISTING: "Сохраняем данные",
+};
+const stateLabels: Record<ImportOperation["state"], string> = {
+  QUEUED: "В очереди",
+  RUNNING: "Обновляется",
+  SUCCEEDED: "Успешно",
+  FAILED: "Ошибка",
+  CANCELLED: "Отменено",
+  OUTCOME_UNKNOWN: "Результат уточняется",
+};
+const descriptions: Record<ImportOperation["state"], string> = {
+  QUEUED: "Загрузка начнётся, когда освободится обработчик.",
+  RUNNING: "Загружаем товары и остатки",
+  SUCCEEDED: "Товары и остатки загружены",
+  FAILED: "Не удалось загрузить данные. Предыдущие успешные загрузки доступны.",
+  CANCELLED: "Загрузка отменена до начала обработки.",
+  OUTCOME_UNKNOWN:
+    "Проверяем, были ли данные сохранены. Не запускайте повторную загрузку до уточнения результата.",
+};
+const failures: Record<string, string> = {
+  LIMIT_REACHED:
+    "Достигнут лимит загрузки. Проверьте ограничения в подробностях.",
+  API_FAILURE:
+    "Сервис не ответил или вернул ошибку. Проверьте доступ в настройках.",
+  INVALID_RESPONSE: "Не удалось проверить данные, полученные от сервиса.",
+  PERSISTENCE_FAILURE: "Не удалось сохранить загруженные данные целиком.",
+  CONFIGURATION_UNAVAILABLE:
+    "Настройки выбранного аккаунта недоступны обработчику.",
+  LEASE_EXHAUSTED: "Обработка прервалась; доступные попытки исчерпаны.",
+  CANCELLED: "Загрузка остановлена до завершения.",
 };
 type History = { items: ImportOperation[]; has_next: boolean; offset: number };
 const active = (state: string) =>
@@ -37,26 +66,141 @@ const pollHistory = (query: { state: { data?: History; error: unknown } }) =>
   !query.state.error && query.state.data?.items.some((op) => active(op.state))
     ? 2000
     : false;
-const descriptions: Record<string, string> = {
-  QUEUED: "Waiting for an available worker.",
-  RUNNING: "Import in progress.",
-  SUCCEEDED: "Catalog traversal completed and a batch is saved.",
-  FAILED: "Import failed. Previous completed imports remain available.",
-  CANCELLED: "Import was cancelled before execution.",
-  OUTCOME_UNKNOWN: "The final database outcome requires reconciliation.",
-};
-const failures: Record<string, string> = {
-  LIMIT_REACHED: "An execution limit stopped the traversal.",
-  API_FAILURE: "The source request failed or timed out.",
-  INVALID_RESPONSE: "The source response could not be validated.",
-  PERSISTENCE_FAILURE: "The batch could not be saved atomically.",
-  CONFIGURATION_UNAVAILABLE:
-    "The matching worker configuration is unavailable.",
-  LEASE_EXHAUSTED: "The worker lease expired on the final attempt.",
-  CANCELLED: "The attempt stopped before completion.",
-};
 function timestamp(value: string | null) {
-  return value ? new Date(value).toLocaleString() : "—";
+  return value
+    ? new Date(value).toLocaleString("ru-RU", {
+        day: "numeric",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+        year: "numeric",
+      })
+    : "—";
+}
+function duration(op: ImportOperation) {
+  const total =
+    op.started_at && op.finished_at
+      ? Date.parse(op.finished_at) - Date.parse(op.started_at)
+      : NaN;
+  const hasTotal = Number.isFinite(total) && total >= 0;
+  const milliseconds = hasTotal ? total : op.elapsed_ms;
+  if (milliseconds <= 0) return null;
+  const seconds = (milliseconds / 1000).toLocaleString("ru-RU", {
+    maximumFractionDigits: 1,
+  });
+  return hasTotal ? `${seconds} с` : `${seconds} с за попытку`;
+}
+
+function Identifier({ label, value }: { label: string; value: string }) {
+  const [message, setMessage] = useState("");
+  return (
+    <div className="technical-identifier">
+      <dt>{label}</dt>
+      <dd>
+        <code>{value}</code>
+        <button
+          className="text-action"
+          aria-label={`Скопировать: ${label}`}
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(value);
+              setMessage("Скопировано");
+            } catch {
+              setMessage("Выделите и скопируйте идентификатор вручную");
+            }
+          }}
+        >
+          Копировать
+        </button>
+        {message && <span role="status">{message}</span>}
+      </dd>
+    </div>
+  );
+}
+function TechnicalDetails({
+  op,
+  scope,
+}: {
+  op: ImportOperation;
+  scope: ImportScope;
+}) {
+  const facts: [string, string | number | null][] = [
+    ["Статус обработки", op.state],
+    ["Этап обработки", op.phase],
+    ["Результат обработки", op.outcome],
+    ["Попытка", `${op.attempt} из ${op.max_attempts}`],
+    ["Запросы", op.counts.requests],
+    ["HTTP-попытки", op.counts.attempts],
+    ["Попытки чтения страниц", op.counts.pages],
+    ["Проверенные страницы", op.counts.completed_pages],
+    ["Успешные JSON-ответы", op.counts.completed_requests],
+    ["Создано", timestamp(op.created_at)],
+    ["Начало", timestamp(op.started_at)],
+    ["Завершение", timestamp(op.finished_at)],
+    ["Длительность", duration(op)],
+    ["Достигнутый лимит", op.limiting_resource],
+  ];
+  const limits: [string, number | undefined][] = [
+    ["Запросы", op.limits.requests],
+    ["HTTP-попытки", op.limits.attempts],
+    ["Страницы", op.limits.pages],
+    ["Товары", op.limits.products],
+    ["Склады", op.limits.warehouses],
+    ["Записи об остатках", op.limits.observations],
+    ["Варианты", op.limits.variants],
+    ["Записи по складам", op.limits.warehouse_observations],
+    ["Размер ответа, байт", op.limits.response_bytes],
+    ["Длительность, с", op.limits.duration_ns / 1e9],
+    ["Транзакция базы данных, с", op.limits.database_timeout_ns / 1e9],
+  ];
+  return (
+    <details className="technical-details">
+      <summary>Технические детали</summary>
+      <dl className="technical-identifiers">
+        <Identifier label="Операция" value={op.id} />
+        <Identifier label="Рабочее пространство" value={scope.tenant} />
+        <Identifier label="Аккаунт" value={scope.account} />
+        {op.batch_id !== null && (
+          <Identifier label="Пакет данных" value={String(op.batch_id)} />
+        )}
+      </dl>
+      <dl className="technical-facts">
+        {facts.map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{value ?? "—"}</dd>
+          </div>
+        ))}
+      </dl>
+      <p>
+        Обнаружено: товаров {op.counts.products}, складов {op.counts.warehouses}
+        , записей об остатках {op.counts.observations}
+        {op.counts.variants !== undefined &&
+          `, вариантов ${op.counts.variants}`}
+        {op.counts.warehouse_observations !== undefined &&
+          `, записей по складам ${op.counts.warehouse_observations}`}
+        . Счётчики относятся к текущей попытке обхода и сбрасываются при новой
+        попытке. Они не означают, что данные сохранены.
+      </p>
+      {op.batch_created === false && (
+        <p>
+          Использован существующий идентичный пакет. Время наблюдения не
+          изменилось.
+        </p>
+      )}
+      <h4>Ограничения загрузки</h4>
+      <dl className="technical-facts">
+        {limits
+          .filter(([, value]) => value !== undefined)
+          .map(([label, value]) => (
+            <div key={label}>
+              <dt>{label}</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
+      </dl>
+    </details>
+  );
 }
 function Confirm({
   title,
@@ -69,7 +213,11 @@ function Confirm({
 }) {
   const dialog = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
     dialog.current?.querySelector<HTMLInputElement>("input,button")?.focus();
+    return () => {
+      if (previous?.isConnected) previous.focus();
+    };
   }, []);
   return (
     <div
@@ -77,14 +225,14 @@ function Confirm({
       className="import-confirm"
       role="dialog"
       aria-label={title}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") onClose();
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onClose();
       }}
     >
       <h3>{title}</h3>
       {children}
       <button className="secondary" onClick={onClose}>
-        Close
+        Закрыть
       </button>
     </div>
   );
@@ -94,20 +242,28 @@ export function ImportPanel({
   configured,
   submission,
   latestBatch,
+  historyTarget,
+  accountLabel,
+  onStateChange,
 }: {
   scope: ImportScope;
   configured: boolean;
   submission: ImportSubmissionState;
   latestBatch?: Batch;
+  historyTarget?: HTMLElement | null;
+  accountLabel?: string;
+  onStateChange?: (
+    scope: ImportScope,
+    state: ImportOperation["state"] | undefined,
+  ) => void;
 }) {
   const client = useQueryClient();
-  const provider = importProviders[scope.provider];
-  const isMoy = scope.provider === "moysklad";
+  const name = scope.provider === "moysklad" ? "МойСклад" : "Ozon";
   const [offset, setOffset] = useState(0),
     [selected, setSelected] = useState(""),
     [confirm, setConfirm] = useState(false),
     [ack, setAck] = useState(false),
-    [cancelConfirm, setCancelConfirm] = useState(false),
+    [cancelTarget, setCancelTarget] = useState<ImportOperation | null>(null),
     [cancelBusy, setCancelBusy] = useState(false),
     [inspectionBusy, setInspectionBusy] = useState(false),
     [submitError, setSubmitError] = useState(""),
@@ -152,6 +308,22 @@ export function ImportPanel({
   const history = offset === 0 ? latest : older;
   const latestID = latest.data?.items[0]?.id || "";
   const operationID = selected || latestID;
+  const currentDetail = useQuery({
+    queryKey: [
+      "import-detail",
+      scope.tenant,
+      scope.provider,
+      scope.account,
+      latestID,
+    ],
+    queryFn: ({ signal }) =>
+      api<ImportOperation>(`/api/imports/${latestID}?${queryString}`, signal),
+    enabled: !!latestID,
+    retry: false,
+    refetchInterval: poll,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
+  });
   const detail = useQuery({
     queryKey: [
       "import-detail",
@@ -165,7 +337,7 @@ export function ImportPanel({
         `/api/imports/${operationID}?${queryString}`,
         signal,
       ),
-    enabled: !!operationID,
+    enabled: !!selected,
     retry: false,
     refetchInterval: poll,
     refetchIntervalInBackground: false,
@@ -180,63 +352,98 @@ export function ImportPanel({
       r.account === scope.account
     ) {
       setOffset(0);
-      setSelected(r.id);
     }
   }, [submission.result, scope.tenant, scope.provider, scope.account]);
   useEffect(() => {
-    for (const error of [latest.error, history.error, detail.error])
+    for (const error of [
+      latest.error,
+      history.error,
+      detail.error,
+      currentDetail.error,
+    ])
       if (error instanceof ApiError && error.status === 401) {
         submission.markSessionLost();
         break;
       }
     // markSessionLost is invoked only on query errors; the hook object changes on render.
-  }, [latest.error, history.error, detail.error]);
+  }, [latest.error, history.error, detail.error, currentDetail.error]);
   useEffect(() => {
-    const op = detail.data;
-    if (
-      op?.state !== "SUCCEEDED" ||
-      op.batch_id === null ||
-      invalidated.current.has(op.id)
-    )
-      return;
-    invalidated.current.add(op.id);
-    for (const key of [
-      "integrations",
-      "diagnostics",
-      "products",
-      "warehouses",
-      "stock",
-      "import-history",
-    ])
-      void client.invalidateQueries({ queryKey: [key] });
-  }, [detail.data, client]);
-  const current = latest.data?.items[0];
+    for (const op of [currentDetail.data, detail.data]) {
+      if (
+        op?.state !== "SUCCEEDED" ||
+        op.batch_id === null ||
+        invalidated.current.has(op.id)
+      )
+        continue;
+      invalidated.current.add(op.id);
+      for (const key of [
+        "integrations",
+        "diagnostics",
+        "products",
+        "warehouses",
+        "stock",
+        "import-history",
+      ])
+        void client.invalidateQueries({ queryKey: [key] });
+    }
+  }, [currentDetail.data, detail.data, client]);
+  const listed = latest.data?.items[0];
+  // A terminal result in the newer history response must not be hidden by a
+  // cached active detail response. Both describe the same scoped operation.
+  const current =
+    currentDetail.data && listed && currentDetail.data.id === listed.id
+      ? listed && !active(listed.state) && active(currentDetail.data.state)
+        ? listed
+        : currentDetail.dataUpdatedAt >= latest.dataUpdatedAt
+          ? currentDetail.data
+          : listed
+      : listed;
+  const cancelOperation =
+    cancelTarget?.id === current?.id
+      ? current
+      : cancelTarget?.id === detail.data?.id
+        ? detail.data
+        : cancelTarget;
   const submitted = submission.result?.operation;
   const submittedStillActive =
     submitted?.provider === scope.provider &&
     submitted?.tenant === scope.tenant &&
     submitted.account === scope.account &&
     active(submitted.state) &&
-    !(current?.id === submitted.id && !active(current.state)) &&
-    !(detail.data?.id === submitted.id && !active(detail.data.state));
+    !(current?.id === submitted.id && !active(current.state));
   const unsafe =
     !!submission.pending ||
     !!latest.error ||
     !latest.data ||
     !!submittedStillActive ||
     !!(current && active(current.state));
+  const observedState = submittedStillActive ? submitted.state : current?.state;
+  useEffect(() => {
+    onStateChange?.(scope, observedState);
+    // Scope identity is defined by these primitives, not the caller's object.
+  }, [
+    scope.tenant,
+    scope.provider,
+    scope.account,
+    observedState,
+    onStateChange,
+  ]);
   const samePending =
     !!submission.pending &&
     sameImportScope(submission.pending.intent.scope, scope);
   async function cancelQueued() {
-    if (cancelling.current || !detail.data || detail.data.state !== "QUEUED")
+    if (
+      cancelling.current ||
+      !cancelOperation ||
+      cancelOperation.state !== "QUEUED"
+    )
       return;
     cancelling.current = true;
     setCancelBusy(true);
     setCancelMessage("");
     try {
       await post(
-        `/api/imports/${detail.data.id}/cancel`,
+        `/api/imports/${cancelOperation.id}/cancel`,
         {
           tenant: scope.tenant,
           ...importAccount(scope),
@@ -244,162 +451,365 @@ export function ImportPanel({
         },
         AbortSignal.timeout(30000),
       );
-      setCancelConfirm(false);
-      setCancelMessage("Cancellation was recorded.");
+      setCancelTarget(null);
+      setCancelMessage("Загрузка отменена.");
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         submission.markSessionLost();
         setCancelMessage(
-          "Session ended. Check the operation after signing in.",
+          "Сессия завершилась. Войдите снова и проверьте результат отмены.",
         );
       } else if (
         error instanceof ApiError &&
         error.code === "CANCELLATION_UNAVAILABLE"
       )
         setCancelMessage(
-          "The operation has started or completed; running imports cannot be cancelled.",
+          "Обработка уже началась или завершилась. Отменить можно только загрузку в очереди.",
         );
       else
         setCancelMessage(
-          "Cancellation outcome is unknown. Refresh the operation before taking further action.",
+          "Результат отмены неизвестен. Обновите статус перед следующим действием.",
         );
     } finally {
       cancelling.current = false;
       setCancelBusy(false);
       void detail.refetch();
+      void currentDetail.refetch();
       void latest.refetch();
       if (offset > 0) void older.refetch();
     }
   }
+  const completed = !!(latestBatch?.present && latestBatch.completed);
+  function historyDetails(op: ImportOperation) {
+    const item =
+      selected === op.id && detail.data?.id === op.id ? detail.data : op;
+    return (
+      <div className="history-entry-detail">
+        {selected === op.id && detail.isLoading && (
+          <p role="status">Уточняем результат…</p>
+        )}
+        {selected === op.id && !!detail.error && (
+          <div role="alert">
+            Статус загрузки недоступен.{" "}
+            <button
+              className="text-action"
+              onClick={() => void detail.refetch()}
+            >
+              Повторить проверку
+            </button>
+          </div>
+        )}
+        <p>{descriptions[item.state]}</p>
+        {item.state === "FAILED" && (
+          <p role="alert">
+            {failures[item.outcome || ""] ||
+              "Проверьте подключение и подробности ошибки перед новой попыткой."}
+          </p>
+        )}
+        {item.state === "SUCCEEDED" && (
+          <>
+            <p className="history-counts">
+              Обнаружено: товаров {item.counts.products}, складов{" "}
+              {item.counts.warehouses}
+              {item.counts.variants !== undefined &&
+                `, вариантов ${item.counts.variants}`}
+              .
+            </p>
+            <p>
+              Счётчики описывают этот обход. Товары и склады показывают
+              последнюю доступную загрузку.
+            </p>
+          </>
+        )}
+        <nav
+          className="history-links"
+          aria-label={`${name}: результаты загрузки`}
+        >
+          {item.state === "SUCCEEDED" && (
+            <>
+              <Link to="/products">Товары</Link>
+              <Link to="/warehouses">Склады</Link>
+            </>
+          )}
+          <Link to="/diagnostics">Диагностика</Link>
+        </nav>
+        {item.state === "QUEUED" && (
+          <button className="secondary" onClick={() => setCancelTarget(item)}>
+            Отменить загрузку
+          </button>
+        )}
+        <TechnicalDetails op={item} scope={scope} />
+      </div>
+    );
+  }
+  const historyView = (
+    <details
+      className="provider-history"
+      aria-label={`${name}: история обновлений`}
+    >
+      <summary>
+        <span>{name}</span>
+        <span className="history-preview">
+          {current ? stateLabels[current.state] : "Загрузок пока нет"}
+          {current && (
+            <time dateTime={current.created_at}>
+              {timestamp(current.created_at)}
+            </time>
+          )}
+        </span>
+        {current && (
+          <span className="history-latest-summary">
+            {current.state === "FAILED"
+              ? "Ошибка загрузки"
+              : current.state === "OUTCOME_UNKNOWN"
+                ? "Проверяем результат загрузки"
+                : current.state === "RUNNING"
+                  ? phaseLabels[current.phase] || "Загружаем данные"
+                  : descriptions[current.state]}
+          </span>
+        )}
+      </summary>
+      <div className="provider-history-content">
+        {history.isLoading && <p role="status">Загружаем историю…</p>}
+        {!!history.error && (
+          <div role="alert">
+            Не удалось загрузить историю.{" "}
+            <button
+              className="text-action"
+              onClick={() => void history.refetch()}
+            >
+              Повторить
+            </button>
+          </div>
+        )}
+        {history.data?.items.length === 0 && (
+          <p>На этой странице загрузок нет.</p>
+        )}
+        <div className="history-entries">
+          {history.data?.items.map((op) => (
+            <details
+              className="history-entry"
+              key={op.id}
+              onToggle={(e) => {
+                if (e.currentTarget.open) setSelected(op.id);
+              }}
+            >
+              <summary>
+                <span
+                  className={`history-result state-${op.state.toLowerCase()}`}
+                >
+                  {stateLabels[op.state]}
+                </span>
+                <time dateTime={op.created_at}>{timestamp(op.created_at)}</time>
+                {duration(op) && (
+                  <span className="history-duration">{duration(op)}</span>
+                )}
+                <span className="history-summary">
+                  {op.state === "SUCCEEDED"
+                    ? "Товары и остатки загружены"
+                    : descriptions[op.state]}
+                </span>
+                <span className="history-more">Подробнее</span>
+              </summary>
+              {historyDetails(op)}
+            </details>
+          ))}
+        </div>
+        <div className="pagination">
+          <button
+            className="secondary"
+            disabled={offset === 0}
+            onClick={() => setOffset(Math.max(0, offset - 10))}
+          >
+            Предыдущие
+          </button>
+          <button
+            className="secondary"
+            disabled={!history.data?.has_next || offset >= 10000}
+            onClick={() => setOffset(offset + 10)}
+          >
+            Следующие
+          </button>
+        </div>
+        {offset >= 10000 && history.data?.has_next && (
+          <p>Достигнут предел просмотра истории.</p>
+        )}
+      </div>
+    </details>
+  );
   return (
     <section
       className="import-panel"
       data-provider={scope.provider}
-      aria-label={`${provider.name} catalog imports`}
+      aria-label={`${name}: импорт данных`}
     >
-      <div className="import-panel-head">
-        <div>
-          <h2>{provider.name} catalog imports</h2>
-          <p className="import-scope">
-            Workspace <strong>{scope.tenant}</strong>{" "}
-            <span>
-              Account <code>{scope.account}</code>
-            </span>
-          </p>
-        </div>
-        <button
-          disabled={!configured || unsafe}
-          onClick={() => {
-            setAck(false);
-            setSubmitError("");
-            setConfirm(true);
-          }}
-        >
-          Import catalog
-        </button>
-      </div>
-      {!configured && (
-        <p>
-          The selected registered account does not match the API's configured
-          {provider.name} account. History remains available.
-        </p>
-      )}
-      {submitError && <p role="alert">{submitError}</p>}
-      {latestBatch?.present && (
-        <div className="import-baseline">
-          <strong>
-            {latestBatch.completed
-              ? "Latest completed import"
-              : "Incomplete source evidence"}
-          </strong>
-          {latestBatch.observed_at && (
-            <time dateTime={latestBatch.observed_at}>
-              {timestamp(latestBatch.observed_at)}
-            </time>
-          )}
-          <p>
-            Products {latestBatch.counts?.products ?? "unknown"};{" "}
-            {isMoy && (
-              <>variants {latestBatch.counts?.variants ?? "unknown"}; </>
+      <div className="import-baseline">
+        <span>
+          {completed
+            ? "Последняя успешная загрузка"
+            : "Данные ещё не загружены"}
+        </span>
+        {completed && latestBatch.observed_at && (
+          <time dateTime={latestBatch.observed_at}>
+            {timestamp(latestBatch.observed_at)}
+          </time>
+        )}
+        {completed && latestBatch.counts && (
+          <dl className="catalog-counts">
+            {latestBatch.counts.products !== undefined && (
+              <div>
+                <dt>Товары</dt>
+                <dd>{latestBatch.counts.products.toLocaleString("ru-RU")}</dd>
+              </div>
             )}
-            warehouses {latestBatch.counts?.warehouses ?? "unknown"}; warehouse
-            stock rows {latestBatch.counts?.stock_rows ?? "unknown"}.
-          </p>
-        </div>
-      )}
-
-      <details className="import-help">
-        <summary>What this import does</summary>
-        <p>
-          {provider.description} Completed traversal is not an atomic source
-          snapshot. Imports do not confirm mappings or make stock safe to
-          publish.
-        </p>
-        <p>
-          If a submission response was lost and the page or session ended,
-          inspect this account's import history before requesting another
-          import.
-        </p>
-      </details>
-      <p className="import-recovery">
-        Lost a request response? Inspect this account's history below before
-        submitting again.
-      </p>
-      {latest.isLoading && <p role="status">Loading import history…</p>}
+            {scope.provider === "moysklad" &&
+              latestBatch.counts.variants !== undefined && (
+                <div>
+                  <dt>Варианты</dt>
+                  <dd>{latestBatch.counts.variants.toLocaleString("ru-RU")}</dd>
+                </div>
+              )}
+            {latestBatch.counts.warehouses !== undefined && (
+              <div>
+                <dt>Склады</dt>
+                <dd>{latestBatch.counts.warehouses.toLocaleString("ru-RU")}</dd>
+              </div>
+            )}
+          </dl>
+        )}
+      </div>
+      {latest.isLoading && <p role="status">Проверяем состояние загрузки…</p>}
       {!!latest.error && (
-        <div role="alert">
-          Import history is unavailable.{" "}
-          <button className="secondary" onClick={() => void latest.refetch()}>
-            Retry history
+        <div className="import-warning" role="alert">
+          История недоступна. Перед загрузкой нужно проверить предыдущие
+          запросы.{" "}
+          <button className="text-action" onClick={() => void latest.refetch()}>
+            Повторить проверку
           </button>
         </div>
       )}
-      {latest.data && !current && <p>No import operations for this account.</p>}
-      {current && (
-        <p>
-          Latest operation:{" "}
-          <strong
-            className={`import-state state-${current.state.toLowerCase()}`}
+      {!!currentDetail.error && (
+        <div className="import-warning" role="alert">
+          Не удалось уточнить статус последней загрузки.{" "}
+          <button
+            className="text-action"
+            onClick={() => void currentDetail.refetch()}
           >
-            {current.state}
-          </strong>{" "}
-          · {current.id}
+            Обновить статус
+          </button>
+        </div>
+      )}
+      {current && active(current.state) && (
+        <div
+          className={`import-progress state-${current.state.toLowerCase()}`}
+          role={current.state === "OUTCOME_UNKNOWN" ? "alert" : "status"}
+        >
+          <strong>
+            {current.state === "RUNNING"
+              ? `Обновляем данные ${name}`
+              : stateLabels[current.state]}
+          </strong>
+          <p>
+            {current.state === "RUNNING"
+              ? `${phaseLabels[current.phase] || descriptions.RUNNING}…`
+              : descriptions[current.state]}
+          </p>
+          {current.state === "RUNNING" && current.counts.products > 0 && (
+            <p>
+              Обнаружено товаров:{" "}
+              {current.counts.products.toLocaleString("ru-RU")}. Данные текущей
+              попытки, ещё не сохранены.
+            </p>
+          )}
+          {current.state === "QUEUED" && (
+            <button
+              className="text-action"
+              disabled={cancelBusy}
+              onClick={() => setCancelTarget(current)}
+            >
+              Отменить загрузку
+            </button>
+          )}
+        </div>
+      )}
+      {current?.state === "FAILED" && (
+        <div className="import-warning" role="alert">
+          <strong>Не удалось обновить данные</strong>
+          <p>
+            {failures[current.outcome || ""] ||
+              "Загрузка завершилась с ошибкой. Проверьте подробности и подключение."}
+          </p>
+          <p>Предыдущие успешные загрузки доступны.</p>
+        </div>
+      )}
+      {current?.state === "CANCELLED" && (
+        <p className="import-caption">Загрузка отменена до начала обработки.</p>
+      )}
+      {!configured && (
+        <p className="import-warning">
+          Для загрузки выберите аккаунт, настроенный на сервере. История
+          выбранного аккаунта доступна.
         </p>
       )}
+      {submitError && <p role="alert">{submitError}</p>}
+      <button
+        className="import-primary"
+        disabled={!configured || unsafe}
+        onClick={() => {
+          setAck(false);
+          setSubmitError("");
+          setConfirm(true);
+        }}
+      >
+        {completed ? "Обновить данные" : "Загрузить данные"}
+      </button>
       {confirm && (
         <Confirm
-          title={`Confirm ${provider.name} catalog import`}
+          title={`Загрузить данные ${name}?`}
           onClose={() => setConfirm(false)}
         >
-          <p>{provider.description}</p>
-          <p>A completed traversal is not an atomic source snapshot.</p>
           <p>
-            Tenant {scope.tenant} · account {scope.account}. Default bounded
-            limits apply.
+            Загрузим товары{scope.provider === "moysklad" ? ", варианты" : ""},
+            склады и остатки
+            {accountLabel ? `: ${accountLabel}` : " выбранного аккаунта"}.
+            Данные в сервисе не изменятся.
           </p>
+          <p>
+            Загрузка не создаёт соответствия и не включает публикацию остатков.
+            Данные получаются последовательно и могут меняться во время
+            загрузки.
+          </p>
+          <details className="technical-details">
+            <summary>Технические детали</summary>
+            <dl>
+              <Identifier label="Рабочее пространство" value={scope.tenant} />
+              <Identifier label="Аккаунт" value={scope.account} />
+            </dl>
+            <p>Действуют установленные ограничения загрузки.</p>
+          </details>
           <label>
             <input
               type="checkbox"
               checked={ack}
               onChange={(e) => setAck(e.target.checked)}
-            />{" "}
-            I explicitly request this read-only import.
-          </label>{" "}
+            />
+            Подтверждаю загрузку данных выбранного аккаунта
+          </label>
           <button
-            disabled={!ack || unsafe}
+            disabled={!ack || unsafe || !configured}
             onClick={() => {
               try {
                 submission.start(scope);
                 setConfirm(false);
               } catch {
                 setSubmitError(
-                  "Secure request creation is unavailable in this browser.",
+                  "Браузер не может создать защищённый запрос. Загрузка не началась.",
                 );
               }
             }}
           >
-            Confirm import
-          </button>{" "}
+            Подтвердить загрузку
+          </button>
         </Confirm>
       )}
       {samePending &&
@@ -419,287 +829,29 @@ export function ImportPanel({
             }}
           >
             {inspectionBusy
-              ? "Refreshing history…"
-              : "Refresh and inspect history"}
+              ? "Проверяем историю…"
+              : "Обновить и проверить историю"}
           </button>
         )}
-      <h3>Import history</h3>
-      {history.isLoading && <p role="status">Loading history…</p>}
-      {!!history.error && (
-        <div role="alert">
-          Could not load history.{" "}
-          <button className="secondary" onClick={() => void history.refetch()}>
-            Retry history page
+      {cancelMessage && <p role="alert">{cancelMessage}</p>}
+      {cancelTarget && (
+        <Confirm
+          title="Отменить загрузку?"
+          onClose={() => setCancelTarget(null)}
+        >
+          <p>
+            Можно отменить только загрузку в очереди. Уже сохранённые данные
+            останутся доступны.
+          </p>
+          <button
+            disabled={cancelBusy || cancelOperation?.state !== "QUEUED"}
+            onClick={() => void cancelQueued()}
+          >
+            {cancelBusy ? "Отменяем…" : "Подтвердить отмену"}
           </button>
-        </div>
+        </Confirm>
       )}
-      {history.data?.items.length === 0 && <p>No operations on this page.</p>}
-      {history.data && history.data.items.length > 0 && (
-        <div
-          className="import-history"
-          role="region"
-          aria-label="Import history list"
-          tabIndex={0}
-        >
-          <table>
-            <thead>
-              <tr>
-                <th>Operation</th>
-                <th>State</th>
-                <th>Created</th>
-                <th>Started</th>
-                <th>Finished</th>
-                <th>Outcome</th>
-                <th>Batch</th>
-              </tr>
-            </thead>
-            <tbody>
-              {history.data.items.map((op) => (
-                <tr
-                  key={op.id}
-                  className={
-                    op.id === operationID ? "import-selected" : undefined
-                  }
-                >
-                  <td>
-                    <button
-                      className="import-id"
-                      aria-label={`Inspect operation ${op.id}`}
-                      aria-pressed={op.id === operationID}
-                      onClick={() => {
-                        setSelected(op.id);
-                        setCancelConfirm(false);
-                        setCancelMessage("");
-                      }}
-                    >
-                      <code>{op.id}</code>
-                    </button>
-                    <br />
-                    <small>{provider.name}</small>
-                  </td>
-                  <td>
-                    <span
-                      className={`import-state state-${op.state.toLowerCase()}`}
-                    >
-                      {op.state}
-                    </span>
-                  </td>
-                  <td>{timestamp(op.created_at)}</td>
-                  <td>{timestamp(op.started_at)}</td>
-                  <td>{timestamp(op.finished_at)}</td>
-                  <td>{op.outcome || "—"}</td>
-                  <td>{op.batch_id ?? "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      <div className="pagination">
-        <button
-          className="secondary"
-          disabled={offset === 0}
-          onClick={() => setOffset(Math.max(0, offset - 10))}
-        >
-          Previous imports
-        </button>
-        <button
-          className="secondary"
-          disabled={!history.data?.has_next || offset >= 10000}
-          onClick={() => setOffset(offset + 10)}
-        >
-          Next imports
-        </button>
-      </div>
-      {offset >= 10000 && history.data?.has_next && (
-        <p>The history API cannot page beyond this offset.</p>
-      )}
-      {operationID && (
-        <section
-          className="import-detail"
-          aria-label="Import operation details"
-        >
-          {detail.isLoading && <p role="status">Loading operation…</p>}
-          {!!detail.error && (
-            <div role="alert">
-              Operation status is unavailable.{" "}
-              <button
-                className="secondary"
-                onClick={() => void detail.refetch()}
-              >
-                Retry operation
-              </button>
-            </div>
-          )}
-          {detail.data && (
-            <>
-              <h3>
-                Operation <code>{detail.data.id}</code>
-              </h3>
-              <p>
-                <strong
-                  className={`import-state state-${detail.data.state.toLowerCase()}`}
-                >
-                  {detail.data.state}
-                </strong>{" "}
-                · {descriptions[detail.data.state] || "Status unavailable."}
-              </p>
-              <ol className="import-phases" aria-label="Import stages">
-                {provider.phases.map((phase) => (
-                  <li
-                    key={phase}
-                    aria-current={
-                      detail.data!.phase === phase ? "step" : undefined
-                    }
-                  >
-                    {phaseLabels[phase]}
-                  </li>
-                ))}
-              </ol>
-              <p className="import-attempt">
-                Phase: {detail.data.phase} · attempt {detail.data.attempt}/
-                {detail.data.max_attempts} · elapsed{" "}
-                {(detail.data.elapsed_ms / 1000).toFixed(1)}s.
-              </p>
-              <dl className="import-metrics">
-                <div>
-                  <dt>Logical requests</dt>
-                  <dd>{detail.data.counts.requests}</dd>
-                </div>
-                <div>
-                  <dt>HTTP attempts</dt>
-                  <dd>{detail.data.counts.attempts}</dd>
-                </div>
-                <div>
-                  <dt>Validated pages</dt>
-                  <dd>{detail.data.counts.completed_pages}</dd>
-                </div>
-                <div>
-                  <dt>Elapsed</dt>
-                  <dd>
-                    {(detail.data.elapsed_ms / 1000).toFixed(1)}
-                    <small> sec</small>
-                  </dd>
-                </div>
-              </dl>
-              <p className="import-records">
-                {isMoy ? (
-                  <>
-                    Products observed {detail.data.counts.products}; variants
-                    observed {detail.data.counts.variants ?? "not reported"};
-                    warehouses observed {detail.data.counts.warehouses};
-                    aggregate stock observations{" "}
-                    {detail.data.counts.observations}; warehouse stock
-                    observations{" "}
-                    {detail.data.counts.warehouse_observations ??
-                      "not reported"}
-                    .
-                  </>
-                ) : (
-                  <>
-                    Products observed {detail.data.counts.products}; warehouses
-                    observed {detail.data.counts.warehouses}; stock observations{" "}
-                    {detail.data.counts.observations}.
-                  </>
-                )}
-              </p>
-              <p>
-                Observed records are not committed inventory data until the
-                import succeeds. These counters are attempt-local. A reclaimed
-                attempt resets these counters.
-              </p>
-              <details className="import-limits">
-                <summary>Execution limits</summary>
-                <p>
-                  Page attempts {detail.data.counts.pages}; successful JSON
-                  responses {detail.data.counts.completed_requests}.
-                </p>
-                <p>
-                  Requests {detail.data.limits.requests}; HTTP attempts{" "}
-                  {detail.data.limits.attempts}; pages{" "}
-                  {detail.data.limits.pages}; products{" "}
-                  {detail.data.limits.products}; warehouses{" "}
-                  {detail.data.limits.warehouses}; stock observations{" "}
-                  {detail.data.limits.observations};{" "}
-                  {isMoy && (
-                    <>
-                      variants {detail.data.limits.variants ?? "not reported"};
-                      warehouse stock observations{" "}
-                      {detail.data.limits.warehouse_observations ??
-                        "not reported"}
-                      ;{" "}
-                    </>
-                  )}
-                  response bytes {detail.data.limits.response_bytes}; duration{" "}
-                  {detail.data.limits.duration_ns / 1e9}s; database transaction{" "}
-                  {detail.data.limits.database_timeout_ns / 1e9}s.
-                </p>
-              </details>
-              {detail.data.outcome && (
-                <p>
-                  Outcome: <code>{detail.data.outcome}</code>
-                  {detail.data.limiting_resource && (
-                    <> · limit: {detail.data.limiting_resource}</>
-                  )}{" "}
-                  {failures[detail.data.outcome] || ""}
-                </p>
-              )}
-              {detail.data.state === "FAILED" && (
-                <p>
-                  You may explicitly request a new import after reviewing the
-                  failure.
-                </p>
-              )}
-              {detail.data.state === "SUCCEEDED" &&
-                detail.data.batch_id !== null && (
-                  <div className="import-batch">
-                    <p>
-                      Completed batch: <strong>{detail.data.batch_id}</strong>
-                      {detail.data.batch_created === false
-                        ? " (existing identical eligible batch reused; observation timestamps unchanged)"
-                        : detail.data.batch_created === true
-                          ? " (new batch created)"
-                          : ""}
-                      . Observed counts describe this traversal.{" "}
-                      <Link to="/products">View latest products</Link>
-                      {" · "}
-                      <Link to="/warehouses">View latest warehouses</Link>.
-                      These screens show the latest eligible batch, which may
-                      have changed.
-                    </p>
-                    <Link to="/diagnostics">View diagnostics</Link>
-                  </div>
-                )}
-              {detail.data.state === "QUEUED" && (
-                <button
-                  disabled={cancelBusy}
-                  onClick={() => setCancelConfirm(true)}
-                >
-                  Cancel queued import
-                </button>
-              )}
-              {cancelMessage && <p role="alert">{cancelMessage}</p>}
-              {cancelConfirm && (
-                <Confirm
-                  title="Cancel queued import"
-                  onClose={() => setCancelConfirm(false)}
-                >
-                  <p>
-                    Only an import that has not started can be cancelled. This
-                    does not undo a committed batch.
-                  </p>
-                  <button
-                    disabled={cancelBusy || detail.data.state !== "QUEUED"}
-                    onClick={() => void cancelQueued()}
-                  >
-                    {cancelBusy ? "Cancelling…" : "Confirm cancellation"}
-                  </button>{" "}
-                </Confirm>
-              )}
-            </>
-          )}
-        </section>
-      )}
+      {historyTarget ? createPortal(historyView, historyTarget) : historyView}
     </section>
   );
 }

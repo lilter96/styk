@@ -1,5 +1,7 @@
 # Catalog import management in the local console
 
+The current screen and Russian user workflow are documented in [Integrations UX V1](integrations-ux-v1.md). Backend and recovery details below remain applicable; screenshots and UI labels here describe the earlier version.
+
 The Integrations page also supports [MoySklad catalog imports](moysklad-import-management-ui-v1.md) through the same provider-aware panel, with separate scoped history and counters. The Ozon workflow remains supported.
 
 The Integrations page can explicitly queue `OZON_CATALOG_IMPORT` for a registered Ozon account. Select a tenant and Ozon account, open **Integrations**, choose **Import catalog**, read the notice and acknowledge the request. It reads product lists (including archived products), warehouses and available FBS stock observations using the backend's bounded importer. It does not modify the marketplace or publish stock. Page load, account selection and connection testing never start an import.
