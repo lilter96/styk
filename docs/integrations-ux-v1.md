@@ -20,7 +20,7 @@ Design retains STYK's dark navigation and green action color. The palette uses i
 
 ## Progressive disclosure and safety
 
-**Настройки** contains connection testing, explicit registration, account selection and contextual import help. **Технические детали** contains tenant/account/operation/batch identifiers with copy controls, raw phase/status/outcome, request/HTTP/page counters, attempt counts and resource limits. No raw marketplace responses are rendered. Business errors, uncertain submission outcomes and queued cancellation remain accessible where they matter.
+**Настройки** opens a modal side panel containing connection testing, explicit registration, account selection and contextual import help. Import and queued-cancellation confirmations use the same modal interaction. These panels have independent scrolling and never change the provider cards, next-step panel or history layout. On mobile the panel uses the full viewport; its close control remains visible. Escape, backdrop closing, trapped keyboard focus, trigger-focus restoration and scrollbar compensation are covered by browser and unit checks. Registration/probe warnings and reconciliation stay visible inside the open settings panel. **Технические детали** contains tenant/account/operation/batch identifiers with copy controls, raw phase/status/outcome, request/HTTP/page counters, attempt counts and resource limits. No raw marketplace responses are rendered. Business errors, uncertain submission outcomes and queued cancellation remain accessible where they matter.
 
 Client-generated UUID idempotency keys and exact serialized request bodies are unchanged. Uncertain retries retain the original tenant/provider/account/type and replay the identical body. Switching accounts cannot retarget a pending intent; restoration returns to its original scope. Session loss and conflicts keep the history-inspection gate. Request keys and credentials are not stored in browser storage. Reload retains only selected scope and recovers durable server history; a pending key remains memory-only, as before. No import submits automatically.
 
@@ -30,7 +30,7 @@ Each selected provider keeps a scoped latest-history query even with history col
 
 The real React application was rendered with Playwright and bounded synthetic API fixtures. Desktop 1440 × 900 and laptop 1280 × 800 show both provider states/actions and contextual next steps in the initial successful-state viewport. At 390 × 844 the cards stack, navigation remains labelled, primary controls are at least 44 px high, and no horizontal overflow occurs. Detailed history and identifiers stay collapsed. Active/error warnings naturally increase page height.
 
-All nine final screenshots below were visually inspected and preserved outside Playwright's disposable output directory:
+The core-state screenshots below were visually inspected and preserved outside Playwright's disposable output directory:
 
 | Scenario | Screenshot |
 | --- | --- |
@@ -50,9 +50,9 @@ Rendered HTML, browser storage and API-response assertions check synthetic provi
 
 - `npm run lint`: pass.
 - `npm run typecheck`: pass.
-- `npm test`: 79/79 across eight files, including account scope, immutable retries, unknown outcomes, polling, pagination, cancellation races, explicit registration, progressive disclosure and next-step guidance.
+- `npm test`: 83/83 across nine files, including account scope, immutable retries, unknown outcomes, polling, pagination, cancellation races, explicit registration, progressive disclosure and next-step guidance.
 - `npm run build`: pass.
-- `npx playwright test e2e/integrations-visual.spec.ts --workers=1`: 9/9 pass.
+- `npx playwright test e2e/integrations-visual.spec.ts --workers=1`: 18/18 pass.
 - Existing import browser harness: Ozon and MoySklad branches pass against the real Go API/shared worker and dedicated migrated PostgreSQL with synthetic sources. Includes both submissions, identical lost-response replay, provider/account switching, polling, queued cancellation, durable history after reload, SQL integrity and Products/Warehouses/Diagnostics navigation. No publication tasks are created.
 - Existing connection browser harness: pass, including explicit registration, access check, lost registration response reconciliation and ownership conflict.
 - Existing warehouse review, product/warehouse confirmation, smoke and product review browser assertions: all pass (five scenarios). Smoke/review ran from temporary copies with isolated local ports and the synthetic login secret adapted because unrelated local processes occupied their hardcoded ports; those copies and test processes were removed.
@@ -71,3 +71,20 @@ The connection regression uses `STYK_BROWSER_E2E=1`, a separate dedicated test d
 ## Remaining limitations
 
 No blocking UX defects remain in this milestone. The API has no friendly account/workspace names, so account identification uses numbered registration entries with exact identifiers available on demand. Products, Warehouses, Diagnostics, Overview and sign-in retain their existing detailed/English interfaces; this milestone deliberately redesigns Integrations only. Mobile requires vertical scrolling through the two provider cards. Resource diagnostics become long when explicitly expanded. These are scope boundaries, not claims of synchronization readiness.
+
+
+## Expanded interaction correction
+
+The original visual pass missed a layout defect reported in user screenshots: expanding settings or technical details stretched the adjacent card, and automatic flex spacing displaced its import action. An initial independent-height correction removed the white gap inside the card but still left excessive page space below the shorter card. Settings and explicit confirmations therefore now open in a separate viewport panel. No fixed card heights, flex growth or automatic action spacers remain. Registered accounts no longer receive a stale-probe warning intended only for adding an account. An unavailable history is labelled unavailable rather than implying there are no previous imports.
+
+The corrected visual suite has 18 tests, including sequential settings for both providers, expanded technical details, load confirmation, and the reported combination of MoySklad access/history failure with Ozon details open at all three viewport sizes. Geometry assertions verify both cards/actions, next steps and history keep the same document positions and sizes. Additional checks verify internal scrolling reaches copy controls, the close button remains visible, focus stays inside the dialog and closing returns focus. Modal screenshots capture the actual viewport, avoiding full-page capture artifacts for fixed overlays.
+
+| Expanded scenario | Desktop | Laptop | Mobile |
+| --- | --- | --- | --- |
+| Ozon settings | [1440](screenshots/integrations-v1/expanded-settings-1440.png) | [1280](screenshots/integrations-v1/expanded-settings-1280.png) | [390](screenshots/integrations-v1/expanded-settings-390.png) |
+| Provider technical details | [1440](screenshots/integrations-v1/expanded-provider-details-1440.png) | [1280](screenshots/integrations-v1/expanded-provider-details-1280.png) | [390](screenshots/integrations-v1/expanded-provider-details-390.png) |
+| MoySklad settings | [1440](screenshots/integrations-v1/expanded-moy-settings-1440.png) | [1280](screenshots/integrations-v1/expanded-moy-settings-1280.png) | [390](screenshots/integrations-v1/expanded-moy-settings-390.png) |
+| Load confirmation | [1440](screenshots/integrations-v1/import-confirmation-1440.png) | [1280](screenshots/integrations-v1/import-confirmation-1280.png) | [390](screenshots/integrations-v1/import-confirmation-390.png) |
+| Unavailable history and Ozon details | [1440](screenshots/integrations-v1/error-history-expanded-settings-1440.png) | [1280](screenshots/integrations-v1/error-history-expanded-settings-1280.png) | [390](screenshots/integrations-v1/error-history-expanded-settings-390.png) |
+
+Corrective verification: frontend lint/typecheck, 83 unit tests and build pass; all 18 visual cases pass; both real import browser branches and explicit connection/registration regression pass with synthetic sources. Required Go lint/tests/race/build checks pass. No backend, contract, migration, credential or style.css changes.

@@ -526,7 +526,13 @@ it("does not allow uncertainty dismissal when refreshing scoped history fails", 
   fireEvent.click(
     screen.getByRole("button", { name: "Обновить и проверить историю" }),
   );
-  await screen.findByText(/История недоступна/);
+  await screen.findByText(/История недоступна/, {
+    selector: ".import-warning",
+  });
+  expect(
+    screen.getByText("История недоступна", { selector: ".history-preview" }),
+  ).toBeTruthy();
+  expect(screen.queryByText("Загрузок пока нет")).toBeNull();
   expect(screen.queryByText("История проверена")).toBeNull();
   expect((await primary()).disabled).toBe(true);
 });

@@ -76,6 +76,7 @@ test("explicit local registration uses bounded synthetic providers", async ({
   await expect(
     moy.getByRole("button", { name: "Добавить аккаунт" }),
   ).toBeDisabled();
+  await moy.getByRole("button", { name: "Закрыть настройки" }).click();
   await page
     .getByRole("button", { name: "Проверить результат добавления" })
     .click();
@@ -97,6 +98,7 @@ test("explicit local registration uses bounded synthetic providers", async ({
   await expect(
     ozon.getByText("Аккаунт добавлен", { exact: true }),
   ).toBeVisible();
+  await ozon.getByRole("button", { name: "Закрыть настройки" }).click();
   await page.reload();
   await expect(
     moy.getByText("Аккаунт добавлен", { exact: true }),
@@ -105,15 +107,17 @@ test("explicit local registration uses bounded synthetic providers", async ({
     ozon.getByText("Аккаунт добавлен", { exact: true }),
   ).toBeVisible();
   await moy.getByText("Настройки", { exact: true }).click();
-  await ozon.getByText("Настройки", { exact: true }).click();
   const moySelector = moy.getByRole("combobox", { name: "МойСклад: аккаунт" });
   const ozonSelector = ozon.getByRole("combobox", { name: "Ozon: аккаунт" });
   expect(configuredMoy).toMatch(/^synthetic-moy-browser-/);
   expect(configuredOzon).toMatch(/^synthetic-ozon-browser-/);
   await moySelector.selectOption(configuredMoy);
-  await ozonSelector.selectOption(configuredOzon);
   await expect(moySelector).toHaveValue(configuredMoy);
+  await moy.getByRole("button", { name: "Закрыть настройки" }).click();
+  await ozon.getByText("Настройки", { exact: true }).click();
+  await ozonSelector.selectOption(configuredOzon);
   await expect(ozonSelector).toHaveValue(configuredOzon);
+  await ozon.getByRole("button", { name: "Закрыть настройки" }).click();
   await page.locator(".workspace-selector > summary").click();
   await page
     .getByLabel("Рабочее пространство", { exact: true })

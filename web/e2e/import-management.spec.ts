@@ -92,6 +92,7 @@ test("operator queues, reconciles and observes a worker import without marketpla
     await card
       .getByRole("combobox", { name: `${providerName}: аккаунт` })
       .selectOption(value);
+    await card.getByRole("button", { name: "Закрыть настройки" }).click();
   };
   await selectAccount(name, "");
   await selectAccount(other, account);
@@ -218,7 +219,7 @@ test("operator queues, reconciles and observes a worker import without marketpla
   for (const settings of await page
     .locator("details.provider-settings[open]")
     .all())
-    await settings.locator(":scope > summary").click();
+    await settings.getByRole("button", { name: "Закрыть настройки" }).click();
   const html = await page.content();
   expect(html).not.toContain("synthetic-import-key");
   expect(html).not.toContain("synthetic-moy-import-token");

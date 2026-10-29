@@ -2,6 +2,7 @@ import { useCallback, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { ImportPanel } from "./ImportPanel";
+import { IntegrationDialog } from "./IntegrationDialog";
 import {
   useImportSubmission,
   type ImportSubmissionState,
@@ -66,6 +67,8 @@ export function Integrations({
   const [acks, setAcks] = useState<Record<string, boolean>>({});
   const [message, setMessage] = useState("");
   const [copiedProvider, setCopiedProvider] = useState("");
+  const [settingsProvider, setSettingsProvider] =
+    useState<ImportProvider | null>(null);
   const [uncertain, setUncertain] = useState("");
   const [historyTarget, setHistoryTarget] = useState<HTMLElement | null>(null);
   const [operationStates, setOperationStates] = useState<
@@ -101,11 +104,8 @@ export function Integrations({
     retry: false,
   });
   function openSettings(provider: ImportProvider) {
-    const element = settings.current[provider];
-    if (!element) return;
-    element.open = true;
-    element.querySelector("summary")?.focus();
-    element.scrollIntoView?.({ block: "nearest" });
+    if (!uncertain) setMessage("");
+    setSettingsProvider(provider);
   }
   async function probe(provider: string) {
     if (requestLock.current) return;
@@ -251,19 +251,8 @@ export function Integrations({
           : !selectedAccount(missing!)
             ? `Выберите аккаунт ${names[missing!]}`
             : "Загрузите первый каталог";
-  if (!tenant)
-    return (
-      <div className="notice">
-        Выберите рабочее пространство, чтобы настроить интеграции.
-      </div>
-    );
-  return (
-    <div className="integration-console">
-      <div className="integrations-heading">
-        <h1>Интеграции</h1>
-        <p>Подключайте сервисы и обновляйте данные в одном месте.</p>
-      </div>
-      {notice}
+  const settingsFeedback = (
+    <>
       {message && (
         <p className="integration-feedback" role="alert">
           {message}
@@ -278,6 +267,22 @@ export function Integrations({
           Проверить результат добавления
         </button>
       )}
+    </>
+  );
+  if (!tenant)
+    return (
+      <div className="notice">
+        Выберите рабочее пространство, чтобы настроить интеграции.
+      </div>
+    );
+  return (
+    <div className="integration-console">
+      <div className="integrations-heading">
+        <h1>Интеграции</h1>
+        <p>Подключайте сервисы и обновляйте данные в одном месте.</p>
+      </div>
+      {notice}
+      {!settingsProvider && settingsFeedback}
       {query.isLoading && <p role="status">Загружаем интеграции…</p>}
       {query.error && (
         <p className="integration-feedback is-error" role="alert">
@@ -397,206 +402,229 @@ export function Integrations({
               )}
               <details
                 className="provider-settings"
+                open={settingsProvider === p.provider}
                 ref={(node) => {
                   settings.current[p.provider] = node;
                 }}
               >
-                <summary>Настройки</summary>
-                <div className="provider-settings-body">
-                  <h3>Подключение {names[p.provider]}</h3>
-                  {registeredAccounts.length > 0 && (
-                    <label className="integration-field">
-                      Аккаунт для работы
-                      <select
-                        aria-label={`${names[p.provider]}: аккаунт`}
-                        value={account || ""}
-                        disabled={!onSelect}
-                        onChange={(e) => onSelect?.(p.provider, e.target.value)}
-                      >
-                        <option value="">Выберите аккаунт</option>
-                        {registeredAccounts.map((a, i) => (
-                          <option key={a.account} value={a.account}>
-                            Аккаунт {i + 1}
-                            {a.account === p.account
-                              ? " · настроен"
-                              : ""} ·{" "}
-                            {new Date(a.registered_at).toLocaleDateString(
-                              "ru-RU",
-                            )}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
-                  <p>
-                    {p.status === "NOT_CONFIGURED"
-                      ? "Данные доступа пока не настроены. Обратитесь к администратору STYK, чтобы добавить их в конфигурацию сервиса."
-                      : "Проверка подключения читает данные сервиса и не запускает загрузку каталога."}
-                  </p>
-                  {p.status === "VERIFIED" && !recentProbe && (
-                    <p>
-                      Перед добавлением аккаунта повторите проверку: прошло
-                      больше пяти минут.
-                    </p>
-                  )}
-                  <button
-                    className="secondary"
-                    disabled={!!busy || p.status === "NOT_CONFIGURED"}
-                    onClick={() => void probe(p.provider)}
+                <summary
+                  aria-haspopup="dialog"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    openSettings(p.provider);
+                  }}
+                >
+                  Настройки
+                </summary>
+                {settingsProvider === p.provider && (
+                  <IntegrationDialog
+                    title={`Настройки ${names[p.provider]}`}
+                    closeLabel="Закрыть настройки"
+                    onClose={() => setSettingsProvider(null)}
                   >
-                    {busy === p.provider
-                      ? "Подождите…"
-                      : "Проверить подключение"}
-                  </button>
-                  {p.check && (
-                    <p>
-                      Последняя проверка: {date(p.check.checked_at)}.{" "}
-                      {p.status === "VERIFICATION_FAILED"
-                        ? "Доступ не подтверждён."
-                        : "Чтение данных доступно."}{" "}
-                      {p.check.identity === "MATCHED_RETURNED_PRODUCT"
-                        ? "Полученный товар соответствует настроенному аккаунту."
-                        : "Принадлежность аккаунта не подтверждена независимо."}
-                    </p>
-                  )}
-                  {p.registration === "NOT_REGISTERED" && (
-                    <div className="registration-form">
+                    <div className="provider-settings-body">
+                      {settingsFeedback}
+                      {registeredAccounts.length > 0 && (
+                        <label className="integration-field">
+                          Аккаунт для работы
+                          <select
+                            aria-label={`${names[p.provider]}: аккаунт`}
+                            value={account || ""}
+                            disabled={!onSelect}
+                            onChange={(e) =>
+                              onSelect?.(p.provider, e.target.value)
+                            }
+                          >
+                            <option value="">Выберите аккаунт</option>
+                            {registeredAccounts.map((a, i) => (
+                              <option key={a.account} value={a.account}>
+                                Аккаунт {i + 1}
+                                {a.account === p.account
+                                  ? " · настроен"
+                                  : ""} ·{" "}
+                                {new Date(a.registered_at).toLocaleDateString(
+                                  "ru-RU",
+                                )}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
                       <p>
-                        Добавьте настроенный аккаунт в текущее рабочее
-                        пространство. Убедитесь, что выбрали верный аккаунт и
-                        пространство. Предыдущие загрузки не будут включены.
+                        {p.status === "NOT_CONFIGURED"
+                          ? "Данные доступа пока не настроены. Обратитесь к администратору STYK, чтобы добавить их в конфигурацию сервиса."
+                          : "Проверка подключения читает данные сервиса и не запускает загрузку каталога."}
                       </p>
-                      <label className="integration-ack">
-                        <input
-                          type="checkbox"
-                          checked={!!acks[p.provider]}
-                          onChange={(e) =>
-                            setAcks((old) => ({
-                              ...old,
-                              [p.provider]: e.target.checked,
-                            }))
-                          }
-                        />
-                        Подтверждаю, что этот аккаунт принадлежит текущему
-                        рабочему пространству.
-                      </label>
-                      <p>
-                        Это ваше подтверждение принадлежности аккаунта. Проверка
-                        доступа не заменяет его.
-                      </p>
+                      {p.registration === "NOT_REGISTERED" &&
+                        p.status === "VERIFIED" &&
+                        !recentProbe && (
+                          <p>
+                            Перед добавлением аккаунта повторите проверку:
+                            прошло больше пяти минут.
+                          </p>
+                        )}
                       <button
-                        className="primary-button"
-                        disabled={
-                          !!busy ||
-                          !!uncertain ||
-                          !acks[p.provider] ||
-                          !recentProbe
-                        }
-                        onClick={() => void register(p.provider)}
+                        className="secondary"
+                        disabled={!!busy || p.status === "NOT_CONFIGURED"}
+                        onClick={() => void probe(p.provider)}
                       >
-                        Добавить аккаунт
+                        {busy === p.provider
+                          ? "Подождите…"
+                          : "Проверить подключение"}
                       </button>
+                      {p.check && (
+                        <p>
+                          Последняя проверка: {date(p.check.checked_at)}.{" "}
+                          {p.status === "VERIFICATION_FAILED"
+                            ? "Доступ не подтверждён."
+                            : "Чтение данных доступно."}{" "}
+                          {p.check.identity === "MATCHED_RETURNED_PRODUCT"
+                            ? "Полученный товар соответствует настроенному аккаунту."
+                            : "Принадлежность аккаунта не подтверждена независимо."}
+                        </p>
+                      )}
+                      {p.registration === "NOT_REGISTERED" && (
+                        <div className="registration-form">
+                          <p>
+                            Добавьте настроенный аккаунт в текущее рабочее
+                            пространство. Убедитесь, что выбрали верный аккаунт
+                            и пространство. Предыдущие загрузки не будут
+                            включены.
+                          </p>
+                          <label className="integration-ack">
+                            <input
+                              type="checkbox"
+                              checked={!!acks[p.provider]}
+                              onChange={(e) =>
+                                setAcks((old) => ({
+                                  ...old,
+                                  [p.provider]: e.target.checked,
+                                }))
+                              }
+                            />
+                            Подтверждаю, что этот аккаунт принадлежит текущему
+                            рабочему пространству.
+                          </label>
+                          <p>
+                            Это ваше подтверждение принадлежности аккаунта.
+                            Проверка доступа не заменяет его.
+                          </p>
+                          <button
+                            className="primary-button"
+                            disabled={
+                              !!busy ||
+                              !!uncertain ||
+                              !acks[p.provider] ||
+                              !recentProbe
+                            }
+                            onClick={() => void register(p.provider)}
+                          >
+                            Добавить аккаунт
+                          </button>
+                        </div>
+                      )}
+                      {p.registration === "OWNERSHIP_CONFLICT" && (
+                        <p className="is-error" role="alert">
+                          Аккаунт уже принадлежит другому рабочему пространству.
+                          Перенос недоступен.
+                        </p>
+                      )}
+                      <details className="import-help">
+                        <summary>О загрузке данных</summary>
+                        <p>
+                          Загружаются товары, склады и остатки
+                          {p.provider === "moysklad"
+                            ? ", включая варианты товаров"
+                            : ""}
+                          . Данные в сервисе не изменяются. Отсутствие записи об
+                          остатках не означает нулевой остаток.
+                        </p>
+                        <p>
+                          Если ответ потерян или страница закрылась, сначала
+                          проверьте историю выбранного аккаунта. Не создавайте
+                          повторную загрузку, пока не уточните результат.
+                        </p>
+                      </details>
+                      <details className="technical-details">
+                        <summary>Технические детали</summary>
+                        <dl>
+                          <div>
+                            <dt>Рабочее пространство</dt>
+                            <dd>
+                              <code>{tenant}</code>
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>Настроенный аккаунт</dt>
+                            <dd>
+                              <code>{p.account || "Не задан"}</code>
+                            </dd>
+                          </div>
+                          {p.check?.reason && (
+                            <div>
+                              <dt>Результат проверки доступа</dt>
+                              <dd>
+                                <code>{p.check.reason}</code>
+                              </dd>
+                            </div>
+                          )}
+                          {account && (
+                            <div>
+                              <dt>Выбранный аккаунт</dt>
+                              <dd>
+                                <code>{account}</code>
+                              </dd>
+                            </div>
+                          )}
+                        </dl>
+                        {registeredAccounts.length > 0 && (
+                          <>
+                            <h4>Добавленные аккаунты</h4>
+                            <ul className="technical-account-list">
+                              {registeredAccounts.map((a, index) => (
+                                <li key={a.account}>
+                                  <span>
+                                    Аккаунт {index + 1} ·{" "}
+                                    {date(a.registered_at)}
+                                  </span>
+                                  <code>{a.account}</code>
+                                </li>
+                              ))}
+                            </ul>
+                          </>
+                        )}
+                        <button
+                          className="secondary"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(
+                                `tenant: ${tenant}\nconfigured account: ${p.account || ""}\nselected account: ${account || ""}\n${registeredAccounts.map((a, i) => `account ${i + 1}: ${a.account}`).join("\n")}`,
+                              );
+                              setCopiedProvider(p.provider);
+                            } catch {
+                              setMessage(
+                                "Не удалось скопировать. Выделите идентификатор вручную.",
+                              );
+                            }
+                          }}
+                        >
+                          {copiedProvider === p.provider
+                            ? "Скопировано"
+                            : "Копировать идентификаторы"}
+                        </button>
+                        <p>
+                          Проверка доступа не подтверждает все разрешения и
+                          готовность к публикации остатков.
+                        </p>
+                      </details>
+                      <nav aria-label={`${names[p.provider]}: разделы`}>
+                        <Link to="/products">Товары</Link>
+                        <Link to="/warehouses">Склады</Link>
+                        <Link to="/diagnostics">Диагностика</Link>
+                      </nav>
                     </div>
-                  )}
-                  {p.registration === "OWNERSHIP_CONFLICT" && (
-                    <p className="is-error" role="alert">
-                      Аккаунт уже принадлежит другому рабочему пространству.
-                      Перенос недоступен.
-                    </p>
-                  )}
-                  <details className="import-help">
-                    <summary>О загрузке данных</summary>
-                    <p>
-                      Загружаются товары, склады и остатки
-                      {p.provider === "moysklad"
-                        ? ", включая варианты товаров"
-                        : ""}
-                      . Данные в сервисе не изменяются. Отсутствие записи об
-                      остатках не означает нулевой остаток.
-                    </p>
-                    <p>
-                      Если ответ потерян или страница закрылась, сначала
-                      проверьте историю выбранного аккаунта. Не создавайте
-                      повторную загрузку, пока не уточните результат.
-                    </p>
-                  </details>
-                  <details className="technical-details">
-                    <summary>Технические детали</summary>
-                    <dl>
-                      <div>
-                        <dt>Рабочее пространство</dt>
-                        <dd>
-                          <code>{tenant}</code>
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Настроенный аккаунт</dt>
-                        <dd>
-                          <code>{p.account || "Не задан"}</code>
-                        </dd>
-                      </div>
-                      {p.check?.reason && (
-                        <div>
-                          <dt>Результат проверки доступа</dt>
-                          <dd>
-                            <code>{p.check.reason}</code>
-                          </dd>
-                        </div>
-                      )}
-                      {account && (
-                        <div>
-                          <dt>Выбранный аккаунт</dt>
-                          <dd>
-                            <code>{account}</code>
-                          </dd>
-                        </div>
-                      )}
-                    </dl>
-                    {registeredAccounts.length > 0 && (
-                      <>
-                        <h4>Добавленные аккаунты</h4>
-                        <ul className="technical-account-list">
-                          {registeredAccounts.map((a, index) => (
-                            <li key={a.account}>
-                              <span>
-                                Аккаунт {index + 1} · {date(a.registered_at)}
-                              </span>
-                              <code>{a.account}</code>
-                            </li>
-                          ))}
-                        </ul>
-                      </>
-                    )}
-                    <button
-                      className="secondary"
-                      onClick={async () => {
-                        try {
-                          await navigator.clipboard.writeText(
-                            `tenant: ${tenant}\nconfigured account: ${p.account || ""}\nselected account: ${account || ""}\n${registeredAccounts.map((a, i) => `account ${i + 1}: ${a.account}`).join("\n")}`,
-                          );
-                          setCopiedProvider(p.provider);
-                        } catch {
-                          setMessage(
-                            "Не удалось скопировать. Выделите идентификатор вручную.",
-                          );
-                        }
-                      }}
-                    >
-                      {copiedProvider === p.provider
-                        ? "Скопировано"
-                        : "Копировать идентификаторы"}
-                    </button>
-                    <p>
-                      Проверка доступа не подтверждает все разрешения и
-                      готовность к публикации остатков.
-                    </p>
-                  </details>
-                  <nav aria-label={`${names[p.provider]}: разделы`}>
-                    <Link to="/products">Товары</Link>
-                    <Link to="/warehouses">Склады</Link>
-                    <Link to="/diagnostics">Диагностика</Link>
-                  </nav>
-                </div>
+                  </IntegrationDialog>
+                )}
               </details>
             </article>
           );

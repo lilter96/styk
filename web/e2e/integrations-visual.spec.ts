@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { spawn, type ChildProcess } from "node:child_process";
 import type { ImportOperation, ImportProvider, Report } from "../src/api";
 
@@ -107,6 +107,7 @@ type Scenario =
   | "missing"
   | "running"
   | "failed"
+  | "history-unavailable"
   | "unknown-submission"
   | "unknown-operation";
 async function openFixture(page: Page, scenario: Scenario = "success") {
@@ -193,7 +194,9 @@ async function openFixture(page: Page, scenario: Scenario = "success") {
           status:
             provider === "ozon" && scenario === "missing"
               ? "CONFIGURED_NOT_VERIFIED"
-              : "VERIFIED",
+              : provider === "moysklad" && scenario === "history-unavailable"
+                ? "VERIFICATION_FAILED"
+                : "VERIFIED",
           registration:
             provider === "ozon" && scenario === "missing"
               ? "NOT_REGISTERED"
@@ -202,7 +205,10 @@ async function openFixture(page: Page, scenario: Scenario = "success") {
             ? {}
             : {
                 check: {
-                  checked_at: observed,
+                  checked_at:
+                    scenario === "history-unavailable" && provider === "ozon"
+                      ? "2026-10-29T05:35:00Z"
+                      : observed,
                   identity:
                     provider === "moysklad"
                       ? "MATCHED_RETURNED_PRODUCT"
@@ -224,6 +230,8 @@ async function openFixture(page: Page, scenario: Scenario = "success") {
       const provider = url.searchParams.has("moysklad_account")
         ? "moysklad"
         : "ozon";
+      if (provider === "moysklad" && scenario === "history-unavailable")
+        return fulfill({ error: "SYNTHETIC_HISTORY_UNAVAILABLE" }, 503);
       const offset = Number(url.searchParams.get("offset") || 0);
       return fulfill({
         items: offset === 0 ? [operations[provider]] : [],
@@ -246,6 +254,71 @@ async function openFixture(page: Page, scenario: Scenario = "success") {
   ).toBeVisible();
   await expect(page.locator(".integration-card")).toHaveCount(2);
   return { calls, submissions };
+}
+
+function providerCard(page: Page, name: "МойСклад" | "Ozon") {
+  return page.getByRole("article", { name, exact: true });
+}
+
+async function geometry(locator: Locator) {
+  return locator.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return {
+      x: rect.x + scrollX,
+      y: rect.y + scrollY,
+      width: rect.width,
+      height: rect.height,
+    };
+  });
+}
+
+async function expectUnchangedGeometry(
+  locator: Locator,
+  before: Awaited<ReturnType<typeof geometry>>,
+) {
+  const after = await geometry(locator);
+  for (const property of ["x", "y", "width", "height"] as const)
+    expect(Math.abs(after[property] - before[property]), property).toBeLessThan(
+      1.5,
+    );
+}
+
+async function expectActionNearContent(card: Locator) {
+  const gap = await card.locator(".import-primary").evaluate((button) => {
+    const previous = button.previousElementSibling!;
+    return (
+      button.getBoundingClientRect().top -
+      previous.getBoundingClientRect().bottom
+    );
+  });
+  expect(gap).toBeGreaterThanOrEqual(0);
+  expect(gap).toBeLessThan(64);
+}
+
+async function expectDrawerFillsViewport(drawer: Locator, height: number) {
+  const bounds = await drawer.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.y).toBe(0);
+  expect(bounds!.height).toBe(height);
+}
+
+async function expectDrawerBottomReachable(drawer: Locator, height: number) {
+  const copy = drawer.getByRole("button", {
+    name: "Копировать идентификаторы",
+  });
+  await copy.scrollIntoViewIfNeeded();
+  await expect(copy).toBeInViewport();
+  await expect(
+    drawer.getByRole("button", { name: "Закрыть настройки" }),
+  ).toBeInViewport();
+  const scroll = await drawer
+    .locator(".provider-settings-dialog-content")
+    .evaluate((element) => ({
+      top: element.scrollTop,
+      hasOverflow: element.scrollHeight > element.clientHeight,
+    }));
+  if (scroll.hasOverflow) expect(scroll.top).toBeGreaterThan(0);
+  await expectDrawerFillsViewport(drawer, height);
 }
 
 async function assertLayout(page: Page) {
@@ -424,3 +497,224 @@ test("history reveals technical details only on request", async ({ page }) => {
       .every((call) => call.includes("limit=10")),
   ).toBe(true);
 });
+
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 1280, height: 800 },
+  { width: 390, height: 844 },
+]) {
+  test(`provider settings drawer never reflows the page at ${viewport.width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    const { submissions } = await openFixture(page);
+    const moy = providerCard(page, "МойСклад"),
+      ozon = providerCard(page, "Ozon");
+    const moyAction = moy.locator(".import-primary"),
+      ozonAction = ozon.locator(".import-primary");
+    await expect(moyAction).toBeEnabled();
+    await expect(ozonAction).toBeEnabled();
+    const stableElements = [
+      moy,
+      moyAction,
+      ozon,
+      ozonAction,
+      page.locator(".integration-next"),
+      page.locator(".updates-history"),
+    ];
+    const baseline = await Promise.all(stableElements.map(geometry));
+    const expectNoReflow = async () => {
+      for (let i = 0; i < stableElements.length; i++)
+        await expectUnchangedGeometry(stableElements[i], baseline[i]);
+    };
+
+    await ozon.locator(".provider-settings > summary").click();
+    const ozonDrawer = page.getByRole("dialog", {
+      name: "Настройки Ozon",
+      exact: true,
+    });
+    await expect(ozonDrawer).toBeVisible();
+    await expectDrawerFillsViewport(ozonDrawer, viewport.height);
+    await expect(page.getByRole("dialog")).toHaveCount(1);
+    await expect(
+      ozonDrawer.getByRole("combobox", { name: "Ozon: аккаунт" }),
+    ).toBeVisible();
+    await expectNoReflow();
+    await expectActionNearContent(moy);
+    await expectActionNearContent(ozon);
+    await assertLayout(page);
+    await page.screenshot({
+      path: `test-results/integrations-ux/expanded-settings-${viewport.width}.png`,
+      fullPage: false,
+    });
+
+    // The first and last keyboard stops stay inside the modal.
+    const ozonClose = ozonDrawer.getByRole("button", {
+      name: "Закрыть настройки",
+    });
+    await ozonClose.focus();
+    await page.keyboard.press("Shift+Tab");
+    expect(
+      await ozonDrawer.evaluate((node) =>
+        node.contains(document.activeElement),
+      ),
+    ).toBe(true);
+    await page.keyboard.press("Tab");
+    await expect(ozonClose).toBeFocused();
+    await ozonDrawer.locator(".technical-details > summary").click();
+    await expect(
+      ozonDrawer.getByText(account, { exact: true }).first(),
+    ).toBeVisible();
+    await expectDrawerBottomReachable(ozonDrawer, viewport.height);
+    await expectNoReflow();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await page.screenshot({
+      path: `test-results/integrations-ux/expanded-provider-details-${viewport.width}.png`,
+      fullPage: false,
+    });
+    await page.keyboard.press("Escape");
+    await expect(ozonDrawer).toHaveCount(0);
+    await expect(ozon.locator(".provider-settings > summary")).toBeFocused();
+    await expectNoReflow();
+
+    await moy.locator(".provider-settings > summary").click();
+    const moyDrawer = page.getByRole("dialog", {
+      name: "Настройки МойСклад",
+      exact: true,
+    });
+    await expect(moyDrawer).toBeVisible();
+    await expectDrawerFillsViewport(moyDrawer, viewport.height);
+    await expect(page.getByRole("dialog")).toHaveCount(1);
+    await moyDrawer.locator(".technical-details > summary").click();
+    await expect(
+      moyDrawer.getByText(account, { exact: true }).first(),
+    ).toBeVisible();
+    await expectDrawerBottomReachable(moyDrawer, viewport.height);
+    await expectNoReflow();
+    await page.screenshot({
+      path: `test-results/integrations-ux/expanded-moy-settings-${viewport.width}.png`,
+      fullPage: false,
+    });
+    await moyDrawer.getByRole("button", { name: "Закрыть настройки" }).click();
+    await expect(moyDrawer).toHaveCount(0);
+    await expect(moy.locator(".provider-settings > summary")).toBeFocused();
+    await expectNoReflow();
+
+    if (viewport.width > 1000) {
+      await ozon.locator(".provider-settings > summary").click();
+      await expect(ozonDrawer).toBeVisible();
+      await page.mouse.click(10, 100);
+      await expect(ozonDrawer).toHaveCount(0);
+      await expect(ozon.locator(".provider-settings > summary")).toBeFocused();
+    }
+    await assertLayout(page);
+    await expectNoReflow();
+    expect(submissions).toHaveLength(0);
+  });
+
+  test(`import confirmation never reflows the page at ${viewport.width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    const { submissions } = await openFixture(page);
+    const moy = providerCard(page, "МойСклад"),
+      ozon = providerCard(page, "Ozon");
+    await expect(moy.locator(".import-primary")).toBeEnabled();
+    await expect(ozon.locator(".import-primary")).toBeEnabled();
+    const stableElements = [
+      moy,
+      moy.locator(".import-primary"),
+      ozon,
+      ozon.locator(".import-primary"),
+      page.locator(".integrations-heading"),
+      page.locator(".integration-cards"),
+      page.locator(".integration-next"),
+      page.locator(".updates-history"),
+    ];
+    const baseline = await Promise.all(stableElements.map(geometry));
+    await moy.locator(".import-primary").click();
+    const confirmation = moy.getByRole("dialog", {
+      name: "Загрузить данные МойСклад?",
+    });
+    await expect(confirmation).toBeVisible();
+    await expectDrawerFillsViewport(confirmation, viewport.height);
+    await expect(
+      confirmation.getByRole("button", { name: "Подтвердить загрузку" }),
+    ).toBeDisabled();
+    for (let i = 0; i < stableElements.length; i++)
+      await expectUnchangedGeometry(stableElements[i], baseline[i]);
+    await expectActionNearContent(moy);
+    await expectActionNearContent(ozon);
+    await assertLayout(page);
+    expect(submissions).toHaveLength(0);
+    await page.screenshot({
+      path: `test-results/integrations-ux/import-confirmation-${viewport.width}.png`,
+      fullPage: false,
+    });
+    await confirmation
+      .getByRole("button", { name: "Закрыть", exact: true })
+      .click();
+    await expect(confirmation).toHaveCount(0);
+    for (let i = 0; i < stableElements.length; i++)
+      await expectUnchangedGeometry(stableElements[i], baseline[i]);
+    expect(submissions).toHaveLength(0);
+  });
+
+  test(`unavailable history stays compact behind settings drawer at ${viewport.width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    const { submissions } = await openFixture(page, "history-unavailable");
+    const moy = providerCard(page, "МойСклад"),
+      ozon = providerCard(page, "Ozon");
+    await expect(moy.getByRole("alert")).toContainText("История недоступна");
+    await expect(moy.locator(".import-primary")).toBeDisabled();
+    await expect(ozon.locator(".import-primary")).toBeEnabled();
+    const stableElements = [
+      moy,
+      moy.locator(".import-primary"),
+      ozon,
+      ozon.locator(".import-primary"),
+      page.locator(".integration-next"),
+      page.locator(".updates-history"),
+    ];
+    const baseline = await Promise.all(stableElements.map(geometry));
+    await ozon.locator(".provider-settings > summary").click();
+    const drawer = page.getByRole("dialog", {
+      name: "Настройки Ozon",
+      exact: true,
+    });
+    await expect(drawer).toBeVisible();
+    await expectDrawerFillsViewport(drawer, viewport.height);
+    await drawer.locator(".technical-details > summary").click();
+    await expect(
+      drawer.getByText(/Перед добавлением аккаунта повторите проверку/),
+    ).toHaveCount(0);
+    await expect(
+      drawer.getByText(account, { exact: true }).first(),
+    ).toBeVisible();
+    await expectDrawerBottomReachable(drawer, viewport.height);
+    for (let i = 0; i < stableElements.length; i++)
+      await expectUnchangedGeometry(stableElements[i], baseline[i]);
+    await expectActionNearContent(moy);
+    await expectActionNearContent(ozon);
+    await expect(moy.locator(".import-primary")).toBeDisabled();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    expect(submissions).toHaveLength(0);
+    await page.screenshot({
+      path: `test-results/integrations-ux/error-history-expanded-settings-${viewport.width}.png`,
+      fullPage: false,
+    });
+    await drawer.getByRole("button", { name: "Закрыть настройки" }).click();
+    for (let i = 0; i < stableElements.length; i++)
+      await expectUnchangedGeometry(stableElements[i], baseline[i]);
+  });
+}

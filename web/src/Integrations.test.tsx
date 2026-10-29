@@ -321,14 +321,11 @@ it("keeps identifiers behind technical disclosure and account selection in setti
     onSelect,
   });
   const card = await moyCard();
-  expect(within(card).getByRole("combobox").closest("details")?.open).toBe(
-    false,
-  );
+  expect(within(card).queryByRole("combobox")).toBeNull();
+  expect(within(card).queryByRole("dialog")).toBeNull();
   expect(
-    within(card)
-      .getByRole("button", { name: "Копировать идентификаторы" })
-      .closest("details")?.open,
-  ).toBe(false);
+    within(card).queryByRole("button", { name: "Копировать идентификаторы" }),
+  ).toBeNull();
   expect(within(card).getByText("Аккаунт 1 из 2")).toBeTruthy();
   settings(card);
   fireEvent.change(

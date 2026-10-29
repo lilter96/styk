@@ -14,6 +14,7 @@ import {
   type ImportScope,
 } from "./api";
 import type { ImportSubmissionState } from "./ImportSubmission";
+import { IntegrationDialog } from "./IntegrationDialog";
 
 const phaseLabels: Record<string, string> = {
   READING_PRODUCTS: "Загружаем товары",
@@ -211,32 +212,13 @@ function Confirm({
   children: React.ReactNode;
   onClose: () => void;
 }) {
-  const dialog = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    dialog.current?.querySelector<HTMLInputElement>("input,button")?.focus();
-    return () => {
-      if (previous?.isConnected) previous.focus();
-    };
-  }, []);
   return (
-    <div
-      ref={dialog}
-      className="import-confirm"
-      role="dialog"
-      aria-label={title}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") onClose();
-      }}
-    >
-      <h3>{title}</h3>
-      {children}
-      <button className="secondary" onClick={onClose}>
-        Закрыть
-      </button>
-    </div>
+    <IntegrationDialog title={title} onClose={onClose}>
+      <div className="import-confirm">{children}</div>
+    </IntegrationDialog>
   );
 }
+
 export function ImportPanel({
   scope,
   configured,
@@ -550,7 +532,13 @@ export function ImportPanel({
       <summary>
         <span>{name}</span>
         <span className="history-preview">
-          {current ? stateLabels[current.state] : "Загрузок пока нет"}
+          {latest.error
+            ? "История недоступна"
+            : current
+              ? stateLabels[current.state]
+              : latest.isLoading
+                ? "Загружаем историю…"
+                : "Загрузок пока нет"}
           {current && (
             <time dateTime={current.created_at}>
               {timestamp(current.created_at)}

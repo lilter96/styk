@@ -120,6 +120,7 @@
 .integration-cards {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: 24px;
 }
 .integration-card {
@@ -268,7 +269,7 @@
   font-size: 14px;
 }
 .integration-console .import-panel {
-  flex: 1;
+  flex: none;
   display: flex;
   flex-direction: column;
   margin: 0;
@@ -284,7 +285,7 @@
   line-height: 1.55;
 }
 .provider-empty {
-  flex: 1;
+  flex: none;
   padding: 22px 0 24px;
 }
 .provider-empty p {
@@ -295,7 +296,7 @@
   width: 100%;
 }
 .provider-settings {
-  margin-top: auto;
+  margin-top: 0;
   border-top: 1px solid #e4ebe9;
 }
 .provider-settings > summary {
@@ -719,7 +720,7 @@
 }
 .integration-console .import-primary {
   width: 100%;
-  margin-top: auto;
+  margin-top: 0;
 }
 .import-baseline:not(:has(.catalog-counts)) {
   margin-bottom: 26px;
@@ -1061,7 +1062,7 @@
   flex-direction: column;
 }
 .provider-empty > button {
-  margin-top: auto;
+  margin-top: 0;
 }
 .integration-shell .import-submission-notice p {
   margin: 0 0 10px;
@@ -1070,4 +1071,101 @@
   border: 0;
   padding: 0;
   margin: 12px 0 0;
+}
+
+/* Settings have their own viewport; disclosure never changes the catalog layout. */
+.provider-settings > summary::after,
+.provider-settings[open] > summary::after {
+  content: "›";
+}
+.provider-settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  justify-content: flex-end;
+  background: rgb(20 42 47 / 30%);
+  text-align: left;
+  cursor: default;
+}
+.provider-settings-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(520px, 100%);
+  height: 100%;
+  height: 100dvh;
+  min-width: 0;
+  background: #fff;
+  box-shadow: -12px 0 40px rgb(20 42 47 / 12%);
+  color: #203d42;
+}
+.provider-settings-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex: none;
+  padding: 22px 28px;
+  border-bottom: 1px solid #dce6e5;
+}
+.provider-settings-dialog-header h2 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+}
+.integration-console .provider-settings-dialog-header button {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: #f1f5f4;
+  color: #365c54;
+  font-size: 24px;
+  font-weight: 400;
+}
+.integration-console .provider-settings-dialog-header button:hover {
+  background: #e2ece7;
+}
+.provider-settings-dialog-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 26px 28px 32px;
+  scrollbar-gutter: stable;
+}
+.provider-settings-dialog .provider-settings-body {
+  padding: 0;
+}
+.provider-settings-dialog .provider-settings-body > p {
+  font-size: 15px;
+}
+.provider-settings-dialog .technical-details {
+  margin-top: 22px;
+}
+.provider-settings-dialog .technical-details > summary {
+  min-height: 36px;
+  display: list-item;
+}
+@media (max-width: 650px) {
+  .provider-settings-dialog-header {
+    padding: 16px 20px;
+  }
+  .provider-settings-dialog-header h2 {
+    font-size: 21px;
+  }
+  .provider-settings-dialog-content {
+    padding: 24px 20px 32px;
+  }
+}
+.integration-console .provider-settings-dialog-content .import-confirm {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
