@@ -99,10 +99,17 @@ func (c *OrderClient) decodeOrderReferences(document orderNative) (orders.Custom
 		}
 		*ref.out = id
 	}
-	if orders.Decimal(document.Rate.Value).Validate() != nil || document.Updated == "" {
+	if document.Updated == "" {
 		return orders.CustomerOrderWrite{}, ErrOrderSchema
 	}
-	write.RateValue = orders.Present(orders.Decimal(document.Rate.Value))
+	write.RateValue = orders.Field[orders.Decimal]{Presence: orders.PresenceMissing}
+	if len(document.Rate.Value) > 0 {
+		value, err := orderReadDecimal(map[string]json.RawMessage{"value": document.Rate.Value}, "value")
+		if err != nil {
+			return orders.CustomerOrderWrite{}, err
+		}
+		write.RateValue = value
+	}
 	return write, nil
 }
 

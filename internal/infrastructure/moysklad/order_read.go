@@ -26,7 +26,7 @@ type orderNative struct {
 	SalesChannel catalogReference `json:"salesChannel"`
 	Rate         struct {
 		Currency catalogReference `json:"currency"`
-		Value    json.Number      `json:"value"`
+		Value    json.RawMessage  `json:"value"`
 	} `json:"rate"`
 	Positions struct {
 		Meta struct {
