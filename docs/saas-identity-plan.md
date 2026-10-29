@@ -60,7 +60,7 @@ production deployment/security review remain outstanding. Rollback migrations
 refuse to delete identity, audit or merchant-draft history; restore a verified
 backup instead of forcing a destructive downgrade.
 
-The local development database was migrated from version 32 to 37 on
+The local development database was migrated from version 32 to 38 on
 2026-10-29. Counts before and after were unchanged: 2 connections, 4 product
 mappings, 1 warehouse mapping, 33 source imports, 20 publications and 1
 recovery. Automatic synchronization was disabled. The existing `cross-e2e`

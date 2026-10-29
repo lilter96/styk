@@ -63,10 +63,10 @@ func TestMerchantBrowserWorkspaces(t *testing.T) {
 	if provider.writes.Load() != 0 {
 		t.Fatal("unexpected external publication during identity test")
 	}
-	assertMerchantDraftRollbackGuard(t, db)
+	assertMerchantHistoryRollbackGuard(t, db)
 }
 
-func assertMerchantDraftRollbackGuard(t *testing.T, db *postgres.Store) {
+func assertMerchantHistoryRollbackGuard(t *testing.T, db *postgres.Store) {
 	t.Helper()
 	var count int
 	if err := db.Pool.QueryRow(context.Background(), `SELECT count(*) FROM stock_auto_configs WHERE tenant_id<>$1 AND NOT enabled`, testpublication.Tenant).Scan(&count); err != nil || count != 1 {
@@ -74,8 +74,8 @@ func assertMerchantDraftRollbackGuard(t *testing.T, db *postgres.Store) {
 	}
 	cmd := exec.Command("go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", db.Pool.Config().ConnString(), "down")
 	output, err := cmd.CombinedOutput()
-	if err == nil || !strings.Contains(string(output), "refusing to discard merchant synchronization drafts") {
-		t.Fatal("migration rollback did not protect merchant draft history")
+	if err == nil || !strings.Contains(string(output), "refusing to remove publication scope guards while merchant identities exist") {
+		t.Fatal("migration rollback did not protect merchant publication scope")
 	}
 }
 
