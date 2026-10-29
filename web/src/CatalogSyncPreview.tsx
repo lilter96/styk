@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { CatalogSyncValue } from "./CatalogSyncValue";
 import {
   displayValue,
   fieldLabel,
@@ -11,7 +12,7 @@ import {
 
 function canApprove(decision: Decision) {
   const values = decision.commands.flatMap((command) =>
-    Object.values(command.values),
+    Object.values({ ...command.values, ...command.extensions }),
   );
   return (
     decision.ready &&
@@ -33,13 +34,15 @@ function DecisionDiff({ decision }: { decision: Decision }) {
     : decision.commands
         .filter((command) => command.action === "create")
         .flatMap((command) =>
-          Object.entries(command.values).map(([field, after]) => ({
-            field,
-            source: decision.source.identity,
-            target: command.target,
-            before: { state: "absent" as const },
-            after,
-          })),
+          Object.entries({ ...command.values, ...command.extensions }).map(
+            ([field, after]) => ({
+              field,
+              source: decision.source.identity,
+              target: command.target,
+              before: { state: "absent" as const },
+              after,
+            }),
+          ),
         );
   return (
     <>
@@ -67,8 +70,18 @@ function DecisionDiff({ decision }: { decision: Decision }) {
                       {providerLabel(change.target.account.provider)}
                     </small>
                   </th>
-                  <td>{displayValue(change.before)}</td>
-                  <td>{displayValue(change.after)}</td>
+                  <td>
+                    <CatalogSyncValue
+                      field={change.field}
+                      value={change.before}
+                    />
+                  </td>
+                  <td>
+                    <CatalogSyncValue
+                      field={change.field}
+                      value={change.after}
+                    />
+                  </td>
                 </tr>
               ))}
             </tbody>

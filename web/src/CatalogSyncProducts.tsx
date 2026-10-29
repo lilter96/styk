@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./api";
 import { CatalogSyncFacts } from "./CatalogSyncFacts";
+import { CatalogSyncCreation, newCatalogCreation } from "./CatalogSyncCreation";
 import {
   catalogURL,
   fieldLabel,
@@ -78,7 +79,10 @@ export function CatalogSyncProducts({
     onChange(next);
   }
   const manualFields = Object.entries(config.rules)
-    .filter(([, value]) => value === "MANUAL")
+    .filter(
+      ([field, value]) =>
+        value === "MANUAL" && field !== "category" && field !== "attributes",
+    )
     .map(([field]) => field);
   return (
     <section
@@ -88,7 +92,7 @@ export function CatalogSyncProducts({
       <h2 id="catalog-products-title">Товары для синхронизации</h2>
       <p>
         Выберите конкретные товары. Выбор сохраняется при переходе между
-        страницами.
+        страницами. Список товаров не меняет источники, заданные для полей.
       </p>
       <form className="catalog-search" onSubmit={find}>
         <label>
@@ -148,12 +152,34 @@ export function CatalogSyncProducts({
                 </thead>
                 <tbody>
                   {query.data.products.map((product) => {
-                    const enrollment = [
-                      ...config.targets,
+                    const candidate = [
                       ...(query.data.enrollments || []),
-                    ].find((item) =>
-                      sameIdentity(item.source, product.identity),
+                      ...config.targets,
+                      ...Object.values(selected).map(
+                        (selection) => selection.enrollment,
+                      ),
+                    ].find(
+                      (item) =>
+                        sameIdentity(item.source, product.identity) ||
+                        sameIdentity(item.target, product.identity),
                     );
+                    const saved =
+                      candidate &&
+                      config.targets.find((item) => item.id === candidate.id);
+                    const enrollment =
+                      saved &&
+                      candidate &&
+                      saved.mapping_id === candidate.mapping_id &&
+                      saved.mapping_version === candidate.mapping_version &&
+                      sameIdentity(saved.source, candidate.source) &&
+                      sameIdentity(saved.target, candidate.target)
+                        ? saved
+                        : candidate;
+                    const paired = enrollment
+                      ? sameIdentity(enrollment.source, product.identity)
+                        ? enrollment.target
+                        : enrollment.source
+                      : null;
                     return (
                       <tr
                         key={`${product.identity.account.provider}:${product.identity.id}`}
@@ -187,16 +213,14 @@ export function CatalogSyncProducts({
                           )}
                         </td>
                         <td>
-                          {enrollment ? (
+                          {enrollment && paired ? (
                             <>
                               <strong>
-                                {providerLabel(
-                                  enrollment.target.account.provider,
-                                )}
+                                {providerLabel(paired.account.provider)}
                               </strong>
                               <small>
-                                {enrollment.target.offer_id ||
-                                  enrollment.target.id ||
+                                {paired.offer_id ||
+                                  paired.id ||
                                   (enrollment.create
                                     ? "Создание нового товара требует проверки"
                                     : "Нет данных")}
@@ -213,7 +237,33 @@ export function CatalogSyncProducts({
                               ? "Подтверждено"
                               : enrollment?.create
                                 ? "Создание по явной настройке"
-                                : "Сначала подтвердите соответствие товаров"}
+                                : "Нет подтверждённого соответствия"}
+                          {!enrollment && product.lifecycle !== "archived" && (
+                            <button
+                              type="button"
+                              className="secondary"
+                              disabled={disabled}
+                              onClick={() => {
+                                const created = newCatalogCreation(
+                                  product,
+                                  scope,
+                                );
+                                onChange({
+                                  ...selected,
+                                  [created.id]: {
+                                    product,
+                                    enrollment: created,
+                                    manual_values: {},
+                                  },
+                                });
+                              }}
+                            >
+                              Создать в{" "}
+                              {product.identity.account.provider === "ozon"
+                                ? "МойСклад"
+                                : "Ozon"}
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -279,43 +329,78 @@ export function CatalogSyncProducts({
             <legend className="catalog-sr-only">
               Данные товара {productName(selection.product)}
             </legend>
-            {manualFields.map((field) => (
-              <label key={field}>
-                Вручную: {fieldLabel(field)}
-                <input
-                  value={
-                    typeof selection.manual_values[field]?.data === "string"
-                      ? (selection.manual_values[field].data as string)
-                      : ""
-                  }
-                  onChange={(event) =>
-                    onChange({
-                      ...selected,
-                      [id]: {
-                        ...selection,
-                        manual_values: {
-                          ...selection.manual_values,
-                          [field]: {
-                            state: event.target.value ? "known" : "empty",
-                            data: event.target.value,
+            {selection.enrollment.create && (
+              <CatalogSyncCreation
+                enrollment={selection.enrollment}
+                onChange={(enrollment) =>
+                  onChange({ ...selected, [id]: { ...selection, enrollment } })
+                }
+              />
+            )}
+            {!selection.enrollment.create &&
+              manualFields.map((field) => (
+                <label key={field}>
+                  Вручную: {fieldLabel(field)}
+                  <input
+                    value={
+                      typeof selection.manual_values[field]?.data === "string"
+                        ? (selection.manual_values[field].data as string)
+                        : ""
+                    }
+                    onChange={(event) =>
+                      onChange({
+                        ...selected,
+                        [id]: {
+                          ...selection,
+                          manual_values: {
+                            ...selection.manual_values,
+                            [field]: {
+                              state: event.target.value ? "known" : "empty",
+                              data: event.target.value,
+                            },
                           },
                         },
-                      },
-                    })
-                  }
-                />
-                <small>
-                  Введите фактическое значение. Пустое поле не означает очистку.
-                </small>
-              </label>
-            ))}
-            <CatalogSyncFacts
-              scope={scope}
-              facts={selection.facts}
-              onChange={(facts) =>
-                onChange({ ...selected, [id]: { ...selection, facts } })
-              }
-            />
+                      })
+                    }
+                  />
+                  <small>
+                    Введите фактическое значение. Пустое поле не означает
+                    очистку.
+                  </small>
+                </label>
+              ))}
+            {(!selection.enrollment.create ||
+              selection.enrollment.target.account.provider === "ozon") && (
+              <CatalogSyncFacts
+                scope={scope}
+                facts={selection.facts}
+                onChange={(facts) => {
+                  const create = selection.enrollment.create;
+                  const values = { ...create?.values };
+                  delete values.category;
+                  delete values.attributes;
+                  onChange({
+                    ...selected,
+                    [id]: {
+                      ...selection,
+                      facts,
+                      enrollment: create
+                        ? {
+                            ...selection.enrollment,
+                            create: {
+                              ...create,
+                              values: {
+                                ...values,
+                                ...facts.values,
+                              },
+                            },
+                          }
+                        : selection.enrollment,
+                    },
+                  });
+                }}
+              />
+            )}
           </fieldset>
         </article>
       ))}

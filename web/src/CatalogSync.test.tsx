@@ -11,6 +11,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { CatalogSync } from "./CatalogSync";
 import { CatalogSyncPreview } from "./CatalogSyncPreview";
 import { CatalogSyncFacts } from "./CatalogSyncFacts";
+import { makeCatalogFacts } from "./CatalogSyncFacts";
 import {
   displayValue,
   scopeBody,
@@ -53,8 +54,9 @@ const enrollment = (id = "enrollment-1", source = product()): Enrollment => ({
 const configuration = (extra: Partial<CatalogConfig> = {}): CatalogConfig => ({
   scope: scopeBody(scope),
   revision: 1,
-  enabled: false,
-  test_enabled: false,
+  enabled: true,
+  test_enabled: true,
+  publication_available: true,
   interval_seconds: 300,
   rules: { name: "MOYSKLAD_AUTHORITATIVE", description: "OZON_AUTHORITATIVE" },
   targets: [enrollment()],
@@ -331,9 +333,7 @@ it("keeps zero, empty, explicit clearing and unknown values distinct", () => {
     />,
   );
   expect(screen.getByRole("cell", { name: "0" })).toBeTruthy();
-  expect(
-    screen.getByRole("cell", { name: "Неизвестно" }),
-  ).toBeTruthy();
+  expect(screen.getByRole("cell", { name: "Неизвестно" })).toBeTruthy();
   expect(
     (
       screen.getByLabelText(
@@ -517,12 +517,12 @@ it("does not invent required factual values, including false and zero", async ()
       ? json({
           items: [
             {
-              id: "category-1",
+              id: "7:8",
               name: "Посуда",
               attributes: [
-                { id: "weight", name: "Вес", required: true, type: "number" },
+                { id: "101", name: "Вес", required: true, type: "number" },
                 {
-                  id: "fragile",
+                  id: "102",
                   name: "Хрупкий товар",
                   required: true,
                   type: "boolean",
@@ -538,27 +538,36 @@ it("does not invent required factual values, including false and zero", async ()
   fireEvent.click(
     screen.getByText("Категория Ozon и фактические характеристики"),
   );
-  fireEvent.change(await screen.findByLabelText("Категория", { exact: true }), {
-    target: { value: "category-1" },
-  });
-  expect(changed).toHaveBeenLastCalledWith({
-    category_id: "category-1",
-    attributes: {},
-  });
+  fireEvent.change(
+    await screen.findByLabelText("Категория товара в Ozon", { exact: true }),
+    {
+      target: { value: "7:8" },
+    },
+  );
+  expect(changed).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      category_id: "7:8",
+      attributes: {},
+    }),
+  );
   const weight = screen.getByLabelText(/Вес/);
   const fragile = screen.getByLabelText(/Хрупкий товар/);
   expect((weight as HTMLInputElement).value).toBe("");
   expect((fragile as HTMLSelectElement).value).toBe("");
   fireEvent.change(weight, { target: { value: "0" } });
-  expect(changed).toHaveBeenLastCalledWith({
-    category_id: "category-1",
-    attributes: { weight: "0" },
-  });
+  expect(changed).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      category_id: "7:8",
+      attributes: { "101": "0" },
+    }),
+  );
   fireEvent.change(fragile, { target: { value: "false" } });
-  expect(changed).toHaveBeenLastCalledWith({
-    category_id: "category-1",
-    attributes: { fragile: "false" },
-  });
+  expect(changed).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      category_id: "7:8",
+      attributes: { "102": "false" },
+    }),
+  );
 });
 
 it("makes no requests without a complete account pair", () => {
@@ -611,3 +620,441 @@ it("isolates a late preview response after changing the account pair", async () 
   );
   expect(screen.getByText("Выбрано товаров: 0")).toBeTruthy();
 });
+
+it("creates an unmapped Ozon product in MoySklad only through a durable explicit enrollment and review", async () => {
+  const source: CatalogProduct = {
+    ...product("unmapped-ozon", "Новый товар Ozon"),
+    identity: identity("unmapped-ozon", "ozon"),
+    fields: {
+      name: { state: "known", data: "Новый товар Ozon" },
+      description: { state: "known", data: "Описание из источника" },
+      price: { state: "known", data: "99" },
+      category: { state: "unknown" },
+    },
+  };
+  let saved = configuration({ targets: [] });
+  const fetcher = mockAPI((url, init) => {
+    if (url.pathname.endsWith("/config")) {
+      if (init?.method === "POST")
+        saved = {
+          ...JSON.parse(init.body as string).config,
+          revision: saved.revision + 1,
+        };
+      return json(saved);
+    }
+    if (url.pathname.endsWith("/products"))
+      return json({
+        products: url.searchParams.get("provider") === "ozon" ? [source] : [],
+        enrollments: [],
+      });
+    if (url.pathname.endsWith("/preview")) {
+      const creation = saved.targets[0];
+      return json({
+        ...preview(),
+        config_revision: saved.revision,
+        decisions: [
+          decision({
+            enrollment_id: creation.id,
+            source,
+            target: { identity: creation.target, fields: {}, revision: "" },
+            target_absent: true,
+            commands: [
+              {
+                action: "create",
+                target: creation.target,
+                values: creation.create!.values,
+              },
+            ],
+            plan: {
+              mapping_id: "",
+              mapping_version: 0,
+              fingerprint: "creation-fingerprint",
+              changes: [],
+              conflicts: [],
+              skipped: [],
+              noop: false,
+            },
+          }),
+        ],
+      });
+    }
+    return undefined;
+  });
+  mount();
+  fireEvent.change(await screen.findByLabelText("Список товаров"), {
+    target: { value: "ozon" },
+  });
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Создать в МойСклад" }),
+  );
+  const name = screen.getByLabelText(
+    "Название нового товара",
+  ) as HTMLInputElement;
+  expect(name.value).toBe("Новый товар Ozon");
+  expect(
+    screen.queryByText("Категория Ozon и фактические характеристики"),
+  ).toBeNull();
+  expect(
+    fetcher.mock.calls.filter(([, init]) => init?.method === "POST"),
+  ).toHaveLength(0);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Проверить выбранные товары" }),
+  );
+  await screen.findByRole("heading", {
+    name: "Проверьте изменения перед отправкой",
+  });
+  const created = saved.targets[0];
+  expect(created.id).toMatch(/^create-[\da-f-]{36}$/);
+  expect(created.create?.id).toMatch(/^[\da-f-]{36}$/);
+  expect(created.create?.external_code).toBe(
+    `STYK-CATALOG-${created.create!.id}`,
+  );
+  expect(created.target).toEqual({
+    id: "",
+    entity_type: "product",
+    account: { provider: "moysklad", id: scope.moy },
+  });
+  expect(created.mapping_id).toBeUndefined();
+  expect(created.automatic).toBe(false);
+  expect(created.create?.values).toEqual({
+    name: { state: "known", data: "Новый товар Ozon" },
+    description: { state: "known", data: "Описание из источника" },
+  });
+  expect(screen.getByText("Будет создан новый товар")).toBeTruthy();
+  expect(
+    fetcher.mock.calls.filter(([url]) => String(url).includes("/approve")),
+  ).toHaveLength(0);
+  fireEvent.click(
+    screen.getByLabelText("Подтвердить изменения товара Новый товар Ozon"),
+  );
+  fireEvent.click(
+    screen.getByLabelText(/Я проверил изменения выбранных товаров/),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Отправить изменения (1)" }),
+  );
+  await screen.findByText(/Подтверждение записано/);
+  const approval = fetcher.mock.calls.find(([url]) =>
+    String(url).includes("/approve"),
+  )!;
+  expect(JSON.parse(approval[1]!.body as string).enrollment_ids).toEqual([
+    created.id,
+  ]);
+});
+
+it("joins an Ozon row to the target side of a canonical mapping without disabling its automatic allowlist", async () => {
+  const configured = enrollment();
+  configured.automatic = true;
+  configured.automatic_fields = ["name"];
+  const fetcher = mockAPI((url) => {
+    if (url.pathname.endsWith("/config"))
+      return json(configuration({ targets: [configured] }));
+    if (url.pathname.endsWith("/products"))
+      return json({
+        products: url.searchParams.get("provider") === "ozon" ? [target] : [],
+        enrollments: [enrollment()],
+      });
+    return undefined;
+  });
+  mount();
+  fireEvent.change(await screen.findByLabelText("Список товаров"), {
+    target: { value: "ozon" },
+  });
+  const choice = (await screen.findByLabelText(
+    "Выбрать товар Чашка",
+  )) as HTMLInputElement;
+  expect(choice.disabled).toBe(false);
+  fireEvent.click(choice);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Проверить выбранные товары" }),
+  );
+  await screen.findByRole("heading", {
+    name: "Проверьте изменения перед отправкой",
+  });
+  expect(
+    fetcher.mock.calls.filter(
+      ([url, init]) =>
+        String(url).endsWith("/config") && init?.method === "POST",
+    ),
+  ).toHaveLength(0);
+});
+
+it("loads only the selected category schema and explicitly requested official dictionary pages", async () => {
+  const category = {
+    id: "7:8",
+    name: "Посуда",
+    attributes: [],
+    attributes_loaded: false,
+  };
+  const attribute = {
+    id: "123",
+    name: "Материал",
+    required: true,
+    type: "string",
+    dictionary: true,
+    options_incomplete: true,
+  };
+  const fetcher = mockAPI((url) => {
+    if (url.pathname.endsWith("/categories"))
+      return url.searchParams.get("category_id")
+        ? json({
+            ...category,
+            attributes: [attribute],
+            attributes_loaded: true,
+          })
+        : json({ items: [category] });
+    if (url.pathname.endsWith("/attributes"))
+      return url.searchParams.get("cursor")
+        ? json({ items: [{ id: "12", name: "Керамика" }] })
+        : json({ items: [{ id: "11", name: "Фарфор" }], next_cursor: "11" });
+    return undefined;
+  });
+  const changed = vi.fn();
+  mount(<CatalogSyncFacts scope={scope} onChange={changed} />);
+  fireEvent.click(
+    screen.getByText("Категория Ozon и фактические характеристики"),
+  );
+  fireEvent.change(
+    await screen.findByLabelText("Категория товара в Ozon", { exact: true }),
+    {
+      target: { value: "7:8" },
+    },
+  );
+  const input = await screen.findByLabelText("Материал (обязательно)");
+  expect(screen.queryByText(/нет обязательных характеристик/)).toBeNull();
+  expect(
+    fetcher.mock.calls.filter(([url]) => String(url).includes("/attributes?")),
+  ).toHaveLength(0);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Загрузить значения справочника" }),
+  );
+  await screen.findByRole("option", { name: "Фарфор" });
+  fireEvent.change(input, { target: { value: "11" } });
+  const facts = changed.mock.calls[changed.mock.calls.length - 1][0];
+  expect(facts.values.category).toEqual({
+    state: "known",
+    data: { description_category_id: 7, type_id: 8 },
+  });
+  expect(facts.values.attributes).toEqual({
+    state: "known",
+    data: [
+      {
+        id: 123,
+        complex_id: 0,
+        values: [{ dictionary_value_id: 11, value: "Фарфор" }],
+      },
+    ],
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Следующие значения" }));
+  await screen.findByRole("option", { name: "Керамика" });
+  expect(
+    fetcher.mock.calls.some(
+      ([url]) =>
+        String(url).includes("attribute_id=123") &&
+        String(url).includes("cursor=11"),
+    ),
+  ).toBe(true);
+});
+
+it("does not turn unverified dictionary text into a factual attribute", () => {
+  const facts = makeCatalogFacts(
+    {
+      id: "7:8",
+      name: "Посуда",
+      attributes: [
+        {
+          id: "123",
+          name: "Материал",
+          required: true,
+          type: "select",
+          dictionary: true,
+        },
+      ],
+    },
+    { "123": "Придуманное значение" },
+  );
+  expect(facts.values?.attributes).toEqual({ state: "known", data: [] });
+});
+
+it("keeps publication unavailable even if a preview incorrectly advertises a ready decision", async () => {
+  const fetcher = mockAPI((url) =>
+    url.pathname.endsWith("/config")
+      ? json(configuration({ publication_available: false }))
+      : undefined,
+  );
+  mount();
+  await review();
+  expect(
+    screen.getByText(
+      /Отправка изменений в сервисы для этого аккаунта пока недоступна/,
+    ),
+  ).toBeTruthy();
+  expect(
+    (
+      screen.getByLabelText(
+        "Подтвердить изменения товара Тестовая чашка",
+      ) as HTMLInputElement
+    ).disabled,
+  ).toBe(true);
+  expect(
+    fetcher.mock.calls.filter(([url]) => String(url).includes("/approve")),
+  ).toHaveLength(0);
+});
+
+it("saves explicit Ozon category facts into creation values and removes them when the seller clears the category", async () => {
+  let saved = configuration({ targets: [] });
+  const fetcher = mockAPI((url, init) => {
+    if (url.pathname.endsWith("/config")) {
+      if (init?.method === "POST")
+        saved = {
+          ...JSON.parse(init.body as string).config,
+          revision: saved.revision + 1,
+        };
+      return json(saved);
+    }
+    if (url.pathname.endsWith("/products"))
+      return json({ products: [product()], enrollments: [] });
+    if (url.pathname.endsWith("/categories")) {
+      const category = {
+        id: "7:8",
+        name: "Посуда",
+        attributes_loaded: true,
+        attributes: [
+          {
+            id: "101",
+            name: "Вес для категории",
+            required: true,
+            type: "number",
+          },
+        ],
+      };
+      return json(
+        url.searchParams.get("category_id") ? category : { items: [category] },
+      );
+    }
+    if (url.pathname.endsWith("/preview"))
+      return json({
+        ...preview([
+          decision({ ready: false, validation: [{ code: "VAT_REQUIRED" }] }),
+        ]),
+        config_revision: saved.revision,
+      });
+    return undefined;
+  });
+  mount();
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Создать в Ozon" }),
+  );
+  fireEvent.change(screen.getByLabelText("Артикул нового товара в Ozon"), {
+    target: { value: "SYNTHETIC-NEW-OFFER" },
+  });
+  expect(
+    (screen.getByLabelText("Цена нового товара") as HTMLInputElement).value,
+  ).toBe("");
+  expect(
+    (screen.getByLabelText("НДС для Ozon") as HTMLInputElement).value,
+  ).toBe("");
+  fireEvent.click(
+    screen.getByText("Категория Ozon и фактические характеристики"),
+  );
+  fireEvent.change(
+    await screen.findByLabelText("Категория товара в Ozon", { exact: true }),
+    {
+      target: { value: "7:8" },
+    },
+  );
+  fireEvent.change(
+    await screen.findByLabelText("Вес для категории (обязательно)"),
+    { target: { value: "0" } },
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Проверить выбранные товары" }),
+  );
+  await screen.findByText("Товар: Укажите фактическую ставку НДС для Ozon.");
+  const originalID = saved.targets[0].create!.id;
+  expect(saved.targets[0].create!.values.category).toEqual({
+    state: "known",
+    data: { description_category_id: 7, type_id: 8 },
+  });
+  expect(saved.targets[0].create!.values.attributes).toEqual({
+    state: "known",
+    data: [
+      {
+        id: 101,
+        complex_id: 0,
+        values: [{ dictionary_value_id: 0, value: "0" }],
+      },
+    ],
+  });
+  expect(saved.targets[0].create!.values.price).toBeUndefined();
+  expect(saved.targets[0].create!.values.currency).toBeUndefined();
+  expect(saved.targets[0].create!.extensions).toBeUndefined();
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Убрать категорию и введённые характеристики",
+    }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Проверить выбранные товары" }),
+  );
+  await screen.findByText("Товар: Укажите фактическую ставку НДС для Ozon.");
+  expect(saved.targets).toHaveLength(1);
+  expect(saved.targets[0].create!.id).toBe(originalID);
+  expect(saved.targets[0].create!.values.category).toBeUndefined();
+  expect(saved.targets[0].create!.values.attributes).toBeUndefined();
+  expect(
+    fetcher.mock.calls.filter(([url]) => String(url).includes("/approve")),
+  ).toHaveLength(0);
+});
+
+it.each([true, false])(
+  "enables controlled catalog work only after explicit saving and server availability=%s",
+  async (available) => {
+    const fetcher = mockAPI((url, init) => {
+      if (!url.pathname.endsWith("/config")) return undefined;
+      if (init?.method === "POST")
+        return json({ ...JSON.parse(init.body as string).config, revision: 2 });
+      return json(
+        configuration({
+          enabled: false,
+          test_enabled: false,
+          publication_available: available,
+        }),
+      );
+    });
+    mount();
+    fireEvent.click(
+      await screen.findByLabelText(
+        "Разрешить синхронизацию каталога для выбранных аккаунтов",
+      ),
+    );
+    expect(
+      fetcher.mock.calls.filter(([, init]) => init?.method === "POST"),
+    ).toHaveLength(0);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Сохранить настройки" }),
+    );
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByRole("button", {
+            name: "Сохранить настройки",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(true),
+    );
+    const save = fetcher.mock.calls.find(
+      ([, init]) => init?.method === "POST",
+    )!;
+    const body = JSON.parse(save[1]!.body as string);
+    expect(body.config.enabled).toBe(true);
+    expect(body.config.test_enabled).toBe(available);
+    expect(body.config.publication_available).toBeUndefined();
+    if (!available)
+      expect(
+        screen.getByText(
+          /Отправка изменений в сервисы для этого аккаунта пока недоступна/,
+        ),
+      ).toBeTruthy();
+  },
+);

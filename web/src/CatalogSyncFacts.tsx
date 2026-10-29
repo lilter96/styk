@@ -1,52 +1,17 @@
-import { useState, type FormEvent } from "react";
+import { useId, useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./api";
 import {
   catalogURL,
   requestError,
-  type Attribute,
   type Category,
   type CategoryPage,
+  type CatalogValue,
   type ProductFacts,
   type Scope,
 } from "./CatalogSyncTypes";
 
-function FactInput({
-  attribute,
-  value,
-  onChange,
-}: {
-  attribute: Attribute;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  if (attribute.type === "boolean" || attribute.type === "select")
-    return (
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
-        <option value="">Укажите значение</option>
-        {attribute.type === "boolean" ? (
-          <>
-            <option value="true">Да</option>
-            <option value="false">Нет</option>
-          </>
-        ) : (
-          attribute.options?.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.name}
-            </option>
-          ))
-        )}
-      </select>
-    );
-  return (
-    <input
-      type={attribute.type === "number" ? "number" : "text"}
-      step={attribute.type === "number" ? "any" : undefined}
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-    />
-  );
-}
+import { CatalogSyncAttribute } from "./CatalogSyncAttribute";
 
 export function CatalogSyncFacts({
   scope,
@@ -58,6 +23,7 @@ export function CatalogSyncFacts({
   onChange: (facts: ProductFacts) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const formID = useId();
   const [draft, setDraft] = useState("");
   const [search, setSearch] = useState("");
   const [cursor, setCursor] = useState("");
@@ -80,6 +46,26 @@ export function CatalogSyncFacts({
     enabled: open,
     retry: false,
   });
+  const schema = useQuery({
+    queryKey: ["catalog-category-schema", scope, selected?.id],
+    queryFn: ({ signal }) =>
+      api<Category | CategoryPage>(
+        catalogURL("categories", scope, {
+          provider: "ozon",
+          category_id: selected!.id,
+        }),
+        signal,
+      ),
+    enabled: open && !!selected,
+    retry: false,
+  });
+  const loaded =
+    (schema.data &&
+      ("items" in schema.data
+        ? schema.data.items?.find((item) => item.id === selected?.id)
+        : schema.data)) ||
+    selected;
+  const category = loaded && { ...loaded, name: selected?.name || loaded.name };
   function find(event: FormEvent) {
     event.preventDefault();
     setSearch(draft.trim());
@@ -88,7 +74,7 @@ export function CatalogSyncFacts({
   }
   function choose(category?: Category) {
     setSelected(category || null);
-    onChange({ category_id: category?.id || "", attributes: {} });
+    onChange(makeCatalogFacts(category, {}));
   }
   return (
     <details
@@ -132,7 +118,7 @@ export function CatalogSyncFacts({
           {query.data && (
             <>
               <label>
-                Категория
+                Категория товара в Ozon
                 <select
                   value={
                     selected &&
@@ -185,29 +171,51 @@ export function CatalogSyncFacts({
               </div>
             </>
           )}
-          {selected && (
+          {selected && schema.isFetching && (
+            <p role="status">Загружаем обязательные характеристики…</p>
+          )}
+          {selected && schema.isError && (
+            <p className="catalog-error" role="alert">
+              Не удалось загрузить характеристики категории.{" "}
+              <button
+                type="button"
+                className="text-action"
+                onClick={() => void schema.refetch()}
+              >
+                Повторить чтение характеристик
+              </button>
+            </p>
+          )}
+          {category && (
             <fieldset>
-              <legend>{selected.name}</legend>
-              <p>Выбранная категория: {selected.name}</p>
-              {selected.attributes.map((attribute) => {
+              <legend>{category.name}</legend>
+              <p>Выбранная категория: {category.name}</p>
+              {(category.attributes || []).map((attribute) => {
                 const value = facts?.attributes[attribute.id] ?? "";
                 const missing = attribute.required && !value.trim();
                 return (
-                  <label key={attribute.id}>
-                    {attribute.name}
-                    {attribute.required ? " (обязательно)" : ""}
-                    {attribute.unit ? `, ${attribute.unit}` : ""}
-                    <FactInput
+                  <div className="catalog-attribute" key={attribute.id}>
+                    <label htmlFor={`${formID}-${attribute.id}`}>
+                      {attribute.name}
+                      {attribute.required ? " (обязательно)" : ""}
+                      {attribute.unit ? `, ${attribute.unit}` : ""}
+                    </label>
+                    <CatalogSyncAttribute
+                      key={`${category.id}:${attribute.id}`}
+                      inputID={`${formID}-${attribute.id}`}
+                      scope={scope}
+                      categoryID={category.id}
                       attribute={attribute}
                       value={value}
-                      onChange={(next) =>
-                        onChange({
-                          category_id: selected.id,
-                          attributes: {
-                            ...facts?.attributes,
-                            [attribute.id]: next,
-                          },
-                        })
+                      choice={facts?.choices?.[attribute.id]}
+                      onChange={(next, option) =>
+                        onChange(
+                          makeCatalogFacts(
+                            category,
+                            { ...facts?.attributes, [attribute.id]: next },
+                            { ...facts?.choices, [attribute.id]: option },
+                          ),
+                        )
                       }
                     />
                     {missing && (
@@ -216,15 +224,19 @@ export function CatalogSyncFacts({
                         полям.
                       </small>
                     )}
-                  </label>
+                  </div>
                 );
               })}
-              {!selected.attributes.length && (
-                <p>
-                  В справочнике нет обязательных характеристик для этой
-                  категории.
-                </p>
-              )}
+              {!schema.isFetching &&
+                !schema.isError &&
+                !!schema.data &&
+                category.attributes_loaded !== false &&
+                !(category.attributes || []).length && (
+                  <p>
+                    В справочнике нет обязательных характеристик для этой
+                    категории.
+                  </p>
+                )}
               <button
                 type="button"
                 className="text-action"
@@ -238,4 +250,75 @@ export function CatalogSyncFacts({
       )}
     </details>
   );
+}
+
+export function makeCatalogFacts(
+  category: Category | undefined,
+  attributes: Record<string, string>,
+  chosen: Record<string, { id: string; name: string } | undefined> = {},
+): ProductFacts {
+  if (!category) return { category_id: "", attributes: {} };
+  const [categoryID, typeID] = category.id.split(":").map(Number);
+  const values: Record<string, CatalogValue> = {};
+  if (
+    Number.isSafeInteger(categoryID) &&
+    categoryID > 0 &&
+    Number.isSafeInteger(typeID) &&
+    typeID > 0
+  ) {
+    values.category = {
+      state: "known",
+      data: { description_category_id: categoryID, type_id: typeID },
+    };
+  }
+  const factual = (category.attributes || [])
+    .filter((attribute) => {
+      if (
+        !attributes[attribute.id]?.trim() ||
+        !Number.isSafeInteger(Number(attribute.id)) ||
+        Number(attribute.id) <= 0
+      )
+        return false;
+      if (!attribute.dictionary && attribute.type !== "select") return true;
+      const option =
+        chosen[attribute.id] ||
+        attribute.options?.find((item) => item.id === attributes[attribute.id]);
+      return (
+        !!option &&
+        Number.isSafeInteger(Number(option.id)) &&
+        Number(option.id) > 0
+      );
+    })
+    .map((attribute) => {
+      const text = attributes[attribute.id];
+      const option =
+        chosen[attribute.id] ||
+        attribute.options?.find((item) => item.id === text);
+      return {
+        id: Number(attribute.id),
+        complex_id: attribute.complex_id || 0,
+        values: [
+          {
+            dictionary_value_id:
+              attribute.type === "select" || attribute.dictionary
+                ? Number(option?.id)
+                : 0,
+            value:
+              attribute.type === "select" || attribute.dictionary
+                ? option?.name || ""
+                : text,
+          },
+        ],
+      };
+    });
+  values.attributes = { state: "known", data: factual };
+  const choices = Object.fromEntries(
+    Object.entries(chosen).filter(([, option]) => option !== undefined),
+  ) as Record<string, { id: string; name: string }>;
+  return {
+    category_id: category.id,
+    attributes,
+    values,
+    ...(Object.keys(choices).length ? { choices } : {}),
+  };
 }

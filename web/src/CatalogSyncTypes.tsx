@@ -55,6 +55,7 @@ export type CatalogConfig = {
   targets: Enrollment[];
   updated_at: string;
   fields?: FieldCapability[];
+  publication_available?: boolean;
 };
 // enrollments is HTTP view metadata joining canonical products to confirmed mappings.
 export type ProductPage = {
@@ -70,12 +71,22 @@ export type Attribute = {
   type: "string" | "number" | "boolean" | "select";
   options?: { id: string; name: string }[];
   unit?: string;
+  complex_id?: number;
+  dictionary?: boolean;
+  options_incomplete?: boolean;
 };
-export type Category = { id: string; name: string; attributes: Attribute[] };
+export type Category = {
+  id: string;
+  name: string;
+  attributes: Attribute[];
+  attributes_loaded?: boolean;
+};
 export type CategoryPage = { items: Category[]; next_cursor?: string };
 export type ProductFacts = {
   category_id: string;
   attributes: Record<string, string>;
+  values?: Record<string, CatalogValue>;
+  choices?: Record<string, { id: string; name: string }>;
 };
 export type FieldIssue = { field?: string; code: string; message?: string };
 export type Change = {
@@ -111,6 +122,7 @@ export type Decision = {
     action: string;
     target: Identity;
     values: Record<string, CatalogValue>;
+    extensions?: Record<string, CatalogValue>;
   }[];
   validation: FieldIssue[];
   ready: boolean;
@@ -175,7 +187,11 @@ export const fieldLabels: Record<string, string> = {
   lifecycle: "Архивирование",
 };
 export const fieldLabel = (field?: string) =>
-  field ? fieldLabels[field] || "Другое поле" : "Товар";
+  field === "vat"
+    ? "НДС"
+    : field
+      ? fieldLabels[field] || "Другое поле"
+      : "Товар";
 export const providerLabel = (provider: string) =>
   provider === "moysklad"
     ? "МойСклад"
@@ -256,6 +272,51 @@ export function displayValue(value?: CatalogValue): string {
 }
 
 const issueLabels: Record<string, string> = {
+  TARGET_OUTCOME_UNRESOLVED:
+    "Результат предыдущей отправки неизвестен. Сначала требуется сверка; повторная отправка недоступна.",
+  CREATED_TARGET_REQUIRES_MAPPING:
+    "Товар уже создан. Подтвердите соответствие товаров перед дальнейшей синхронизацией.",
+  CONFIRMED_MAPPING_CHANGED:
+    "Соответствие товаров изменилось. Обновите выбор и выполните новую проверку.",
+  CREATE_HAS_CONFIRMED_MAPPING:
+    "Для товара уже есть подтверждённое соответствие. Используйте обновление существующего товара.",
+  CREATE_TARGET_NOT_PROVEN_ABSENT:
+    "Не подтверждено отсутствие товара в сервисе. Создание заблокировано, чтобы избежать дубликата.",
+  SOURCE_READ_UNAVAILABLE: "Не удалось прочитать актуальный товар в источнике.",
+  TARGET_READ_UNAVAILABLE:
+    "Не удалось прочитать актуальный товар в сервисе назначения.",
+  SOURCE_CREDENTIALS_UNAVAILABLE:
+    "Проверьте подключение источника в разделе интеграций.",
+  TARGET_CREDENTIALS_UNAVAILABLE:
+    "Проверьте подключение сервиса назначения в разделе интеграций.",
+  VALIDATION_CREDENTIALS_UNAVAILABLE:
+    "Не удалось проверить подключение. Обновите данные интеграции.",
+  CREATION_VALIDATION_UNAVAILABLE:
+    "Сервис пока не поддерживает проверку создания этого товара.",
+  PROVIDER_VALIDATION_UNAVAILABLE:
+    "Проверка данных в сервисе недоступна. Отправка заблокирована.",
+  CREATE_VALUES_INVALID: "Проверьте фактические данные нового товара.",
+  SELECTED_VALUES_INVALID: "Проверьте значения выбранных полей.",
+  REQUIRED_CREATE_FACT: "Укажите обязательные данные для создания товара.",
+  VAT_REQUIRED: "Укажите фактическую ставку НДС для Ozon.",
+  REQUIRED_ATTRIBUTE_MISSING:
+    "Заполните обязательные характеристики выбранной категории.",
+  CATEGORY_NOT_CREATABLE: "Выберите действующую конечную категорию Ozon.",
+  FIELD_NOT_WRITABLE:
+    "Сервис не поддерживает изменение этого поля для выбранной категории.",
+  CATALOG_WRITES_DISABLED:
+    "Отправка изменений для этого аккаунта пока недоступна.",
+  UNSUPPORTED_OPERATION: "Сервис пока не поддерживает эту операцию.",
+  INVALID_PROVIDER_FACTS:
+    "Проверьте обязательные данные, единицы измерения и справочники.",
+  PREFLIGHT_FAILED:
+    "Не удалось проверить данные в сервисе. Выполните проверку позже.",
+  PREFLIGHT_CANCELLED:
+    "Проверка в сервисе не завершена. Выполните новую проверку.",
+  TARGET_CHANGED:
+    "Товар в сервисе изменился. Загрузите актуальные данные и выполните новую проверку.",
+  UNSUPPORTED_ENTITY_TYPE: "Этот тип товара пока не поддерживается.",
+  UNSUPPORTED_ACTION: "Это действие с товаром пока не поддерживается.",
   both_sides_changed: "Оба сервиса изменили поле. Сначала разрешите конфликт.",
   unsupported_write_field: "Передача этого поля пока не поддерживается.",
   ignored: "Поле исключено из синхронизации.",

@@ -72,6 +72,7 @@
   font-weight: 500;
 }
 .catalog-sync input:not([type="checkbox"]),
+.catalog-sync textarea,
 .catalog-sync select {
   min-height: 44px;
   width: 100%;
@@ -99,6 +100,31 @@
   font: inherit;
   cursor: pointer;
   overflow-wrap: anywhere;
+  border: 1px solid #2563eb;
+  background: #2563eb;
+  color: #fff;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 600;
+}
+.catalog-sync button.secondary {
+  background: #fff;
+  color: #334155;
+  border-color: #cbd5e1;
+}
+.catalog-sync button:hover:not(:disabled):not(.text-action) {
+  filter: brightness(0.95);
+}
+.catalog-create-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.catalog-attribute,
+.catalog-attribute-input {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 .catalog-sync button:disabled {
   cursor: default;
@@ -110,7 +136,8 @@
   border: 0;
   text-align: left;
 }
-.catalog-sync :is(button, input, select, summary, [tabindex]):focus-visible {
+.catalog-sync
+  :is(button, input, textarea, select, summary, [tabindex]):focus-visible {
   outline: 3px solid #2563eb;
   outline-offset: 3px;
 }
@@ -188,6 +215,22 @@
 }
 .catalog-diff td {
   white-space: pre-wrap;
+}
+.catalog-value-list {
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+.catalog-value-list dt {
+  font-size: 12px;
+  color: #475569;
+}
+.catalog-value-list dd {
+  margin: 0;
+}
+.catalog-value-attributes {
+  margin: 0;
+  padding-left: 18px;
 }
 .catalog-sync
   :is(.catalog-error, .catalog-warning, .catalog-success, .catalog-empty) {

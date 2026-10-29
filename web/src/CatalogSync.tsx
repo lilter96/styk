@@ -86,7 +86,15 @@ function CatalogSyncAccount({
       );
       return;
     }
-    client.setQueryData(configKey, normalizeConfig(value));
+    client.setQueryData(
+      configKey,
+      normalizeConfig({
+        ...value,
+        fields: value.fields ?? config.data?.fields,
+        publication_available:
+          value.publication_available ?? config.data?.publication_available,
+      }),
+    );
     setDirty(false);
     setPreview(null);
   }
@@ -106,14 +114,20 @@ function CatalogSyncAccount({
     setPreview(null);
     try {
       let current = config.data;
-      const additions = Object.entries(selected)
-        .filter(([id]) => !current.targets.some((target) => target.id === id))
+      const updates = Object.entries(selected)
+        .filter(([id, selection]) => {
+          const existing = current.targets.find((target) => target.id === id);
+          return (
+            !existing ||
+            enrollmentJSON(existing) !== enrollmentJSON(selection.enrollment)
+          );
+        })
         .map(([, selection]) => ({
           ...selection.enrollment,
           automatic: false,
           automatic_fields: [],
         }));
-      if (additions.length) {
+      if (updates.length) {
         current = normalizeConfig(
           await post<CatalogConfig>(
             "/api/catalog-sync/config",
@@ -121,7 +135,13 @@ function CatalogSyncAccount({
               ...scopeBody(scope),
               config: configBody({
                 ...current,
-                targets: [...current.targets, ...additions],
+                targets: [
+                  ...current.targets.filter(
+                    (target) =>
+                      !updates.some((update) => update.id === target.id),
+                  ),
+                  ...updates,
+                ],
               }),
               expected_revision: current.revision,
               idempotency_key: crypto.randomUUID(),
@@ -224,6 +244,13 @@ function CatalogSyncAccount({
           Настройте источники, проверьте разницу и подтвердите выбранные товары.
         </p>
       </header>
+      {config.data?.publication_available === false && (
+        <p className="catalog-warning">
+          Отправка изменений в сервисы для этого аккаунта пока недоступна. Можно
+          настроить каталог и проверить данные. Изменение настройки не снимает
+          ограничение отправки.
+        </p>
+      )}
       {config.isLoading && <p role="status">Загружаем настройки каталога…</p>}
       {config.isError && (
         <p className="catalog-error" role="alert">
@@ -280,6 +307,12 @@ function CatalogSyncAccount({
               отправляет изменения в сервисы.
             </p>
           </div>
+          {(!config.data.enabled || !config.data.test_enabled) && (
+            <p className="catalog-warning">
+              Перед отправкой включите синхронизацию каталога и сохраните
+              настройки. Само включение не подтверждает изменения новых товаров.
+            </p>
+          )}
           {uncertainSelection && (
             <p className="catalog-warning" role="alert">
               Для выбранного товара результат предыдущего подтверждения
@@ -291,7 +324,13 @@ function CatalogSyncAccount({
               key={preview.id}
               preview={preview}
               busy={busy === "approve"}
-              blocked={uncertainSelection || dirty}
+              blocked={
+                uncertainSelection ||
+                dirty ||
+                !config.data.enabled ||
+                !config.data.test_enabled ||
+                config.data.publication_available === false
+              }
               onApprove={(ids) => void approve(ids)}
             />
           )}
@@ -318,14 +357,19 @@ function manualValues(selected: Record<string, ProductSelection>) {
       const values: Record<string, CatalogValue> = {
         ...selection.manual_values,
       };
-      if (selection.facts?.category_id) {
-        values.category = { state: "known", data: selection.facts.category_id };
-        values.attributes = {
-          state: "known",
-          data: selection.facts.attributes,
-        };
+      if (selection.facts?.values) {
+        Object.assign(values, selection.facts.values);
       }
       return [id, values];
     }),
   );
+}
+
+function enrollmentJSON(value: unknown): string {
+  return JSON.stringify(value, (_key, item: unknown) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+    return Object.fromEntries(
+      Object.entries(item).sort(([left], [right]) => left.localeCompare(right)),
+    );
+  });
 }

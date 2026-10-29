@@ -43,17 +43,19 @@ export function CatalogSyncConfig({
       ...(config.fields || []).map((f) => f.field),
     ]),
   ];
-  const dirty =
-    JSON.stringify(policies) !== JSON.stringify(config.rules) ||
-    enabled !== config.enabled ||
-    interval !== config.interval_seconds;
+  function isDirty(next = policies, permission = enabled, seconds = interval) {
+    return (
+      JSON.stringify(next) !== JSON.stringify(config.rules) ||
+      permission !== config.enabled ||
+      seconds !== config.interval_seconds ||
+      (permission && config.publication_available === true) !==
+        config.test_enabled
+    );
+  }
+  const dirty = isDirty();
   function change(next: Record<string, Authority>) {
     setPolicies(next);
-    onDirty(
-      JSON.stringify(next) !== JSON.stringify(config.rules) ||
-        enabled !== config.enabled ||
-        interval !== config.interval_seconds,
-    );
+    onDirty(isDirty(next));
   }
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -75,6 +77,7 @@ export function CatalogSyncConfig({
             scope: scopeBody(scope),
             rules: policies,
             enabled,
+            test_enabled: enabled && config.publication_available === true,
             interval_seconds: interval,
           }),
           expected_revision: config.revision,
@@ -108,11 +111,7 @@ export function CatalogSyncConfig({
             disabled={busy}
             onChange={(event) => {
               setEnabled(event.target.checked);
-              onDirty(
-                JSON.stringify(policies) !== JSON.stringify(config.rules) ||
-                  event.target.checked !== config.enabled ||
-                  interval !== config.interval_seconds,
-              );
+              onDirty(isDirty(policies, event.target.checked));
             }}
           />
           Разрешить синхронизацию каталога для выбранных аккаунтов
@@ -152,11 +151,7 @@ export function CatalogSyncConfig({
             onChange={(event) => {
               const next = event.target.valueAsNumber;
               setInterval(next);
-              onDirty(
-                JSON.stringify(policies) !== JSON.stringify(config.rules) ||
-                  enabled !== config.enabled ||
-                  next !== config.interval_seconds,
-              );
+              onDirty(isDirty(policies, enabled, next));
             }}
           />
           <small>
