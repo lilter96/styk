@@ -92,6 +92,8 @@ func selectTargets(targets []TargetContext, ids []string) ([]TargetContext, erro
 
 func (service Service) decide(ctx context.Context, current ReviewContext, target TargetContext, manual map[catalog.Field]catalog.Value) Decision {
 	decision := Decision{EnrollmentID: target.Enrollment.ID, Mapping: target.Mapping, Baseline: target.Baseline,
+		Source:   catalog.Product{Identity: target.Enrollment.Source, Fields: make(map[catalog.Field]catalog.Value)},
+		Target:   catalog.Product{Identity: target.Enrollment.Target, Fields: make(map[catalog.Field]catalog.Value)},
 		Commands: make([]catalog.Command, 0, 2), Validation: make([]catalog.FieldError, 0)}
 	if target.Fenced {
 		decision.block("TARGET_OUTCOME_UNRESOLVED")

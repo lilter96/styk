@@ -34,6 +34,17 @@ const activeStates = new Set([
   "ACKNOWLEDGED",
 ]);
 
+function targetCaption(work: CatalogWork) {
+  const target = work.command.target;
+  const createdID = target.id
+    ? ""
+    : work.created_target?.id || work.receipt.external_id;
+  const primary = target.offer_id || target.id || createdID || "Новый товар";
+  return createdID && target.offer_id
+    ? `${primary} · ID ${createdID}`
+    : primary;
+}
+
 function WorkResult({ work }: { work: CatalogWork }) {
   const errors = [
     ...(work.receipt.errors || []),
@@ -52,9 +63,7 @@ function WorkResult({ work }: { work: CatalogWork }) {
       </header>
       <p>
         {providerLabel(work.command.target.account.provider)}:{" "}
-        {work.command.target.offer_id ||
-          work.command.target.id ||
-          "Новый товар"}
+        {targetCaption(work)}
       </p>
       {uncertain && (
         <p className="catalog-warning">

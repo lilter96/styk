@@ -144,9 +144,11 @@ export type CatalogWork = {
     values: Record<string, CatalogValue>;
   };
   decision: Decision;
+  created_target?: Identity;
   receipt: {
     state: string;
     task_id?: string;
+    external_id?: string;
     errors?: FieldIssue[];
     products?: {
       id?: string;
