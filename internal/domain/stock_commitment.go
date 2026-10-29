@@ -36,6 +36,9 @@ type StockCalculationPolicy struct {
 	DecisionLifetime  time.Duration
 	// Only a scoped controlled-test policy may accept operator assumptions.
 	AcceptOperatorAttested bool
+	// A scoped, time-limited test policy may explicitly accept a standing
+	// operator assumption; this never represents a fresh provider observation.
+	TestStandingAttestationMaxAge time.Duration
 }
 
 // StockSourceEvidence preserves the exact values and local timestamp of one

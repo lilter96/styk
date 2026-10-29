@@ -38,6 +38,17 @@ func (s *Store) SubmitOzonImport(ctx context.Context, tenant, account, key, sess
 }
 
 func (s *Store) SubmitCatalogImport(ctx context.Context, tenant, provider, account, key, session string, limits domain.ImportLimits) (domain.ImportOperation, bool, error) {
+	return s.submitCatalogImport(ctx, tenant, provider, account, key, session, "LOCAL_OPERATOR_SESSION", limits)
+}
+
+// SubmitScheduledCatalogImport is called only by the scheduler after loading an
+// enabled, audited policy. Its principal identifies the policy rather than a
+// fictitious new operator action.
+func (s *Store) SubmitScheduledCatalogImport(ctx context.Context, tenant, provider, account, key, policy string, limits domain.ImportLimits) (domain.ImportOperation, bool, error) {
+	return s.submitCatalogImport(ctx, tenant, provider, account, key, policy, "AUTOMATIC_POLICY", limits)
+}
+
+func (s *Store) submitCatalogImport(ctx context.Context, tenant, provider, account, key, session, principal string, limits domain.ImportLimits) (domain.ImportOperation, bool, error) {
 	operationType, taskType := domain.OzonCatalogImport, domain.OzonCatalogTask
 	if provider == "moysklad" {
 		operationType, taskType = domain.MoyskladCatalogImport, domain.MoyskladCatalogTask
@@ -78,7 +89,7 @@ func (s *Store) SubmitCatalogImport(ctx context.Context, tenant, provider, accou
 		return domain.ImportOperation{}, false, ErrImportScope
 	}
 	var inserted string
-	err = tx.QueryRow(ctx, `INSERT INTO ozon_import_operations(id,tenant_id,account_id,operation_type,idempotency_key,request_fingerprint,principal_type,session_audit_id,limits,provider) VALUES($1,$2,$3,$4,$5,$6,'LOCAL_OPERATOR_SESSION',$7,$8,$9) ON CONFLICT(tenant_id,idempotency_key) DO NOTHING RETURNING id`, id, tenant, account, operationType, key, fingerprint, session, rawLimits, provider).Scan(&inserted)
+	err = tx.QueryRow(ctx, `INSERT INTO ozon_import_operations(id,tenant_id,account_id,operation_type,idempotency_key,request_fingerprint,principal_type,session_audit_id,limits,provider) VALUES($1,$2,$3,$4,$5,$6,$10,$7,$8,$9) ON CONFLICT(tenant_id,idempotency_key) DO NOTHING RETURNING id`, id, tenant, account, operationType, key, fingerprint, session, rawLimits, provider, principal).Scan(&inserted)
 	replay := false
 	if errors.Is(err, pgx.ErrNoRows) {
 		var existingFingerprint, existingAccount string

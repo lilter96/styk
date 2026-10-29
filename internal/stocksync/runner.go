@@ -22,6 +22,28 @@ type Runner struct {
 	ResolveOzon    func(context.Context, string, string) (*ozon.Client, error)
 }
 
+// MaintainPresence runs independently of a potentially long catalog traversal.
+// Heartbeats make active test workers visible to the operator recovery gate;
+// an expired heartbeat still cannot prove that a remote request has finished.
+func (r Runner) MaintainPresence(ctx context.Context) {
+	if !r.ControlledTest || !r.Enabled || r.Store == nil {
+		return
+	}
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		_ = r.Store.TouchTestStockWorker(ctx, r.WorkerID, time.Now().UTC())
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
 func (r Runner) RunNext(ctx context.Context) (bool, error) {
 	if !r.Enabled {
 		return false, nil

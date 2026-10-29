@@ -85,7 +85,11 @@ func Evaluate(req domain.StockCalculationRequest, e domain.StockEvidence, now ti
 	if e.CustomerOrders != nil {
 		orders := e.CustomerOrders
 		coverage, provided := e.Proofs[ProofCustomerOrders]
-		coverageVerified := provided && proofAccepted(coverage, req.Policy) && strings.TrimSpace(coverage.Reference) != "" && !coverage.AsOf.IsZero() && !coverage.AsOf.After(now) && coverage.ValidUntil.After(now) && sourceFreshness != nil && !coverage.AsOf.After(*sourceFreshness) && coverage.ValidUntil.Sub(coverage.AsOf) <= 15*time.Minute
+		coverageLimit := 15 * time.Minute
+		if coverage.State == domain.ProofAttested && req.Policy.AcceptOperatorAttested && req.Policy.TestStandingAttestationMaxAge > 0 && req.Policy.TestStandingAttestationMaxAge <= 24*time.Hour {
+			coverageLimit = req.Policy.TestStandingAttestationMaxAge
+		}
+		coverageVerified := provided && proofAccepted(coverage, req.Policy) && strings.TrimSpace(coverage.Reference) != "" && !coverage.AsOf.IsZero() && !coverage.AsOf.After(now) && coverage.ValidUntil.After(now) && sourceFreshness != nil && !coverage.AsOf.After(*sourceFreshness) && coverage.ValidUntil.Sub(coverage.AsOf) <= coverageLimit
 		coverageDescription := "Complete customer-order and reservation coverage, including baseline inclusion, was explicitly verified."
 		if coverage.State == domain.ProofAttested {
 			coverageDescription = "Customer-order coverage is an operator-attested test assumption, not independent provider evidence."

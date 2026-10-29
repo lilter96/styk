@@ -29,6 +29,61 @@ func registerStockSyncRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c 
 	mux.HandleFunc("POST /api/stock-sync/disable", a.authorized(a.connectionMutation(api.disable)))
 	mux.HandleFunc("POST /api/stock-sync/operations/{id}/reconcile", a.authorized(a.connectionMutation(api.reconcile)))
 	mux.HandleFunc("POST /api/stock-sync/operations/{id}/supersede", a.authorized(a.connectionMutation(api.supersede)))
+	mux.HandleFunc("GET /api/stock-sync/automatic", a.authorized(api.automaticStatus))
+	mux.HandleFunc("POST /api/stock-sync/automatic", a.authorized(a.connectionMutation(api.automaticConfigure)))
+	mux.HandleFunc("POST /api/stock-sync/automatic/run", a.authorized(a.connectionMutation(api.automaticRun)))
+}
+
+func (a *stockSyncAPI) automaticStatus(w http.ResponseWriter, r *http.Request) {
+	scope := syncScope(r)
+	if !scope.Valid() {
+		writeError(w, 400, "INVALID_SCOPE")
+		return
+	}
+	view, err := a.db.AutomaticStockStatus(r.Context(), scope)
+	if err != nil {
+		stockSyncError(w, err)
+		return
+	}
+	writeJSON(w, view)
+}
+
+func (a *stockSyncAPI) automaticConfigure(w http.ResponseWriter, r *http.Request) {
+	var req domain.AutomaticStockRequest
+	if !decodeStockSync(w, r, &req) {
+		return
+	}
+	req.SessionID, _ = r.Context().Value(auditContextKey{}).(string)
+	if req.SessionID == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED")
+		return
+	}
+	view, err := a.db.ConfigureAutomaticStock(r.Context(), req, time.Now().UTC())
+	if err != nil {
+		stockSyncError(w, err)
+		return
+	}
+	writeJSON(w, view)
+}
+
+func (a *stockSyncAPI) automaticRun(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		domain.StockSyncScope
+		Acknowledge bool `json:"acknowledge"`
+	}
+	if !decodeStockSync(w, r, &req) {
+		return
+	}
+	if !req.Acknowledge {
+		writeError(w, 400, "INVALID_REQUEST")
+		return
+	}
+	view, err := a.db.RequestAutomaticCycle(r.Context(), req.StockSyncScope, time.Now().UTC())
+	if err != nil {
+		stockSyncError(w, err)
+		return
+	}
+	writeJSON(w, view)
 }
 
 // shadow exposes only a bounded projection of the existing status calculation.

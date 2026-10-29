@@ -195,6 +195,9 @@ func (c *Client) get(ctx context.Context, path string, q url.Values) ([]byte, er
 			hc = b.http
 		}
 		resp, err := hc.Do(req)
+		if err == nil && resp.StatusCode == http.StatusTooManyRequests && b != nil {
+			b.counts.RateLimitResponses++
+		}
 		var retry bool
 		var delay time.Duration
 		var last error

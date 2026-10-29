@@ -108,3 +108,16 @@ func TestBoundedRetriesCountNetworkAttempts(t *testing.T) {
 		t.Fatalf("retry escaped attempt budget: %v %+v calls=%d", err, counts, calls)
 	}
 }
+
+func TestBoundedReadCountsRateLimitResponses(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer s.Close()
+	l := Limits{Requests: 5, Attempts: 1, Pages: 5, Entities: 5, Products: 5, Warehouses: 5, Observations: 5, Postings: 5, ResponseBytes: 1024, Duration: time.Second}
+	_, c, err := newTestClient(t, s).ReadBounded(context.Background(), l)
+	if err == nil || c.Attempts != 1 || c.RateLimitResponses != 1 {
+		t.Fatalf("rate limit was not recorded: %+v %v", c, err)
+	}
+}

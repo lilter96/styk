@@ -1,0 +1,248 @@
+package postgres
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strconv"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/lilter96/styk/internal/commitment"
+	"github.com/lilter96/styk/internal/domain"
+	"github.com/lilter96/styk/internal/testpublication"
+)
+
+var automaticProofCodes = []string{commitment.ProofUnit, commitment.ProofBaseline, commitment.ProofSourceOrdering, commitment.ProofUnassigned, commitment.ProofAttribution, commitment.ProofPostingCoverage, commitment.ProofCompeting, commitment.ProofBound, commitment.ProofCustomerOrders}
+
+// automaticAttestation preserves the time of the operator's original policy
+// acceptance. It never invents a new verification time during later cycles.
+func automaticAttestation(p domain.AutomaticStockPolicy, target domain.AutomaticStockTarget) domain.StockSyncAttestation {
+	a := domain.StockSyncAttestation{ProductID: target.ProductID, WarehouseID: target.WarehouseID, Unreflected: target.Unreflected, UnseenBound: target.UnseenBound, SafetyStock: target.SafetyStock, AutomaticPolicyRevision: p.Revision}
+	reference := fmt.Sprintf("standing OPERATOR_ATTESTED test policy revision %d; account and target scoped; no independent proof of order coverage or competing exposure", p.Revision)
+	for _, code := range automaticProofCodes {
+		a.Proofs = append(a.Proofs, domain.StockSyncProof{Code: code, Reference: reference, AsOf: p.CreatedAt, ValidUntil: p.ValidUntil})
+	}
+	return a
+}
+
+func authorizedAutomaticAttestation(ctx context.Context, tx pgx.Tx, scope domain.StockSyncScope, a domain.StockSyncAttestation, now time.Time) (*domain.AutomaticStockTarget, error) {
+	if !testpublication.Enabled(scope) || a.AutomaticPolicyRevision <= 0 {
+		return nil, nil
+	}
+	var raw []byte
+	err := tx.QueryRow(ctx, `SELECT v.snapshot FROM stock_auto_configs c JOIN stock_auto_config_audits v USING(tenant_id,moysklad_account,ozon_account,revision) WHERE c.tenant_id=$1 AND c.moysklad_account=$2 AND c.ozon_account=$3 AND c.enabled AND v.enabled AND c.revision=$4 FOR SHARE OF c`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, a.AutomaticPolicyRevision).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var p domain.AutomaticStockPolicy
+	if err = json.Unmarshal(raw, &p); err != nil {
+		return nil, err
+	}
+	if p.StockSyncScope != scope || !p.Enabled || p.Revision != a.AutomaticPolicyRevision || p.CreatedAt.After(now) || !p.ValidUntil.After(now) || p.ValidUntil.Sub(p.CreatedAt) > 24*time.Hour || p.EvidenceClass != "OPERATOR_ATTESTED" {
+		return nil, nil
+	}
+	for _, target := range p.Targets {
+		if target.ProductID == a.ProductID && target.WarehouseID == a.WarehouseID && syncHash(automaticAttestation(p, target)) == syncHash(a) {
+			copy := target
+			return &copy, nil
+		}
+	}
+	return nil, nil
+}
+
+func loadAutomaticPolicy(ctx context.Context, tx pgx.Tx, scope domain.StockSyncScope) (domain.AutomaticStockPolicy, error) {
+	var raw []byte
+	err := tx.QueryRow(ctx, `SELECT v.snapshot FROM stock_auto_configs c JOIN stock_auto_config_audits v USING(tenant_id,moysklad_account,ozon_account,revision) WHERE c.tenant_id=$1 AND c.moysklad_account=$2 AND c.ozon_account=$3`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount).Scan(&raw)
+	if err != nil {
+		return domain.AutomaticStockPolicy{}, err
+	}
+	var p domain.AutomaticStockPolicy
+	err = json.Unmarshal(raw, &p)
+	return p, err
+}
+
+func (s *Store) ConfigureAutomaticStock(ctx context.Context, req domain.AutomaticStockRequest, now time.Time) (domain.AutomaticStockView, error) {
+	scope := req.StockSyncScope
+	if !testpublication.Enabled(scope) || !req.Acknowledge || req.SessionID == "" || len(req.SessionID) > 128 || len(req.IdempotencyKey) < 16 || len(req.IdempotencyKey) > 128 {
+		return domain.AutomaticStockView{}, domain.ErrStockSyncInvalid
+	}
+	if req.Enabled && (req.IntervalSeconds < 30 || req.IntervalSeconds > 3600 || req.ValidMinutes < 1 || req.ValidMinutes > 1440 || req.Maximum < 0 || req.Maximum > testpublication.MaxQuantity || !syncQuantity(&req.SafetyStock) || !syncQuantity(&req.Unreflected) || !syncQuantity(&req.UnseenBound)) {
+		return domain.AutomaticStockView{}, domain.ErrStockSyncInvalid
+	}
+	now = now.UTC().Truncate(time.Microsecond)
+	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
+	defer cancel()
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return domain.AutomaticStockView{}, err
+	}
+	defer tx.Rollback(context.Background())
+	if err = syncLock(ctx, tx, scope); err != nil {
+		return domain.AutomaticStockView{}, err
+	}
+	requestHash := syncHash(req)
+	var oldHash string
+	err = tx.QueryRow(ctx, `SELECT request_hash FROM stock_auto_config_audits WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND idempotency_key=$4`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, req.IdempotencyKey).Scan(&oldHash)
+	if err == nil {
+		if oldHash != requestHash {
+			return domain.AutomaticStockView{}, domain.ErrStockSyncConflict
+		}
+		if err = tx.Commit(ctx); err != nil {
+			return domain.AutomaticStockView{}, err
+		}
+		return s.AutomaticStockStatus(ctx, scope)
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return domain.AutomaticStockView{}, err
+	}
+	var owned bool
+	if err = tx.QueryRow(ctx, `SELECT count(*)=2 FROM stock_connections WHERE tenant_id=$1 AND ((source='moysklad' AND account_id=$2) OR (source='ozon' AND account_id=$3))`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount).Scan(&owned); err != nil {
+		return domain.AutomaticStockView{}, err
+	}
+	if !owned {
+		return domain.AutomaticStockView{}, domain.ErrStockSyncNotFound
+	}
+	// Do not start or change a policy over any active or unknown target.
+	var fenced bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_publication_target_fences f WHERE f.ozon_account=$1 AND f.product_id=$2 AND f.warehouse_id=$3)`, scope.OzonAccount, testpublication.OzonProduct, testpublication.OzonWarehouse).Scan(&fenced); err != nil {
+		return domain.AutomaticStockView{}, err
+	}
+	if req.Enabled && fenced {
+		return domain.AutomaticStockView{}, domain.ErrStockSyncBlocked
+	}
+	var p domain.AutomaticStockPolicy
+	if req.Enabled {
+		var t domain.AutomaticStockTarget
+		var kind string
+		t.ProductID, t.WarehouseID = req.ProductID, req.WarehouseID
+		err = tx.QueryRow(ctx, `SELECT pm.id,pm.version,pm.target_kind,pm.target_id,wm.id,wm.version,wm.moysklad_warehouse_id FROM product_mappings pm JOIN warehouse_mappings wm ON wm.tenant_id=pm.tenant_id AND wm.moysklad_account=pm.moysklad_account AND wm.ozon_account=pm.ozon_account WHERE pm.tenant_id=$1 AND pm.moysklad_account=$2 AND pm.ozon_account=$3 AND pm.ozon_product_id=$4 AND wm.ozon_warehouse_id=$5 AND wm.status='active' AND EXISTS(SELECT 1 FROM product_mapping_confirmation_audits a WHERE a.mapping_id=pm.id AND a.mapping_version=pm.version) AND EXISTS(SELECT 1 FROM warehouse_mapping_confirmation_audits a WHERE a.mapping_id=wm.id AND a.mapping_version=wm.version) FOR SHARE OF pm,wm`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, req.ProductID, req.WarehouseID).Scan(&t.ProductMappingID, &t.ProductMappingVersion, &kind, &t.SourceItemID, &t.WarehouseMappingID, &t.WarehouseMappingVersion, &t.SourceWarehouseID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.AutomaticStockView{}, domain.ErrStockSyncBlocked
+		}
+		if err != nil {
+			return domain.AutomaticStockView{}, err
+		}
+		if kind != "product" || !testpublication.TargetAllowed(scope, t.ProductID, t.WarehouseID, t.SourceItemID, t.SourceWarehouseID, strconv.FormatInt(req.Maximum, 10)) {
+			return domain.AutomaticStockView{}, domain.ErrStockSyncBlocked
+		}
+		t.SafetyStock, t.Unreflected, t.UnseenBound, t.Maximum = req.SafetyStock, req.Unreflected, req.UnseenBound, req.Maximum
+		p = domain.AutomaticStockPolicy{StockSyncScope: scope, Enabled: true, IntervalSeconds: req.IntervalSeconds, CreatedAt: now, ValidUntil: now.Add(time.Duration(req.ValidMinutes) * time.Minute), Targets: []domain.AutomaticStockTarget{t}, EvidenceClass: "OPERATOR_ATTESTED"}
+	} else {
+		p, err = loadAutomaticPolicy(ctx, tx, scope)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.AutomaticStockView{}, domain.ErrStockSyncNotFound
+		}
+		if err != nil {
+			return domain.AutomaticStockView{}, err
+		}
+		p.Enabled, p.CreatedAt = false, now
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO stock_sync_settings(tenant_id,moysklad_account,ozon_account,enabled,updated_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(tenant_id,moysklad_account,ozon_account) DO UPDATE SET enabled=EXCLUDED.enabled,review_id=NULL,updated_at=EXCLUDED.updated_at`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, req.Enabled, now)
+	if err != nil {
+		return domain.AutomaticStockView{}, err
+	}
+	var revision int64
+	err = tx.QueryRow(ctx, `INSERT INTO stock_auto_configs(tenant_id,moysklad_account,ozon_account,revision,enabled,next_run_at) VALUES($1,$2,$3,1,$4,CASE WHEN $4 THEN $5::timestamptz ELSE NULL END) ON CONFLICT(tenant_id,moysklad_account,ozon_account) DO UPDATE SET revision=stock_auto_configs.revision+1,enabled=EXCLUDED.enabled,next_run_at=EXCLUDED.next_run_at RETURNING revision`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, req.Enabled, now).Scan(&revision)
+	if err != nil {
+		return domain.AutomaticStockView{}, err
+	}
+	p.Revision = revision
+	raw, err := json.Marshal(p)
+	if err != nil {
+		return domain.AutomaticStockView{}, err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO stock_auto_config_audits(tenant_id,moysklad_account,ozon_account,revision,enabled,snapshot,principal_type,session_audit_id,idempotency_key,request_hash,created_at) VALUES($1,$2,$3,$4,$5,$6,'LOCAL_OPERATOR_SESSION',$7,$8,$9,$10)`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, revision, req.Enabled, raw, req.SessionID, req.IdempotencyKey, requestHash, now); err != nil {
+		return domain.AutomaticStockView{}, err
+	}
+	// A changed or paused configuration invalidates unclaimed decisions, but it
+	// cannot retract a request that has already left a worker.
+	if _, err = tx.Exec(ctx, `UPDATE stock_auto_cycles SET state='CANCELLED',outcome='CONFIGURATION_CHANGED',finished_at=$4 WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND state IN ('STARTING','READING','WAITING_PUBLICATION')`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, now); err != nil {
+		return domain.AutomaticStockView{}, err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE stock_publication_targets t SET state='CANCELLED',safe_error='SYNC_DISABLED',finished_at=$4 FROM stock_publications p WHERE t.operation_id=p.id AND p.tenant_id=$1 AND p.moysklad_account=$2 AND p.ozon_account=$3 AND t.state='QUEUED'`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, now); err != nil {
+		return domain.AutomaticStockView{}, err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE outbox_tasks q SET state='cancelled',last_error='SYNC_DISABLED',updated_at=$4 FROM stock_publications p WHERE q.publication_operation_id=p.id AND p.tenant_id=$1 AND p.moysklad_account=$2 AND p.ozon_account=$3 AND q.state='pending'`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, now); err != nil {
+		return domain.AutomaticStockView{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return domain.AutomaticStockView{}, err
+	}
+	return s.AutomaticStockStatus(ctx, scope)
+}
+
+func (s *Store) AutomaticStockStatus(ctx context.Context, scope domain.StockSyncScope) (domain.AutomaticStockView, error) {
+	view := domain.AutomaticStockView{Available: testpublication.Enabled(scope)}
+	if !view.Available {
+		return view, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
+	defer cancel()
+	var raw []byte
+	err := s.Pool.QueryRow(ctx, `SELECT v.snapshot,c.next_run_at,c.last_cycle_at FROM stock_auto_configs c JOIN stock_auto_config_audits v USING(tenant_id,moysklad_account,ozon_account,revision) WHERE c.tenant_id=$1 AND c.moysklad_account=$2 AND c.ozon_account=$3`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount).Scan(&raw, &view.NextRunAt, &view.LastCycleAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return view, nil
+	}
+	if err != nil {
+		return view, err
+	}
+	var policy domain.AutomaticStockPolicy
+	if err = json.Unmarshal(raw, &policy); err != nil {
+		return view, err
+	}
+	view.Policy = &policy
+	var cycle domain.AutomaticStockCycle
+	var metrics []byte
+	err = s.Pool.QueryRow(ctx, `SELECT id,config_revision,state,outcome,started_at,finished_at,COALESCE(moysklad_import_id,''),COALESCE(ozon_import_id,''),COALESCE(publication_id,''),reconcile_attempts,metrics FROM stock_auto_cycles WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 ORDER BY started_at DESC,id DESC LIMIT 1`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount).Scan(&cycle.ID, &cycle.ConfigRevision, &cycle.State, &cycle.Outcome, &cycle.StartedAt, &cycle.FinishedAt, &cycle.MoyskladImportID, &cycle.OzonImportID, &cycle.PublicationID, &cycle.ReconcileAttempts, &metrics)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return view, nil
+	}
+	if err != nil {
+		return view, err
+	}
+	if err = json.Unmarshal(metrics, &cycle.Metrics); err != nil {
+		return view, err
+	}
+	view.LastCycle = &cycle
+	return view, nil
+}
+
+// RequestAutomaticCycle advances the next due time only. It never performs a
+// provider request or removes a target fence.
+func (s *Store) RequestAutomaticCycle(ctx context.Context, scope domain.StockSyncScope, now time.Time) (domain.AutomaticStockView, error) {
+	if !testpublication.Enabled(scope) {
+		return domain.AutomaticStockView{}, domain.ErrStockSyncInvalid
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
+	defer cancel()
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return domain.AutomaticStockView{}, err
+	}
+	defer tx.Rollback(context.Background())
+	if err = syncLock(ctx, tx, scope); err != nil {
+		return domain.AutomaticStockView{}, err
+	}
+	p, err := loadAutomaticPolicy(ctx, tx, scope)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.AutomaticStockView{}, domain.ErrStockSyncNotFound
+	}
+	if err != nil {
+		return domain.AutomaticStockView{}, err
+	}
+	if !p.Enabled || !p.ValidUntil.After(now) {
+		return domain.AutomaticStockView{}, domain.ErrStockSyncBlocked
+	}
+	if _, err = tx.Exec(ctx, `UPDATE stock_auto_configs SET next_run_at=$4 WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND enabled AND revision=$5 AND NOT EXISTS(SELECT 1 FROM stock_auto_cycles WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND state IN ('STARTING','READING','WAITING_PUBLICATION'))`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, now, p.Revision); err != nil {
+		return domain.AutomaticStockView{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return domain.AutomaticStockView{}, err
+	}
+	return s.AutomaticStockStatus(ctx, scope)
+}

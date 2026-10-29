@@ -42,6 +42,8 @@ type ImportCounts struct {
 	Products              int `json:"products"`
 	Warehouses            int `json:"warehouses"`
 	Observations          int `json:"observations"`
+	HTTPStatus            int `json:"http_status,omitempty"`
+	RateLimitResponses    int `json:"rate_limit_responses,omitempty"`
 }
 type ImportOperation struct {
 	ID               string       `json:"id"`

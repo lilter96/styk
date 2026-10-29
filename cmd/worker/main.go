@@ -218,5 +218,13 @@ func run() error {
 			return ozon.NewControlledTestStockClient(scope, key)
 		}}
 	}
-	return (application.Worker{Publications: publications, StoredCredentials: vault != nil, MoyskladImportAccount: moyClaim, Store: db, Handler: application.MockHandler{}, Imports: imports, ImportAccount: claimAccount, Log: slog.Default(), Poll: c.PollInterval, Lease: c.LeaseDuration, Retry: c.RetryDelay}).Run(ctx)
+	var automatic application.PublicationRunner
+	if controlled {
+		automatic = stocksync.AutomaticRunner{Store: db, Publisher: publications, Log: slog.Default()}
+		presenceCtx, stopPresence := context.WithCancel(ctx)
+		presenceDone := make(chan struct{})
+		go func() { defer close(presenceDone); publications.MaintainPresence(presenceCtx) }()
+		defer func() { stopPresence(); <-presenceDone }()
+	}
+	return (application.Worker{Publications: publications, Automatic: automatic, StoredCredentials: vault != nil, MoyskladImportAccount: moyClaim, Store: db, Handler: application.MockHandler{}, Imports: imports, ImportAccount: claimAccount, Log: slog.Default(), Poll: c.PollInterval, Lease: c.LeaseDuration, Retry: c.RetryDelay}).Run(ctx)
 }

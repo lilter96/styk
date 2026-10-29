@@ -28,7 +28,7 @@ type Runner struct {
 }
 
 func counts(c ozon.Counts) domain.ImportCounts {
-	return domain.ImportCounts{Requests: c.Requests, Attempts: c.Attempts, Pages: c.Pages, CompletedRequests: c.CompletedRequests, CompletedPages: c.CompletedPages, Products: c.Products, Warehouses: c.Warehouses, Observations: c.Observations}
+	return domain.ImportCounts{Requests: c.Requests, Attempts: c.Attempts, Pages: c.Pages, CompletedRequests: c.CompletedRequests, CompletedPages: c.CompletedPages, Products: c.Products, Warehouses: c.Warehouses, Observations: c.Observations, RateLimitResponses: c.RateLimitResponses}
 }
 
 var errProgress = errors.New("cannot persist import progress")
@@ -137,6 +137,16 @@ func (r Runner) ProcessImport(parent context.Context, t domain.Task, lease time.
 		resource := execution.LimitingResource
 		var ml *moysklad.LimitError
 		var ma *moysklad.APIError
+		var oa *ozon.APIError
+		if errors.As(readErr, &oa) {
+			observed.HTTPStatus = oa.Status
+		}
+		if errors.As(readErr, &ma) {
+			observed.HTTPStatus = ma.Status
+		}
+		if observed.HTTPStatus == 429 && observed.RateLimitResponses == 0 {
+			observed.RateLimitResponses = 1
+		}
 		if errors.As(readErr, &ml) {
 			outcome, resource = "LIMIT_REACHED", ml.Resource
 		}

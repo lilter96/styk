@@ -12,6 +12,20 @@ import (
 	"time"
 )
 
+func TestBoundedReadCountsRateLimitResponses(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer s.Close()
+	l := domain.DefaultMoyskladImportLimits()
+	l.Attempts = 1
+	_, counts, err := client(t, s).ReadBoundedProgress(context.Background(), "acct", l, nil)
+	if err == nil || counts.Attempts != 1 || counts.RateLimitResponses != 1 {
+		t.Fatalf("rate limit was not recorded: %+v %v", counts, err)
+	}
+}
+
 func TestCatalogBudgetsStopBeforeNextSend(t *testing.T) {
 	for _, resource := range []string{"requests", "attempts", "pages", "products", "variants", "warehouses", "observations", "warehouse_observations", "response_bytes"} {
 		t.Run(resource, func(t *testing.T) {

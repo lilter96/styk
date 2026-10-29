@@ -226,6 +226,9 @@ func (c *Client) post(ctx context.Context, path string, body any, out any) error
 			}
 		}
 		resp, e := c.http.Do(req)
+		if e == nil && resp.StatusCode == http.StatusTooManyRequests && b != nil {
+			b.counts.RateLimitResponses++
+		}
 		var last error
 		retry := false
 		var delay time.Duration

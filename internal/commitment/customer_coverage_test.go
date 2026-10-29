@@ -59,3 +59,31 @@ func TestCustomerCoverageNeverOverridesKnownContradictions(t *testing.T) {
 		})
 	}
 }
+
+func TestStandingTestAssumptionIsExplicitBoundedAndNotFreshEvidence(t *testing.T) {
+	r, e, now := provenFixture()
+	e.CustomerOrders = &domain.StockCustomerOrderEvidence{}
+	original := now.Add(-time.Hour)
+	e.Proofs[ProofCustomerOrders] = domain.StockProof{State: domain.ProofAttested, EvidenceClass: "OPERATOR_ATTESTED", Reference: "original test policy", AsOf: original, ValidUntil: original.Add(2 * time.Hour)}
+	r.Policy.AcceptOperatorAttested = true
+	if d := Evaluate(r, e, now); d.Status == domain.StockReady {
+		t.Fatal("ordinary short-lived policy accepted a standing assumption")
+	}
+	r.Policy.TestStandingAttestationMaxAge = 24 * time.Hour
+	d := Evaluate(r, e, now)
+	if d.Status != domain.StockReady || !d.Evidence.Proofs[ProofCustomerOrders].AsOf.Equal(original) {
+		t.Fatalf("standing assumption was lost or refreshed: %+v", d.ReasonCodes)
+	}
+	proof := e.Proofs[ProofCustomerOrders]
+	proof.ValidUntil = original.Add(25 * time.Hour)
+	e.Proofs[ProofCustomerOrders] = proof
+	if d = Evaluate(r, e, now); d.Status == domain.StockReady {
+		t.Fatal("policy exceeded its maximum validity")
+	}
+	proof.ValidUntil = original.Add(2 * time.Hour)
+	proof.State = domain.ProofVerified
+	e.Proofs[ProofCustomerOrders] = proof
+	if d = Evaluate(r, e, now); d.Status == domain.StockReady {
+		t.Fatal("long validity was applied to purported provider evidence")
+	}
+}

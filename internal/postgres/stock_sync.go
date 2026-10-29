@@ -72,7 +72,7 @@ func validateAttestations(items []domain.StockSyncAttestation, now time.Time) er
 	seen := map[string]bool{}
 	for _, a := range items {
 		key := a.ProductID + ":" + a.WarehouseID
-		if a.ProductID == "" || a.WarehouseID == "" || seen[key] || len(a.Proofs) > 9 {
+		if a.ProductID == "" || a.WarehouseID == "" || seen[key] || len(a.Proofs) > 9 || a.AutomaticPolicyRevision != 0 {
 			return errors.New("invalid or duplicate target attestation")
 		}
 		seen[key] = true
@@ -194,6 +194,18 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 	for _, t := range targets {
 		a, attested := inputs[t.pid+":"+t.wid]
 		r := domain.StockCalculationRequest{Pool: domain.StockPool{Tenant: scope.Tenant, MoyskladAccount: scope.MoyskladAccount, WarehouseID: t.sourceWarehouse, ItemKind: t.kind, ItemID: t.item}, Target: domain.StockTarget{OzonAccount: scope.OzonAccount, WarehouseID: t.wid, ProductID: t.pid}, Policy: domain.StockCalculationPolicy{Version: 1, Unit: "piece", SafetyStock: a.SafetyStock, MaxObservationAge: 15 * time.Minute, DecisionLifetime: 2 * time.Minute, AcceptOperatorAttested: testpublication.Enabled(scope)}}
+		var automaticTarget *domain.AutomaticStockTarget
+		automaticValid := a.AutomaticPolicyRevision == 0
+		if a.AutomaticPolicyRevision != 0 {
+			automaticTarget, err = authorizedAutomaticAttestation(ctx, tx, scope, a, now)
+			if err != nil {
+				return review, err
+			}
+			automaticValid = automaticTarget != nil
+			if automaticValid {
+				r.Policy.TestStandingAttestationMaxAge = 24 * time.Hour
+			}
+		}
 		e := domain.StockEvidence{Connections: connections, Proofs: map[string]domain.StockProof{}}
 		registered := connections[0].RegisteredAt
 		if connections[1].RegisteredAt.After(registered) {
@@ -232,6 +244,12 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 		}
 		d := commitment.Evaluate(r, e, now)
 		checks := syncChecks(d)
+		if a.AutomaticPolicyRevision != 0 {
+			if automaticTarget != nil {
+				automaticValid = e.ProductMapping != nil && e.WarehouseMapping != nil && e.ProductMapping.ID == automaticTarget.ProductMappingID && e.ProductMapping.Version == automaticTarget.ProductMappingVersion && e.WarehouseMapping.ID == automaticTarget.WarehouseMappingID && e.WarehouseMapping.Version == automaticTarget.WarehouseMappingVersion && t.item == automaticTarget.SourceItemID && t.sourceWarehouse == automaticTarget.SourceWarehouseID
+			}
+			checks = append(checks, domain.StockSyncCheck{Code: "AUTOMATIC_POLICY_CHANGED", Passed: automaticValid, Message: "Выбранные соответствия и тестовые допущения автоматической синхронизации действуют."})
+		}
 		// A historical mapping does not prove the latest catalog still refers
 		// to the same offer, SKU, source entity, or FBS warehouse.
 		var sourceIdentity, productIdentity, warehouseIdentity bool
@@ -355,7 +373,12 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 			testAllowed = approved && testpublication.TargetAllowed(scope, t.pid, t.wid, t.item, t.sourceWarehouse, quantity)
 			checks = append(checks, domain.StockSyncCheck{Code: "TEST_TARGET_ALLOWED", Passed: testAllowed, Message: "Тестовая пара, подтверждённые соответствия и ограничение количества проверены."})
 		}
-		ready := d.Status == domain.StockReady && validIDs && stockComplete && qtyValid && settled && sourceIdentity && productIdentity && warehouseIdentity && orderingValid && validStockValues && sourceTraversalFresh && marketTraversalFresh && beforeTraversal && testAllowed && recoveryFresh
+		if automaticTarget != nil && d.Quantity != nil {
+			quantity, parseErr := strconv.ParseInt(*d.Quantity, 10, 64)
+			automaticValid = automaticValid && parseErr == nil && quantity <= automaticTarget.Maximum
+			checks = append(checks, domain.StockSyncCheck{Code: "AUTOMATIC_MAXIMUM_EXCEEDED", Passed: parseErr == nil && quantity <= automaticTarget.Maximum, Message: "Расчёт не превышает настроенный предел тестовой публикации."})
+		}
+		ready := d.Status == domain.StockReady && validIDs && stockComplete && qtyValid && settled && sourceIdentity && productIdentity && warehouseIdentity && orderingValid && validStockValues && sourceTraversalFresh && marketTraversalFresh && beforeTraversal && testAllowed && recoveryFresh && automaticValid
 		item := domain.StockSyncTarget{SettlementOperationID: settlementID, SettlementObservedAt: settlementAt, ProductID: t.pid, WarehouseID: t.wid, SourceItemID: t.item, SourceWarehouseID: t.sourceWarehouse, SourceImportID: e.Source.ImportID, SourcePhysical: e.Source.Physical, SourceReserve: e.Source.Reserve, MarketplaceFree: e.Marketplace.FreeStock, MarketplacePresent: e.Marketplace.Present, MarketplaceReserved: e.Marketplace.Reserved, Status: string(d.Status), Checks: checks, Decision: d}
 		if e.ProductMapping != nil {
 			item.ProductMappingVersion = e.ProductMapping.Version
@@ -522,6 +545,13 @@ func (s *Store) MutateStockSync(ctx context.Context, scope domain.StockSyncScope
 	defer tx.Rollback(context.Background())
 	if err = syncLock(ctx, tx, scope); err != nil {
 		return domain.StockSyncView{}, err
+	}
+	var automaticEnabled bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_auto_configs WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND enabled)`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount).Scan(&automaticEnabled); err != nil {
+		return domain.StockSyncView{}, err
+	}
+	if automaticEnabled {
+		return domain.StockSyncView{}, domain.ErrStockSyncBlocked
 	}
 	hash := syncHash(struct {
 		Scope          domain.StockSyncScope

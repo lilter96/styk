@@ -17,7 +17,7 @@ type Limits struct {
 	Duration                                 time.Duration
 }
 
-type Counts struct{ Requests, Attempts, Pages, Entities, Products, Warehouses, Observations, Postings, CompletedRequests, CompletedPages int }
+type Counts struct{ Requests, Attempts, Pages, Entities, Products, Warehouses, Observations, Postings, CompletedRequests, CompletedPages, RateLimitResponses int }
 type Progress func(context.Context, string, Counts) error
 type LimitError struct {
 	Resource string

@@ -36,6 +36,9 @@ type StockSyncAttestation struct {
 	UnseenBound string           `json:"unseen_bound"`
 	SafetyStock string           `json:"safety_stock"`
 	Proofs      []StockSyncProof `json:"proofs"`
+	// Nonzero only for a persisted, currently enabled test policy. The manual
+	// preview API cannot manufacture or submit this value.
+	AutomaticPolicyRevision int64 `json:"automatic_policy_revision,omitempty"`
 }
 type StockSyncPreviewRequest struct {
 	StockSyncScope

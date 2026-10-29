@@ -50,6 +50,7 @@ type Worker struct {
 	Handler               Handler
 	Imports               ImportHandler
 	Publications          PublicationRunner
+	Automatic             PublicationRunner
 	StoredCredentials     bool
 	ImportAccount         string
 	MoyskladImportAccount string
@@ -66,6 +67,15 @@ func (w Worker) Run(ctx context.Context) error {
 			worked, err := w.Publications.RunNext(ctx)
 			if err != nil && ctx.Err() == nil {
 				w.Log.Error("stock publication did not complete")
+			}
+			if worked && err == nil {
+				continue
+			}
+		}
+		if w.Automatic != nil {
+			worked, err := w.Automatic.RunNext(ctx)
+			if err != nil && ctx.Err() == nil {
+				w.Log.Error("automatic stock cycle did not advance")
 			}
 			if worked && err == nil {
 				continue
