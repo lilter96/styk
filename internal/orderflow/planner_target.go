@@ -65,7 +65,7 @@ func prepareMirrorUpdate(command *orders.Command, target orders.TargetObservatio
 		return orders.Validation{Field: "target", Code: "target_native_references_conflict"}
 	}
 	wanted.OwnedFields = changedScalarFields(*wanted, target.Fields)
-	if len(wanted.OwnedFields) == 0 && !positionsRepresented(wanted.Positions, target.Positions) {
+	if !updatePositionsRepresented(*command, target.Positions) {
 		return orders.Validation{Field: "positions", Code: "position_replacement_unverified"}
 	}
 	return orders.Validation{}
@@ -140,8 +140,8 @@ func targetRepresents(command orders.Command, target orders.TargetObservation) b
 	if !sameNativeReferences(wanted, target.Fields) || len(changedScalarFields(wanted, target.Fields)) > 0 {
 		return false
 	}
-	if command.Action == orders.ActionMirrorUpdate && len(wanted.OwnedFields) > 0 {
-		return true
+	if command.Action == orders.ActionMirrorUpdate {
+		return updatePositionsRepresented(command, target.Positions)
 	}
 	return positionsRepresented(wanted.Positions, target.Positions)
 }

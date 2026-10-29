@@ -34,6 +34,10 @@ func positionsRepresented(wanted []orders.PositionWrite, actual []orders.TargetP
 	if len(wanted) != len(actual) {
 		return false
 	}
+	return wantedPositionsRepresented(wanted, actual)
+}
+
+func wantedPositionsRepresented(wanted []orders.PositionWrite, actual []orders.TargetPosition) bool {
 	used := make(map[int]bool, len(actual))
 	for _, position := range wanted {
 		index := representedPositionIndex(position, wanted, actual)
@@ -43,6 +47,56 @@ func positionsRepresented(wanted []orders.PositionWrite, actual []orders.TargetP
 		used[index] = true
 	}
 	return true
+}
+
+func updatePositionsRepresented(command orders.Command, actual []orders.TargetPosition) bool {
+	if command.CustomerOrder == nil {
+		return false
+	}
+	if !command.TargetPositionsComplete {
+		return positionsRepresented(command.CustomerOrder.Positions, actual)
+	}
+	return nativePositionsUnchanged(command.TargetPositions, actual) && wantedPositionsRepresented(command.CustomerOrder.Positions, actual)
+}
+
+func nativePositionsUnchanged(before, after []orders.TargetPosition) bool {
+	if len(before) != len(after) {
+		return false
+	}
+	byID := make(map[string]orders.TargetPosition, len(after))
+	for _, position := range after {
+		if _, exists := byID[position.ID]; exists {
+			return false
+		}
+		byID[position.ID] = position
+	}
+	for _, prior := range before {
+		current, exists := byID[prior.ID]
+		if !exists || !nativePositionUnchanged(prior, current) {
+			return false
+		}
+	}
+	return true
+}
+
+func nativePositionUnchanged(before, after orders.TargetPosition) bool {
+	return before.ID == after.ID && before.MoyskladKind == after.MoyskladKind && before.MoyskladID == after.MoyskladID &&
+		decimalEqual(before.Quantity, after.Quantity) && sameDecimalObservation(before.Reserve, after.Reserve) &&
+		sameMoneyObservation(before.Price, after.Price) && sameDecimalObservation(before.VAT, after.VAT)
+}
+
+func sameDecimalObservation(before, after orders.Field[orders.Decimal]) bool {
+	if before.IsKnown() && after.IsKnown() {
+		return decimalEqual(*before.Value, *after.Value)
+	}
+	return sameField(before, after)
+}
+
+func sameMoneyObservation(before, after orders.Field[orders.Money]) bool {
+	if before.IsKnown() && after.IsKnown() {
+		return before.Value.Currency == after.Value.Currency && decimalEqual(before.Value.Amount, after.Value.Amount)
+	}
+	return sameField(before, after)
 }
 
 func representedPositionIndex(wanted orders.PositionWrite, all []orders.PositionWrite, actual []orders.TargetPosition) int {
