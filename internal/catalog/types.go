@@ -40,6 +40,7 @@ type Field string
 const (
 	FieldName        Field = "name"
 	FieldDescription Field = "description"
+	FieldArticle     Field = "article"
 	FieldPrice       Field = "price"
 	FieldCurrency    Field = "currency"
 	FieldBarcode     Field = "barcode"
@@ -64,13 +65,21 @@ const (
 	StateUnknown     FieldState = "unknown"
 )
 
+type EvidenceKind string
+
+const (
+	EvidenceAPICurated       EvidenceKind = "API_CURATED"
+	EvidenceOperatorAttested EvidenceKind = "OPERATOR_ATTESTED"
+)
+
 type Provenance struct {
-	Provider   Provider  `json:"provider,omitempty"`
-	AccountID  string    `json:"account_id,omitempty"`
-	EntityID   string    `json:"entity_id,omitempty"`
-	Revision   string    `json:"revision,omitempty"`
-	ObservedAt time.Time `json:"observed_at,omitempty"`
-	Evidence   string    `json:"evidence,omitempty"`
+	Kind       EvidenceKind `json:"kind,omitempty"`
+	Provider   Provider     `json:"provider,omitempty"`
+	AccountID  string       `json:"account_id,omitempty"`
+	EntityID   string       `json:"entity_id,omitempty"`
+	Revision   string       `json:"revision,omitempty"`
+	ObservedAt time.Time    `json:"observed_at,omitempty"`
+	Evidence   string       `json:"evidence,omitempty"`
 }
 
 // Value distinguishes an observation of emptiness from an explicit request to clear.
