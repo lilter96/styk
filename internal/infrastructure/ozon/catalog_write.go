@@ -143,7 +143,8 @@ func (c *CatalogClient) catalogPatchAttributes(ctx context.Context, command cata
 func supportsTextAttribute(schema []CategoryAttribute, id int64) bool {
 	for _, attribute := range schema {
 		if attribute.ID == id {
-			return attribute.ComplexID == 0 && attribute.DictionaryID == 0 && !attribute.Collection && (attribute.Type == "string" || attribute.Type == "multiline")
+			kind := strings.ToLower(attribute.Type)
+			return attribute.ComplexID == 0 && attribute.DictionaryID == 0 && !attribute.Collection && (kind == "string" || kind == "multiline")
 		}
 	}
 	return false
