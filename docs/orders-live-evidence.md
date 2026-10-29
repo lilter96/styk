@@ -112,8 +112,10 @@ Latest normal APIs remain on loopback 8080/8082 with one combined worker for use
 testing; port 8081's unrelated process was preserved. No provider secrets are in
 their environment; the scoped Orders flag remains enabled with configuration off.
 
-The checked [executable manifest](order-contract-manifest.json) byte SHA-256 is
-`10a3380688dd9f639ef0c3a4883ec3c481c102a29e5f1fe43446ff70c499a572`.
+The initial [executable manifest](order-contract-manifest.json) byte SHA-256 was
+`10a3380688dd9f639ef0c3a4883ec3c481c102a29e5f1fe43446ff70c499a572`;
+the final release manifest byte SHA-256 is
+`4bb1d2a1ba3454c9e9d7d3f5a6ee60cae031769af5cfe297eb392db15f505ec3`.
 Official notices verify [posting versions](https://dev.ozon.ru/news/734-Otkliuchenie-starykh-metodov-Seller-API-dlia-raboty-s-postingami/),
 [warehouse/delivery versions](https://dev.ozon.ru/news/648-Izmeneniia-v-metodakh-Seller-API/)
 and [label migration/scanit](https://dev.ozon.ru/news/800-Podderzhka-novoi-etiketki-scanit-i-migratsiia-metodov-v-Seller-API/).
