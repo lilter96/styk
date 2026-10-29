@@ -1155,11 +1155,15 @@ body {
     min-height: 36px;
   }
   .app-tabs {
-    height: 48px;
+    height: auto;
+    min-height: 48px;
     width: 100%;
-    justify-content: space-between;
+    flex-wrap: wrap;
+    justify-content: flex-start;
   }
   .app-tabs a {
+    min-height: 40px;
+    flex-shrink: 0;
     padding: 0 8px;
     font-size: 14px;
   }
