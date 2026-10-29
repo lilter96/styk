@@ -6,16 +6,22 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
+import type { Batch } from "./api";
 import { ImportPanel } from "./ImportPanel";
 import {
   ImportSubmissionNotice,
   useImportSubmission,
 } from "./ImportSubmission";
-import type { ImportOperation, ImportScope } from "./api";
-const scope = { tenant: "tenant-a", account: "ozon-a" };
+import type { ImportOperation, ImportScope, ImportProvider } from "./api";
+const scope: ImportScope = {
+  provider: "ozon",
+  tenant: "tenant-a",
+  account: "ozon-a",
+};
 const base: ImportOperation = {
   id: "a".repeat(32),
   tenant: scope.tenant,
@@ -63,15 +69,41 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
-function Harness({ client }: { client: QueryClient }) {
-  const [current, setCurrent] = useState<ImportScope>(scope);
+function Harness({
+  client,
+  initialScope = scope,
+  configured = true,
+  latestBatch,
+}: {
+  client: QueryClient;
+  initialScope?: ImportScope;
+  configured?: boolean;
+  latestBatch?: Batch;
+}) {
+  const [current, setCurrent] = useState<ImportScope>(initialScope);
   const submission = useImportSubmission();
   return (
     <>
       <button
-        onClick={() => setCurrent({ tenant: "tenant-b", account: "ozon-b" })}
+        onClick={() =>
+          setCurrent({
+            provider: current.provider,
+            tenant: "tenant-b",
+            account: "ozon-b",
+          })
+        }
       >
         Switch scope
+      </button>
+      <button
+        onClick={() =>
+          setCurrent({
+            ...current,
+            provider: current.provider === "ozon" ? "moysklad" : "ozon",
+          })
+        }
+      >
+        Switch provider
       </button>
       <ImportSubmissionNotice
         submission={submission}
@@ -79,10 +111,11 @@ function Harness({ client }: { client: QueryClient }) {
         restore={setCurrent}
       />
       <ImportPanel
-        key={`${current.tenant}:${current.account}`}
+        key={`${current.tenant}:${current.provider}:${current.account}`}
         scope={current}
         submission={submission}
-        configured={true}
+        configured={configured}
+        latestBatch={latestBatch}
       />
       <button
         onClick={() =>
@@ -96,6 +129,9 @@ function Harness({ client }: { client: QueryClient }) {
 }
 function setup(
   opts: {
+    provider?: ImportProvider;
+    latestBatch?: Batch;
+    configured?: boolean;
     initial?: ImportOperation;
     lost?: boolean;
     unauthorized?: boolean;
@@ -104,6 +140,18 @@ function setup(
     pages?: boolean;
   } = {},
 ) {
+  const fixtureScope: ImportScope = {
+    ...scope,
+    provider: opts.provider ?? "ozon",
+  };
+  const fixtureBase: ImportOperation = {
+    ...base,
+    provider: fixtureScope.provider,
+    operation_type:
+      fixtureScope.provider === "moysklad"
+        ? "MOYSKLAD_CATALOG_IMPORT"
+        : "OZON_CATALOG_IMPORT",
+  };
   let operation = opts.initial,
     attempts = 0,
     historyUnavailable = false;
@@ -123,7 +171,7 @@ function setup(
           return new Response('{"error":"IDEMPOTENCY_CONFLICT"}', {
             status: 409,
           });
-        operation = { ...base };
+        operation = { ...fixtureBase };
         if (opts.lost && attempts === 1) throw new TypeError("connection lost");
         return new Response(
           JSON.stringify({ operation, idempotent_replay: !!opts.lost }),
@@ -132,13 +180,17 @@ function setup(
       }
       if (init?.method === "POST" && path.endsWith("/cancel")) {
         if (opts.cancelConflict) {
-          operation = { ...base, state: "RUNNING", phase: "READING_PRODUCTS" };
+          operation = {
+            ...fixtureBase,
+            state: "RUNNING",
+            phase: "READING_PRODUCTS",
+          };
           return new Response('{"error":"CANCELLATION_UNAVAILABLE"}', {
             status: 409,
           });
         }
         operation = {
-          ...base,
+          ...fixtureBase,
           state: "CANCELLED",
           phase: "CANCELLED",
           outcome: "CANCELLED",
@@ -151,7 +203,11 @@ function setup(
             status: 503,
           });
         const query = new URLSearchParams(path.split("?")[1]);
-        if (query.get("tenant") !== scope.tenant)
+        if (
+          query.get("tenant") !== fixtureScope.tenant ||
+          (query.has("moysklad_account") ? "moysklad" : "ozon") !==
+            fixtureScope.provider
+        )
           return new Response('{"items":[],"has_next":false,"offset":0}', {
             status: 200,
           });
@@ -187,7 +243,12 @@ function setup(
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter>
-        <Harness client={client} />
+        <Harness
+          client={client}
+          initialScope={fixtureScope}
+          configured={opts.configured ?? true}
+          latestBatch={opts.latestBatch}
+        />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -203,11 +264,11 @@ function setup(
     },
   };
 }
-async function openConfirm() {
+async function openConfirm(name = "Ozon") {
   fireEvent.click(
     await screen.findByRole("button", { name: "Import catalog" }),
   );
-  await screen.findByRole("dialog", { name: "Confirm Ozon catalog import" });
+  await screen.findByRole("dialog", { name: `Confirm ${name} catalog import` });
 }
 it("requires acknowledgement and safely retries one immutable intent after switching accounts", async () => {
   const { fetcher } = setup({ lost: true });
@@ -267,7 +328,13 @@ it("renders real progress, resets attempt-local counts, and refreshes queries af
   };
   const { client, invalidate } = setup({ initial: running });
   await screen.findByText(/Products observed 8/);
-  const key = ["import-detail", scope.tenant, scope.account, base.id];
+  const key = [
+    "import-detail",
+    scope.tenant,
+    scope.provider,
+    scope.account,
+    base.id,
+  ];
   client.setQueryData(key, {
     ...running,
     attempt: 2,
@@ -305,11 +372,14 @@ it("does not offer another import while a newly queued result is newer than cach
   fireEvent.click(screen.getByLabelText(/I explicitly request/));
   fireEvent.click(screen.getByRole("button", { name: "Confirm import" }));
   await screen.findByText("Import request accepted.");
-  client.setQueryData(["import-history", scope.tenant, scope.account, 0], {
-    items: [],
-    has_next: false,
-    offset: 0,
-  });
+  client.setQueryData(
+    ["import-history", scope.tenant, scope.provider, scope.account, 0],
+    {
+      items: [],
+      has_next: false,
+      offset: 0,
+    },
+  );
   await waitFor(() =>
     expect(
       (
@@ -420,4 +490,294 @@ it("does not create a new intent on idempotency conflict", async () => {
       ([p, init]) => p === "/api/imports" && init?.method === "POST",
     ),
   ).toHaveLength(1);
+});
+
+const moyBase: ImportOperation = {
+  ...base,
+  provider: "moysklad",
+  operation_type: "MOYSKLAD_CATALOG_IMPORT",
+  counts: { ...base.counts, variants: 1, warehouse_observations: 2 },
+  limits: { ...base.limits, variants: 1000, warehouse_observations: 10000 },
+};
+it("submits MoySklad only after acknowledgement and preserves its exact intent across providers", async () => {
+  const { fetcher, client } = setup({ provider: "moysklad", lost: true });
+  await screen.findByText(/No import operations/);
+  expect(fetcher.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
+    false,
+  );
+  await openConfirm("MoySklad");
+  expect(
+    within(screen.getByRole("dialog")).getByText(
+      /Customer orders are not imported/,
+    ),
+  ).toBeTruthy();
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Confirm import",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.click(screen.getByLabelText(/I explicitly request/));
+  const confirmButton = screen.getByRole("button", { name: "Confirm import" });
+  fireEvent.click(confirmButton);
+  fireEvent.click(confirmButton);
+  await screen.findByText(/Submission outcome unknown/);
+  fireEvent.click(screen.getByText("Switch scope"));
+  expect(screen.queryByText("Retry same import request")).toBeNull();
+  fireEvent.click(screen.getByText("Return to original import scope"));
+  fireEvent.click(screen.getByText("Switch provider"));
+  await screen.findByRole("region", { name: "Ozon catalog imports" });
+  expect(screen.queryByText("Retry same import request")).toBeNull();
+  fireEvent.click(screen.getByText("Return to original import scope"));
+  fireEvent.click(screen.getByText("Retry same import request"));
+  await screen.findByText(/existing import operation was recovered/);
+  const calls = fetcher.mock.calls.filter(
+    ([url, init]) => url === "/api/imports" && init?.method === "POST",
+  );
+  expect(calls).toHaveLength(2);
+  expect(calls[0][1]?.body).toBe(calls[1][1]?.body);
+  const body = JSON.parse(String(calls[0][1]?.body));
+  expect(body).toMatchObject({
+    tenant: scope.tenant,
+    moysklad_account: scope.account,
+    operation_type: "MOYSKLAD_CATALOG_IMPORT",
+    acknowledge: true,
+  });
+  expect(body.ozon_account).toBeUndefined();
+  expect(body.limits).toBeUndefined();
+  expect(body.idempotency_key).toMatch(/^[0-9a-f-]{36}$/);
+  expect(
+    client
+      .getQueryCache()
+      .findAll()
+      .some(
+        (q) =>
+          JSON.stringify(q.queryKey) ===
+          JSON.stringify([
+            "import-history",
+            scope.tenant,
+            "moysklad",
+            scope.account,
+            0,
+          ]),
+      ),
+  ).toBe(true);
+  expect(
+    client
+      .getQueryCache()
+      .findAll()
+      .some(
+        (q) =>
+          JSON.stringify(q.queryKey) ===
+          JSON.stringify([
+            "import-history",
+            scope.tenant,
+            "ozon",
+            scope.account,
+            0,
+          ]),
+      ),
+  ).toBe(true);
+});
+it("keeps MoySklad history readable when credentials are missing", async () => {
+  setup({
+    provider: "moysklad",
+    configured: false,
+    initial: {
+      ...moyBase,
+      state: "FAILED",
+      outcome: "CONFIGURATION_UNAVAILABLE",
+    },
+  });
+  await screen.findByText(/matching worker configuration is unavailable/);
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Import catalog",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+});
+it("renders MoySklad stages and attempt-local observation counters", async () => {
+  const { client } = setup({
+    provider: "moysklad",
+    initial: {
+      ...moyBase,
+      state: "RUNNING",
+      phase: "READING_VARIANTS",
+      attempt: 1,
+    },
+  });
+  await screen.findByText(/variants observed 1/);
+  const key = [
+    "import-detail",
+    scope.tenant,
+    "moysklad",
+    scope.account,
+    base.id,
+  ];
+  for (const phase of [
+    "READING_PRODUCTS",
+    "READING_VARIANTS",
+    "READING_WAREHOUSES",
+    "READING_AGGREGATE_STOCK",
+    "READING_WAREHOUSE_STOCK",
+    "PERSISTING",
+  ]) {
+    client.setQueryData(key, {
+      ...moyBase,
+      state: "RUNNING",
+      phase,
+      attempt: 2,
+      counts: { ...moyBase.counts, variants: 0 },
+    });
+    await screen.findByText(new RegExp(`Phase: ${phase}`));
+    await screen.findByText(/variants observed 0/);
+  }
+  expect(screen.getByText(/attempt-local/)).toBeTruthy();
+  expect(screen.getByText(/warehouse stock observations 2/)).toBeTruthy();
+});
+for (const state of [
+  "QUEUED",
+  "FAILED",
+  "OUTCOME_UNKNOWN",
+  "CANCELLED",
+] as const)
+  it(`renders MoySklad ${state} without displaying a saved batch`, async () => {
+    setup({
+      provider: "moysklad",
+      initial: {
+        ...moyBase,
+        state,
+        outcome: state === "FAILED" ? "API_FAILURE" : null,
+      },
+    });
+    await screen.findByRole("region", { name: "Import operation details" });
+    await screen.findByRole("heading", { name: /Operation / });
+    expect(screen.queryByText(/Completed batch:/)).toBeNull();
+  });
+it("shows MoySklad reused batch without claiming fresh timestamps and invalidates data", async () => {
+  const { invalidate } = setup({
+    provider: "moysklad",
+    initial: {
+      ...moyBase,
+      state: "SUCCEEDED",
+      phase: "COMPLETED",
+      batch_id: 51,
+      batch_created: false,
+      outcome: "COMPLETE_TRAVERSAL",
+    },
+  });
+  await screen.findByText(/observation timestamps unchanged/);
+  await waitFor(() =>
+    expect(
+      invalidate.mock.calls.some(([arg]) =>
+        JSON.stringify(arg).includes('"diagnostics"'),
+      ),
+    ).toBe(true),
+  );
+  expect(screen.getByText(/variants observed 1/)).toBeTruthy();
+});
+it("cancels a MoySklad queued operation using only its provider scope", async () => {
+  const { fetcher } = setup({ provider: "moysklad", initial: moyBase });
+  await screen.findByText(/Waiting for an available worker/);
+  fireEvent.click(screen.getByRole("button", { name: "Cancel queued import" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm cancellation" }));
+  await screen.findByText(/Cancellation was recorded/);
+  const call = fetcher.mock.calls.find(([url]) =>
+    String(url).endsWith("/cancel"),
+  )!;
+  expect(JSON.parse(String(call[1]?.body))).toEqual({
+    tenant: scope.tenant,
+    moysklad_account: scope.account,
+    acknowledge: true,
+  });
+});
+it("handles a MoySklad queued-to-running cancellation race", async () => {
+  setup({ provider: "moysklad", initial: moyBase, cancelConflict: true });
+  await screen.findByText(/Waiting for an available worker/);
+  fireEvent.click(screen.getByRole("button", { name: "Cancel queued import" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm cancellation" }));
+  await screen.findByText(/running imports cannot be cancelled/);
+  expect(screen.queryByText(/Cancellation was recorded/)).toBeNull();
+});
+
+it("keeps simultaneous histories isolated when both providers use the same account text", async () => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    const url = String(input),
+      query = new URLSearchParams(url.split("?")[1]);
+    const provider = query.has("moysklad_account") ? "moysklad" : "ozon";
+    const op = {
+      ...(provider === "moysklad" ? moyBase : base),
+      id: provider === "moysklad" ? "m".repeat(32) : base.id,
+    };
+    return new Response(
+      JSON.stringify(
+        url.startsWith("/api/imports?")
+          ? { items: [op], has_next: false, offset: 0 }
+          : op,
+      ),
+      { status: 200 },
+    );
+  });
+  function Pair() {
+    const submission = useImportSubmission();
+    return (
+      <>
+        {(["moysklad", "ozon"] as const).map((provider) => (
+          <ImportPanel
+            key={provider}
+            scope={{ ...scope, provider }}
+            configured
+            submission={submission}
+          />
+        ))}
+      </>
+    );
+  }
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <Pair />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const moy = await screen.findByRole("region", {
+    name: "MoySklad catalog imports",
+  });
+  const ozon = await screen.findByRole("region", {
+    name: "Ozon catalog imports",
+  });
+  await within(moy).findByRole("heading", { name: /Operation m/ });
+  await within(ozon).findByRole("heading", { name: /Operation a/ });
+  expect(
+    within(ozon).queryByRole("heading", { name: /Operation m/ }),
+  ).toBeNull();
+  expect(
+    within(moy).queryByRole("heading", { name: /Operation a/ }),
+  ).toBeNull();
+});
+
+it("keeps the selected MoySklad account's prior persisted import visible after a failed operation", async () => {
+  setup({
+    provider: "moysklad",
+    initial: { ...moyBase, state: "FAILED", outcome: "API_FAILURE" },
+    latestBatch: {
+      present: true,
+      completed: true,
+      age: "2h",
+      observed_at: "2026-01-01T00:00:00Z",
+      counts: { products: 9, variants: 2, warehouses: 3, stock_rows: 0 },
+    },
+  });
+  await screen.findByText("Latest completed import");
+  await screen.findByText(
+    /Products 9; variants 2; warehouses 3; warehouse stock rows 0/,
+  );
+  await screen.findByText(/Import failed/);
+  expect(screen.queryByText(/Completed batch:/)).toBeNull();
 });

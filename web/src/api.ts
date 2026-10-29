@@ -49,7 +49,47 @@ export async function post<T>(
   return r.json() as Promise<T>;
 }
 
-export type ImportScope = Readonly<{ tenant: string; account: string }>;
+export type ImportProvider = "ozon" | "moysklad";
+export const importProviders = {
+  ozon: {
+    name: "Ozon",
+    accountField: "ozon_account",
+    operationType: "OZON_CATALOG_IMPORT",
+    description:
+      "This operation reads the Ozon catalog, warehouses and stock observations. It does not modify marketplace data or publish stock.",
+    phases: [
+      "READING_PRODUCTS",
+      "READING_WAREHOUSES",
+      "READING_STOCK",
+      "PERSISTING",
+    ],
+  },
+  moysklad: {
+    name: "MoySklad",
+    accountField: "moysklad_account",
+    operationType: "MOYSKLAD_CATALOG_IMPORT",
+    description:
+      "Reads products, variants and their parent identities, warehouses, aggregate stock and warehouse stock. Customer orders are not imported. External entities are not modified and stock is not published.",
+    phases: [
+      "READING_PRODUCTS",
+      "READING_VARIANTS",
+      "READING_WAREHOUSES",
+      "READING_AGGREGATE_STOCK",
+      "READING_WAREHOUSE_STOCK",
+      "PERSISTING",
+    ],
+  },
+} as const;
+export type ImportScope = Readonly<{
+  tenant: string;
+  provider: ImportProvider;
+  account: string;
+}>;
+export const sameImportScope = (a: ImportScope, b: ImportScope) =>
+  a.tenant === b.tenant && a.provider === b.provider && a.account === b.account;
+export const importAccount = (scope: ImportScope) => ({
+  [importProviders[scope.provider].accountField]: scope.account,
+});
 export type ImportOperation = {
   id: string;
   tenant: string;
@@ -86,6 +126,8 @@ export type ImportOperation = {
     products: number;
     warehouses: number;
     observations: number;
+    variants?: number;
+    warehouse_observations?: number;
   };
   limits: {
     requests: number;
@@ -94,6 +136,8 @@ export type ImportOperation = {
     products: number;
     warehouses: number;
     observations: number;
+    variants?: number;
+    warehouse_observations?: number;
     response_bytes: number;
     duration_ns: number;
     database_timeout_ns: number;
@@ -112,8 +156,8 @@ export function createImportIntent(scope: ImportScope): ImportIntent {
     scope: frozenScope,
     body: JSON.stringify({
       tenant: frozenScope.tenant,
-      ozon_account: frozenScope.account,
-      operation_type: "OZON_CATALOG_IMPORT",
+      ...importAccount(frozenScope),
+      operation_type: importProviders[frozenScope.provider].operationType,
       idempotency_key: crypto.randomUUID(),
       acknowledge: true,
     }),

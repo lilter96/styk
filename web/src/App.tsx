@@ -803,6 +803,19 @@ export function Diagnostics({
   );
 }
 
+function savedWorkspace() {
+  try {
+    const value = JSON.parse(sessionStorage.getItem("styk-workspace") || "{}");
+    return {
+      tenant: typeof value.tenant === "string" ? value.tenant : "",
+      moy: typeof value.moy === "string" ? value.moy : "",
+      ozon: typeof value.ozon === "string" ? value.ozon : "",
+    };
+  } catch {
+    return { tenant: "", moy: "", ozon: "" };
+  }
+}
+
 export function App() {
   const client = useQueryClient();
   const confirmation = useConfirmation();
@@ -822,10 +835,21 @@ export function App() {
     queryFn: ({ signal }) => api<null>("/api/session", signal),
     retry: false,
   });
-  const [tenant, setTenant] = useState(""),
-    [chosen, setChosen] = useState(""),
-    [moy, setMoy] = useState(""),
-    [ozon, setOzon] = useState("");
+  const [initialWorkspace] = useState(savedWorkspace);
+  const [tenant, setTenant] = useState(initialWorkspace.tenant),
+    [chosen, setChosen] = useState(initialWorkspace.tenant),
+    [moy, setMoy] = useState(initialWorkspace.moy),
+    [ozon, setOzon] = useState(initialWorkspace.ozon);
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        "styk-workspace",
+        JSON.stringify({ tenant: chosen, moy, ozon }),
+      );
+    } catch {
+      // The console remains usable when browser storage is unavailable.
+    }
+  }, [chosen, moy, ozon]);
   const accounts = useQuery({
     queryKey: ["accounts", chosen],
     queryFn: ({ signal }) =>
@@ -836,6 +860,23 @@ export function App() {
     enabled: session.isSuccess && !!chosen,
   });
   const scope = { tenant: chosen, moy, ozon };
+  useEffect(() => {
+    if (!accounts.data) return;
+    if (
+      moy &&
+      !accounts.data.accounts.some(
+        (a) => a.source === "moysklad" && a.account === moy,
+      )
+    )
+      setMoy("");
+    if (
+      ozon &&
+      !accounts.data.accounts.some(
+        (a) => a.source === "ozon" && a.account === ozon,
+      )
+    )
+      setOzon("");
+  }, [accounts.data, moy, ozon]);
   const report = useQuery({
     queryKey: ["diagnostics", scope],
     queryFn: ({ signal }) =>
@@ -944,12 +985,24 @@ export function App() {
           />
           <ImportSubmissionNotice
             submission={importSubmission}
-            scope={{ tenant: chosen, account: ozon }}
+            scope={{
+              tenant: chosen,
+              provider:
+                importSubmission.pending?.intent.scope.provider ??
+                (importSubmission.result?.operation.provider === "moysklad"
+                  ? "moysklad"
+                  : "ozon"),
+              account:
+                (importSubmission.pending?.intent.scope.provider ??
+                  importSubmission.result?.operation.provider) === "moysklad"
+                  ? moy
+                  : ozon,
+            }}
             restore={(original) => {
               setTenant(original.tenant);
               setChosen(original.tenant);
-              setMoy("");
-              setOzon(original.account);
+              if (original.provider === "moysklad") setMoy(original.account);
+              else setOzon(original.account);
               navigate("/integrations");
             }}
           />

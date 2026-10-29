@@ -976,3 +976,30 @@ td {
     flex-direction: column;
   }
 }
+
+/* Integration and import actions share the console's control styling. */
+.source-card button, .import-panel button, .notice button {
+  border: 1px solid #177a69;
+  border-radius: 6px;
+  background: #177a69;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1.2;
+  padding: 10px 14px;
+}
+.source-card button:hover:not(:disabled), .import-panel button:hover:not(:disabled) { background: #126456; }
+.import-panel button.secondary, .notice button.secondary { background: #fff; color: #286b60; border-color: #c7ded9; }
+.source-card .source-top { gap: 12px; align-items: center; margin-bottom: 16px; }
+.source-card .source-top h2 { margin: 0; font-size: 19px; letter-spacing: -.4px; }
+.source-card .source-top strong { color: #397668; background: #edf7f3; border-radius: 20px; padding: 6px 9px; font-size: 10px; overflow-wrap: anywhere; }
+.source-card p, .source-card li { color: #526b70; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.source-card nav { border-top: 1px solid #e2ecea; padding-top: 16px; margin-top: 18px; font-size: 13px; font-weight: 700; }
+.import-panel { box-shadow: 0 4px 18px rgba(32, 73, 65, .05); }
+.import-panel h2 { font-size: 20px; letter-spacing: -.4px; color: #193b37; }
+.import-panel h3 { margin: 22px 0 10px; color: #284c47; font-size: 15px; }
+.import-panel-head { padding-bottom: 18px; border-bottom: 1px solid #e5efec; }
+.import-panel .pagination { display: flex; justify-content: flex-end; gap: 8px; }
+.import-history td code { font-size: 11px; }
+.import-confirm label { color: #315a53; font-size: 13px; font-weight: 600; }
+@media (max-width: 700px) { .source-card .source-top { align-items: flex-start; flex-direction: column; } }

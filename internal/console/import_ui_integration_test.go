@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/lilter96/styk/internal/application"
+	"github.com/lilter96/styk/internal/infrastructure/moysklad"
 	"github.com/lilter96/styk/internal/infrastructure/ozon"
 	"github.com/lilter96/styk/internal/ozonjob"
 	"github.com/lilter96/styk/internal/postgres"
@@ -29,6 +30,11 @@ import (
 // TestImportManagementBrowser uses the actual API, outbox worker and importer,
 // but only a synthetic, explicitly allowlisted HTTP server and disposable DB.
 func TestImportManagementBrowser(t *testing.T) {
+	for _, provider := range []string{"ozon", "moysklad"} {
+		t.Run(provider, func(t *testing.T) { testProviderImportBrowser(t, provider) })
+	}
+}
+func testProviderImportBrowser(t *testing.T, provider string) {
 	if os.Getenv("STYK_IMPORT_BROWSER_E2E") != "1" {
 		t.Skip("import browser E2E not requested")
 	}
@@ -44,12 +50,15 @@ func TestImportManagementBrowser(t *testing.T) {
 	}
 	defer db.Pool.Close()
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
-	tenant, account := "browser-import-"+suffix, "browser-ozon-"+suffix
+	tenant, account := "browser-import-"+suffix, "browser-account-"+suffix
 	t.Setenv("OZON_CLIENT_ID", account)
 	t.Setenv("OZON_API_KEY", "synthetic-import-key")
-	t.Setenv("MOYSKLAD_TOKEN", "")
-	t.Setenv("MOYSKLAD_ACCOUNT_ID", "")
+	t.Setenv("MOYSKLAD_TOKEN", "synthetic-moy-import-token")
+	t.Setenv("MOYSKLAD_ACCOUNT_ID", account)
 	if err := db.RegisterStockConnection(ctx, tenant, "ozon", account, "synthetic browser fixture", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.RegisterStockConnection(ctx, tenant, "moysklad", account, "synthetic browser fixture", false); err != nil {
 		t.Fatal(err)
 	}
 	gate := make(chan struct{})
@@ -61,6 +70,40 @@ func TestImportManagementBrowser(t *testing.T) {
 		callsMu.Lock()
 		calls = append(calls, r.Method+" "+r.URL.Path)
 		callsMu.Unlock()
+
+		if strings.HasPrefix(r.URL.Path, "/entity/") || strings.HasPrefix(r.URL.Path, "/report/") {
+			if r.Method != "GET" || r.Header.Get("Authorization") != "Bearer synthetic-moy-import-token" {
+				t.Error("unexpected MoySklad operation")
+				w.WriteHeader(405)
+				return
+			}
+			var rows string
+			switch r.URL.Path {
+			case "/entity/product":
+				startedOnce.Do(func() { close(started) })
+				select {
+				case <-gate:
+				case <-r.Context().Done():
+					return
+				}
+				rows = fmt.Sprintf(`[{"id":"p1","accountId":%q,"name":"Synthetic product","article":"synthetic","updated":"2026-01-01 10:00:00.000"}]`, account)
+			case "/entity/variant":
+				rows = fmt.Sprintf(`[{"id":"v1","accountId":%q,"name":"Synthetic variant","product":{"meta":{"href":"/entity/product/p1","type":"product"}}}]`, account)
+			case "/entity/store":
+				rows = fmt.Sprintf(`[{"id":"w1","accountId":%q,"name":"Synthetic warehouse"}]`, account)
+			case "/report/stock/all":
+				rows = `[{"meta":{"href":"/entity/product/p1","type":"product"},"stock":0,"reserve":0,"inTransit":0,"quantity":0}]`
+			case "/report/stock/bystore":
+				rows = `[{"meta":{"href":"/entity/variant/v1","type":"variant"},"stockByStore":[{"meta":{"href":"/entity/store/w1","type":"store"},"stock":5,"reserve":1,"inTransit":2}]}]`
+			default:
+				t.Error("unallowlisted MoySklad endpoint")
+				w.WriteHeader(405)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":%s}`, rows)
+			return
+		}
 		if r.Method != http.MethodPost || r.Header.Get("Client-Id") != account || r.Header.Get("Api-Key") != "synthetic-import-key" {
 			t.Error("unexpected method or synthetic credentials")
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -104,7 +147,11 @@ func TestImportManagementBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c := &connections{db: db, ozonAccount: account, ozon: client, checks: map[string]map[string]connectionCheck{}}
+	mc, err := moysklad.New(moysklad.Options{BaseURL: mock.URL + "/", Token: "synthetic-moy-import-token", Timeout: 15 * time.Second, Interval: time.Millisecond, Backoff: time.Millisecond, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := &connections{db: db, moyAccount: account, moy: mc, ozonAccount: account, ozon: client, checks: map[string]map[string]connectionCheck{}}
 	handler, err := handlerWithConnections(db, strings.Repeat("s", 32), "http://127.0.0.1:15175", c)
 	if err != nil {
 		t.Fatal(err)
@@ -120,7 +167,7 @@ func TestImportManagementBrowser(t *testing.T) {
 			workerWG.Add(1)
 			go func() {
 				defer workerWG.Done()
-				w := application.Worker{Store: db, Handler: application.MockHandler{}, Imports: ozonjob.Runner{Store: db, Account: account, Client: client}, ImportAccount: account, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Poll: 20 * time.Millisecond, Lease: 6 * time.Second, Retry: 100 * time.Millisecond}
+				w := application.Worker{Store: db, Handler: application.MockHandler{}, Imports: ozonjob.Runner{Store: db, Account: account, Client: client, MoyskladAccount: account, MoyskladClient: mc}, ImportAccount: account, MoyskladImportAccount: account, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Poll: 20 * time.Millisecond, Lease: 6 * time.Second, Retry: 100 * time.Millisecond}
 				_ = w.Run(workerCtx)
 			}()
 		})
@@ -133,14 +180,14 @@ func TestImportManagementBrowser(t *testing.T) {
 	mux.HandleFunc("GET /__test/state", func(w http.ResponseWriter, r *http.Request) {
 		var operations, tasks, batches, products, warehouses, stock, linked, publication int
 		err := db.Pool.QueryRow(r.Context(), `SELECT
-		 (SELECT count(*) FROM ozon_import_operations WHERE tenant_id=$1 AND account_id=$2),
-		 (SELECT count(*) FROM outbox_tasks WHERE import_tenant_id=$1 AND import_account_id=$2),
-		 (SELECT count(*) FROM source_imports WHERE source='ozon' AND account_id=$2),
-		 (SELECT count(*) FROM ozon_product_observations p JOIN source_imports s ON s.id=p.import_id WHERE s.account_id=$2),
-		 (SELECT count(*) FROM ozon_warehouse_observations p JOIN source_imports s ON s.id=p.import_id WHERE s.account_id=$2),
-		 (SELECT count(*) FROM ozon_fbs_stock_observations p JOIN source_imports s ON s.id=p.import_id WHERE s.account_id=$2),
-		 (SELECT count(*) FROM ozon_import_operations o JOIN ozon_import_batches b ON b.import_id=o.batch_id WHERE o.tenant_id=$1 AND o.account_id=$2 AND o.outcome='COMPLETE_TRAVERSAL'),
-		 (SELECT count(*) FROM outbox_tasks WHERE task_type NOT IN ('ozon_catalog_import','mock'))`, tenant, account).Scan(&operations, &tasks, &batches, &products, &warehouses, &stock, &linked, &publication)
+		 (SELECT count(*) FROM ozon_import_operations WHERE tenant_id=$1 AND account_id=$2 AND provider=$3),
+		 (SELECT count(*) FROM outbox_tasks WHERE import_tenant_id=$1 AND import_account_id=$2 AND import_provider=$3),
+		 (SELECT count(*) FROM source_imports WHERE source=$3 AND account_id=$2),
+		 (CASE WHEN $3='ozon' THEN (SELECT count(*) FROM ozon_product_observations p JOIN source_imports s ON s.id=p.import_id WHERE s.account_id=$2) ELSE (SELECT count(*) FROM source_entities p JOIN source_imports s ON s.id=p.import_id WHERE s.account_id=$2 AND s.source=$3 AND p.kind='product') END),
+		 (CASE WHEN $3='ozon' THEN (SELECT count(*) FROM ozon_warehouse_observations p JOIN source_imports s ON s.id=p.import_id WHERE s.account_id=$2) ELSE (SELECT count(*) FROM source_entities p JOIN source_imports s ON s.id=p.import_id WHERE s.account_id=$2 AND s.source=$3 AND p.kind='store') END),
+		 (CASE WHEN $3='ozon' THEN (SELECT count(*) FROM ozon_fbs_stock_observations p JOIN source_imports s ON s.id=p.import_id WHERE s.account_id=$2) ELSE (SELECT count(*) FROM source_stock_observations p JOIN source_imports s ON s.id=p.import_id WHERE s.account_id=$2 AND s.source=$3) END),
+		 (SELECT count(*) FROM ozon_import_operations o JOIN source_imports b ON b.id=o.batch_id AND b.source=o.provider WHERE o.tenant_id=$1 AND o.account_id=$2 AND o.provider=$3 AND o.outcome='COMPLETE_TRAVERSAL'),
+		 (SELECT count(*) FROM outbox_tasks WHERE task_type NOT IN ('ozon_catalog_import','moysklad_catalog_import','mock'))`, tenant, account, provider).Scan(&operations, &tasks, &batches, &products, &warehouses, &stock, &linked, &publication)
 		if err != nil {
 			w.WriteHeader(500)
 			return
@@ -194,7 +241,7 @@ func TestImportManagementBrowser(t *testing.T) {
 	}
 	cmd := exec.CommandContext(ctx, "node", "node_modules/@playwright/test/cli.js", "test", "e2e/import-management.spec.ts", "--workers=1")
 	cmd.Dir = web
-	cmd.Env = append(os.Environ(), "STYK_IMPORT_E2E_URL="+api.URL, "STYK_IMPORT_E2E_TENANT="+tenant, "STYK_IMPORT_E2E_ACCOUNT="+account)
+	cmd.Env = append(os.Environ(), "STYK_IMPORT_E2E_PROVIDER="+provider, "STYK_IMPORT_E2E_URL="+api.URL, "STYK_IMPORT_E2E_TENANT="+tenant, "STYK_IMPORT_E2E_ACCOUNT="+account)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("browser E2E: %v\n%s", err, output)
@@ -202,22 +249,37 @@ func TestImportManagementBrowser(t *testing.T) {
 	t.Log(string(output))
 	var operations, tasks, succeeded, cancelled, batches, products, warehouses, stocks, publication, otherEffects int
 	err = db.Pool.QueryRow(ctx, `SELECT
-	 (SELECT count(*) FROM ozon_import_operations WHERE tenant_id=$1 AND account_id=$2),
-	 (SELECT count(*) FROM outbox_tasks WHERE import_tenant_id=$1 AND import_account_id=$2),
-	 (SELECT count(*) FROM ozon_import_operations o JOIN outbox_tasks t ON t.import_operation_id=o.id JOIN ozon_import_batches b ON b.import_id=o.batch_id WHERE o.tenant_id=$1 AND o.account_id=$2 AND o.outcome='COMPLETE_TRAVERSAL' AND t.state='succeeded'),
-	 (SELECT count(*) FROM ozon_import_operations o JOIN outbox_tasks t ON t.import_operation_id=o.id WHERE o.tenant_id=$1 AND o.account_id=$2 AND o.outcome='CANCELLED' AND t.state='cancelled'),
-	 (SELECT count(*) FROM source_imports WHERE account_id=$2 AND source='ozon'),
-	 (SELECT count(*) FROM ozon_product_observations p JOIN source_imports s ON s.id=p.import_id WHERE s.account_id=$2 AND p.product_id='1' AND p.offer_id='synthetic-offer'),
-	 (SELECT count(*) FROM ozon_warehouse_observations p JOIN source_imports s ON s.id=p.import_id WHERE s.account_id=$2 AND p.warehouse_id='10' AND p.is_rfbs=false),
-	 (SELECT count(*) FROM ozon_fbs_stock_observations p JOIN source_imports s ON s.id=p.import_id WHERE s.account_id=$2 AND p.present=0 AND p.reserved=0 AND p.free_stock=0),
-	 (SELECT count(*) FROM outbox_tasks WHERE task_type NOT IN ('ozon_catalog_import','mock')),
-	 (SELECT count(*) FROM stock_pools WHERE tenant_id=$1) + (SELECT count(*) FROM stock_decisions WHERE tenant_id=$1) + (SELECT count(*) FROM product_mappings WHERE tenant_id=$1) + (SELECT count(*) FROM warehouse_mappings WHERE tenant_id=$1)`, tenant, account).Scan(&operations, &tasks, &succeeded, &cancelled, &batches, &products, &warehouses, &stocks, &publication, &otherEffects)
+	 (SELECT count(*) FROM ozon_import_operations WHERE tenant_id=$1 AND account_id=$2 AND provider=$3),
+	 (SELECT count(*) FROM outbox_tasks WHERE import_tenant_id=$1 AND import_account_id=$2 AND import_provider=$3),
+	 (SELECT count(*) FROM ozon_import_operations o JOIN outbox_tasks t ON t.import_operation_id=o.id JOIN source_imports b ON b.id=o.batch_id AND b.source=o.provider WHERE o.tenant_id=$1 AND o.account_id=$2 AND o.provider=$3 AND o.outcome='COMPLETE_TRAVERSAL' AND t.state='succeeded'),
+	 (SELECT count(*) FROM ozon_import_operations o JOIN outbox_tasks t ON t.import_operation_id=o.id WHERE o.tenant_id=$1 AND o.account_id=$2 AND o.provider=$3 AND o.outcome='CANCELLED' AND t.state='cancelled'),
+	 (SELECT count(*) FROM source_imports WHERE account_id=$2 AND source=$3),
+	 (CASE WHEN $3='ozon' THEN (SELECT count(*) FROM ozon_product_observations p JOIN source_imports s ON s.id=p.import_id WHERE s.account_id=$2 AND p.product_id='1' AND p.offer_id='synthetic-offer') ELSE (SELECT count(*) FROM source_entities p JOIN source_imports s ON s.id=p.import_id WHERE s.account_id=$2 AND s.source=$3 AND p.kind='product' AND p.external_id='p1') END),
+	 (CASE WHEN $3='ozon' THEN (SELECT count(*) FROM ozon_warehouse_observations p JOIN source_imports s ON s.id=p.import_id WHERE s.account_id=$2 AND p.warehouse_id='10' AND p.is_rfbs=false) ELSE (SELECT count(*) FROM source_entities p JOIN source_imports s ON s.id=p.import_id WHERE s.account_id=$2 AND s.source=$3 AND p.kind='store' AND p.external_id='w1') END),
+	 (CASE WHEN $3='ozon' THEN (SELECT count(*) FROM ozon_fbs_stock_observations p JOIN source_imports s ON s.id=p.import_id WHERE s.account_id=$2 AND p.present=0 AND p.reserved=0 AND p.free_stock=0) ELSE (SELECT count(*) FROM source_stock_observations p JOIN source_imports s ON s.id=p.import_id WHERE s.account_id=$2 AND s.source=$3 AND p.stock=0 AND p.reserve=0 AND p.in_transit=0 AND p.quantity=0) END),
+	 (SELECT count(*) FROM outbox_tasks WHERE task_type NOT IN ('ozon_catalog_import','moysklad_catalog_import','mock')),
+	 (SELECT count(*) FROM stock_pools WHERE tenant_id=$1) + (SELECT count(*) FROM stock_decisions WHERE tenant_id=$1) + (SELECT count(*) FROM product_mappings WHERE tenant_id=$1) + (SELECT count(*) FROM warehouse_mappings WHERE tenant_id=$1)`, tenant, account, provider).Scan(&operations, &tasks, &succeeded, &cancelled, &batches, &products, &warehouses, &stocks, &publication, &otherEffects)
 	if err != nil || operations != 2 || tasks != 2 || succeeded != 1 || cancelled != 1 || batches != 1 || products != 1 || warehouses != 1 || stocks != 1 || publication != 0 || otherEffects != 0 {
 		t.Fatalf("unexpected durable state: %d %d %d %d %d %d %d %d %d %d, %v", operations, tasks, succeeded, cancelled, batches, products, warehouses, stocks, publication, otherEffects, err)
 	}
+	if provider == "moysklad" {
+		var variants, nullable int
+		err = db.Pool.QueryRow(ctx, `SELECT
+   (SELECT count(*) FROM source_entities p JOIN source_imports s ON s.id=p.import_id WHERE s.source='moysklad' AND s.account_id=$1 AND p.kind='variant' AND p.external_id='v1' AND p.parent_id='p1'),
+   (SELECT count(*) FROM source_warehouse_stock_observations p JOIN source_imports s ON s.id=p.import_id WHERE s.source='moysklad' AND s.account_id=$1 AND p.kind='variant' AND p.external_id='v1' AND p.warehouse_id='w1' AND p.stock=5 AND p.reserve=1 AND p.in_transit=2 AND p.quantity IS NULL AND p.observed_at=s.finished_at)`, account).Scan(&variants, &nullable)
+		if err != nil || variants != 1 || nullable != 1 {
+			t.Fatal("MoySklad variant/stock semantics lost", err)
+		}
+	}
+	var both int
+	if err = db.Pool.QueryRow(ctx, `SELECT count(DISTINCT o.provider) FROM ozon_import_operations o JOIN source_imports s ON s.id=o.batch_id AND s.source=o.provider AND s.account_id=o.account_id JOIN outbox_tasks t ON t.import_operation_id=o.id AND t.import_provider=o.provider WHERE o.tenant_id=$1 AND o.account_id=$2 AND t.state='succeeded' AND o.outcome='COMPLETE_TRAVERSAL'`, tenant, account).Scan(&both); err != nil || both != 2 {
+		t.Fatal("shared worker did not persist both providers", err)
+	}
 	callsMu.Lock()
 	defer callsMu.Unlock()
-	if len(calls) != 4 {
-		t.Fatalf("expected four allowlisted read requests, got %v", calls)
+	// Both types execute on the same worker lifetime: four Ozon reads and five MoySklad reads.
+	wantCalls := 9
+	if len(calls) != wantCalls {
+		t.Fatalf("unexpected allowlisted read request count, got %v", calls)
 	}
 }

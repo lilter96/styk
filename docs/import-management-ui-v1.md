@@ -1,10 +1,12 @@
-# Ozon import management in the local console
+# Catalog import management in the local console
+
+The Integrations page also supports [MoySklad catalog imports](moysklad-import-management-ui-v1.md) through the same provider-aware panel, with separate scoped history and counters. The Ozon workflow remains supported.
 
 The Integrations page can explicitly queue `OZON_CATALOG_IMPORT` for a registered Ozon account. Select a tenant and Ozon account, open **Integrations**, choose **Import catalog**, read the notice and acknowledge the request. It reads product lists (including archived products), warehouses and available FBS stock observations using the backend's bounded importer. It does not modify the marketplace or publish stock. Page load, account selection and connection testing never start an import.
 
 ## Local setup and worker
 
-Apply the migrations through version 21, register the Ozon account and configure the same `OZON_CLIENT_ID` and `OZON_API_KEY` in the API and worker environments. Start the authenticated loopback API and Vite as described in the [web console guide](web-console-v1.md). In a separate terminal with the same `DATABASE_URL` and Ozon configuration, run `go run ./cmd/worker`. Restart both processes after changing credentials. Only a worker configured for the selected account can claim its import. Stop or upgrade old mock-only workers before submitting imports: they do not understand the import task. See the [backend guide](import-management-backend-v1.md) for limits, leases and recovery.
+Apply the migrations through version 22, register the Ozon account and configure the same `OZON_CLIENT_ID` and `OZON_API_KEY` in the API and worker environments. Start the authenticated loopback API and Vite as described in the [web console guide](web-console-v1.md). In a separate terminal with the same `DATABASE_URL` and Ozon configuration, run `go run ./cmd/worker`. Restart both processes after changing credentials. Only a worker configured for the selected account can claim its import. Stop or upgrade old mock-only workers before submitting imports: they do not understand the import task. See the [backend guide](import-management-backend-v1.md) for limits, leases and recovery.
 
 ## Submission and recovery
 
@@ -22,9 +24,9 @@ Queued operations offer explicit cancellation via `POST /api/imports/{id}/cancel
 
 ## Security and limitations
 
-The existing authenticated local operator session, Origin checks and loopback boundary apply. External account identifiers are visible to the trusted local operator; they do not authorize marketplace access. API keys, bearer tokens and operator credentials remain server-side. The shared local operator secret does not provide production multi-tenant or individual-user authorization. No product or warehouse mappings, stock pools or publication tasks are created by this workflow. MoySklad imports, Ozon posting imports, scheduling and automatic recurring imports are outside this interface.
+The existing authenticated local operator session, Origin checks and loopback boundary apply. External account identifiers are visible to the trusted local operator; they do not authorize marketplace access. API keys, bearer tokens and operator credentials remain server-side. The shared local operator secret does not provide production multi-tenant or individual-user authorization. No product or warehouse mappings, stock pools or publication tasks are created by this workflow. Ozon posting imports, customer-order jobs, scheduling and automatic recurring imports are outside this interface.
 
-The browser regression test uses the real local Go API and worker, a disposable migrated PostgreSQL database named `styk_import_ui_e2e_v1` on `127.0.0.1`, and an allowlisted synthetic Ozon HTTP server. It checks cancellation, a lost submission response with identical replay, persistence, batch linkage and refresh. It does not contact live marketplace accounts. After creating and migrating that disposable database, installing the web dependencies and Playwright's Chromium, run:
+The browser regression test uses the real local Go API and worker, a disposable migrated PostgreSQL database named `styk_import_ui_e2e_v1` on `127.0.0.1`, and allowlisted synthetic Ozon and MoySklad HTTP servers. It checks cancellation, a lost submission response with identical replay, persistence, batch linkage and refresh. It does not contact live marketplace accounts. After creating and migrating that disposable database, installing the web dependencies and Playwright's Chromium, run:
 
 ```sh
 STYK_IMPORT_BROWSER_E2E=1 TEST_DATABASE_URL='<local disposable database URL>' \

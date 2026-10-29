@@ -156,7 +156,7 @@ export function Integrations({
       <div className="notice">Select a tenant to inspect its integrations.</div>
     );
   return (
-    <>
+    <div className="integration-console">
       <div className="heading-row">
         <div>
           <p className="eyebrow">Local operator</p>
@@ -269,7 +269,10 @@ export function Integrations({
                     {p.import.observed_at &&
                       Date.now() - Date.parse(p.import.observed_at) > 3600000 &&
                       "Stale observation."}{" "}
-                    Products {p.import.counts?.products ?? "unknown"};
+                    Products {p.import.counts?.products ?? "unknown"};{" "}
+                    {p.provider === "moysklad" && (
+                      <>variants {p.import.counts?.variants ?? "unknown"}; </>
+                    )}
                     warehouses {p.import.counts?.warehouses ?? "unknown"}; stock
                     rows {p.import.counts?.stock_rows ?? "unknown"}.
                   </>
@@ -337,6 +340,16 @@ export function Integrations({
                   unavailable.
                 </p>
               )}
+              {registeredAccounts.length > 0 &&
+                !(p.provider === "moysklad"
+                  ? selected?.moy
+                  : selected?.ozon) && (
+                  <p>
+                    Choose a registered{" "}
+                    {p.provider === "moysklad" ? "MoySklad" : "Ozon"} account
+                    above to manage catalog imports.
+                  </p>
+                )}
               <nav aria-label={`${p.provider} navigation`}>
                 <Link to="/products">Products</Link>
                 {" · "}
@@ -348,25 +361,31 @@ export function Integrations({
           );
         })}
       </div>
-      {selected?.ozon &&
-        accounts.some(
-          (account) =>
-            account.source === "ozon" && account.account === selected.ozon,
-        ) && (
+      {(["moysklad", "ozon"] as const).map((provider) => {
+        const account =
+          provider === "moysklad" ? selected?.moy : selected?.ozon;
+        if (
+          !account ||
+          !accounts.some((a) => a.source === provider && a.account === account)
+        )
+          return null;
+        return (
           <ImportPanel
-            key={`${tenant}:${selected.ozon}`}
-            scope={{ tenant, account: selected.ozon }}
+            key={`${tenant}:${provider}:${account}`}
+            scope={{ tenant, provider, account }}
             submission={imports}
+            latestBatch={report?.batches[provider]}
             configured={
               !!query.data?.providers.some(
-                (provider) =>
-                  provider.provider === "ozon" &&
-                  provider.account === selected.ozon &&
-                  provider.status !== "NOT_CONFIGURED",
+                (p) =>
+                  p.provider === provider &&
+                  p.account === account &&
+                  p.status !== "NOT_CONFIGURED",
               )
             }
           />
-        )}
-    </>
+        );
+      })}
+    </div>
   );
 }

@@ -3,19 +3,32 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
   api,
+  importProviders,
+  importAccount,
+  sameImportScope,
   post,
   params,
   ApiError,
   type ImportOperation,
+  type Batch,
   type ImportScope,
 } from "./api";
 import type { ImportSubmissionState } from "./ImportSubmission";
 
+const phaseLabels: Record<string, string> = {
+  READING_PRODUCTS: "Products",
+  READING_VARIANTS: "Variants",
+  READING_WAREHOUSES: "Warehouses",
+  READING_STOCK: "FBS stock",
+  READING_AGGREGATE_STOCK: "Aggregate stock",
+  READING_WAREHOUSE_STOCK: "Warehouse stock",
+  PERSISTING: "Save batch",
+};
 type History = { items: ImportOperation[]; has_next: boolean; offset: number };
 const active = (state: string) =>
   ["QUEUED", "RUNNING", "OUTCOME_UNKNOWN"].includes(state);
 const scopeQuery = (scope: ImportScope) =>
-  params({ tenant: scope.tenant, ozon_account: scope.account });
+  params({ tenant: scope.tenant, ...importAccount(scope) });
 const poll = (query: { state: { data?: ImportOperation; error: unknown } }) =>
   !query.state.error && query.state.data && active(query.state.data.state)
     ? 2000
@@ -54,8 +67,13 @@ function Confirm({
   children: React.ReactNode;
   onClose: () => void;
 }) {
+  const dialog = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    dialog.current?.querySelector<HTMLInputElement>("input,button")?.focus();
+  }, []);
   return (
     <div
+      ref={dialog}
       className="import-confirm"
       role="dialog"
       aria-label={title}
@@ -75,12 +93,16 @@ export function ImportPanel({
   scope,
   configured,
   submission,
+  latestBatch,
 }: {
   scope: ImportScope;
   configured: boolean;
   submission: ImportSubmissionState;
+  latestBatch?: Batch;
 }) {
   const client = useQueryClient();
+  const provider = importProviders[scope.provider];
+  const isMoy = scope.provider === "moysklad";
   const [offset, setOffset] = useState(0),
     [selected, setSelected] = useState(""),
     [confirm, setConfirm] = useState(false),
@@ -94,7 +116,13 @@ export function ImportPanel({
     invalidated = useRef(new Set<string>());
   const queryString = scopeQuery(scope);
   const latest = useQuery({
-    queryKey: ["import-history", scope.tenant, scope.account, 0],
+    queryKey: [
+      "import-history",
+      scope.tenant,
+      scope.provider,
+      scope.account,
+      0,
+    ],
     queryFn: ({ signal }) =>
       api<History>(`/api/imports?${queryString}&limit=10&offset=0`, signal),
     retry: false,
@@ -103,7 +131,13 @@ export function ImportPanel({
     refetchOnWindowFocus: false,
   });
   const older = useQuery({
-    queryKey: ["import-history", scope.tenant, scope.account, offset],
+    queryKey: [
+      "import-history",
+      scope.tenant,
+      scope.provider,
+      scope.account,
+      offset,
+    ],
     queryFn: ({ signal }) =>
       api<History>(
         `/api/imports?${queryString}&limit=10&offset=${offset}`,
@@ -119,7 +153,13 @@ export function ImportPanel({
   const latestID = latest.data?.items[0]?.id || "";
   const operationID = selected || latestID;
   const detail = useQuery({
-    queryKey: ["import-detail", scope.tenant, scope.account, operationID],
+    queryKey: [
+      "import-detail",
+      scope.tenant,
+      scope.provider,
+      scope.account,
+      operationID,
+    ],
     queryFn: ({ signal }) =>
       api<ImportOperation>(
         `/api/imports/${operationID}?${queryString}`,
@@ -133,11 +173,16 @@ export function ImportPanel({
   });
   useEffect(() => {
     const r = submission.result?.operation;
-    if (r && r.tenant === scope.tenant && r.account === scope.account) {
+    if (
+      r &&
+      r.provider === scope.provider &&
+      r.tenant === scope.tenant &&
+      r.account === scope.account
+    ) {
       setOffset(0);
       setSelected(r.id);
     }
-  }, [submission.result, scope.tenant, scope.account]);
+  }, [submission.result, scope.tenant, scope.provider, scope.account]);
   useEffect(() => {
     for (const error of [latest.error, history.error, detail.error])
       if (error instanceof ApiError && error.status === 401) {
@@ -168,6 +213,7 @@ export function ImportPanel({
   const current = latest.data?.items[0];
   const submitted = submission.result?.operation;
   const submittedStillActive =
+    submitted?.provider === scope.provider &&
     submitted?.tenant === scope.tenant &&
     submitted.account === scope.account &&
     active(submitted.state) &&
@@ -181,8 +227,7 @@ export function ImportPanel({
     !!(current && active(current.state));
   const samePending =
     !!submission.pending &&
-    submission.pending.intent.scope.tenant === scope.tenant &&
-    submission.pending.intent.scope.account === scope.account;
+    sameImportScope(submission.pending.intent.scope, scope);
   async function cancelQueued() {
     if (cancelling.current || !detail.data || detail.data.state !== "QUEUED")
       return;
@@ -194,7 +239,7 @@ export function ImportPanel({
         `/api/imports/${detail.data.id}/cancel`,
         {
           tenant: scope.tenant,
-          ozon_account: scope.account,
+          ...importAccount(scope),
           acknowledge: true,
         },
         AbortSignal.timeout(30000),
@@ -227,12 +272,19 @@ export function ImportPanel({
     }
   }
   return (
-    <section className="import-panel" aria-label="Ozon catalog imports">
+    <section
+      className="import-panel"
+      data-provider={scope.provider}
+      aria-label={`${provider.name} catalog imports`}
+    >
       <div className="import-panel-head">
         <div>
-          <h2>Ozon catalog imports</h2>
-          <p>
-            Tenant {scope.tenant} · account {scope.account}
+          <h2>{provider.name} catalog imports</h2>
+          <p className="import-scope">
+            Workspace <strong>{scope.tenant}</strong>{" "}
+            <span>
+              Account <code>{scope.account}</code>
+            </span>
           </p>
         </div>
         <button
@@ -249,17 +301,49 @@ export function ImportPanel({
       {!configured && (
         <p>
           The selected registered account does not match the API's configured
-          Ozon account. History remains available.
+          {provider.name} account. History remains available.
         </p>
       )}
       {submitError && <p role="alert">{submitError}</p>}
-      <p>
-        Imports do not confirm mappings or make stock safe to publish. Completed
-        traversal is not an atomic source snapshot.
-      </p>
-      <p>
-        If a submission response was lost and the page or session ended, inspect
-        this account's import history before requesting another import.
+      {latestBatch?.present && (
+        <div className="import-baseline">
+          <strong>
+            {latestBatch.completed
+              ? "Latest completed import"
+              : "Incomplete source evidence"}
+          </strong>
+          {latestBatch.observed_at && (
+            <time dateTime={latestBatch.observed_at}>
+              {timestamp(latestBatch.observed_at)}
+            </time>
+          )}
+          <p>
+            Products {latestBatch.counts?.products ?? "unknown"};{" "}
+            {isMoy && (
+              <>variants {latestBatch.counts?.variants ?? "unknown"}; </>
+            )}
+            warehouses {latestBatch.counts?.warehouses ?? "unknown"}; warehouse
+            stock rows {latestBatch.counts?.stock_rows ?? "unknown"}.
+          </p>
+        </div>
+      )}
+
+      <details className="import-help">
+        <summary>What this import does</summary>
+        <p>
+          {provider.description} Completed traversal is not an atomic source
+          snapshot. Imports do not confirm mappings or make stock safe to
+          publish.
+        </p>
+        <p>
+          If a submission response was lost and the page or session ended,
+          inspect this account's import history before requesting another
+          import.
+        </p>
+      </details>
+      <p className="import-recovery">
+        Lost a request response? Inspect this account's history below before
+        submitting again.
       </p>
       {latest.isLoading && <p role="status">Loading import history…</p>}
       {!!latest.error && (
@@ -273,18 +357,22 @@ export function ImportPanel({
       {latest.data && !current && <p>No import operations for this account.</p>}
       {current && (
         <p>
-          Latest operation: <strong>{current.state}</strong> · {current.id}
+          Latest operation:{" "}
+          <strong
+            className={`import-state state-${current.state.toLowerCase()}`}
+          >
+            {current.state}
+          </strong>{" "}
+          · {current.id}
         </p>
       )}
       {confirm && (
         <Confirm
-          title="Confirm Ozon catalog import"
+          title={`Confirm ${provider.name} catalog import`}
           onClose={() => setConfirm(false)}
         >
-          <p>
-            This operation reads the Ozon catalog, warehouses and stock
-            observations. It does not modify marketplace data or publish stock.
-          </p>
+          <p>{provider.description}</p>
+          <p>A completed traversal is not an atomic source snapshot.</p>
           <p>
             Tenant {scope.tenant} · account {scope.account}. Default bounded
             limits apply.
@@ -351,6 +439,7 @@ export function ImportPanel({
           className="import-history"
           role="region"
           aria-label="Import history list"
+          tabIndex={0}
         >
           <table>
             <thead>
@@ -362,31 +451,44 @@ export function ImportPanel({
                 <th>Finished</th>
                 <th>Outcome</th>
                 <th>Batch</th>
-                <th></th>
               </tr>
             </thead>
             <tbody>
               {history.data.items.map((op) => (
-                <tr key={op.id}>
+                <tr
+                  key={op.id}
+                  className={
+                    op.id === operationID ? "import-selected" : undefined
+                  }
+                >
                   <td>
-                    <code>{op.id}</code>
+                    <button
+                      className="import-id"
+                      aria-label={`Inspect operation ${op.id}`}
+                      aria-pressed={op.id === operationID}
+                      onClick={() => {
+                        setSelected(op.id);
+                        setCancelConfirm(false);
+                        setCancelMessage("");
+                      }}
+                    >
+                      <code>{op.id}</code>
+                    </button>
                     <br />
-                    {op.provider} · {op.account}
+                    <small>{provider.name}</small>
                   </td>
-                  <td>{op.state}</td>
+                  <td>
+                    <span
+                      className={`import-state state-${op.state.toLowerCase()}`}
+                    >
+                      {op.state}
+                    </span>
+                  </td>
                   <td>{timestamp(op.created_at)}</td>
                   <td>{timestamp(op.started_at)}</td>
                   <td>{timestamp(op.finished_at)}</td>
                   <td>{op.outcome || "—"}</td>
                   <td>{op.batch_id ?? "—"}</td>
-                  <td>
-                    <button
-                      className="secondary"
-                      onClick={() => setSelected(op.id)}
-                    >
-                      Inspect
-                    </button>
-                  </td>
                 </tr>
               ))}
             </tbody>
@@ -435,40 +537,100 @@ export function ImportPanel({
                 Operation <code>{detail.data.id}</code>
               </h3>
               <p>
-                <strong>{detail.data.state}</strong> ·{" "}
-                {descriptions[detail.data.state] || "Status unavailable."}
+                <strong
+                  className={`import-state state-${detail.data.state.toLowerCase()}`}
+                >
+                  {detail.data.state}
+                </strong>{" "}
+                · {descriptions[detail.data.state] || "Status unavailable."}
               </p>
-              <p>
+              <ol className="import-phases" aria-label="Import stages">
+                {provider.phases.map((phase) => (
+                  <li
+                    key={phase}
+                    aria-current={
+                      detail.data!.phase === phase ? "step" : undefined
+                    }
+                  >
+                    {phaseLabels[phase]}
+                  </li>
+                ))}
+              </ol>
+              <p className="import-attempt">
                 Phase: {detail.data.phase} · attempt {detail.data.attempt}/
                 {detail.data.max_attempts} · elapsed{" "}
                 {(detail.data.elapsed_ms / 1000).toFixed(1)}s.
               </p>
-              <p>
-                Logical requests {detail.data.counts.requests}; HTTP attempts{" "}
-                {detail.data.counts.attempts}; page attempts{" "}
-                {detail.data.counts.pages}; validated pages{" "}
-                {detail.data.counts.completed_pages}; successful JSON responses{" "}
-                {detail.data.counts.completed_requests}.
-              </p>
-              <p>
-                Products observed {detail.data.counts.products}; warehouses
-                observed {detail.data.counts.warehouses}; stock observations{" "}
-                {detail.data.counts.observations}.
+              <dl className="import-metrics">
+                <div>
+                  <dt>Logical requests</dt>
+                  <dd>{detail.data.counts.requests}</dd>
+                </div>
+                <div>
+                  <dt>HTTP attempts</dt>
+                  <dd>{detail.data.counts.attempts}</dd>
+                </div>
+                <div>
+                  <dt>Validated pages</dt>
+                  <dd>{detail.data.counts.completed_pages}</dd>
+                </div>
+                <div>
+                  <dt>Elapsed</dt>
+                  <dd>
+                    {(detail.data.elapsed_ms / 1000).toFixed(1)}
+                    <small> sec</small>
+                  </dd>
+                </div>
+              </dl>
+              <p className="import-records">
+                {isMoy ? (
+                  <>
+                    Products observed {detail.data.counts.products}; variants
+                    observed {detail.data.counts.variants ?? "not reported"};
+                    warehouses observed {detail.data.counts.warehouses};
+                    aggregate stock observations{" "}
+                    {detail.data.counts.observations}; warehouse stock
+                    observations{" "}
+                    {detail.data.counts.warehouse_observations ??
+                      "not reported"}
+                    .
+                  </>
+                ) : (
+                  <>
+                    Products observed {detail.data.counts.products}; warehouses
+                    observed {detail.data.counts.warehouses}; stock observations{" "}
+                    {detail.data.counts.observations}.
+                  </>
+                )}
               </p>
               <p>
                 Observed records are not committed inventory data until the
-                import succeeds. A reclaimed attempt resets these counters.
+                import succeeds. These counters are attempt-local. A reclaimed
+                attempt resets these counters.
               </p>
-              <details>
+              <details className="import-limits">
                 <summary>Execution limits</summary>
+                <p>
+                  Page attempts {detail.data.counts.pages}; successful JSON
+                  responses {detail.data.counts.completed_requests}.
+                </p>
                 <p>
                   Requests {detail.data.limits.requests}; HTTP attempts{" "}
                   {detail.data.limits.attempts}; pages{" "}
                   {detail.data.limits.pages}; products{" "}
                   {detail.data.limits.products}; warehouses{" "}
                   {detail.data.limits.warehouses}; stock observations{" "}
-                  {detail.data.limits.observations}; response bytes{" "}
-                  {detail.data.limits.response_bytes}; duration{" "}
+                  {detail.data.limits.observations};{" "}
+                  {isMoy && (
+                    <>
+                      variants {detail.data.limits.variants ?? "not reported"};
+                      warehouse stock observations{" "}
+                      {detail.data.limits.warehouse_observations ??
+                        "not reported"}
+                      ;{" "}
+                    </>
+                  )}
+                  response bytes {detail.data.limits.response_bytes}; duration{" "}
                   {detail.data.limits.duration_ns / 1e9}s; database transaction{" "}
                   {detail.data.limits.database_timeout_ns / 1e9}s.
                 </p>
@@ -490,17 +652,23 @@ export function ImportPanel({
               )}
               {detail.data.state === "SUCCEEDED" &&
                 detail.data.batch_id !== null && (
-                  <p>
-                    Completed batch: <strong>{detail.data.batch_id}</strong>
-                    {detail.data.batch_created === false &&
-                      " (existing identical eligible batch reused)"}
-                    . Observed counts describe this traversal.{" "}
-                    <Link to="/products">View latest products</Link>
-                    {" · "}
-                    <Link to="/warehouses">View latest warehouses</Link>. These
-                    screens show the latest eligible batch, which may have
-                    changed.
-                  </p>
+                  <div className="import-batch">
+                    <p>
+                      Completed batch: <strong>{detail.data.batch_id}</strong>
+                      {detail.data.batch_created === false
+                        ? " (existing identical eligible batch reused; observation timestamps unchanged)"
+                        : detail.data.batch_created === true
+                          ? " (new batch created)"
+                          : ""}
+                      . Observed counts describe this traversal.{" "}
+                      <Link to="/products">View latest products</Link>
+                      {" · "}
+                      <Link to="/warehouses">View latest warehouses</Link>.
+                      These screens show the latest eligible batch, which may
+                      have changed.
+                    </p>
+                    <Link to="/diagnostics">View diagnostics</Link>
+                  </div>
                 )}
               {detail.data.state === "QUEUED" && (
                 <button

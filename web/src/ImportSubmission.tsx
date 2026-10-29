@@ -2,6 +2,8 @@ import { useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ApiError,
+  importProviders,
+  sameImportScope,
   createImportIntent,
   sendImportIntent,
   type ImportIntent,
@@ -33,7 +35,9 @@ export function useImportSubmission() {
       if (
         value.operation.tenant !== p.intent.scope.tenant ||
         value.operation.account !== p.intent.scope.account ||
-        value.operation.operation_type !== "OZON_CATALOG_IMPORT"
+        value.operation.provider !== p.intent.scope.provider ||
+        value.operation.operation_type !==
+          importProviders[p.intent.scope.provider].operationType
       )
         throw new Error("Unexpected scoped response");
       setResult(value);
@@ -49,6 +53,7 @@ export function useImportSubmission() {
         queryKey: [
           "import-history",
           p.intent.scope.tenant,
+          p.intent.scope.provider,
           p.intent.scope.account,
         ],
       });
@@ -56,6 +61,7 @@ export function useImportSubmission() {
         queryKey: [
           "import-detail",
           p.intent.scope.tenant,
+          p.intent.scope.provider,
           p.intent.scope.account,
         ],
       });
@@ -98,6 +104,7 @@ export function useImportSubmission() {
           queryKey: [
             "import-history",
             p.intent.scope.tenant,
+            p.intent.scope.provider,
             p.intent.scope.account,
           ],
         });
@@ -148,11 +155,7 @@ export function useImportSubmission() {
       if (ref.current && !sessionLost) void submit(ref.current);
     },
     inspected: (scope: ImportScope) => {
-      if (
-        ref.current &&
-        ref.current.intent.scope.tenant === scope.tenant &&
-        ref.current.intent.scope.account === scope.account
-      )
+      if (ref.current && sameImportScope(ref.current.intent.scope, scope))
         setHistoryInspected(true);
     },
     dismiss: () => {
@@ -182,19 +185,18 @@ export function ImportSubmissionNotice({
   if (
     !pending &&
     result &&
-    (result.operation.tenant !== scope.tenant ||
+    (result.operation.provider !== scope.provider ||
+      result.operation.tenant !== scope.tenant ||
       result.operation.account !== scope.account)
   )
     return null;
-  const same =
-    pending &&
-    pending.intent.scope.tenant === scope.tenant &&
-    pending.intent.scope.account === scope.account;
+  const same = pending && sameImportScope(pending.intent.scope, scope);
   return (
-    <div className="notice" aria-live="polite">
+    <div className="notice import-submission-notice" aria-live="polite">
       {pending && (
         <p>
-          Import request for tenant {pending.intent.scope.tenant}, Ozon account{" "}
+          Import request for tenant {pending.intent.scope.tenant},{" "}
+          {importProviders[pending.intent.scope.provider].name} account{" "}
           {pending.intent.scope.account}.{" "}
           {busy
             ? "Request in progress; changing accounts does not cancel it."
@@ -205,7 +207,8 @@ export function ImportSubmissionNotice({
       {result && !pending && (
         <p>
           Operation {result.operation.id} · tenant {result.operation.tenant} ·
-          Ozon account {result.operation.account}.
+          {result.operation.provider === "moysklad" ? "MoySklad" : "Ozon"}{" "}
+          account {result.operation.account}.
         </p>
       )}
       {pending && !busy && !same && (
