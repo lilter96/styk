@@ -23,6 +23,7 @@ import (
 // These clients are shared so concurrent operator probes use their existing rate limiter.
 // Only the hard-coded official hosts are used in the production constructor.
 type connections struct {
+	catalogSimulator        bool // Only set by the integration-only literal-loopback harness.
 	db                      *postgres.Store
 	moyAccount, ozonAccount string
 	moy                     *moysklad.Client

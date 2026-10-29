@@ -26,11 +26,12 @@ func MerchantLoopbackTestHandler(db *postgres.Store, origin string, sender ident
 		return nil, err
 	}
 	c := newConnections(db)
+	c.catalogSimulator = true
 	c.moyFactory = func(secret string) (*moysklad.Client, error) {
 		return moysklad.New(moysklad.Options{BaseURL: moyURL, Token: secret, Timeout: 3 * time.Second, Interval: time.Millisecond, Backoff: time.Millisecond, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 1})
 	}
 	c.ozonFactory = func(account, secret string) (*ozon.Client, error) {
-		return ozon.New(ozon.Options{BaseURL: ozonURL, ClientID: account, APIKey: secret, Timeout: 3 * time.Second, Interval: time.Millisecond, Backoff: time.Millisecond, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 1})
+		return ozon.New(ozon.Options{AllowSyntheticStockWrites: true, BaseURL: ozonURL, ClientID: account, APIKey: secret, Timeout: 3 * time.Second, Interval: time.Millisecond, Backoff: time.Millisecond, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 1})
 	}
 	return handlerWithAuth(db, a, c)
 }

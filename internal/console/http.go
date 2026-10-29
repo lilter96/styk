@@ -65,6 +65,7 @@ func handlerWithAuth(db *postgres.Store, a *auth, connections *connections) (htt
 	registerCredentialRoutes(mux, a, db, connections)
 	registerStockSyncRoutes(mux, a, db, connections)
 	registerOrderEvidenceRoutes(mux, a, db, connections)
+	registerCatalogRoutes(mux, a, db, connections)
 	imports := newImportAPI(db)
 	mux.HandleFunc("GET /api/auth-mode", func(w http.ResponseWriter, r *http.Request) {
 		valid := a.merchant == nil && a.safe(r) || a.merchant != nil && a.merchant.safe(r)

@@ -229,5 +229,9 @@ func run() error {
 		go func() { defer close(presenceDone); publications.MaintainPresence(presenceCtx) }()
 		defer func() { stopPresence(); <-presenceDone }()
 	}
-	return (application.Worker{Publications: publications, Automatic: automatic, StoredCredentials: vault != nil, MoyskladImportAccount: moyClaim, Store: db, Handler: application.MockHandler{}, Imports: imports, ImportAccount: claimAccount, Log: slog.Default(), Poll: c.PollInterval, Lease: c.LeaseDuration, Retry: c.RetryDelay}).Run(ctx)
+	catalogWorker, err := newCatalogWork(db, resolver)
+	if err != nil {
+		return err
+	}
+	return (application.Worker{Catalog: catalogWorker, Publications: publications, Automatic: automatic, StoredCredentials: vault != nil, MoyskladImportAccount: moyClaim, Store: db, Handler: application.MockHandler{}, Imports: imports, ImportAccount: claimAccount, Log: slog.Default(), Poll: c.PollInterval, Lease: c.LeaseDuration, Retry: c.RetryDelay}).Run(ctx)
 }
