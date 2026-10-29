@@ -52,9 +52,9 @@
       "url": "https://docs.ozon.ru/api/seller/",
       "checked_at": "2026-10-30",
       "status": "inaccessible",
-      "sha256": "81fca24e727c76a595f95a4006dffd8cd69728f3cac7f41c4901ffb96eceddc1",
+      "sha256": "49cb2193f9b2de00a5a221f957eaafdd1e4d911000930c6828bbea4596c298f4",
       "hash_basis": "evidence_summary_utf8",
-      "evidence": "Checked with web reader: no readable schema content. Direct unauthenticated documentation download encountered HTTP 307 redirect loop. Current Seller API request/response schemas remain unverified; no provider API was called."
+      "evidence": "Checked with web reader: no readable schema content. Direct unauthenticated download encountered an HTTP307 redirect loop. On 2026-10-30, a normal Playwright Chromium browser executed the exact public official challenge script from st.ozone.ru; docs.ozon.ru/api/seller/ returned HTTP307 then HTTP403, and its normal documentation-origin /abt/result verification also returned HTTP403. The canonical dev.ozon.ru label notice likewise returned HTTP307/403 and its normal browser verification returned HTTP403. Both rendered connection-denial pages without Redoc/spec URLs or Seller API schema assets. Across bounded browser passes, 12 requests reached only docs.ozon.ru, dev.ozon.ru and the discovered static challenge script, plus one separate canonical-notice web read, below the 30-request budget. The retrieved challenge script SHA-256 is d20ce5cd734a5079a6d80b677c28f3e309e8b7a29fa8256eeac99558454754b9; this is not an API schema hash. No complete schema bytes or schema SHA-256 were obtained. No Seller API/provider endpoints, credentials, private accounts, injected cookies, or stealth changes were used. Current outbound request/response schemas remain unverified."
     },
     {
       "id": "ozon_sdk",
