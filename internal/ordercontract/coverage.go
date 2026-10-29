@@ -68,7 +68,7 @@ func CoverageReport() (CoverageSnapshot, error) {
 		"Validator fixture coverage is not implementation, deterministic integration, or live-provider coverage.",
 		"Integration remains false where a field-specific integration assertion has not been audited; adapter unit tests are not integration evidence.",
 		"Live flags cover only the owner-reported two genuinely cancelled FBS mirrors on 2026-10-30, not rFBS or fulfillment transitions.",
-		"Three native attribute definitions were created/read; attribute-value updates were still in progress and are not claimed as live writes.",
+		"Three registered string attribute definitions were reconciled, including read-only verification after an unknown outcome. Two existing customerorders each received exactly one HTTP200 attributes PUT; both reconciled with unchanged native IDs, and fresh normal previews produced zero commands for both.",
 		"LiveWrite means this endpoint field was sent to its provider, not that an Ozon source value was mirrored elsewhere.",
 		"Only existing manifest paths are reported; missing price/currency or metadata-create paths are not invented.",
 	}}, nil
@@ -198,6 +198,7 @@ func coverNativeScalars(row *FieldCoverageRow, path string) {
 	if coverageReference(path, "$.attributes[]") || path == "$.attributes[].value" {
 		supportedCoverage(row, FateCustomAttribute, "internal/infrastructure/moysklad/order_payload.go:orderAttributes",
 			"Write/read only reviewed string/text native attribute UUIDs with owned fields and STYK markers; definition creation is separate from value update.")
+		markAttributeLive(row, path)
 	}
 }
 
@@ -205,7 +206,7 @@ func markNativeLive(row *FieldCoverageRow, write bool) {
 	row.Proof.LiveRead = row.Direction == "response"
 	row.Proof.LiveWrite = row.Direction == "request" && row.Endpoint == "/entity/customerorder" && write
 	if row.Proof.LiveRead || row.Proof.LiveWrite {
-		row.LiveScope = "owner_reported_2026_10_30_two_cancelled_FBS_native_creates_and_readback_only; no_attribute_value_or_fulfillment_writes"
+		row.LiveScope = "owner_reported_2026_10_30_two_cancelled_FBS_native_creates_and_readback_only; no_fulfillment_writes"
 	}
 }
 
@@ -237,4 +238,14 @@ func nativeCoverageBlocked(row *FieldCoverageRow, path string) bool {
 		return true
 	}
 	return false
+}
+
+func markAttributeLive(row *FieldCoverageRow, path string) {
+	leaves := []string{"$.attributes[].meta.href", "$.attributes[].meta.type", "$.attributes[].meta.mediaType", "$.attributes[].value"}
+	if row.Endpoint != "/entity/customerorder/{id}" || !slices.Contains(leaves, path) {
+		return
+	}
+	row.Proof.LiveWrite = row.Direction == "request"
+	row.Proof.LiveRead = row.Direction == "response"
+	row.LiveScope = "owner_reported_2026_10_30_three_registered_string_attributes_commercial_order_id_status_substatus; two_existing_order_single_PUT200_each_RECONCILED_native_IDs_unchanged; fresh_normal_preview_command_counts_0_0"
 }

@@ -42,8 +42,8 @@ func TestCoverageUnsupportedAndFulfillmentWritesStayUnproven(t *testing.T) {
 		if strings.HasPrefix(row.Endpoint, "/v") && row.Proof.LiveWrite {
 			t.Fatal("Ozon fulfillment or rFBS write evidence was invented")
 		}
-		if row.Endpoint == "/entity/customerorder/{id}" && row.Direction == "request" && row.Proof.LiveWrite {
-			t.Fatal("in-progress native updates were reported as completed")
+		if row.Endpoint == "/entity/customerorder/{id}" && row.Direction == "request" && row.Proof.LiveWrite && !strings.HasPrefix(row.Path, "$.attributes[].") {
+			t.Fatal("unverified native update gained live write evidence")
 		}
 	}
 }
@@ -58,7 +58,7 @@ func TestCoverageKeepsNativeMoneyAndProviderAggregatesDistinct(t *testing.T) {
 	}{
 		{"/entity/customerorder", "request", "$.positions[].price", FateNativeField, false, true},
 		{"/entity/customerorder/{id}", "response", "$.sum", FateReadOnlyDerived, true, false},
-		{"/entity/customerorder/{id}", "request", "$.attributes[].value", FateCustomAttribute, false, false},
+		{"/entity/customerorder/{id}", "request", "$.attributes[].value", FateCustomAttribute, false, true},
 		{"/v3/posting/fbs/get", "response", "$.result.products[].sku", FateLinkedEntity, true, false},
 		{"/v3/posting/fbs/get", "response", "$.result.scanit", FateUnsupported, false, false},
 	}
@@ -104,5 +104,31 @@ func TestCoverageBlockedNativeUpdatesAreNotAdvertisedAsImplemented(t *testing.T)
 		if blocked && (row.Fate != FateUnsupported || row.Proof.Implemented || row.Proof.LiveWrite) {
 			t.Fatalf("blocked native update gained coverage: %s", row.Path)
 		}
+	}
+}
+
+func TestReconciledAttributeLiveEvidenceIsLimitedToWrittenLeaves(t *testing.T) {
+	t.Parallel()
+	writes, reads := 0, 0
+	for _, row := range testManifest(t).FieldCoverage() {
+		if row.Endpoint != "/entity/customerorder/{id}" || !strings.HasPrefix(row.Path, "$.attributes") {
+			continue
+		}
+		written := row.Path == "$.attributes[].meta.href" || row.Path == "$.attributes[].meta.type" || row.Path == "$.attributes[].meta.mediaType" || row.Path == "$.attributes[].value"
+		if row.Direction == "request" && row.Proof.LiveWrite {
+			if !written || !strings.Contains(row.LiveScope, "RECONCILED") {
+				t.Fatal("attribute live write proof exceeded reconciled leaf scope")
+			}
+			writes++
+		}
+		if row.Direction == "response" && row.Proof.LiveRead {
+			if !written {
+				t.Fatal("attribute readback proof expanded to unverified fields")
+			}
+			reads++
+		}
+	}
+	if writes != 4 || reads != 3 {
+		t.Fatalf("unexpected attribute proof counts: writes=%d reads=%d", writes, reads)
 	}
 }
