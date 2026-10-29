@@ -101,11 +101,15 @@ func TestMerchantMigrationRefusesToOrphanBusinessData(t *testing.T) {
 func TestMerchantAccountBackfillLeavesAmbiguousOwnershipUnassigned(t *testing.T) {
 	db, _ := controlledFixture(t)
 	migration := func(direction string) (string, error) {
-		cmd := exec.Command("go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", db.Pool.Config().ConnString(), direction)
+		target := "38"
+		if direction == "up-to" {
+			target = "39"
+		}
+		cmd := exec.Command("go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", db.Pool.Config().ConnString(), direction, target)
 		output, err := cmd.CombinedOutput()
 		return string(output), err
 	}
-	if output, err := migration("down"); err != nil {
+	if output, err := migration("down-to"); err != nil {
 		t.Fatalf("rollback empty merchant bindings: %v %s", err, output)
 	}
 	ctx := context.Background()
@@ -126,7 +130,7 @@ func TestMerchantAccountBackfillLeavesAmbiguousOwnershipUnassigned(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if output, err := migration("up"); err != nil {
+	if output, err := migration("up-to"); err != nil {
 		t.Fatalf("migrate merchant bindings: %v %s", err, output)
 	}
 	var count int
@@ -136,7 +140,7 @@ func TestMerchantAccountBackfillLeavesAmbiguousOwnershipUnassigned(t *testing.T)
 	if err = db.Pool.QueryRow(ctx, `SELECT count(*) FROM saas_merchant_accounts`).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("ambiguous ownership was assigned: count=%d err=%v", count, err)
 	}
-	if output, err := migration("down"); err == nil || !strings.Contains(output, "refusing to discard merchant ownership bindings") {
+	if output, err := migration("down-to"); err == nil || !strings.Contains(output, "refusing to discard merchant ownership bindings") {
 		t.Fatal("rollback did not protect the migrated account binding")
 	}
 	if err = db.Pool.QueryRow(ctx, `SELECT count(*) FROM stock_connections WHERE tenant_id='cross-e2e'`).Scan(&count); err != nil || count != 2 {

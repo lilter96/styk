@@ -67,6 +67,8 @@ func (p *merchantFakeProvider) ozon(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		merchantFakeReply(w, `{"result":{"items":[{"product_id":%s,"offer_id":%q,"sku":%s,"archived":false}],"total_items":1,"last_id":""}}`, product, offer, sku)
+	case "/v3/product/info/list":
+		merchantFakeReply(w, `{"items":[{"id":%s,"offer_id":%q,"name":"Товар Ozon для проверки"}]}`, product, offer)
 	case "/v2/warehouse/list":
 		merchantFakeReply(w, `{"warehouses":[{"warehouse_id":1020001323428000,"name":"Тестовый FBS","status":"created","is_rfbs":false}],"has_next":false,"cursor":""}`)
 	case "/v2/product/info/stocks-by-warehouse/fbs":

@@ -75,7 +75,8 @@ test("two merchants register, use independent accounts and stay isolated", async
     b.getByText(/Публикация остатков ожидает отдельной активации/),
   ).toBeVisible();
   await b.getByRole("link", { name: "Товары", exact: true }).click();
-  await expect(b.getByText("B-TEST-OFFER", { exact: true })).toBeVisible();
+  await expect(b.getByText("Товар Ozon для проверки", { exact: true })).toBeVisible();
+  await expect(b.getByText("Offer ID: B-TEST-OFFER", { exact: true })).toBeVisible();
   await expect(b.getByText("ATEST-897677", { exact: true })).toHaveCount(0);
   await b.getByRole("button", { name: /^Сопоставить / }).click();
   await b.getByLabel("Поиск товара МойСклад").fill("Тестовый товар");

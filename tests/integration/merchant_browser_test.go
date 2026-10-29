@@ -106,7 +106,7 @@ func assertMerchantHistoryRollbackGuard(t *testing.T, db *postgres.Store, automa
 	}
 	cmd := exec.Command("go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", db.Pool.Config().ConnString(), "down")
 	output, err := cmd.CombinedOutput()
-	if err == nil || !strings.Contains(string(output), "refusing to discard merchant ownership bindings") {
+	if err == nil || !strings.Contains(string(output), "refusing to discard merchant ownership bindings") && !strings.Contains(string(output), "refusing to discard observed Ozon product names") {
 		t.Fatal("migration rollback did not protect merchant publication scope")
 	}
 }
@@ -134,7 +134,7 @@ func startMerchantImportWorker(t *testing.T, ctx context.Context, db *postgres.S
 	t.Helper()
 	resolver := &credentials.Resolver{Store: db, Vault: vault}
 	imports := ozonjob.Runner{Store: db, Resolver: resolver, NewOzon: func(account, secret string) (*ozon.Client, error) {
-		return ozon.New(ozon.Options{BaseURL: base, ClientID: account, APIKey: secret, Timeout: 3 * time.Second, Interval: time.Millisecond, Backoff: time.Millisecond, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 100})
+		return ozon.New(ozon.Options{BaseURL: base, ClientID: account, APIKey: secret, Timeout: 3 * time.Second, Interval: time.Millisecond, Backoff: time.Millisecond, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 100, IncludeProductNames: true})
 	}, NewMoysklad: func(_ string, secret string) (*moysklad.Client, error) {
 		return moysklad.New(moysklad.Options{BaseURL: base, Token: secret, Timeout: 3 * time.Second, Interval: time.Millisecond, Backoff: time.Millisecond, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 100})
 	}}
