@@ -155,6 +155,9 @@ func (c *Client) UpdateStocks(ctx context.Context, items []StockUpdate) ([]Stock
 	req.Header.Set("Accept", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
+		if providercall.IsNotDispatched(err) {
+			return nil, ErrStockWritesDisabled
+		}
 		return nil, &StockWriteError{}
 	}
 	defer closeStockResponse(resp.Body)

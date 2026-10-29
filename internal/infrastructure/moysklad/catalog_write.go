@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/lilter96/styk/internal/providercall"
 	"io"
 	"net/http"
 	"net/url"
@@ -160,6 +161,9 @@ func (c *CatalogClient) dispatchCatalog(ctx context.Context, cmd catalog.Command
 	resp, err := b.http.Do(req)
 	observeCatalogRequest(ctx, req.Method, strings.TrimPrefix(req.URL.Path, c.client.base.Path), resp, err)
 	if err != nil {
+		if providercall.IsNotDispatched(err) {
+			return catalogRejected(cmd), ErrCatalogWritesDisabled
+		}
 		return catalogUnknown(cmd, 0)
 	}
 	raw, readErr := io.ReadAll(io.LimitReader(resp.Body, catalogResponseLimit+1))

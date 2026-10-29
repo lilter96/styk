@@ -9,6 +9,13 @@ import (
 	"time"
 )
 
+// NotDispatchedError proves admission or final authorization failed before HTTP.
+type NotDispatchedError struct{ Cause error }
+
+func (e *NotDispatchedError) Error() string { return "provider request was not dispatched" }
+func (e *NotDispatchedError) Unwrap() error { return e.Cause }
+func IsNotDispatched(err error) bool        { var local *NotDispatchedError; return errors.As(err, &local) }
+
 type guardKey struct{}
 type targetKey struct{}
 
@@ -30,13 +37,13 @@ type Transport struct {
 
 func (t Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if t.Gate == nil || t.Base == nil {
-		return nil, ErrInvalid
+		return nil, &NotDispatchedError{Cause: ErrInvalid}
 	}
 	operation := operationKey(req.URL.Path)
 	target, _ := req.Context().Value(targetKey{}).(string)
 	permit, err := t.Gate.Begin(req.Context(), Request{Scope: t.Scope, Method: req.Method, Operation: operation, Timeout: t.Timeout, IsWrite: isMutation(req), TargetKey: target, Endpoint: req.URL.Scheme + "://" + req.URL.Host})
 	if err != nil {
-		return nil, err
+		return nil, &NotDispatchedError{Cause: err}
 	}
 	defer func() {
 		if cleanupErr := permit.Abort(req.Context()); cleanupErr != nil {
@@ -44,11 +51,11 @@ func (t Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 	}()
 	if err = permit.Start(req.Context()); err != nil {
-		return nil, err
+		return nil, &NotDispatchedError{Cause: err}
 	}
 	if guard, ok := req.Context().Value(guardKey{}).(func(context.Context) error); ok {
 		if err = guard(req.Context()); err != nil {
-			return nil, err
+			return nil, &NotDispatchedError{Cause: err}
 		}
 	}
 	response, err := t.Base.RoundTrip(req)

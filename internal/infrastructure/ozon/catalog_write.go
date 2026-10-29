@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/lilter96/styk/internal/providercall"
 	"io"
 	"net/http"
 	"net/url"
@@ -202,6 +203,9 @@ func (c *CatalogClient) catalogMutation(ctx context.Context, command catalog.Com
 	response, err := c.read.http.Do(request)
 	observeCatalogRequest(ctx, path, response, err)
 	if err != nil {
+		if providercall.IsNotDispatched(err) {
+			return nil, 0, ErrCatalogWritesDisabled
+		}
 		return nil, 0, &CatalogWriteError{}
 	}
 	return readCatalogMutation(response)
