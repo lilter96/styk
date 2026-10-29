@@ -1,0 +1,23 @@
+﻿{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "db:up",
+      "type": "shell",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File ${workspaceFolder}/scripts/dev.ps1 up",
+      "problemMatcher": []
+    },
+    {
+      "label": "db:migrate",
+      "type": "shell",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File ${workspaceFolder}/scripts/dev.ps1 migrate",
+      "problemMatcher": []
+    },
+    {
+      "label": "web:dev",
+      "type": "shell",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File ${workspaceFolder}/scripts/dev.ps1 web",
+      "problemMatcher": []
+    }
+  ]
+}
