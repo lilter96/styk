@@ -194,7 +194,8 @@ export function ProductReview({
                       setReviewID("");
                     }}
                   >
-                    Посмотреть предложение {index + 1}
+                    {c.name || `Посмотреть предложение ${index + 1}`}{" "}
+                    {c.kind === "variant" ? "· вариант" : "· товар"}
                   </button>
                   <details className="mapping-technical">
                     <summary>Данные предложения</summary>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, params, type Page, type Product, type Report } from "./api";
@@ -28,6 +28,7 @@ export function ProductMappingPage({
   const [archived, setArchived] = useState("");
   const [mapping, setMapping] = useState("");
   const [offset, setOffset] = useState(0);
+  const [selectedProducts, setSelectedProducts] = useState<Product[]>([]);
   const ready = !!(scope.tenant && scope.moy && scope.ozon);
   const base = {
     tenant: scope.tenant,
@@ -77,6 +78,11 @@ export function ProductMappingPage({
     (targets.data?.items ?? []).map((t) => [t.kind + ":" + t.id, t]),
   );
   const reset = () => setOffset(0);
+  useEffect(() => {
+    setSelectedProducts([]);
+    setReview(null);
+    setOffset(0);
+  }, [scope.tenant, scope.moy, scope.ozon]);
 
   return (
     <div className="product-mapping-page">
@@ -143,7 +149,7 @@ export function ProductMappingPage({
         <label>
           Поиск
           <input
-            placeholder="Артикул, ID товара или SKU"
+            placeholder="Название, артикул, offer ID или SKU"
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
@@ -176,10 +182,53 @@ export function ProductMappingPage({
           >
             <option value="">Все соответствия</option>
             <option value="confirmed">Подтверждённые</option>
-            <option value="unconfirmed">Без подтверждения</option>
+            <option value="unconfirmed">Требуют проверки</option>
           </select>
         </label>
       </div>
+      {selectedProducts.length > 0 && (
+        <details className="mapping-queue">
+          <summary>Выбрано для проверки: {selectedProducts.length}</summary>
+          <p>
+            Проверьте каждую пару. Совпадение артикула не подтверждает, что это
+            один товар; автоматического подтверждения нет.
+          </p>
+          <ul>
+            {selectedProducts.map((product) => (
+              <li key={product.product_id}>
+                <button
+                  className="text-action"
+                  disabled={!!activeConfirmation.pending}
+                  onClick={() => setReview(product)}
+                >
+                  Проверить {product.offer_id || product.product_id}
+                </button>{" "}
+                <span>
+                  →{" "}
+                  {product.candidates
+                    .map(
+                      (c) =>
+                        `${c.name || c.id}${c.kind === "variant" ? " (вариант)" : ""}`,
+                    )
+                    .join(", ")}
+                </span>{" "}
+                <button
+                  className="text-action"
+                  onClick={() =>
+                    setSelectedProducts((items) =>
+                      items.filter(
+                        (item) => item.product_id !== product.product_id,
+                      ),
+                    )
+                  }
+                >
+                  Убрать
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       {!ready ? (
         <div className="mapping-empty">
           Выберите оба аккаунта в рабочем пространстве, чтобы сопоставить
@@ -214,6 +263,7 @@ export function ProductMappingPage({
             <table className="mapping-table">
               <thead>
                 <tr>
+                  <th>Проверить</th>
                   <th>Товар в МойСклад</th>
                   <th>Артикул</th>
                   <th>Товар в Ozon</th>
@@ -232,6 +282,41 @@ export function ProductMappingPage({
                     statuses.INSUFFICIENT_DATA;
                   return (
                     <tr key={product.product_id}>
+                      <td data-label="Проверить">
+                        {product.archived === false &&
+                        product.target_id === null &&
+                        product.candidates.length > 0 &&
+                        !product.candidates_truncated ? (
+                          <input
+                            type="checkbox"
+                            aria-label={`Выбрать ${product.offer_id || product.product_id} для проверки`}
+                            checked={selectedProducts.some(
+                              (item) => item.product_id === product.product_id,
+                            )}
+                            disabled={
+                              selectedProducts.length >= 100 &&
+                              !selectedProducts.some(
+                                (item) =>
+                                  item.product_id === product.product_id,
+                              )
+                            }
+                            onChange={(e) =>
+                              setSelectedProducts((items) =>
+                                e.target.checked
+                                  ? [...items, product]
+                                  : items.filter(
+                                      (item) =>
+                                        item.product_id !== product.product_id,
+                                    ),
+                              )
+                            }
+                          />
+                        ) : (
+                          <span aria-label="Нет предложений для групповой проверки">
+                            —
+                          </span>
+                        )}
+                      </td>
                       <td data-label="Товар в МойСклад">
                         <button
                           className="mapping-select"
@@ -304,7 +389,17 @@ export function ProductMappingPage({
             ) ?? review
           }
           scope={scope}
-          close={() => setReview(null)}
+          close={() => {
+            if (
+              activeConfirmation.result &&
+              activeConfirmation.resultContext?.product === review.product_id
+            ) {
+              setSelectedProducts((items) =>
+                items.filter((item) => item.product_id !== review.product_id),
+              );
+            }
+            setReview(null);
+          }}
           confirmation={activeConfirmation}
         />
       )}

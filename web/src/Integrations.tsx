@@ -14,7 +14,6 @@ import {
 import {
   StockSyncControls,
   type StockSyncSubmissionState,
-  type StockSyncView,
 } from "./StockSyncControls";
 import {
   useImportSubmission,
@@ -101,10 +100,23 @@ export function Integrations({
   const requestLock = useRef(false);
   const [acks, setAcks] = useState<Record<string, boolean>>({});
   const [message, setMessage] = useState("");
-  const [syncView, setSyncView] = useState<StockSyncView | null>(null);
-  const onSyncStatus = useCallback(
-    (value: StockSyncView) => setSyncView(value),
-    [],
+  const [autoProgress, setAutoProgress] = useState({
+    scope: "",
+    enabled: false,
+    checked: false,
+  });
+  const progressScope = `${tenant}:${selected?.moy || ""}:${selected?.ozon || ""}`;
+  const onAutomaticProgress = useCallback(
+    (enabled: boolean, checked: boolean) => {
+      setAutoProgress((old) =>
+        old.scope === progressScope &&
+        old.enabled === enabled &&
+        old.checked === checked
+          ? old
+          : { scope: progressScope, enabled, checked },
+      );
+    },
+    [progressScope],
   );
   const [creatingProvider, setCreatingProvider] =
     useState<ImportProvider | null>(null);
@@ -284,23 +296,9 @@ export function Integrations({
   const eligible = (provider: ImportProvider) =>
     !!(batchFor(provider)?.present && batchFor(provider)?.completed);
   const bothReady = eligible("moysklad") && eligible("ozon");
-  const syncEnabled = !!(
-    syncView &&
-    syncView.tenant === tenant &&
-    syncView.moysklad_account === selected?.moy &&
-    syncView.ozon_account === selected?.ozon &&
-    syncView.enabled &&
-    syncView.publication_available === true &&
-    syncView.ready &&
-    [
-      "ACTIVE",
-      "ENABLED",
-      "QUEUED",
-      "RUNNING",
-      "UPDATING",
-      "SUCCEEDED",
-    ].includes(syncView.state)
-  );
+  const syncEnabled =
+    autoProgress.scope === progressScope && autoProgress.enabled;
+  const firstCheckCompleted = syncEnabled && autoProgress.checked;
   const connected = (["moysklad", "ozon"] as const).filter((provider) => {
     const p = providers.find((item) => item.provider === provider);
     return (
@@ -319,12 +317,7 @@ export function Integrations({
   );
   const mapped = report?.mapping_counts.catalog_confirmed_products;
   const catalogTotal = report?.mapping_counts.catalog_products;
-  const productsMapped =
-    bothReady &&
-    typeof mapped === "number" &&
-    typeof catalogTotal === "number" &&
-    catalogTotal > 0 &&
-    mapped === catalogTotal;
+  const productsMapped = bothReady && typeof mapped === "number" && mapped > 0;
   const warehousesMapped =
     (report?.mapping_counts.confirmed_warehouses || 0) > 0;
   const setupStep =
@@ -334,7 +327,9 @@ export function Integrations({
         ? 2
         : !productsMapped || !warehousesMapped
           ? 3
-          : 4;
+          : !syncEnabled
+            ? 4
+            : 5;
   const settingsFeedback = (
     <>
       {message && (
@@ -393,9 +388,9 @@ export function Integrations({
         <div className="setup-heading">
           <h2>Настройка синхронизации</h2>
           <span>
-            {syncEnabled && productsMapped && warehousesMapped
+            {firstCheckCompleted && productsMapped && warehousesMapped
               ? "Все шаги выполнены"
-              : `Шаг ${setupStep} из 4`}
+              : `Шаг ${setupStep} из 5`}
           </span>
         </div>
         <ol className="setup-steps">
@@ -455,7 +450,7 @@ export function Integrations({
                   ? "Откроется после загрузки данных"
                   : typeof mapped === "number" &&
                       typeof catalogTotal === "number"
-                    ? `${mapped} из ${catalogTotal} · склады подтверждаются отдельно`
+                    ? `${mapped} из ${catalogTotal} · остальные товары можно настроить позже`
                     : "Проверьте соответствия товаров и складов"}
               </p>
               {bothReady && (
@@ -473,9 +468,25 @@ export function Integrations({
               {syncEnabled ? "✓" : "4"}
             </span>
             <div>
-              <strong>Включить синхронизацию</strong>
+              <strong>Настроить и включить</strong>
               <p>
                 {syncEnabled ? "Включена" : "Нужна проверка перед включением"}
+              </p>
+            </div>
+          </li>
+          <li className={`setup-step ${setupStep < 5 ? "pending" : ""}`}>
+            <span
+              className={`step-symbol ${firstCheckCompleted ? "done" : setupStep === 5 ? "current" : ""}`}
+              aria-hidden="true"
+            >
+              {firstCheckCompleted ? "✓" : "5"}
+            </span>
+            <div>
+              <strong>Проверить результат</strong>
+              <p>
+                {firstCheckCompleted
+                  ? "Первая проверка выбранных товаров завершена"
+                  : "После первой проверки покажем результат"}
               </p>
             </div>
           </li>
@@ -487,7 +498,7 @@ export function Integrations({
         ozon={selected?.ozon || ""}
         eligible={bothReady && productsMapped && warehousesMapped}
         submission={stockSyncSubmission}
-        onStatus={onSyncStatus}
+        onAutomaticProgress={onAutomaticProgress}
       />
       <StockShadow
         tenant={tenant}

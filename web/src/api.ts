@@ -209,7 +209,15 @@ export type Product = {
   target_id: string | null;
   match_status: string;
   candidate_count: number;
-  candidates: { kind: string; id: string; evidence: string[] }[];
+  candidates: {
+    kind: string;
+    id: string;
+    evidence: string[];
+    name?: string;
+    article?: string;
+    code?: string;
+    parent_id?: string;
+  }[];
   candidates_truncated: boolean;
 };
 export type Warehouse = {

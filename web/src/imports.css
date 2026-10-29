@@ -325,7 +325,7 @@ body {
 }
 .setup-steps {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 20px;
   list-style: none;
   padding: 0;
@@ -756,6 +756,26 @@ body {
   padding-top: 14px;
   margin-top: 20px;
   font-size: 14px;
+}
+.order-evidence-actions {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0;
+}
+.order-evidence-actions label {
+  display: grid;
+  gap: 6px;
+  color: #475569;
+}
+.order-evidence-actions select {
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+  color: #0f172a;
 }
 .technical-details > summary,
 .import-help > summary {

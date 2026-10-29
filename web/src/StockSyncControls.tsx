@@ -2,7 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, params, post } from "./api";
 import { IntegrationDialog } from "./IntegrationDialog";
-import { AutomaticStockControls, type AutomaticRecoveryTarget } from "./AutomaticStockControls";
+import {
+  AutomaticStockControls,
+  type AutomaticRecoveryTarget,
+} from "./AutomaticStockControls";
 
 type SyncScope = {
   tenant: string;
@@ -169,7 +172,12 @@ export function useStockSyncSubmission() {
       });
       if (intent.kind === "supersede")
         await client.invalidateQueries({
-          queryKey: ["automatic-stock", intent.scope.tenant, intent.scope.moysklad_account, intent.scope.ozon_account],
+          queryKey: [
+            "automatic-stock",
+            intent.scope.tenant,
+            intent.scope.moysklad_account,
+            intent.scope.ozon_account,
+          ],
         });
     } catch (error) {
       const safeCode = error instanceof ApiError ? error.code || "" : "";
@@ -394,6 +402,7 @@ export function StockSyncControls({
   eligible,
   submission,
   onStatus,
+  onAutomaticProgress,
 }: {
   tenant: string;
   moy: string;
@@ -401,6 +410,10 @@ export function StockSyncControls({
   eligible: boolean;
   submission?: StockSyncSubmissionState;
   onStatus?: (view: StockSyncView) => void;
+  onAutomaticProgress?: (
+    enabled: boolean,
+    firstCheckCompleted: boolean,
+  ) => void;
 }) {
   const local = useStockSyncSubmission(),
     commands = submission || local;
@@ -420,7 +433,8 @@ export function StockSyncControls({
     [testAck, setTestAck] = useState(false),
     [testAttestations, setTestAttestations] = useState<TestAttestation[]>([]),
     [recoveryOpen, setRecoveryOpen] = useState(false),
-    [recoveryTarget, setRecoveryTarget] = useState<AutomaticRecoveryTarget | null>(null),
+    [recoveryTarget, setRecoveryTarget] =
+      useState<AutomaticRecoveryTarget | null>(null),
     [recoveryAck, setRecoveryAck] = useState(false),
     [automaticEnabled, setAutomaticEnabled] = useState(false),
     [workerStopped, setWorkerStopped] = useState(false),
@@ -604,7 +618,7 @@ export function StockSyncControls({
       : state === "RECONCILING"
         ? "Проверяем результат"
         : state === "RECONCILED"
-          ? "Синхронизировано"
+          ? "Последняя отправка сверена"
           : state === "QUEUED"
             ? "Ожидает отправки"
             : uncertainOperation
@@ -891,7 +905,10 @@ export function StockSyncControls({
                   setRecoveryAck(false);
                   setWorkerStopped(false);
                   setRecoveryReason("");
-                  setRecoveryTarget({ operation_id: view.last_operation!.id, ...view.last_operation!.targets[0] });
+                  setRecoveryTarget({
+                    operation_id: view.last_operation!.id,
+                    ...view.last_operation!.targets[0],
+                  });
                   setRecoveryOpen(true);
                 }}
               >
@@ -905,6 +922,7 @@ export function StockSyncControls({
           scope={scope}
           targets={view.targets}
           onEnabledChange={setAutomaticEnabled}
+          onProgress={onAutomaticProgress}
           onRecover={(target) => {
             setRecoveryAck(false);
             setWorkerStopped(false);
@@ -1319,8 +1337,7 @@ export function StockSyncControls({
               Товар {recoveryTarget.ozon_product_id} · склад{" "}
               {recoveryTarget.ozon_warehouse_id} · запрос{" "}
               {recoveryTarget.quantity} шт. · последняя проверка{" "}
-              {recoveryTarget.readback_quantity ?? "нет данных"}{" "}
-              шт.{" "}
+              {recoveryTarget.readback_quantity ?? "нет данных"} шт.{" "}
               {recoveryTarget.readback_at &&
                 `· ${new Date(recoveryTarget.readback_at).toLocaleString("ru-RU")}`}
               .
@@ -1369,10 +1386,8 @@ export function StockSyncControls({
                     undefined,
                     recoveryTarget.operation_id,
                     {
-                      expected_readback_at:
-                        recoveryTarget.readback_at!,
-                      expected_quantity:
-                        recoveryTarget.readback_quantity!,
+                      expected_readback_at: recoveryTarget.readback_at!,
+                      expected_quantity: recoveryTarget.readback_quantity!,
                       reason: recoveryReason.trim(),
                     },
                   )

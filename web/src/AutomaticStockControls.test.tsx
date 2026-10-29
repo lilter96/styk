@@ -146,13 +146,28 @@ it("allows multiple mapped targets to be selected without adding unselected ones
 it("enrolls mapped candidates returned by the automatic configuration API", async () => {
   const calls = setup({
     available: true,
-    candidates: [target, { ...target, ozon_product_id: "102", offer_id: "offer-b" }],
+    candidates: [
+      target,
+      { ...target, ozon_product_id: "102", offer_id: "offer-b" },
+    ],
   });
-  fireEvent.click(await screen.findByRole("button", { name: "Настроить автоматическую синхронизацию" }));
-  const dialog = screen.getByRole("dialog", { name: "Настроить автоматическую синхронизацию?" });
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Настроить автоматическую синхронизацию",
+    }),
+  );
+  const dialog = screen.getByRole("dialog", {
+    name: "Настроить автоматическую синхронизацию?",
+  });
   fireEvent.click(within(dialog).getByLabelText("Товар offer-b, склад 201"));
-  fireEvent.click(within(dialog).getByLabelText(/Подтверждаю выбранные настройки/));
-  fireEvent.click(within(dialog).getByRole("button", { name: "Включить автоматическую проверку" }));
+  fireEvent.click(
+    within(dialog).getByLabelText(/Подтверждаю выбранные настройки/),
+  );
+  fireEvent.click(
+    within(dialog).getByRole("button", {
+      name: "Включить автоматическую проверку",
+    }),
+  );
   await waitFor(() => expect(calls).toHaveLength(1));
   expect(calls[0].body.targets).toMatchObject([
     { ozon_product_id: "101", ozon_warehouse_id: "201" },
@@ -165,22 +180,67 @@ it("shows each enrolled target's last calculation and blocked reason", async () 
   setup({
     available: true,
     candidates: [target, second],
-    policy: { enabled: true, interval_seconds: 60, valid_until: new Date(Date.now() + 3600000).toISOString(), targets: [target, second] },
-    last_cycle: { id: "multi", state: "BLOCKED", outcome: "TARGETS_NEED_ATTENTION", started_at: "2026-10-29T13:00:00Z", metrics: { blocked_targets: 1, target_results: { "101:201": { outcome: "RECONCILED", candidate: "5", readback_quantity: "5" }, "102:201": { outcome: "BLOCKED", checks: ["PUBLICATION_UNKNOWN_OR_PENDING"] } } } },
+    policy: {
+      enabled: true,
+      interval_seconds: 60,
+      valid_until: new Date(Date.now() + 3600000).toISOString(),
+      targets: [target, second],
+    },
+    last_cycle: {
+      id: "multi",
+      state: "BLOCKED",
+      outcome: "TARGETS_NEED_ATTENTION",
+      started_at: "2026-10-29T13:00:00Z",
+      metrics: {
+        blocked_targets: 1,
+        target_results: {
+          "101:201": {
+            outcome: "RECONCILED",
+            candidate: "5",
+            readback_quantity: "5",
+          },
+          "102:201": {
+            outcome: "BLOCKED",
+            checks: ["PUBLICATION_UNKNOWN_OR_PENDING"],
+          },
+        },
+      },
+    },
   });
   fireEvent.click(await screen.findByText(/Товаров в настройке: 2/));
   expect(screen.getByText(/offer-b.*Требует внимания/)).toBeTruthy();
-  expect(screen.getByText("Проверьте результат предыдущей отправки.")).toBeTruthy();
+  expect(
+    screen.getByText("Проверьте результат предыдущей отправки."),
+  ).toBeTruthy();
   expect(screen.getByText(/расчёт: 5/)).toBeTruthy();
 });
 
 it("keeps an enrolled target visible when its latest marketplace row disappears", async () => {
-  const missing = { ...target, ozon_product_id: "102", offer_id: "offer-b", eligible: false, marketplace_free: undefined };
+  const missing = {
+    ...target,
+    ozon_product_id: "102",
+    offer_id: "offer-b",
+    eligible: false,
+    marketplace_free: undefined,
+  };
   setup({
     available: true,
     candidates: [{ ...target, eligible: true }, missing],
-    policy: { enabled: true, interval_seconds: 60, valid_until: new Date(Date.now() + 3600000).toISOString(), targets: [target, missing] },
-    last_cycle: { id: "multi", state: "COMPLETE", outcome: "NO_CHANGE", started_at: "2026-10-29T13:00:00Z", metrics: { target_results: { "102:201": { outcome: "NO_CHANGE", candidate: "0" } } } },
+    policy: {
+      enabled: true,
+      interval_seconds: 60,
+      valid_until: new Date(Date.now() + 3600000).toISOString(),
+      targets: [target, missing],
+    },
+    last_cycle: {
+      id: "multi",
+      state: "COMPLETE",
+      outcome: "NO_CHANGE",
+      started_at: "2026-10-29T13:00:00Z",
+      metrics: {
+        target_results: { "102:201": { outcome: "NO_CHANGE", candidate: "0" } },
+      },
+    },
   });
   fireEvent.click(await screen.findByText(/Товаров в настройке: 2/));
   expect(screen.getByText(/offer-b.*Требует внимания/)).toBeTruthy();
@@ -259,4 +319,48 @@ it("keeps an earlier unknown target inspectable after an unrelated success", asy
       calls.some((c) => c.path.endsWith("/unknown-operation/reconcile")),
     ).toBe(true),
   );
+});
+
+it("requires separate consent when Ozon has no stock observation", async () => {
+  const missing = {
+    ...target,
+    offer_id: "new-offer",
+    eligible: false,
+    initial_eligible: true,
+    marketplace_free: undefined,
+  };
+  const calls = setup({ available: true, candidates: [missing] });
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Настроить автоматическую синхронизацию",
+    }),
+  );
+  const dialog = screen.getByRole("dialog", {
+    name: "Настроить автоматическую синхронизацию?",
+  });
+  fireEvent.change(within(dialog).getByLabelText("Товар и склад"), {
+    target: { value: "101:201" },
+  });
+  const submit = within(dialog).getByRole("button", {
+    name: "Включить автоматическую проверку",
+  }) as HTMLButtonElement;
+  const consent = within(dialog).getByLabelText(/Разрешаю первую отправку/);
+  expect(
+    within(dialog).getByText(/отсутствие записи не означает ноль/),
+  ).toBeTruthy();
+  fireEvent.click(
+    within(dialog).getByLabelText(/Подтверждаю выбранные настройки/),
+  );
+  expect(submit.disabled).toBe(true);
+  fireEvent.click(consent);
+  expect(submit.disabled).toBe(false);
+  fireEvent.click(submit);
+  await waitFor(() => expect(calls).toHaveLength(1));
+  expect(calls[0].body.targets).toEqual([
+    expect.objectContaining({
+      ozon_product_id: "101",
+      ozon_warehouse_id: "201",
+      initial_publication: true,
+    }),
+  ]);
 });

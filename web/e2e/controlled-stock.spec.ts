@@ -150,9 +150,9 @@ test("operator reviews and publishes a single controlled quantity through the wo
     .getByLabel("Подтверждаю изменение остатков в Ozon для выбранных аккаунтов")
     .check();
   await dialog.getByRole("button", { name: "Отправить остаток" }).click();
-  await expect(page.getByText("Синхронизировано", { exact: true })).toBeVisible(
-    { timeout: 15000 },
-  );
+  await expect(
+    page.getByText("Последняя отправка сверена", { exact: true }),
+  ).toBeVisible({ timeout: 15000 });
   await expect(page.getByText(/Проверено в Ozon: 7 шт/)).toBeVisible();
   await page.screenshot({
     path: join(shots, "result-mobile.png"),

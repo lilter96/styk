@@ -259,3 +259,70 @@ it("uses latest-catalog counts for progress instead of historical mappings or th
   expect(progress.getAttribute("aria-valuenow")).toBe("4");
   expect(screen.queryByText("Подтверждено соответствий: 99")).toBeNull();
 });
+
+it("queues several suggestions for individual review without confirming them", async () => {
+  const variants = [
+    {
+      ...product,
+      product_id: "p1",
+      offer_id: "one",
+      match_status: "ONE_CANDIDATE",
+      candidate_count: 1,
+      candidates: [
+        { kind: "variant", id: "v1", name: "Размер S", evidence: ["article"] },
+      ],
+    },
+    {
+      ...product,
+      product_id: "p2",
+      offer_id: "two",
+      match_status: "ONE_CANDIDATE",
+      candidate_count: 1,
+      candidates: [
+        { kind: "product", id: "p3", name: "Другой товар", evidence: ["code"] },
+      ],
+    },
+    {
+      ...product,
+      product_id: "archived",
+      offer_id: "archived",
+      archived: true,
+      match_status: "ONE_CANDIDATE",
+      candidate_count: 1,
+      candidates: [{ kind: "product", id: "p4", evidence: ["code"] }],
+    },
+  ];
+  const fetchMock = vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation((input, init) => {
+      if (init?.method === "POST")
+        throw new Error("review selection must not write");
+      const path = String(input);
+      if (path.includes("/api/diagnostics"))
+        return response({ mapping_counts: {} });
+      if (path.includes("moysklad-products"))
+        return response({ items: [], offset: 0, has_next: false });
+      return response({ items: variants, offset: 0, has_next: false });
+    });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <Products scope={scope} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  fireEvent.click(await screen.findByLabelText("Выбрать one для проверки"));
+  fireEvent.click(screen.getByLabelText("Выбрать two для проверки"));
+  expect(screen.queryByLabelText("Выбрать archived для проверки")).toBeNull();
+  fireEvent.click(screen.getByText("Выбрано для проверки: 2"));
+  expect(screen.getByText(/Размер S \(вариант\)/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Проверить one" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Проверить two" })).toBeTruthy();
+  expect(fetchMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
+    false,
+  );
+  client.clear();
+});

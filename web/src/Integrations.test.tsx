@@ -427,7 +427,7 @@ it("keeps setup contextual and opens missing-provider settings without a submiss
   const setupPanel = screen.getByRole("region", {
     name: "Настройка синхронизации",
   });
-  expect(within(setupPanel).getByText("Шаг 1 из 4")).toBeTruthy();
+  expect(within(setupPanel).getByText("Шаг 1 из 5")).toBeTruthy();
   expect(
     within(setupPanel).getByText("Проверено подключений: 0 из 2"),
   ).toBeTruthy();

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api, params } from "./api";
 import { IntegrationDialog } from "./IntegrationDialog";
+import { OrderEvidence } from "./OrderEvidence";
 
 type Check = { code: string; passed: boolean; message: string };
 type Target = {
@@ -265,6 +266,11 @@ export function StockShadow({
                       {reason}
                     </p>
                   ))}
+                  <OrderEvidence
+                    scope={scope}
+                    product={t.product_id}
+                    warehouse={t.warehouse_id}
+                  />
                   <details>
                     <summary>Технические детали</summary>
                     <p>

@@ -128,8 +128,8 @@ test("operator accepts a test-only unknown outcome and reviews a separate public
     .getByLabel("Подтверждаю изменение остатков в Ozon для выбранных аккаунтов")
     .check();
   await dialog.getByRole("button", { name: "Отправить остаток" }).click();
-  await expect(page.getByText("Синхронизировано", { exact: true })).toBeVisible(
-    { timeout: 50_000 },
-  );
+  await expect(
+    page.getByText("Последняя отправка сверена", { exact: true }),
+  ).toBeVisible({ timeout: 50_000 });
   await expect(page.getByText(/Проверено в Ozon: 7 шт/)).toBeVisible();
 });

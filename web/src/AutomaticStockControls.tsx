@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, params, post } from "./api";
 import { IntegrationDialog } from "./IntegrationDialog";
+import { OrderEvidence } from "./OrderEvidence";
 
 type Scope = { tenant: string; moysklad_account: string; ozon_account: string };
 type Target = {
@@ -9,6 +10,7 @@ type Target = {
   ozon_warehouse_id: string;
   offer_id?: string;
   eligible?: boolean;
+  initial_eligible?: boolean;
   source_physical?: string;
   source_reserve?: string;
   marketplace_free?: number;
@@ -31,6 +33,7 @@ export type AutomaticRecoveryTarget = {
 type AutoView = {
   available: boolean;
   policy?: {
+    revision: number;
     enabled: boolean;
     interval_seconds: number;
     valid_until: string;
@@ -48,6 +51,7 @@ type AutoView = {
   candidates?: Target[];
   last_cycle?: {
     id: string;
+    config_revision: number;
     state: string;
     outcome?: string;
     started_at: string;
@@ -89,11 +93,13 @@ export function AutomaticStockControls({
   targets,
   onEnabledChange,
   onRecover,
+  onProgress,
 }: {
   scope: Scope;
   targets: Target[];
   onEnabledChange: (enabled: boolean) => void;
   onRecover?: (target: AutomaticRecoveryTarget) => void;
+  onProgress?: (enabled: boolean, firstCheckCompleted: boolean) => void;
 }) {
   const client = useQueryClient();
   const key = [
@@ -111,8 +117,21 @@ export function AutomaticStockControls({
   });
   const data = query.data,
     enabled = !!data?.policy?.enabled;
+  const policyActive =
+    enabled &&
+    !!data?.policy &&
+    new Date(data.policy.valid_until).getTime() > Date.now();
+  const firstCheckCompleted = !!(
+    policyActive &&
+    data?.last_cycle &&
+    data.last_cycle.config_revision === data.policy?.revision &&
+    data.last_cycle.state === "COMPLETE" &&
+    ["NO_CHANGE", "RECONCILED"].includes(data.last_cycle.outcome || "") &&
+    Number(data.last_cycle.metrics?.blocked_targets || 0) === 0
+  );
   const [open, setOpen] = useState(false),
     [ack, setAck] = useState(false),
+    [initialConfirmed, setInitialConfirmed] = useState<string[]>([]),
     [selected, setSelected] = useState<string[] | null>(null),
     [interval, setInterval] = useState("60"),
     [validMinutes, setValidMinutes] = useState("240"),
@@ -128,18 +147,34 @@ export function AutomaticStockControls({
     onEnabledChange(enabled);
   }, [enabled, onEnabledChange]);
   useEffect(() => {
+    onProgress?.(policyActive, firstCheckCompleted);
+  }, [policyActive, firstCheckCompleted, onProgress]);
+  useEffect(() => {
     setSelected(null);
     setOpen(false);
     setAck(false);
+    setInitialConfirmed([]);
     setPending(null);
     setMessage("");
   }, [scope.tenant, scope.moysklad_account, scope.ozon_account]);
   if (!data?.available) return null;
   const keyFor = (t: Target) => `${t.ozon_product_id}:${t.ozon_warehouse_id}`;
   const allTargets = data.candidates ?? targets;
-  const availableTargets = allTargets.filter((t) => t.eligible !== false);
-  const selection = selected ?? availableTargets.slice(0, 1).map(keyFor);
-  const selectedTargets = availableTargets.filter((t) => selection.includes(keyFor(t)));
+  const availableTargets = allTargets.filter(
+    (t) => t.eligible !== false || t.initial_eligible,
+  );
+  const selection =
+    selected ??
+    availableTargets
+      .filter((t) => t.eligible !== false)
+      .slice(0, 1)
+      .map(keyFor);
+  const selectedTargets = availableTargets.filter((t) =>
+    selection.includes(keyFor(t)),
+  );
+  const initialTargets = selectedTargets.filter(
+    (t) => t.initial_eligible && t.eligible === false,
+  );
   const current = selectedTargets[0];
   const cycle = data.last_cycle;
   const activeCycle =
@@ -165,11 +200,17 @@ export function AutomaticStockControls({
     publication_id?: string;
     checks?: string[];
   };
-  const results = (cycle?.metrics?.target_results || {}) as Record<string, TargetResult>;
-  const enrolled: Target[] = (data.policy?.targets || []).map((p) =>
-    allTargets.find((t) => keyFor(t) === keyFor(p)) || { ...p, eligible: false },
+  const results = (cycle?.metrics?.target_results || {}) as Record<
+    string,
+    TargetResult
+  >;
+  const enrolled: Target[] = (data.policy?.targets || []).map(
+    (p) =>
+      allTargets.find((t) => keyFor(t) === keyFor(p)) || {
+        ...p,
+        eligible: false,
+      },
   );
-  const needsAttention = cycle?.state === "BLOCKED" || Number(cycle?.metrics?.blocked_targets || 0) > 0 || enrolled.some((t) => t.eligible === false) || !!data.unresolved?.length;
   const lastSuccess = enrolled
     .filter((t) => t.last_state === "RECONCILED" && t.readback_at)
     .map((t) => t.readback_at!)
@@ -177,16 +218,44 @@ export function AutomaticStockControls({
     .at(-1);
   function targetOutcome(t: Target): string {
     const result = results[keyFor(t)];
+    // After a first publication the catalog snapshot still has no row, but a
+    // later, target-specific readback can already have reconciled the write.
+    if (
+      result?.outcome === "RECONCILED" &&
+      t.last_state === "RECONCILED" &&
+      t.readback_at &&
+      result.readback_quantity != null &&
+      result.readback_quantity === result.candidate
+    )
+      return "Сверено";
     if (t.eligible === false) return "Требует внимания";
-    if (result?.outcome === "NO_CHANGE" || result?.outcome === "RECONCILED") return "Сверено";
-    if (result?.outcome === "BLOCKED" || result?.outcome === "PUBLICATION_UNKNOWN" || result?.outcome === "PUBLICATION_REJECTED" || result?.outcome === "RECONCILIATION_PENDING") return "Требует внимания";
+    if (result?.outcome === "NO_CHANGE" || result?.outcome === "RECONCILED")
+      return "Сверено";
+    if (
+      result?.outcome === "BLOCKED" ||
+      result?.outcome === "PUBLICATION_UNKNOWN" ||
+      result?.outcome === "PUBLICATION_REJECTED" ||
+      result?.outcome === "RECONCILIATION_PENDING"
+    )
+      return "Требует внимания";
     return "Ожидает проверки";
   }
+  const needsAttention =
+    cycle?.state === "BLOCKED" ||
+    Number(cycle?.metrics?.blocked_targets || 0) > 0 ||
+    enrolled.some((t) => targetOutcome(t) === "Требует внимания") ||
+    !!data.unresolved?.length;
   function targetProblem(checks: string[]): string {
-    if (checks.includes("PUBLICATION_UNKNOWN_OR_PENDING")) return "Проверьте результат предыдущей отправки.";
-    if (checks.includes("MARKETPLACE_RESERVATION_REQUIRES_REVIEW")) return "Проверьте резерв Ozon для этого товара.";
-    if (checks.includes("STOCK_OBSERVATION_MISSING")) return "Нет подтверждённого остатка товара на выбранном складе.";
-    if (checks.includes("AUTOMATIC_MAXIMUM_EXCEEDED")) return "Расчёт превышает настроенный предел отправки.";
+    if (checks.includes("PUBLICATION_UNKNOWN_OR_PENDING"))
+      return "Проверьте результат предыдущей отправки.";
+    if (checks.includes("MARKETPLACE_RESERVATION_REQUIRES_REVIEW"))
+      return "Проверьте резерв Ozon для этого товара.";
+    if (checks.includes("STOCK_OBSERVATION_MISSING"))
+      return "Нет подтверждённого остатка товара на выбранном складе.";
+    if (checks.includes("INITIAL_PUBLICATION_ALREADY_USED"))
+      return "Первая отправка уже выполнялась. Проверьте её результат перед дальнейшими действиями.";
+    if (checks.includes("AUTOMATIC_MAXIMUM_EXCEEDED"))
+      return "Расчёт превышает настроенный предел отправки.";
     return "Проверьте актуальность данных, соответствие товара и настройки.";
   }
 
@@ -248,7 +317,7 @@ export function AutomaticStockControls({
         ? {
             interval_seconds: Number(interval),
             valid_minutes: Number(validMinutes),
-            ...(selectedTargets.length === 1
+            ...(selectedTargets.length === 1 && initialTargets.length === 0
               ? {
                   ozon_product_id: current.ozon_product_id,
                   ozon_warehouse_id: current.ozon_warehouse_id,
@@ -265,6 +334,11 @@ export function AutomaticStockControls({
                     unreflected,
                     unseen_bound: bound,
                     maximum: Number(maximum),
+                    initial_publication: initialTargets.some(
+                      (initial) =>
+                        keyFor(initial) === keyFor(t) &&
+                        initialConfirmed.includes(keyFor(t)),
+                    ),
                   })),
                 }),
           }
@@ -344,7 +418,7 @@ export function AutomaticStockControls({
                       ? "Требуется внимание"
                       : cycle?.outcome === "NO_CHANGE" ||
                           cycle?.outcome === "RECONCILED"
-                        ? "Синхронизировано"
+                        ? "Сверены выбранные товары"
                         : "Включена"}
             </span>
           </div>
@@ -371,21 +445,77 @@ export function AutomaticStockControls({
               {new Date(data.last_cycle_at).toLocaleString("ru-RU")}.
             </p>
           )}
-          {lastSuccess && <p>Последняя сверенная отправка: {new Date(lastSuccess).toLocaleString("ru-RU")}.</p>}
+          {lastSuccess && (
+            <p>
+              Последняя сверенная отправка:{" "}
+              {new Date(lastSuccess).toLocaleString("ru-RU")}.
+            </p>
+          )}
           {enrolled.length > 0 && (
             <details className="technical-details">
               <summary>
-                Товаров в настройке: {enrolled.length} · сверено: {enrolled.filter((t) => targetOutcome(t) === "Сверено").length} · ожидают: {enrolled.filter((t) => targetOutcome(t) === "Ожидает проверки").length} · требуют внимания: {enrolled.filter((t) => targetOutcome(t) === "Требует внимания").length}
+                Товаров в настройке: {enrolled.length} · сверено:{" "}
+                {enrolled.filter((t) => targetOutcome(t) === "Сверено").length}{" "}
+                · ожидают:{" "}
+                {
+                  enrolled.filter(
+                    (t) => targetOutcome(t) === "Ожидает проверки",
+                  ).length
+                }{" "}
+                · требуют внимания:{" "}
+                {
+                  enrolled.filter(
+                    (t) => targetOutcome(t) === "Требует внимания",
+                  ).length
+                }
               </summary>
               {enrolled.map((t) => {
                 const r = results[keyFor(t)];
                 return (
                   <div key={keyFor(t)}>
-                    <p>{t.offer_id || t.ozon_product_id} · склад {t.ozon_warehouse_id} · {targetOutcome(t)}</p>
-                    <p>МойСклад: {number(r?.source_physical ?? t.source_physical)} · резерв: {number(r?.source_reserve ?? t.source_reserve)} · Ozon: {number(r?.readback_quantity ?? r?.marketplace_free ?? t.marketplace_free)} · расчёт: {number(r?.candidate)}</p>
-                    {t.eligible === false ? <p>Нет актуального товара или остатка на поддерживаемом складе Ozon.</p> : r?.checks?.length ? <p>{targetProblem(r.checks)}</p> : null}
-                    {r?.publication_id && <p>Последняя отправка: {r.publication_id}</p>}
-                    {t.readback_at && <p>Последняя проверка Ozon: {new Date(t.readback_at).toLocaleString("ru-RU")}.</p>}
+                    <p>
+                      {t.offer_id || t.ozon_product_id} · склад{" "}
+                      {t.ozon_warehouse_id} · {targetOutcome(t)}
+                    </p>
+                    <p>
+                      МойСклад:{" "}
+                      {number(r?.source_physical ?? t.source_physical)} ·
+                      резерв: {number(r?.source_reserve ?? t.source_reserve)} ·
+                      Ozon:{" "}
+                      {number(
+                        r?.readback_quantity ??
+                          r?.marketplace_free ??
+                          t.marketplace_free,
+                      )}{" "}
+                      · расчёт: {number(r?.candidate)}
+                    </p>
+                    {t.eligible === false && targetOutcome(t) === "Сверено" ? (
+                      <p>
+                        Последняя отправка сверена отдельным чтением Ozon;
+                        следующая загрузка обновит данные каталога.
+                      </p>
+                    ) : t.eligible === false ? (
+                      <p>
+                        Нет актуального товара или остатка на поддерживаемом
+                        складе Ozon.
+                      </p>
+                    ) : r?.checks?.length ? (
+                      <p>{targetProblem(r.checks)}</p>
+                    ) : null}
+                    {r?.publication_id && (
+                      <p>Последняя отправка: {r.publication_id}</p>
+                    )}
+                    <OrderEvidence
+                      scope={scope}
+                      product={t.ozon_product_id}
+                      warehouse={t.ozon_warehouse_id}
+                    />
+                    {t.readback_at && (
+                      <p>
+                        Последняя проверка Ozon:{" "}
+                        {new Date(t.readback_at).toLocaleString("ru-RU")}.
+                      </p>
+                    )}
                   </div>
                 );
               })}
@@ -422,11 +552,18 @@ export function AutomaticStockControls({
                   >
                     Уточнить этот результат
                   </button>
-                  {item.state === "UNKNOWN" && item.readback_at && item.readback_quantity !== undefined && onRecover && (
-                    <button className="text-action" disabled={busy || !!pending} onClick={() => onRecover(item)}>
-                      Рассмотреть восстановление
-                    </button>
-                  )}
+                  {item.state === "UNKNOWN" &&
+                    item.readback_at &&
+                    item.readback_quantity !== undefined &&
+                    onRecover && (
+                      <button
+                        className="text-action"
+                        disabled={busy || !!pending}
+                        onClick={() => onRecover(item)}
+                      >
+                        Рассмотреть восстановление
+                      </button>
+                    )}
                 </div>
               ))}
             </details>
@@ -538,7 +675,11 @@ export function AutomaticStockControls({
                         )
                       }
                     />
-                    Товар {t.offer_id || t.ozon_product_id}, склад {t.ozon_warehouse_id}
+                    Товар {t.offer_id || t.ozon_product_id}, склад{" "}
+                    {t.ozon_warehouse_id}
+                    {t.initial_eligible && t.eligible === false
+                      ? " · требуется первая публикация"
+                      : ""}
                   </label>
                 ))}
               </fieldset>
@@ -547,16 +688,38 @@ export function AutomaticStockControls({
                 Товар и склад
                 <select
                   value={current ? keyFor(current) : ""}
-                  onChange={(e) => setSelected([e.target.value])}
+                  onChange={(e) =>
+                    setSelected(e.target.value ? [e.target.value] : [])
+                  }
                 >
+                  <option value="">Выберите товар и склад</option>
                   {availableTargets.map((t) => (
                     <option key={keyFor(t)} value={keyFor(t)}>
-                      Товар {t.offer_id || t.ozon_product_id}, склад {t.ozon_warehouse_id}
+                      Товар {t.offer_id || t.ozon_product_id}, склад{" "}
+                      {t.ozon_warehouse_id}
                     </option>
                   ))}
                 </select>
               </label>
             )}
+            {initialTargets.map((t) => (
+              <label className="integration-ack" key={`initial-${keyFor(t)}`}>
+                <input
+                  type="checkbox"
+                  checked={initialConfirmed.includes(keyFor(t))}
+                  onChange={(e) =>
+                    setInitialConfirmed(
+                      e.target.checked
+                        ? [...initialConfirmed, keyFor(t)]
+                        : initialConfirmed.filter((key) => key !== keyFor(t)),
+                    )
+                  }
+                />
+                Разрешаю первую отправку для {t.offer_id || t.ozon_product_id}{" "}
+                на склад {t.ozon_warehouse_id}. Предыдущий остаток и резерв Ozon
+                неизвестны; отсутствие записи не означает ноль.
+              </label>
+            ))}
             {selectedTargets.length > 1 && (
               <p>
                 Указанные ниже количества и предел применяются к каждой
@@ -588,27 +751,43 @@ export function AutomaticStockControls({
               <input
                 type="number"
                 min="0"
+                aria-label="Страховой остаток"
+                aria-describedby="automatic-safety-help"
                 value={safety}
                 onChange={(e) => setSafety(e.target.value)}
               />
+              <small id="automatic-safety-help">
+                Количество товара, которое STYK не будет выставлять на Ozon.
+              </small>
             </label>
             <label className="integration-field">
               Неучтённые обязательства
               <input
                 type="number"
                 min="0"
+                aria-label="Неучтённые обязательства"
+                aria-describedby="automatic-obligations-help"
                 value={unreflected}
                 onChange={(e) => setUnreflected(e.target.value)}
               />
+              <small id="automatic-obligations-help">
+                Заказы и обязательства, которые ещё не входят в резерв МойСклад.
+              </small>
             </label>
             <label className="integration-field">
               Предел неизвестного уменьшения
               <input
                 type="number"
                 min="0"
+                aria-label="Предел неизвестного уменьшения"
+                aria-describedby="automatic-unseen-help"
                 value={bound}
                 onChange={(e) => setBound(e.target.value)}
               />
+              <small id="automatic-unseen-help">
+                Максимум товара, который может уйти до следующей проверки и ещё
+                не учтён в других полях.
+              </small>
             </label>
             <label className="integration-field">
               Максимум к отправке
@@ -616,9 +795,14 @@ export function AutomaticStockControls({
                 type="number"
                 min="0"
                 max="10"
+                aria-label="Максимум к отправке"
+                aria-describedby="automatic-maximum-help"
                 value={maximum}
                 onChange={(e) => setMaximum(e.target.value)}
               />
+              <small id="automatic-maximum-help">
+                Больше этого количества STYK не отправит на маркетплейс.
+              </small>
             </label>
             <p>
               Предполагается одна единица товара на одну единицу продажи и
@@ -638,7 +822,15 @@ export function AutomaticStockControls({
             </label>
             <div className="provider-actions">
               <button
-                disabled={!ack || !current || busy || !!pending}
+                disabled={
+                  !ack ||
+                  !current ||
+                  initialTargets.some(
+                    (t) => !initialConfirmed.includes(keyFor(t)),
+                  ) ||
+                  busy ||
+                  !!pending
+                }
                 onClick={() => configure(true)}
               >
                 Включить автоматическую проверку
