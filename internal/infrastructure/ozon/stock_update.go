@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/lilter96/styk/internal/testpublication"
 )
 
 const stockUpdatePath = "/v2/products/stocks"
@@ -38,7 +40,11 @@ func safeStockCode(v string) string {
 // reused for an external write. Any ambiguous transport/schema/server result
 // must be reconciled by an explicit read; it is not a retry instruction.
 func (c *Client) UpdateStocks(ctx context.Context, items []StockUpdate) ([]StockUpdateResult, error) {
-	if !c.allowSyntheticStockWrites {
+	if c.controlledTestScope != nil {
+		if !testpublication.Enabled(*c.controlledTestScope) || len(items) != 1 || items[0].ProductID != testpublication.OzonProduct || items[0].WarehouseID != testpublication.OzonWarehouse || !testpublication.QuantityAllowed(strconv.FormatInt(items[0].Quantity, 10)) {
+			return nil, ErrStockWritesDisabled
+		}
+	} else if !c.allowSyntheticStockWrites {
 		return nil, ErrStockWritesDisabled
 	}
 	if len(items) == 0 || len(items) > 100 {

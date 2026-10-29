@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/lilter96/styk/internal/testpublication"
 )
 
 func stockTestClient(t *testing.T, h http.HandlerFunc) *Client {
@@ -22,6 +25,51 @@ func stockTestClient(t *testing.T, h http.HandlerFunc) *Client {
 		t.Fatal(err)
 	}
 	return c
+}
+
+func TestControlledLiveClientIsFixedToOneAccountAndTarget(t *testing.T) {
+	scope := testpublication.Scope()
+	t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", "")
+	if _, err := NewControlledTestStockClient(scope, "synthetic-key"); !errors.Is(err, ErrStockWritesDisabled) {
+		t.Fatal("controlled live client must be default-off")
+	}
+	t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", "true")
+	wrong := scope
+	wrong.OzonAccount = "another-account"
+	if _, err := NewControlledTestStockClient(wrong, "synthetic-key"); !errors.Is(err, ErrStockWritesDisabled) {
+		t.Fatal("another account was authorized")
+	}
+	c, err := NewControlledTestStockClient(scope, "synthetic-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	c.http.Transport = transportFunc(func(req *http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"result":[{"product_id":2764544165,"warehouse_id":1020001323428000,"updated":true,"errors":[]}]}`))}, nil
+	})
+	for _, items := range [][]StockUpdate{
+		{{"another-product", testpublication.OzonWarehouse, 1}},
+		{{testpublication.OzonProduct, "another-warehouse", 1}},
+		{{testpublication.OzonProduct, testpublication.OzonWarehouse, 8}},
+		{{testpublication.OzonProduct, testpublication.OzonWarehouse, -1}},
+		{{testpublication.OzonProduct, testpublication.OzonWarehouse, 1}, {testpublication.OzonProduct, testpublication.OzonWarehouse, 0}},
+	} {
+		if _, err := c.UpdateStocks(context.Background(), items); !errors.Is(err, ErrStockWritesDisabled) {
+			t.Fatalf("out-of-scope update accepted: %v", err)
+		}
+	}
+	if calls.Load() != 0 {
+		t.Fatal("an unapproved target reached the transport")
+	}
+	result, err := c.UpdateStocks(context.Background(), []StockUpdate{{testpublication.OzonProduct, testpublication.OzonWarehouse, 7}})
+	if err != nil || calls.Load() != 1 || len(result) != 1 || result[0].State != "SUCCEEDED" {
+		t.Fatalf("approved target: %+v %v", result, err)
+	}
+	t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", "false")
+	if _, err = c.UpdateStocks(context.Background(), []StockUpdate{{testpublication.OzonProduct, testpublication.OzonWarehouse, 1}}); !errors.Is(err, ErrStockWritesDisabled) || calls.Load() != 1 {
+		t.Fatal("disabled test policy did not stop an existing client")
+	}
 }
 func TestStockWriteSingleAttemptAndAmbiguousResult(t *testing.T) {
 	for _, status := range []int{500, 502, 503, 307} {

@@ -3,6 +3,7 @@ package ozon
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/lilter96/styk/internal/domain"
+	"github.com/lilter96/styk/internal/testpublication"
 )
 
 const BaseURL = "https://api-seller.ozon.ru"
@@ -45,7 +47,32 @@ type Client struct {
 	mu                                        sync.Mutex
 	next                                      time.Time
 	allowSyntheticStockWrites                 bool
+	controlledTestScope                       *domain.StockSyncScope
 }
+
+// NewControlledTestStockClient permits writes only to the fixed, owner-authorized
+// test scope and official Ozon host. It cannot opt another account into writes.
+func NewControlledTestStockClient(scope domain.StockSyncScope, key string) (*Client, error) {
+	if !testpublication.Enabled(scope) {
+		return nil, ErrStockWritesDisabled
+	}
+	c, err := New(Options{BaseURL: BaseURL, ClientID: scope.OzonAccount, APIKey: key, Timeout: 20 * time.Second, Interval: time.Second, Backoff: time.Second, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 100})
+	if err != nil {
+		return nil, err
+	}
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return nil, errors.New("standard stock transport unavailable")
+	}
+	transport := base.Clone()
+	transport.Proxy = nil
+	transport.DisableKeepAlives = true
+	transport.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
+	c.http.Transport = transport
+	c.controlledTestScope = &scope
+	return c, nil
+}
+
 type APIError struct {
 	Status   int
 	Category string
