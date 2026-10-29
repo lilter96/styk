@@ -87,3 +87,29 @@ func TestTransportFinalGuardRunsAfterAdmissionAndNeverDispatchesDeniedIntent(t *
 		t.Fatal("local refusal was classified as ambiguous external outcome")
 	}
 }
+
+func TestMutationAccountingDistinguishesAttributeWritesFromReadPOSTs(t *testing.T) {
+	for _, tc := range []struct {
+		path  string
+		write bool
+	}{
+		{"/api/remap/1.2/entity/customerorder/metadata/attributes", true},
+		{"/v1/product/update/attributes", true},
+		{"/v1/description-category/attribute", false},
+		{"/v1/description-category/attribute/values", false},
+		{"/v3/products/info/attributes", false},
+		{"/v2/product/info/stocks-by-warehouse/fbs", false},
+		{"/v2/products/stocks", true},
+		{"/v1/product/import/info", false},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			request, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "https://provider.invalid"+tc.path, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if isMutation(request) != tc.write {
+				t.Fatal("provider attempt was assigned to the wrong read/write budget")
+			}
+		})
+	}
+}

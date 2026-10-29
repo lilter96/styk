@@ -83,7 +83,17 @@ func isMutation(req *http.Request) bool {
 		return false
 	}
 	path := req.URL.Path
-	if strings.HasSuffix(path, "/list") || strings.HasSuffix(path, "/get") || strings.Contains(path, "/info") || strings.Contains(path, "/attribute") || strings.Contains(path, "/tree") {
+	if req.Method != http.MethodPost {
+		return true
+	}
+	if strings.HasPrefix(path, "/api/remap/") || strings.HasPrefix(path, "/entity/") {
+		return true
+	}
+	if strings.HasSuffix(path, "/list") || strings.HasSuffix(path, "/get") || strings.HasSuffix(path, "/info") || strings.HasPrefix(path, "/v1/description-category/") {
+		return false
+	}
+	switch path {
+	case "/v2/product/info/stocks-by-warehouse/fbs", "/v3/products/info/attributes":
 		return false
 	}
 	return true

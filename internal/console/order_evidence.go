@@ -163,7 +163,7 @@ func (a *orderEvidenceAPI) orderReaders(ctx context.Context, scope domain.StockS
 	out.moyRevision = revision
 	if legacy {
 		out.moy = c.moy
-	} else if out.moy, err = c.newMoy(secret); err != nil {
+	} else if out.moy, err = c.scopedMoy(moyScope, secret, revision); err != nil {
 		return out, err
 	}
 	marketScope := credentials.Scope{Tenant: scope.Tenant, Provider: "ozon", Account: scope.OzonAccount}
@@ -174,7 +174,7 @@ func (a *orderEvidenceAPI) orderReaders(ctx context.Context, scope domain.StockS
 	out.marketRevision = revision
 	if legacy {
 		out.market = c.ozon
-	} else if out.market, err = c.newOzon(scope.OzonAccount, secret); err != nil {
+	} else if out.market, err = c.scopedOzon(marketScope, secret, revision); err != nil {
 		return out, err
 	}
 	return out, nil
