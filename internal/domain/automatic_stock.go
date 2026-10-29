@@ -77,6 +77,24 @@ type AutomaticStockView struct {
 	LastCycleAt *time.Time                 `json:"last_cycle_at,omitempty"`
 	LastCycle   *AutomaticStockCycle       `json:"last_cycle,omitempty"`
 	Unresolved  []AutomaticStockUnresolved `json:"unresolved,omitempty"`
+	Candidates  []AutomaticStockCandidate  `json:"candidates,omitempty"`
+}
+
+// Candidates are confirmed mappings observed in the most recent imported
+// catalog. Quantities are observations, not a new calculated decision.
+type AutomaticStockCandidate struct {
+	ProductID        string     `json:"ozon_product_id"`
+	WarehouseID      string     `json:"ozon_warehouse_id"`
+	OfferID          string     `json:"offer_id"`
+	SourceItemID     string     `json:"source_item_id"`
+	SourcePhysical   *string    `json:"source_physical,omitempty"`
+	SourceReserve    *string    `json:"source_reserve,omitempty"`
+	MarketplaceFree  *int64     `json:"marketplace_free,omitempty"`
+	LastOperationID  *string    `json:"last_operation_id,omitempty"`
+	LastState        *string    `json:"last_state,omitempty"`
+	LastQuantity     *string    `json:"last_quantity,omitempty"`
+	ReadbackQuantity *string    `json:"readback_quantity,omitempty"`
+	ReadbackAt       *time.Time `json:"readback_at,omitempty"`
 }
 
 type AutomaticStockUnresolved struct {

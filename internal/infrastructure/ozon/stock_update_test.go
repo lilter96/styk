@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -107,6 +108,61 @@ func TestControlledLiveClientIsFixedToOneAccountAndTarget(t *testing.T) {
 	t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", "false")
 	if _, err = c.UpdateStocks(context.Background(), []StockUpdate{{testpublication.OzonProduct, testpublication.OzonWarehouse, 1}}); !errors.Is(err, ErrStockWritesDisabled) || calls.Load() != 1 {
 		t.Fatal("disabled test policy did not stop an existing client")
+	}
+}
+
+func TestControlledAutomaticIntentIsExactAndSingleUse(t *testing.T) {
+	t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", "true")
+	c, err := NewControlledTestStockClient(testpublication.Scope(), "synthetic-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	c.http.Transport = transportFunc(func(req *http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]}]}`))}, nil
+	})
+	item := StockUpdate{ProductID: "123", WarehouseID: "456", Quantity: 3}
+	if _, err = c.UpdateStocks(context.Background(), []StockUpdate{item}); !errors.Is(err, ErrStockWritesDisabled) {
+		t.Fatal("unbound target was accepted")
+	}
+	var checks atomic.Int32
+	if err = c.BindControlledTestIntent(item, func(context.Context) (bool, error) { checks.Add(1); return true, nil }); err != nil {
+		t.Fatal(err)
+	}
+	wrong := item
+	wrong.Quantity++
+	if _, err = c.UpdateStocks(context.Background(), []StockUpdate{wrong}); !errors.Is(err, ErrStockWritesDisabled) {
+		t.Fatal("different quantity was accepted")
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); _, _ = c.UpdateStocks(context.Background(), []StockUpdate{item}) }()
+	}
+	wg.Wait()
+	if calls.Load() != 1 || checks.Load() != 1 {
+		t.Fatalf("expected one authorization and request, got %d and %d", checks.Load(), calls.Load())
+	}
+}
+
+func TestControlledAutomaticIntentRequiresCurrentAuthorization(t *testing.T) {
+	t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", "true")
+	c, err := NewControlledTestStockClient(testpublication.Scope(), "synthetic-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	c.http.Transport = transportFunc(func(*http.Request) (*http.Response, error) { calls.Add(1); return nil, errors.New("unexpected") })
+	item := StockUpdate{ProductID: "123", WarehouseID: "456", Quantity: 10}
+	if err = c.BindControlledTestIntent(item, func(context.Context) (bool, error) { return false, nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = c.UpdateStocks(context.Background(), []StockUpdate{item}); !errors.Is(err, ErrStockWritesDisabled) || calls.Load() != 0 {
+		t.Fatal("revoked authorization reached Ozon")
+	}
+	if _, err = c.UpdateStocks(context.Background(), []StockUpdate{item}); !errors.Is(err, ErrStockWritesDisabled) || calls.Load() != 0 {
+		t.Fatal("consumed intent was reused")
 	}
 }
 func TestStockWriteSingleAttemptAndAmbiguousResult(t *testing.T) {

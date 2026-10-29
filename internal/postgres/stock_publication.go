@@ -165,7 +165,7 @@ func (s *Store) refreshStockScope(ctx context.Context, scope domain.StockSyncSco
 // have no lease retry path. A crash can become UNKNOWN, never QUEUED again.
 func (s *Store) IsAutomaticPublication(ctx context.Context, scope domain.StockSyncScope, id string) (bool, error) {
 	var result bool
-	err := s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_auto_cycles WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND publication_id=$4)`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, id).Scan(&result)
+	err := s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_auto_cycles c JOIN stock_auto_cycle_publications cp ON cp.cycle_id=c.id WHERE c.tenant_id=$1 AND c.moysklad_account=$2 AND c.ozon_account=$3 AND cp.publication_id=$4)`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, id).Scan(&result)
 	return result, err
 }
 
@@ -559,12 +559,25 @@ func (s *Store) StockPublicationCanDispatch(ctx context.Context, op domain.Stock
 	if !enabled {
 		return false, nil
 	}
+	review, err := readSyncReview(ctx, tx, op.StockSyncScope, op.ReviewID)
+	if err != nil {
+		return false, err
+	}
 	if op.StockSyncScope == testpublication.Scope() {
 		if !testpublication.Enabled(op.StockSyncScope) || op.OutboxClaimToken == "" || len(op.Targets) != 1 {
 			return false, nil
 		}
 		t := op.Targets[0]
-		if !testpublication.TargetAllowed(op.StockSyncScope, t.ProductID, t.WarehouseID, t.Decision.Request.Pool.ItemID, t.Decision.Request.Pool.WarehouseID, t.Quantity) {
+		automaticAllowed, authErr := authorizedAutomaticReview(ctx, tx, review, now)
+		if authErr != nil {
+			return false, authErr
+		}
+		if automaticAllowed {
+			reviewed := review.Targets[0]
+			automaticAllowed = reviewed.Quantity != nil && t.ProductID == reviewed.ProductID && t.WarehouseID == reviewed.WarehouseID && t.Quantity == *reviewed.Quantity && t.Decision.Request.Pool.ItemID == reviewed.SourceItemID && t.Decision.Request.Pool.WarehouseID == reviewed.SourceWarehouseID
+		}
+		manualAllowed := testpublication.TargetAllowed(op.StockSyncScope, t.ProductID, t.WarehouseID, t.Decision.Request.Pool.ItemID, t.Decision.Request.Pool.WarehouseID, t.Quantity)
+		if !automaticAllowed && !manualAllowed {
 			return false, nil
 		}
 		var owned bool
@@ -598,10 +611,6 @@ func (s *Store) StockPublicationCanDispatch(ctx context.Context, op domain.Stock
 		if currentState != "DISPATCHING" || product != target.ProductID || warehouse != target.WarehouseID || quantity != target.Quantity {
 			return false, nil
 		}
-	}
-	review, err := readSyncReview(ctx, tx, op.StockSyncScope, op.ReviewID)
-	if err != nil {
-		return false, err
 	}
 	if !review.ExpiresAt.After(now) {
 		return false, nil

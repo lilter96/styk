@@ -68,6 +68,26 @@ func authorizedAutomaticAttestation(ctx context.Context, tx pgx.Tx, scope domain
 	return nil, nil
 }
 
+// authorizedAutomaticReview binds a real test write to the current immutable
+// operator policy, exact reviewed mapping revisions and bounded quantity.
+// It is deliberately separate from the legacy single-target manual exception.
+func authorizedAutomaticReview(ctx context.Context, tx pgx.Tx, review domain.StockSyncReview, now time.Time) (bool, error) {
+	if !testpublication.Enabled(review.StockSyncScope) || len(review.Targets) != 1 || len(review.Attestations) != 1 {
+		return false, nil
+	}
+	a, t := review.Attestations[0], review.Targets[0]
+	approved, err := authorizedAutomaticAttestation(ctx, tx, review.StockSyncScope, a, now)
+	if err != nil || approved == nil || t.Quantity == nil {
+		return false, err
+	}
+	p, w := t.Decision.Evidence.ProductMapping, t.Decision.Evidence.WarehouseMapping
+	if p == nil || w == nil || approved.ProductID != t.ProductID || approved.WarehouseID != t.WarehouseID || approved.SourceItemID != t.SourceItemID || approved.SourceWarehouseID != t.SourceWarehouseID || p.ID != approved.ProductMappingID || p.Version != approved.ProductMappingVersion || w.ID != approved.WarehouseMappingID || w.Version != approved.WarehouseMappingVersion || !testpublication.AutomaticQuantityAllowed(*t.Quantity) {
+		return false, nil
+	}
+	quantity, err := strconv.ParseInt(*t.Quantity, 10, 64)
+	return err == nil && quantity <= approved.Maximum, nil
+}
+
 func loadAutomaticPolicy(ctx context.Context, tx pgx.Tx, scope domain.StockSyncScope) (domain.AutomaticStockPolicy, error) {
 	var raw []byte
 	err := tx.QueryRow(ctx, `SELECT v.snapshot FROM stock_auto_configs c JOIN stock_auto_config_audits v USING(tenant_id,moysklad_account,ozon_account,revision) WHERE c.tenant_id=$1 AND c.moysklad_account=$2 AND c.ozon_account=$3`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount).Scan(&raw)
@@ -101,7 +121,7 @@ func (s *Store) ConfigureAutomaticStock(ctx context.Context, req domain.Automati
 		seen := map[string]bool{}
 		for _, t := range requestedTargets {
 			key := t.ProductID + ":" + t.WarehouseID
-			if seen[key] || !positiveAPIID(t.ProductID) || !positiveAPIID(t.WarehouseID) || t.Maximum < 0 || t.Maximum > testpublication.MaxQuantity || !syncQuantity(&t.SafetyStock) || !syncQuantity(&t.Unreflected) || !syncQuantity(&t.UnseenBound) {
+			if seen[key] || !positiveAPIID(t.ProductID) || !positiveAPIID(t.WarehouseID) || t.Maximum < 0 || t.Maximum > testpublication.MaxAutomaticQuantity || !syncQuantity(&t.SafetyStock) || !syncQuantity(&t.Unreflected) || !syncQuantity(&t.UnseenBound) {
 				return domain.AutomaticStockView{}, domain.ErrStockSyncInvalid
 			}
 			seen[key] = true
@@ -154,9 +174,6 @@ func (s *Store) ConfigureAutomaticStock(ctx context.Context, req domain.Automati
 			}
 			if err != nil {
 				return domain.AutomaticStockView{}, err
-			}
-			if testpublication.Enabled(scope) && (kind != "product" || !testpublication.TargetAllowed(scope, t.ProductID, t.WarehouseID, t.SourceItemID, t.SourceWarehouseID, strconv.FormatInt(selected.Maximum, 10))) {
-				return domain.AutomaticStockView{}, domain.ErrStockSyncBlocked
 			}
 			if kind != "product" && kind != "variant" {
 				return domain.AutomaticStockView{}, domain.ErrStockSyncBlocked
@@ -225,8 +242,32 @@ func (s *Store) AutomaticStockStatus(ctx context.Context, scope domain.StockSync
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
+	rows, err := s.Pool.Query(ctx, `SELECT pm.ozon_product_id,wm.ozon_warehouse_id,pm.ozon_offer_id,pm.target_id,src.stock::text,src.reserve::text,stock.free_stock,last.operation_id,last.state,last.quantity,last.readback_quantity,last.readback_at
+		FROM product_mappings pm JOIN warehouse_mappings wm ON wm.tenant_id=pm.tenant_id AND wm.moysklad_account=pm.moysklad_account AND wm.ozon_account=pm.ozon_account AND wm.status='active'
+		JOIN ozon_product_observations p ON p.import_id=(SELECT max(id) FROM source_imports WHERE source='ozon' AND account_id=$3) AND p.product_id=pm.ozon_product_id AND p.offer_id=pm.ozon_offer_id AND p.archived=false AND p.sku IS NOT NULL
+		JOIN ozon_fbs_stock_observations stock ON stock.import_id=p.import_id AND stock.product_id=p.product_id AND stock.offer_id=p.offer_id AND stock.sku=p.sku AND stock.warehouse_id=wm.ozon_warehouse_id
+		JOIN ozon_warehouse_observations wh ON wh.import_id=p.import_id AND wh.warehouse_id=wm.ozon_warehouse_id AND wh.is_rfbs=false AND wh.status='created'
+		LEFT JOIN source_warehouse_stock_observations src ON src.import_id=(SELECT max(id) FROM source_imports WHERE source='moysklad' AND account_id=$2) AND src.kind=pm.target_kind AND src.external_id=pm.target_id AND src.warehouse_id=wm.moysklad_warehouse_id
+		LEFT JOIN LATERAL (SELECT t.operation_id,t.state,t.quantity,t.readback_quantity,t.readback_at FROM stock_publications pub JOIN stock_publication_targets t ON t.operation_id=pub.id WHERE pub.tenant_id=$1 AND pub.moysklad_account=$2 AND pub.ozon_account=$3 AND t.product_id=pm.ozon_product_id AND t.warehouse_id=wm.ozon_warehouse_id ORDER BY pub.created_at DESC,t.id DESC LIMIT 1) last ON true
+		WHERE pm.tenant_id=$1 AND pm.moysklad_account=$2 AND pm.ozon_account=$3 ORDER BY pm.ozon_product_id,wm.ozon_warehouse_id LIMIT 100`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount)
+	if err != nil {
+		return view, err
+	}
+	for rows.Next() {
+		var c domain.AutomaticStockCandidate
+		if err = rows.Scan(&c.ProductID, &c.WarehouseID, &c.OfferID, &c.SourceItemID, &c.SourcePhysical, &c.SourceReserve, &c.MarketplaceFree, &c.LastOperationID, &c.LastState, &c.LastQuantity, &c.ReadbackQuantity, &c.ReadbackAt); err != nil {
+			rows.Close()
+			return view, err
+		}
+		view.Candidates = append(view.Candidates, c)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return view, err
+	}
 	var raw []byte
-	err := s.Pool.QueryRow(ctx, `SELECT v.snapshot,c.next_run_at,c.last_cycle_at FROM stock_auto_configs c JOIN stock_auto_config_audits v USING(tenant_id,moysklad_account,ozon_account,revision) WHERE c.tenant_id=$1 AND c.moysklad_account=$2 AND c.ozon_account=$3`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount).Scan(&raw, &view.NextRunAt, &view.LastCycleAt)
+	err = s.Pool.QueryRow(ctx, `SELECT v.snapshot,c.next_run_at,c.last_cycle_at FROM stock_auto_configs c JOIN stock_auto_config_audits v USING(tenant_id,moysklad_account,ozon_account,revision) WHERE c.tenant_id=$1 AND c.moysklad_account=$2 AND c.ozon_account=$3`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount).Scan(&raw, &view.NextRunAt, &view.LastCycleAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return view, nil
 	}
@@ -250,7 +291,7 @@ func (s *Store) AutomaticStockStatus(ctx context.Context, scope domain.StockSync
 		}
 		view.LastCycle = &cycle
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT t.operation_id,t.product_id,t.warehouse_id,t.quantity,t.state,t.safe_error,t.dispatched_at,t.readback_at,t.readback_quantity FROM stock_publication_targets t JOIN stock_publication_target_fences f ON f.target_id=t.id JOIN stock_publications p ON p.id=t.operation_id WHERE p.tenant_id=$1 AND p.moysklad_account=$2 AND p.ozon_account=$3 AND t.state IN ('UNKNOWN','ACKNOWLEDGED') ORDER BY t.id LIMIT 100`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount)
+	rows, err = s.Pool.Query(ctx, `SELECT t.operation_id,t.product_id,t.warehouse_id,t.quantity,t.state,t.safe_error,t.dispatched_at,t.readback_at,t.readback_quantity FROM stock_publication_targets t JOIN stock_publication_target_fences f ON f.target_id=t.id JOIN stock_publications p ON p.id=t.operation_id WHERE p.tenant_id=$1 AND p.moysklad_account=$2 AND p.ozon_account=$3 AND t.state IN ('UNKNOWN','ACKNOWLEDGED') ORDER BY t.id LIMIT 100`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount)
 	if err != nil {
 		return view, err
 	}

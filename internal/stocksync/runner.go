@@ -141,10 +141,28 @@ func (r Runner) RunNext(ctx context.Context) (bool, error) {
 		}
 		return true, nil
 	}
+	if r.ControlledTest && automatic {
+		if len(items) != 1 {
+			return true, errors.New("automatic test publication must contain exactly one target")
+		}
+		if err = client.BindControlledTestIntent(items[0], func(check context.Context) (bool, error) {
+			return r.Store.StockPublicationCanDispatch(check, *op, time.Now().UTC())
+		}); err != nil {
+			return true, err
+		}
+	}
 	send, cancel := context.WithTimeout(ctx, 20*time.Second)
 	results, writeErr := client.UpdateStocks(send, items)
 	cancel()
 	if writeErr != nil {
+		if errors.Is(writeErr, ozon.ErrStockWritesDisabled) {
+			for _, t := range targets {
+				if err = finish(t, "BLOCKED", "EVIDENCE_CHANGED_OR_DISABLED", nil); err != nil {
+					return true, err
+				}
+			}
+			return true, nil
+		}
 		var status *int
 		var providerErr *ozon.StockWriteError
 		if errors.As(writeErr, &providerErr) && providerErr.HTTPStatus != 0 {

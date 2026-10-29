@@ -48,10 +48,15 @@ type Client struct {
 	next                                      time.Time
 	allowSyntheticStockWrites                 bool
 	controlledTestScope                       *domain.StockSyncScope
+	controlledIntent                          *StockUpdate
+	controlledAuthorize                       func(context.Context) (bool, error)
+	intentMu                                  sync.Mutex
+	controlledIntentUsed                      bool
 }
 
-// NewControlledTestStockClient permits writes only to the fixed, owner-authorized
-// test scope and official Ozon host. It cannot opt another account into writes.
+// NewControlledTestStockClient permits the owner-authorized test scope and
+// official Ozon host. The legacy manual target is fixed; automatic writes
+// additionally require a bound, database-revalidated publication intent.
 func NewControlledTestStockClient(scope domain.StockSyncScope, key string) (*Client, error) {
 	if !testpublication.Enabled(scope) {
 		return nil, ErrStockWritesDisabled

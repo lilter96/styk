@@ -38,7 +38,7 @@ func (s *Store) TouchTestStockWorker(ctx context.Context, workerID string, now t
 // SupersedeTestUnknown records the operator's accepted uncertainty before
 // releasing only the auxiliary fence. It never mutates or retries the old write.
 func (s *Store) SupersedeTestUnknown(ctx context.Context, req domain.StockRecoveryRequest, now time.Time) (domain.StockSyncView, error) {
-	if !testpublication.Enabled(req.StockSyncScope) || !req.Acknowledge || !req.WorkerStopped || len(req.OperationID) != 32 || req.SessionID == "" || len(req.IdempotencyKey) < 16 || len(req.IdempotencyKey) > 128 || len(strings.TrimSpace(req.Reason)) < 16 || len(req.Reason) > 1000 || strings.ContainsRune(req.Reason, 0) || req.ExpectedReadbackAt.IsZero() || !testpublication.QuantityAllowed(req.ExpectedQuantity) {
+	if !testpublication.Enabled(req.StockSyncScope) || !req.Acknowledge || !req.WorkerStopped || len(req.OperationID) != 32 || req.SessionID == "" || len(req.IdempotencyKey) < 16 || len(req.IdempotencyKey) > 128 || len(strings.TrimSpace(req.Reason)) < 16 || len(req.Reason) > 1000 || strings.ContainsRune(req.Reason, 0) || req.ExpectedReadbackAt.IsZero() || !testpublication.AutomaticQuantityAllowed(req.ExpectedQuantity) {
 		return domain.StockSyncView{}, domain.ErrStockSyncInvalid
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
@@ -81,7 +81,12 @@ func (s *Store) SupersedeTestUnknown(ctx context.Context, req domain.StockRecove
 	if err != nil {
 		return domain.StockSyncView{}, err
 	}
-	if state != "UNKNOWN" || taskState != "failed" || attempts != 1 || product != testpublication.OzonProduct || warehouse != testpublication.OzonWarehouse {
+	var enrolled bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_auto_cycle_publications cp JOIN stock_auto_cycles c ON c.id=cp.cycle_id JOIN stock_auto_config_audits a ON a.tenant_id=c.tenant_id AND a.moysklad_account=c.moysklad_account AND a.ozon_account=c.ozon_account AND a.revision=c.config_revision WHERE cp.publication_id=$1 AND c.tenant_id=$2 AND c.moysklad_account=$3 AND c.ozon_account=$4 AND cp.product_id=$5 AND cp.warehouse_id=$6 AND a.enabled AND a.snapshot->'targets' @> jsonb_build_array(jsonb_build_object('ozon_product_id',$5::text,'ozon_warehouse_id',$6::text)))`, req.OperationID, req.Tenant, req.MoyskladAccount, req.OzonAccount, product, warehouse).Scan(&enrolled); err != nil {
+		return domain.StockSyncView{}, err
+	}
+	legacy := product == testpublication.OzonProduct && warehouse == testpublication.OzonWarehouse
+	if state != "UNKNOWN" || taskState != "failed" || attempts != 1 || (!legacy && !enrolled) {
 		return domain.StockSyncView{}, domain.ErrStockSyncBlocked
 	}
 	var alreadyRecovered bool

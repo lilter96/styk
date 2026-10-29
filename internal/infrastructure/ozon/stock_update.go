@@ -49,13 +49,52 @@ func safeStockCode(v string) string {
 	}
 }
 
+// BindControlledTestIntent restricts this single-use client to one frozen
+// automatic publication. The worker supplies an authorization callback that
+// rechecks the claimed outbox task and the current audited policy in Postgres
+// immediately before dispatch. This does not enable other accounts or hosts.
+func (c *Client) BindControlledTestIntent(item StockUpdate, authorize func(context.Context) (bool, error)) error {
+	c.intentMu.Lock()
+	defer c.intentMu.Unlock()
+	if c.controlledTestScope == nil && c.allowSyntheticStockWrites {
+		// Deterministic loopback fixtures already have a separate hard host
+		// boundary; the worker still performs its database checks.
+		return nil
+	}
+	if c.controlledTestScope == nil || !testpublication.Enabled(*c.controlledTestScope) || c.controlledIntent != nil || authorize == nil || item.ProductID == "" || item.WarehouseID == "" || !testpublication.AutomaticQuantityAllowed(strconv.FormatInt(item.Quantity, 10)) {
+		return ErrStockWritesDisabled
+	}
+	c.controlledIntent = &item
+	c.controlledAuthorize = authorize
+	return nil
+}
+
 // UpdateStocks sends exactly ONE HTTP attempt. Read-client retries are never
 // reused for an external write. Any ambiguous transport/schema/server result
 // must be reconciled by an explicit read; it is not a retry instruction.
 func (c *Client) UpdateStocks(ctx context.Context, items []StockUpdate) ([]StockUpdateResult, error) {
 	if c.controlledTestScope != nil {
-		if !testpublication.Enabled(*c.controlledTestScope) || len(items) != 1 || items[0].ProductID != testpublication.OzonProduct || items[0].WarehouseID != testpublication.OzonWarehouse || !testpublication.QuantityAllowed(strconv.FormatInt(items[0].Quantity, 10)) {
+		if !testpublication.Enabled(*c.controlledTestScope) || len(items) != 1 {
 			return nil, ErrStockWritesDisabled
+		}
+		c.intentMu.Lock()
+		if c.controlledIntent != nil {
+			if c.controlledIntentUsed || *c.controlledIntent != items[0] || c.controlledAuthorize == nil || !testpublication.AutomaticQuantityAllowed(strconv.FormatInt(items[0].Quantity, 10)) {
+				c.intentMu.Unlock()
+				return nil, ErrStockWritesDisabled
+			}
+			c.controlledIntentUsed = true
+			authorize := c.controlledAuthorize
+			c.intentMu.Unlock()
+			allowed, err := authorize(ctx)
+			if err != nil || !allowed {
+				return nil, ErrStockWritesDisabled
+			}
+		} else {
+			c.intentMu.Unlock()
+			if items[0].ProductID != testpublication.OzonProduct || items[0].WarehouseID != testpublication.OzonWarehouse || !testpublication.QuantityAllowed(strconv.FormatInt(items[0].Quantity, 10)) {
+				return nil, ErrStockWritesDisabled
+			}
 		}
 	} else if !c.allowSyntheticStockWrites {
 		return nil, ErrStockWritesDisabled

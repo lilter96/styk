@@ -263,18 +263,30 @@ func TestAutomaticMultipleTargetsScopesAndUnknownIsolation(t *testing.T) {
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
-	unknown := waitState(a, "BLOCKED")
-	if unknown.LastCycle.Outcome != "PUBLICATION_UNKNOWN" {
-		t.Fatalf("unknown not isolated: %+v", unknown.LastCycle)
-	}
 	if first.LastCycle.PublicationID == "" || writes.Load() != 1 {
 		t.Fatal("first target was not sent once")
 	}
-	if _, err := db.RequestAutomaticCycle(ctx, a.scope, time.Now()); err != nil {
-		t.Fatal(err)
+	waitNext := func(f automaticMultiFixture, previous string) domain.AutomaticStockView {
+		t.Helper()
+		deadline := time.Now().Add(8 * time.Second)
+		for time.Now().Before(deadline) {
+			advance()
+			v, e := db.AutomaticStockStatus(ctx, f.scope)
+			if e != nil {
+				t.Fatal(e)
+			}
+			if v.LastCycle != nil && v.LastCycle.State == "WAITING_PUBLICATION" && v.LastCycle.PublicationID != previous {
+				return v
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		t.Fatal("next target did not reuse the shared cycle")
+		return domain.AutomaticStockView{}
 	}
-	startReads(a, unknown.LastCycle.ID)
-	second := waitState(a, "WAITING_PUBLICATION")
+	second := waitNext(a, first.LastCycle.PublicationID)
+	if second.LastCycle.ID != first.LastCycle.ID || second.LastCycle.MoyskladImportID != first.LastCycle.MoyskladImportID || second.LastCycle.OzonImportID != first.LastCycle.OzonImportID {
+		t.Fatal("independent targets did not share one account-level import cycle")
+	}
 	for i := 0; i < 10; i++ {
 		worked, e := runner.RunNext(ctx)
 		if e != nil {
@@ -285,8 +297,8 @@ func TestAutomaticMultipleTargetsScopesAndUnknownIsolation(t *testing.T) {
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
-	done := waitState(a, "COMPLETE")
-	if done.LastCycle.Outcome != "RECONCILED" || writes.Load() != 2 {
+	done := waitState(a, "BLOCKED")
+	if done.LastCycle.Outcome != "TARGETS_NEED_ATTENTION" || writes.Load() != 2 {
 		t.Fatalf("unrelated variant did not reconcile: %+v writes=%d", done.LastCycle, writes.Load())
 	}
 	if len(done.Unresolved) != 1 || done.Unresolved[0].ProductID != "101" || done.Unresolved[0].State != "UNKNOWN" || done.Unresolved[0].OperationID != first.LastCycle.PublicationID {
@@ -335,8 +347,7 @@ func TestAutomaticMultipleTargetsScopesAndUnknownIsolation(t *testing.T) {
 	if err = db.Pool.QueryRow(ctx, `SELECT count(*) FILTER(WHERE product_id='101' AND state='UNKNOWN'),count(*) FILTER(WHERE product_id IN ('103','104')) FROM stock_publication_targets WHERE ozon_account=$1`, a.scope.OzonAccount).Scan(&unknownCount, &blockedShared); err != nil || unknownCount != 1 || blockedShared != 0 {
 		t.Fatalf("unknown=%d shared-pool publications=%d err=%v", unknownCount, blockedShared, err)
 	}
-	// If a continuously changing first product is eligible again, the other
-	// changed product must get its turn rather than being starved by ordering.
+	// Two changed products in one traversal must both publish independently.
 	c := automaticMultiScope(t, db, "three", true)
 	startReads(c, "")
 	cfirst := waitState(c, "WAITING_PUBLICATION")
@@ -350,19 +361,14 @@ func TestAutomaticMultipleTargetsScopesAndUnknownIsolation(t *testing.T) {
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
-	cfirstDone := waitState(c, "COMPLETE")
 	cfirstOp, err := db.StockPublication(ctx, c.scope, cfirst.LastCycle.PublicationID)
 	if err != nil || cfirstOp.Targets[0].ProductID != "101" {
 		t.Fatalf("first fair target: %+v %v", cfirstOp, err)
 	}
-	mu.Lock()
-	market[fmt.Sprintf("%s:%d:%d", c.scope.OzonAccount, 101, 201)] = 0
-	mu.Unlock()
-	if _, err = db.RequestAutomaticCycle(ctx, c.scope, time.Now()); err != nil {
-		t.Fatal(err)
+	csecond := waitNext(c, cfirst.LastCycle.PublicationID)
+	if csecond.LastCycle.ID != cfirst.LastCycle.ID {
+		t.Fatal("second changed target was not in the same cycle")
 	}
-	startReads(c, cfirstDone.LastCycle.ID)
-	csecond := waitState(c, "WAITING_PUBLICATION")
 	for i := 0; i < 10; i++ {
 		worked, e := runner.RunNext(ctx)
 		if e != nil {
@@ -373,9 +379,9 @@ func TestAutomaticMultipleTargetsScopesAndUnknownIsolation(t *testing.T) {
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
-	csecondDone := waitState(c, "COMPLETE")
+	csecondDone := waitState(c, "BLOCKED")
 	secondOp, err := db.StockPublication(ctx, c.scope, csecond.LastCycle.PublicationID)
-	if err != nil || csecondDone.LastCycle.Outcome != "RECONCILED" || secondOp.Targets[0].ProductID != "102" || writes.Load() != 5 {
+	if err != nil || csecondDone.LastCycle.Outcome != "TARGETS_NEED_ATTENTION" || secondOp.Targets[0].ProductID != "102" || writes.Load() != 5 {
 		t.Fatalf("another changing target was starved: %+v writes=%d err=%v", secondOp, writes.Load(), err)
 	}
 	// Two due account pairs compete for the same scheduler. Concurrent workers

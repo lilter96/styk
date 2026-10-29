@@ -175,7 +175,8 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 	if err != nil {
 		return review, err
 	}
-	if testpublication.Enabled(scope) {
+	legacyManualTest := testpublication.Enabled(scope) && len(automaticProducts) == 0
+	if legacyManualTest {
 		// The real test mode never publishes the other confirmed mappings in
 		// this workspace. Shared-pool checks still inspect all mappings below.
 		selected := targets[:0]
@@ -272,7 +273,7 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 				JOIN ozon_product_observations original ON original.import_id=h.ozon_import_id AND original.product_id=h.ozon_product_id AND original.offer_id=h.ozon_offer_id AND original.sku=p.sku
 				WHERE p.import_id=$1 AND p.product_id=$2 AND p.offer_id=$3 AND p.archived=false AND p.sku IS NOT NULL AND s.warehouse_id=$4
 				AND (NOT $7::boolean OR (p.offer_id=$8 AND p.sku=$9))
-			), EXISTS(SELECT 1 FROM ozon_warehouse_observations WHERE import_id=$1 AND warehouse_id=$4 AND is_rfbs=false AND (NOT $7::boolean OR status='created'))`, *e.Marketplace.ImportID, t.pid, e.ProductMapping.OfferID, t.wid, e.ProductMapping.ID, e.ProductMapping.Version, testpublication.Enabled(scope), testpublication.OzonOffer, testpublication.OzonSKU).Scan(&productIdentity, &warehouseIdentity)
+			), EXISTS(SELECT 1 FROM ozon_warehouse_observations WHERE import_id=$1 AND warehouse_id=$4 AND is_rfbs=false AND (NOT $10::boolean OR status='created'))`, *e.Marketplace.ImportID, t.pid, e.ProductMapping.OfferID, t.wid, e.ProductMapping.ID, e.ProductMapping.Version, legacyManualTest, testpublication.OzonOffer, testpublication.OzonSKU, testpublication.Enabled(scope)).Scan(&productIdentity, &warehouseIdentity)
 			if err != nil {
 				return review, err
 			}
@@ -375,7 +376,7 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 			if d.Quantity != nil {
 				quantity = *d.Quantity
 			}
-			testAllowed = approved && testpublication.TargetAllowed(scope, t.pid, t.wid, t.item, t.sourceWarehouse, quantity)
+			testAllowed = approved && ((legacyManualTest && testpublication.TargetAllowed(scope, t.pid, t.wid, t.item, t.sourceWarehouse, quantity)) || (automaticTarget != nil && automaticValid && testpublication.AutomaticQuantityAllowed(quantity)))
 			checks = append(checks, domain.StockSyncCheck{Code: "TEST_TARGET_ALLOWED", Passed: testAllowed, Message: "Тестовая пара, подтверждённые соответствия и ограничение количества проверены."})
 		}
 		if automaticTarget != nil && d.Quantity != nil {
@@ -522,7 +523,12 @@ func createPublication(ctx context.Context, tx pgx.Tx, review domain.StockSyncRe
 		op.Targets = append(op.Targets, v)
 	}
 	if testpublication.Enabled(review.StockSyncScope) {
-		if len(op.Targets) != 1 || !testpublication.TargetAllowed(review.StockSyncScope, op.Targets[0].ProductID, op.Targets[0].WarehouseID, review.Targets[0].SourceItemID, review.Targets[0].SourceWarehouseID, op.Targets[0].Quantity) {
+		automaticAllowed, authErr := authorizedAutomaticReview(ctx, tx, review, now)
+		if authErr != nil {
+			return op, authErr
+		}
+		manualAllowed := len(op.Targets) == 1 && len(review.Targets) == 1 && testpublication.TargetAllowed(review.StockSyncScope, op.Targets[0].ProductID, op.Targets[0].WarehouseID, review.Targets[0].SourceItemID, review.Targets[0].SourceWarehouseID, op.Targets[0].Quantity)
+		if len(op.Targets) != 1 || (!automaticAllowed && !manualAllowed) {
 			return op, domain.ErrStockSyncBlocked
 		}
 		if _, err = tx.Exec(ctx, `INSERT INTO outbox_tasks(operation_key,observation_id,max_attempts,task_type,publication_operation_id) VALUES($1,NULL,1,'stock_publication',$2)`, "stock-publication:"+id, id); err != nil {
