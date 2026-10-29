@@ -1,7 +1,8 @@
 # Controlled live orders and stock evidence
 
-**SUCCESS for two historical order mirrors and the bounded FBS stock regression.**
-Final verification: **2026-10-29 23:09:54 UTC** / 2026-10-30 Europe/Minsk.
+**SUCCESS for two historical order mirrors, three native service fields,
+two attribute-only updates and the bounded FBS stock regression.**
+Final verification: **2026-10-29 23:33:30 UTC** / 2026-10-30 Europe/Minsk.
 The registered `cross-e2e` pair matched the private manifest, enabled encrypted
 credentials and authenticated provider evidence. Account-ID SHA-256 prefixes:
 MoySklad `8fd183ebcacb`, Ozon `a3a518ffbc98`. These are real test accounts;
@@ -33,8 +34,8 @@ was disabled; unavailable buyer/address data were not invented. Missing source
 `created_at` was not mapped to a fabricated moment. Missing native `rate.value`
 remains missing; STYK supplied no FX rate. No create was replayed.
 
-Native discovery found one organization, three stores, five counterparties, seven
-states and no custom attributes. The account initially had only default BYN;
+Initial native discovery found one organization, three stores, five counterparties,
+seven states and no custom attributes. The account initially had only default BYN;
 source lines explicitly specified RUB. One separately authorized native system
 RUB currency was created with provider-managed automatic parameters and read back
 by its returned ID; BYN remains default. An earlier setup attempt returned HTTP
@@ -50,6 +51,47 @@ rows and native links appeared, without horizontal overflow or browser errors.
 Screenshots are encrypted and native selectors/account identity are masked.
 Two normal API processes and two dispatch plus two schedule worker processes ran
 against the real pair; shared ingestion and dispatch fences prevented duplicates.
+
+## Native service fields and existing-order updates
+
+The normal explicit metadata-setup API created exactly three native string fields:
+`styk-order-id`, `styk-order-status` and `styk-order-substatus`. Each had one durable
+dispatch authorization and one provider POST, all HTTP 200. The account registry
+revision **3** contains their observed native UUIDs. The actual Orders UI selected
+`commercial_order_id`, `status` and `substatus` mappings to those UUIDs and saved
+them with PII disabled and no automation grant.
+
+The first accepted creation initially remained UNKNOWN because its acknowledgement
+could not be verified. A dedicated recovery endpoint reconciled its exact generated
+marker using **four native GETs and no provider POST**. Its original UNKNOWN result
+remains append-only history. The other two fields were confirmed by matching native
+marker readback after unverified acknowledgements. Original native POST response
+bodies were not retained; their exact shape and the initial mismatch cause are
+not claimed as verified. No creation was replayed.
+
+Fresh source discovery preceded explicit normal previews and separate approvals.
+Both previews were Ready with **`owned_fields=["attribute"]` only**:
+
+| Local update operation | Work | Provider HTTP | Dispatches | Final state |
+|---|---|---:|---:|---|
+| `65bf782a44ad88007e675c409d147653` | `176e8b61330cb5fd346a21f062b6393d` | 200 | 1 | RECONCILED |
+| `b4becfaec487611b9687334a3cc6a2b9` | `da5da696205a5f1106590ee8863b31fe` | 200 | 1 | RECONCILED |
+
+These were normal-worker PUTs to the **same two customerorders**. Worker readback
+confirmed all three source values. A fresh two-target preview then returned Ready
+with **zero commands for each**, independently confirming no remaining mapped
+change. Stored non-PII references/scalars, complete positions and sums match the
+pre-update snapshots. Native free text and attribute values remain redacted in
+durable target observations; that mask is not evidence of a missing native value.
+No foreign unmanaged custom attribute existed in this live case.
+
+Both orders remain unposted with reserve zero. Existing source reservation-fixture
+product `ea33e770-d389-11f1-0a80-0d480029c772` was physical **10**, reserved **3** in
+normal imports **39** before the draft mirrors and **43** afterward. That pre-existing
+reservation was preserved; no live active-posting reservation was created or claimed.
+Final desktop/mobile inspection showed three verified field badges, selected
+mappings, four reconciled operations, six native links and configuration disabled,
+with no browser errors or overflow. Screenshots remain encrypted.
 
 ## Bounded stock regression
 
@@ -83,34 +125,44 @@ the independent final Ozon batch **44** reports present/reserved/free **0/0/0**.
 
 | Provider | Read attempts | Write attempts | Accepted writes | Final aggregate budget |
 |---|---:|---:|---:|---|
-| MoySklad | **109** | **6** | **5**: currency, two drafts, entry, loss | 140 reads / 25 writes |
-| Ozon | **65** | **2** | **2** selected stock updates | 150 reads / 20 writes |
+| MoySklad | **247** | **11** | **10**: currency, two drafts, three fields, two draft updates, entry, loss | 310 reads / 30 writes |
+| Ozon | **83** | **2** | **2** selected stock updates | 150 reads / 20 writes |
 
-Budgets include recovery reserves of 20 reads / 5 writes per provider. Counts
+Budgets include recovery reserves of **30 reads / 8 writes for MoySklad** and
+**20 reads / 5 writes for Ozon**. The documented expansion covered explicit native
+metadata setup, measured UI reference reads, stale-source refresh and full normal
+update/readback/no-op checks. Counts
 include the initial read-only phase (MoySklad 8, Ozon 11), five response-less
 MoySklad transport attempts, one Ozon HTTP 400 read and the rejected MoySklad
 HTTP 415 setup attempt. No provider 429 was observed. A legacy normal order-evidence
 refresh made **five MoySklad and one Ozon read absent from the coordinator ledger**;
 its returned attempt counters are counted separately here. The legacy coordination
 fix was built afterward; no additional live request was used to claim its validation.
-All other phase-two attempts were recorded by the shared PostgreSQL gate.
+All other phase-two attempts were recorded by the shared PostgreSQL gate. Interim
+status-zero snapshots included in-progress requests; the completed ledger contains
+only the original five response-less attempts. All final permits are finished.
 
 Requests were bounded, single-attempt, redirect-rejecting and paced. New fixture
 mutations had exclusive durable local intents; normal mutations had application
 intents/outbox records. No forbidden logistics-information endpoint, financial,
 payment, shipment, refund or demand document was used. No new write remains UNKNOWN;
+the recovered metadata creation's historical UNKNOWN result is retained, and
 the original superseded historical stock UNKNOWN remains unchanged, without an
 active UNKNOWN fence.
 
 Migrations 45–47 and then index-only 48 were applied after encrypted mode-600
 backups. Existing business/order row counts, credential ciphertexts and the
 encryption key were preserved across the migrations. The v6 helper and journal
-hashes remain unchanged. Order configuration revision **6**, manual stock sync,
+hashes remain unchanged. Order configuration revision **8**, manual stock sync,
 automatic stock sync and catalog sync are disabled; no automation grant or active
 outbox task remains. Temporary publication flags and schedulers were removed.
 Latest normal APIs remain on loopback 8080/8082 with one combined worker for user
 testing; port 8081's unrelated process was preserved. No provider secrets are in
 their environment; the scoped Orders flag remains enabled with configuration off.
+The final API/worker binaries embed runtime commit `c8645a8`, including the reviewed
+privacy-retention wiring; the dirty build marker reflects concurrent root-owned
+browser-test edits. Targeted API/worker builds passed. Full release checks remain
+the root agent's separate responsibility.
 
 The initial [executable manifest](order-contract-manifest.json) byte SHA-256 was
 `10a3380688dd9f639ef0c3a4883ec3c481c102a29e5f1fe43446ff70c499a572`;
@@ -127,6 +179,11 @@ the [currency source](https://raw.githubusercontent.com/moysklad/api-remap-1.2-d
 hash is `80cfc5edbc944bd2f3d9d6bdee47206af65990457449d7483a9195be6092bdd8`.
 Both returned HTTP 200 on the observation date. Source URLs, dates, full hashes
 and value-free structural signatures are retained privately.
+The metadata setup contract uses the official
+[general source](https://raw.githubusercontent.com/moysklad/api-remap-1.2-doc/master/md/_general.md),
+retrieved and verified by the implementation agent on **2026-10-30**, byte SHA-256
+`5dc61a23b376b7b2ea46ece7ac6f33f56476d2c34fdf152d457cbeb8e0da0c16`.
+This source verification does not establish the unretained live POST response shape.
 
 Ozon returned 13 warehouses and 10 delivery methods, with separate identities.
 No actionable live FBS/rFBS posting was observed. Packing, labels, tracking and
@@ -135,7 +192,8 @@ shipment/delivery actions are **NOT_OBSERVED_LIVE**; rFBS stock writes are
 
 Private handoff: `.local/orders-live/final-normal-evidence.json`, its encrypted
 full counterpart, `stock-regression-journal.json`, `phase2-journal.json`,
-`source-evidence.json`, `mirror-inputs.json`, encrypted payloads/screenshots and
+`final-metadata-evidence.json`, `source-evidence.json`, `mirror-inputs.json`,
+encrypted payloads/screenshots and
 backups. Sensitive customer values and native names remain encrypted or transient;
 safe identifiers and counts are separate. The legitimate owner's reset password
 is only in the designated private file.
