@@ -57,6 +57,9 @@ type StockSyncTarget struct {
 	SettlementObservedAt    *time.Time       `json:"settlement_observed_at,omitempty"`
 	SourceImportID          *int64           `json:"source_import_id,omitempty"`
 	Quantity                *string          `json:"quantity,omitempty"`
+	SourcePhysical          *string          `json:"source_physical,omitempty"`
+	SourceReserve           *string          `json:"source_reserve,omitempty"`
+	MarketplaceFree         *int64           `json:"marketplace_free,omitempty"`
 	Status                  string           `json:"status"`
 	Checks                  []StockSyncCheck `json:"checks"`
 	// Decision is persisted as an immutable snapshot but is removed from public
@@ -76,24 +79,29 @@ type StockSyncReview struct {
 	OzonCredentialRevision     int64                  `json:"ozon_credential_revision"`
 }
 type StockPublicationTarget struct {
-	ID           int64         `json:"id"`
-	OperationID  string        `json:"operation_id"`
-	ProductID    string        `json:"ozon_product_id"`
-	WarehouseID  string        `json:"ozon_warehouse_id"`
-	Quantity     string        `json:"quantity"`
-	State        string        `json:"state"`
-	SafeError    string        `json:"safe_error,omitempty"`
-	DispatchedAt *time.Time    `json:"dispatched_at,omitempty"`
-	FinishedAt   *time.Time    `json:"finished_at,omitempty"`
-	Decision     StockDecision `json:"decision"`
+	ID               int64         `json:"id"`
+	OperationID      string        `json:"operation_id"`
+	ProductID        string        `json:"ozon_product_id"`
+	WarehouseID      string        `json:"ozon_warehouse_id"`
+	Quantity         string        `json:"quantity"`
+	State            string        `json:"state"`
+	SafeError        string        `json:"safe_error,omitempty"`
+	DispatchedAt     *time.Time    `json:"dispatched_at,omitempty"`
+	FinishedAt       *time.Time    `json:"finished_at,omitempty"`
+	AcknowledgedAt   *time.Time    `json:"acknowledged_at,omitempty"`
+	ReadbackAt       *time.Time    `json:"readback_at,omitempty"`
+	ReadbackQuantity *string       `json:"readback_quantity,omitempty"`
+	HTTPStatus       *int          `json:"http_status,omitempty"`
+	Decision         StockDecision `json:"decision"`
 }
 type StockPublication struct {
 	ID string `json:"id"`
 	StockSyncScope
-	ReviewID  string                   `json:"review_id"`
-	State     string                   `json:"state"`
-	CreatedAt time.Time                `json:"created_at"`
-	Targets   []StockPublicationTarget `json:"targets"`
+	ReviewID         string                   `json:"review_id"`
+	State            string                   `json:"state"`
+	CreatedAt        time.Time                `json:"created_at"`
+	Targets          []StockPublicationTarget `json:"targets"`
+	OutboxClaimToken string                   `json:"-"`
 }
 type StockSyncView struct {
 	StockSyncScope

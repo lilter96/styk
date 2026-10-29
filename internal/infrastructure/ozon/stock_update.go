@@ -25,7 +25,17 @@ type StockUpdate struct {
 	ProductID, WarehouseID string
 	Quantity               int64
 }
-type StockUpdateResult struct{ ProductID, WarehouseID, State, SafeError string }
+type StockUpdateResult struct {
+	ProductID, WarehouseID, State, SafeError string
+	HTTPStatus                               int
+}
+
+// StockWriteError preserves a safe HTTP status without treating any error
+// response as proof that the external mutation did not happen.
+type StockWriteError struct{ HTTPStatus int }
+
+func (e *StockWriteError) Error() string { return ErrStockWriteUnknown.Error() }
+func (e *StockWriteError) Unwrap() error { return ErrStockWriteUnknown }
 
 func safeStockCode(v string) string {
 	switch strings.ToUpper(strings.ReplaceAll(v, " ", "_")) {
@@ -84,17 +94,17 @@ func (c *Client) UpdateStocks(ctx context.Context, items []StockUpdate) ([]Stock
 	req.Header.Set("Accept", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, ErrStockWriteUnknown
+		return nil, &StockWriteError{}
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20+1))
 	if err != nil || len(data) > 1<<20 {
-		return nil, ErrStockWriteUnknown
+		return nil, &StockWriteError{HTTPStatus: resp.StatusCode}
 	}
 	// No available provider guarantee proves that any non-2xx response means
 	// no target was applied, especially through gateways or after partial work.
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, ErrStockWriteUnknown
+		return nil, &StockWriteError{HTTPStatus: resp.StatusCode}
 	}
 	var decoded struct {
 		Result *[]struct {
@@ -107,7 +117,7 @@ func (c *Client) UpdateStocks(ctx context.Context, items []StockUpdate) ([]Stock
 		} `json:"result"`
 	}
 	if json.Unmarshal(data, &decoded) != nil || decoded.Result == nil {
-		return nil, ErrStockWriteUnknown
+		return nil, &StockWriteError{HTTPStatus: resp.StatusCode}
 	}
 	out := make([]StockUpdateResult, 0, len(items))
 	returned := map[string]StockUpdateResult{}
@@ -115,12 +125,12 @@ func (c *Client) UpdateStocks(ctx context.Context, items []StockUpdate) ([]Stock
 		p, w := id(v.ProductID), id(v.WarehouseID)
 		key := p + ":" + w
 		if !seen[key] || v.Updated == nil || v.Errors == nil {
-			return nil, ErrStockWriteUnknown
+			return nil, &StockWriteError{HTTPStatus: resp.StatusCode}
 		}
 		if _, duplicate := returned[key]; duplicate {
-			return nil, ErrStockWriteUnknown
+			return nil, &StockWriteError{HTTPStatus: resp.StatusCode}
 		}
-		r := StockUpdateResult{ProductID: p, WarehouseID: w, State: "UNKNOWN", SafeError: "INCOMPLETE_RESPONSE"}
+		r := StockUpdateResult{ProductID: p, WarehouseID: w, State: "UNKNOWN", SafeError: "INCOMPLETE_RESPONSE", HTTPStatus: resp.StatusCode}
 		if *v.Updated && len(*v.Errors) == 0 {
 			r.State, r.SafeError = "SUCCEEDED", ""
 		} else if !*v.Updated && len(*v.Errors) > 0 {
@@ -133,7 +143,7 @@ func (c *Client) UpdateStocks(ctx context.Context, items []StockUpdate) ([]Stock
 	for _, v := range items {
 		r, ok := returned[v.ProductID+":"+v.WarehouseID]
 		if !ok {
-			r = StockUpdateResult{v.ProductID, v.WarehouseID, "UNKNOWN", "TARGET_RESULT_MISSING"}
+			r = StockUpdateResult{ProductID: v.ProductID, WarehouseID: v.WarehouseID, State: "UNKNOWN", SafeError: "TARGET_RESULT_MISSING", HTTPStatus: resp.StatusCode}
 		}
 		out = append(out, r)
 	}

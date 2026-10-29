@@ -85,15 +85,19 @@ func Evaluate(req domain.StockCalculationRequest, e domain.StockEvidence, now ti
 	if e.CustomerOrders != nil {
 		orders := e.CustomerOrders
 		coverage, provided := e.Proofs[ProofCustomerOrders]
-		coverageVerified := provided && coverage.State == domain.ProofVerified && strings.TrimSpace(coverage.Reference) != "" && !coverage.AsOf.IsZero() && !coverage.AsOf.After(now) && coverage.ValidUntil.After(now) && sourceFreshness != nil && !coverage.AsOf.After(*sourceFreshness) && coverage.ValidUntil.Sub(coverage.AsOf) <= 15*time.Minute
+		coverageVerified := provided && proofAccepted(coverage, req.Policy) && strings.TrimSpace(coverage.Reference) != "" && !coverage.AsOf.IsZero() && !coverage.AsOf.After(now) && coverage.ValidUntil.After(now) && sourceFreshness != nil && !coverage.AsOf.After(*sourceFreshness) && coverage.ValidUntil.Sub(coverage.AsOf) <= 15*time.Minute
+		coverageDescription := "Complete customer-order and reservation coverage, including baseline inclusion, was explicitly verified."
+		if coverage.State == domain.ProofAttested {
+			coverageDescription = "Customer-order coverage is an operator-attested test assumption, not independent provider evidence."
+		}
 		if provided {
-			add(ProofCustomerOrders, "Complete customer-order and reservation coverage, including baseline inclusion, was explicitly verified.", coverage.Reference, coverageVerified, false)
+			add(ProofCustomerOrders, coverageDescription, coverage.Reference, coverageVerified, false)
 		}
 		if coverageVerified {
 			expiry := coverage.ValidUntil
 			customerCoverageExpiry = &expiry
 		}
-		add("CUSTOMER_ORDER_IMPORT_MISSING", "A scoped customer-order traversal or explicit independent coverage evidence was recorded.", coverage.Reference, orders.BatchID != nil || coverageVerified, false)
+		add("CUSTOMER_ORDER_IMPORT_MISSING", "A scoped customer-order traversal or accepted, explicitly classified coverage assumption was recorded.", coverage.Reference, orders.BatchID != nil || coverageVerified, false)
 		add("CUSTOMER_ORDER_EVIDENCE_TRUNCATED", "The bounded customer-order evidence was not truncated.", "", !orders.Truncated, false)
 		add("CUSTOMER_ORDER_DETAILS_WITHOUT_BATCH", "Observed order details have a durable scoped batch reference.", "", orders.BatchID != nil || len(orders.Correlations) == 0, true)
 		if orders.BatchID != nil {
@@ -163,7 +167,10 @@ func Evaluate(req domain.StockCalculationRequest, e domain.StockEvidence, now ti
 	}
 	for code, description := range proofDescriptions {
 		p, ok := e.Proofs[code]
-		verified := ok && p.State == domain.ProofVerified && strings.TrimSpace(p.Reference) != "" && !p.AsOf.IsZero() && !p.AsOf.After(now) && p.ValidUntil.After(now)
+		verified := ok && proofAccepted(p, req.Policy) && strings.TrimSpace(p.Reference) != "" && !p.AsOf.IsZero() && !p.AsOf.After(now) && p.ValidUntil.After(now)
+		if p.State == domain.ProofAttested {
+			description = "Operator-attested test assumption, not independently verified: " + description
+		}
 		if verified && code != ProofOwnership && code != ProofProductMapping && code != ProofWarehouseMapping && code != ProofUnit {
 			verified = sourceFreshness != nil && !p.AsOf.After(*sourceFreshness)
 		}
@@ -202,6 +209,10 @@ func Evaluate(req domain.StockCalculationRequest, e domain.StockEvidence, now ti
 		d.ExpiresAt = &expires
 	}
 	return d
+}
+
+func proofAccepted(proof domain.StockProof, policy domain.StockCalculationPolicy) bool {
+	return proof.State == domain.ProofVerified || (policy.AcceptOperatorAttested && proof.State == domain.ProofAttested && proof.EvidenceClass == "OPERATOR_ATTESTED")
 }
 
 // SourceFreshnessTime keeps the original row timestamp intact while allowing

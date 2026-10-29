@@ -99,6 +99,30 @@ func TestFreshTraversalDoesNotRewriteHistoricalObservation(t *testing.T) {
 	}
 }
 
+func TestOperatorAttestationsRequireExplicitTestPolicy(t *testing.T) {
+	r, e, now := provenFixture()
+	for _, code := range []string{ProofUnit, ProofBaseline, ProofSourceOrdering, ProofUnassigned, ProofAttribution, ProofPostingCoverage, ProofCompeting, ProofBound} {
+		proof := e.Proofs[code]
+		proof.State, proof.EvidenceClass = domain.ProofAttested, "OPERATOR_ATTESTED"
+		e.Proofs[code] = proof
+	}
+	e.CustomerOrders = &domain.StockCustomerOrderEvidence{}
+	e.Proofs[ProofCustomerOrders] = domain.StockProof{State: domain.ProofAttested, EvidenceClass: "OPERATOR_ATTESTED", Reference: "operator risk assumption", AsOf: *e.Source.ObservedAt, ValidUntil: now.Add(5 * time.Minute)}
+	if d := Evaluate(r, e, now); d.Status == domain.StockReady {
+		t.Fatal("ordinary policy accepted test-only assumptions")
+	}
+	r.Policy.AcceptOperatorAttested = true
+	if d := Evaluate(r, e, now); d.Status != domain.StockReady || d.Quantity == nil || *d.Quantity != "6" || d.Evidence.Proofs[ProofCustomerOrders].EvidenceClass != "OPERATOR_ATTESTED" {
+		t.Fatalf("test assumptions did not remain explicit: %+v", d.ReasonCodes)
+	}
+	bad := e.Proofs[ProofBound]
+	bad.EvidenceClass = ""
+	e.Proofs[ProofBound] = bad
+	if d := Evaluate(r, e, now); d.Status == domain.StockReady {
+		t.Fatal("unclassified attestation was accepted")
+	}
+}
+
 func TestMissingAndConflictingEvidence(t *testing.T) {
 	cases := []struct {
 		name, reason string

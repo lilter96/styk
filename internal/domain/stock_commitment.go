@@ -34,6 +34,8 @@ type StockCalculationPolicy struct {
 	SafetyStock       string
 	MaxObservationAge time.Duration
 	DecisionLifetime  time.Duration
+	// Only a scoped controlled-test policy may accept operator assumptions.
+	AcceptOperatorAttested bool
 }
 
 // StockSourceEvidence preserves the exact values and local timestamp of one
@@ -83,6 +85,7 @@ type StockProofState string
 const (
 	ProofUnknown     StockProofState = "unknown"
 	ProofVerified    StockProofState = "verified"
+	ProofAttested    StockProofState = "operator_attested"
 	ProofConflict    StockProofState = "conflict"
 	ProofUnsupported StockProofState = "unsupported"
 )
@@ -91,10 +94,12 @@ const (
 // validity interval. The current import adapter cannot attest the critical
 // cross-system proofs; tests can supply synthetic proofs to exercise arithmetic.
 type StockProof struct {
-	State      StockProofState
-	Reference  string
-	AsOf       time.Time
-	ValidUntil time.Time
+	State StockProofState
+	// EvidenceClass distinguishes an operator assertion from provider evidence.
+	EvidenceClass string
+	Reference     string
+	AsOf          time.Time
+	ValidUntil    time.Time
 }
 
 type StockEvidence struct {

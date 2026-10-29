@@ -12,6 +12,7 @@ import (
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/postgres"
 	"github.com/lilter96/styk/internal/stocksync"
+	"github.com/lilter96/styk/internal/testpublication"
 )
 
 type stockSyncAPI struct {
@@ -147,7 +148,7 @@ func (a *stockSyncAPI) shadow(w http.ResponseWriter, r *http.Request) {
 		}
 		targets = append(targets, t)
 	}
-	writeJSON(w, map[string]any{"scope": scope, "checks": view.Checks, "state": view.State, "targets": targets, "publication_available": false})
+	writeJSON(w, map[string]any{"scope": scope, "checks": view.Checks, "state": view.State, "targets": targets, "publication_available": testpublication.Enabled(scope), "test_account_mode": testpublication.Enabled(scope)})
 }
 func syncScope(r *http.Request) domain.StockSyncScope {
 	q := r.URL.Query()
@@ -227,7 +228,7 @@ func (a *stockSyncAPI) mutate(w http.ResponseWriter, r *http.Request, action str
 		return
 	}
 	if action == "enable" {
-		if _, ok := config.StockPublicationTestEndpoint(); !ok {
+		if _, ok := config.StockPublicationTestEndpoint(); !ok && !testpublication.Enabled(req.StockSyncScope) {
 			writeError(w, http.StatusServiceUnavailable, "STOCK_PUBLICATION_DISABLED")
 			return
 		}
@@ -259,14 +260,15 @@ func (a *stockSyncAPI) reconcile(w http.ResponseWriter, r *http.Request) {
 	writeStockSyncView(w, view)
 }
 
-// Actual marketplace publication is not available during the safety hold,
-// even when the loopback-only simulator is explicitly configured.
+// Real publication is available only for the owner's fixed test-account scope.
+// The simulator does not expose publication through the operator UI.
 func writeStockSyncView(w http.ResponseWriter, view domain.StockSyncView) {
 	data, ok := postgres.StockSyncPublic(view).(map[string]any)
 	if !ok {
 		writeError(w, http.StatusServiceUnavailable, "STOCK_SYNC_UNAVAILABLE")
 		return
 	}
-	data["publication_available"] = false
+	data["publication_available"] = testpublication.Enabled(view.StockSyncScope)
+	data["test_account_mode"] = testpublication.Enabled(view.StockSyncScope)
 	writeJSON(w, data)
 }

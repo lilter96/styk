@@ -11,12 +11,14 @@ import (
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/infrastructure/ozon"
 	"github.com/lilter96/styk/internal/postgres"
+	"github.com/lilter96/styk/internal/testpublication"
 )
 
 type Runner struct {
-	Enabled     bool
-	Store       *postgres.Store
-	ResolveOzon func(context.Context, string, string) (*ozon.Client, error)
+	Enabled        bool
+	ControlledTest bool
+	Store          *postgres.Store
+	ResolveOzon    func(context.Context, string, string) (*ozon.Client, error)
 }
 
 func (r Runner) RunNext(ctx context.Context) (bool, error) {
@@ -27,17 +29,29 @@ func (r Runner) RunNext(ctx context.Context) (bool, error) {
 		return false, errors.New("stock publisher requires a store and scoped credential resolver")
 	}
 	now := time.Now().UTC()
-	if err := r.Store.RefreshStockSync(ctx, now); err != nil {
-		return false, err
+	var op *domain.StockPublication
+	var err error
+	if r.ControlledTest {
+		if !testpublication.Enabled(testpublication.Scope()) {
+			return false, nil
+		}
+		if err = r.Store.RecoverControlledStockPublications(ctx, now); err != nil {
+			return false, err
+		}
+		op, err = r.Store.NextControlledStockPublication(ctx, now)
+	} else {
+		if err = r.Store.RefreshStockSync(ctx, now); err != nil {
+			return false, err
+		}
+		op, err = r.Store.NextStockPublication(ctx, now)
 	}
-	op, err := r.Store.NextStockPublication(ctx, now)
 	if err != nil || op == nil {
 		return false, err
 	}
-	finish := func(target domain.StockPublicationTarget, state, code string) error {
+	finish := func(target domain.StockPublicationTarget, state, code string, status *int) error {
 		save, cancel := context.WithTimeout(context.WithoutCancel(ctx), r.Store.Timeout)
 		defer cancel()
-		return r.Store.FinishStockTarget(save, op.StockSyncScope, op.ID, target.ID, state, code, time.Now().UTC())
+		return r.Store.FinishStockTargetHTTP(save, op.StockSyncScope, op.ID, target.ID, state, code, status, time.Now().UTC())
 	}
 	enabled, err := r.Store.StockPublicationStillEnabled(ctx, op.StockSyncScope)
 	if err != nil {
@@ -46,7 +60,7 @@ func (r Runner) RunNext(ctx context.Context) (bool, error) {
 	if !enabled {
 		for _, t := range op.Targets {
 			if t.State == "DISPATCHING" {
-				if err = finish(t, "CANCELLED", "SYNC_DISABLED"); err != nil {
+				if err = finish(t, "CANCELLED", "SYNC_DISABLED", nil); err != nil {
 					return true, err
 				}
 			}
@@ -57,7 +71,7 @@ func (r Runner) RunNext(ctx context.Context) (bool, error) {
 	if err != nil {
 		for _, t := range op.Targets {
 			if t.State == "DISPATCHING" {
-				if err = finish(t, "BLOCKED", "CREDENTIALS_UNAVAILABLE"); err != nil {
+				if err = finish(t, "BLOCKED", "CREDENTIALS_UNAVAILABLE", nil); err != nil {
 					return true, err
 				}
 			}
@@ -86,7 +100,7 @@ func (r Runner) RunNext(ctx context.Context) (bool, error) {
 	}
 	if !valid {
 		for _, t := range targets {
-			if err = finish(t, "BLOCKED", "EVIDENCE_CHANGED_OR_DISABLED"); err != nil {
+			if err = finish(t, "BLOCKED", "EVIDENCE_CHANGED_OR_DISABLED", nil); err != nil {
 				return true, err
 			}
 		}
@@ -96,8 +110,13 @@ func (r Runner) RunNext(ctx context.Context) (bool, error) {
 	results, writeErr := client.UpdateStocks(send, items)
 	cancel()
 	if writeErr != nil {
+		var status *int
+		var providerErr *ozon.StockWriteError
+		if errors.As(writeErr, &providerErr) && providerErr.HTTPStatus != 0 {
+			status = &providerErr.HTTPStatus
+		}
 		for _, t := range targets {
-			if err = finish(t, "UNKNOWN", "REQUEST_OUTCOME_UNKNOWN"); err != nil {
+			if err = finish(t, "UNKNOWN", "REQUEST_OUTCOME_UNKNOWN", status); err != nil {
 				return true, err
 			}
 		}
@@ -105,20 +124,40 @@ func (r Runner) RunNext(ctx context.Context) (bool, error) {
 	}
 	for i, t := range targets {
 		if i >= len(results) {
-			if err = finish(t, "UNKNOWN", "TARGET_RESULT_MISSING"); err != nil {
+			if err = finish(t, "UNKNOWN", "TARGET_RESULT_MISSING", nil); err != nil {
 				return true, err
 			}
 			continue
 		}
 		result := results[i]
 		if result.ProductID != t.ProductID || result.WarehouseID != t.WarehouseID {
-			if err = finish(t, "UNKNOWN", "TARGET_RESULT_MISMATCH"); err != nil {
+			if err = finish(t, "UNKNOWN", "TARGET_RESULT_MISMATCH", nil); err != nil {
 				return true, err
 			}
 			continue
 		}
-		if err = finish(t, result.State, result.SafeError); err != nil {
+		state := result.State
+		if r.ControlledTest && state == "SUCCEEDED" {
+			state = "ACKNOWLEDGED"
+		}
+		status := result.HTTPStatus
+		if err = finish(t, state, result.SafeError, &status); err != nil {
 			return true, err
+		}
+		if r.ControlledTest && state == "ACKNOWLEDGED" && t.Decision.Evidence.ProductMapping != nil {
+			readCtx, readCancel := context.WithTimeout(ctx, 20*time.Second)
+			quantity, readErr := client.ReadStockQuantity(readCtx, t.ProductID, t.WarehouseID, t.Decision.Evidence.ProductMapping.OfferID)
+			readCancel()
+			var observed *int64
+			if readErr == nil {
+				observed = &quantity
+			}
+			save, saveCancel := context.WithTimeout(context.WithoutCancel(ctx), r.Store.Timeout)
+			err = r.Store.RecordStockReadback(save, op.StockSyncScope, op.ID, t.ID, observed, time.Now().UTC())
+			saveCancel()
+			if err != nil {
+				return true, err
+			}
 		}
 	}
 	return true, nil
@@ -144,11 +183,21 @@ func (r Runner) Reconcile(ctx context.Context, scope domain.StockSyncScope, id s
 		return domain.StockSyncView{}, errors.New("stock reconciliation credentials unavailable")
 	}
 	for _, t := range op.Targets {
-		if t.State != "UNKNOWN" || t.Decision.Evidence.ProductMapping == nil {
+		if (t.State != "UNKNOWN" && t.State != "ACKNOWLEDGED") || t.Decision.Evidence.ProductMapping == nil {
 			continue
 		}
 		offer := t.Decision.Evidence.ProductMapping.OfferID
 		quantity, readErr := client.ReadStockQuantity(ctx, t.ProductID, t.WarehouseID, offer)
+		if t.State == "ACKNOWLEDGED" {
+			var observed *int64
+			if readErr == nil {
+				observed = &quantity
+			}
+			if err = r.Store.RecordStockReadback(ctx, scope, id, t.ID, observed, time.Now().UTC()); err != nil {
+				return domain.StockSyncView{}, err
+			}
+			continue
+		}
 		if readErr != nil {
 			if ctx.Err() != nil {
 				break

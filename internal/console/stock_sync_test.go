@@ -77,9 +77,10 @@ func TestStockPublicationDeploymentGateCannotBeBypassedByEnableRequest(t *testin
 	login := send("/api/session", `{"secret":"`+strings.Repeat("s", 32)+`"}`, nil)
 	cookie := login.Result().Cookies()[0]
 	body := `{"tenant":"tenant","moysklad_account":"moy","ozon_account":"ozon","review_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","idempotency_key":"synthetic-key-12345678","acknowledge":true}`
-	for _, tc := range []struct{ flag, endpoint string }{{"", ""}, {"true", ""}, {"true", "https://api-seller.ozon.ru"}, {"true", "http://localhost:1234"}} {
+	for _, tc := range []struct{ flag, endpoint, controlled string }{{"", "", ""}, {"true", "", ""}, {"true", "https://api-seller.ozon.ru", ""}, {"true", "http://localhost:1234", ""}, {"", "", "true"}} {
 		t.Setenv("STYK_STOCK_PUBLICATION_ENABLED", tc.flag)
 		t.Setenv("STYK_STOCK_PUBLICATION_TEST_ENDPOINT", tc.endpoint)
+		t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", tc.controlled)
 		w := send("/api/stock-sync/enable", body, cookie)
 		if w.Code != 503 || !strings.Contains(w.Body.String(), "STOCK_PUBLICATION_DISABLED") {
 			t.Fatalf("gate bypass: %d %s", w.Code, w.Body.String())

@@ -17,6 +17,7 @@ const (
 	SourceWarehouse       = "7035238c-d31c-11f1-0a80-071500070d0a"
 	OzonProduct           = "2764544165"
 	OzonOffer             = "ATEST-897677"
+	OzonSKU               = "2889277907"
 	OzonWarehouse         = "1020001323428000"
 	MaxQuantity     int64 = 7
 )

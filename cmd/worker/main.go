@@ -11,6 +11,7 @@ import (
 	"github.com/lilter96/styk/internal/ozonjob"
 	"github.com/lilter96/styk/internal/postgres"
 	"github.com/lilter96/styk/internal/stocksync"
+	"github.com/lilter96/styk/internal/testpublication"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -188,11 +189,28 @@ func run() error {
 			return client, nil
 		},
 	}
-	// Until remote fencing/contract validation is complete this path can send
-	// only to an explicitly configured loopback simulator, never to Ozon.
+	// The existing simulator and the single authorized real-account experiment
+	// are mutually exclusive. Neither switch enables arbitrary real targets.
 	testEndpoint, publicationEnabled := config.StockPublicationTestEndpoint()
+	controlled := testpublication.Enabled(testpublication.Scope())
+	if controlled && publicationEnabled {
+		return errors.New("controlled live test and publication simulator cannot run together")
+	}
 	publications := stocksync.Runner{Enabled: publicationEnabled, Store: db, ResolveOzon: func(_ context.Context, _, _ string) (*ozon.Client, error) {
 		return ozon.New(ozon.Options{BaseURL: testEndpoint, ClientID: "synthetic-test-seller", APIKey: "synthetic-test-key", Timeout: 20 * time.Second, Interval: 400 * time.Millisecond, Backoff: time.Second, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 100, AllowSyntheticStockWrites: true})
 	}}
+	if controlled {
+		publications = stocksync.Runner{Enabled: true, ControlledTest: true, Store: db, ResolveOzon: func(ctx context.Context, tenant, account string) (*ozon.Client, error) {
+			scope := testpublication.Scope()
+			if tenant != scope.Tenant || account != scope.OzonAccount || !testpublication.Enabled(scope) {
+				return nil, errors.New("controlled test publication scope mismatch")
+			}
+			key, err := resolver.Resolve(ctx, credentials.Scope{Tenant: tenant, Provider: "ozon", Account: account})
+			if err != nil {
+				return nil, err
+			}
+			return ozon.NewControlledTestStockClient(scope, key)
+		}}
+	}
 	return (application.Worker{Publications: publications, StoredCredentials: vault != nil, MoyskladImportAccount: moyClaim, Store: db, Handler: application.MockHandler{}, Imports: imports, ImportAccount: claimAccount, Log: slog.Default(), Poll: c.PollInterval, Lease: c.LeaseDuration, Retry: c.RetryDelay}).Run(ctx)
 }

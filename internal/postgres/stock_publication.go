@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/lilter96/styk/internal/domain"
+	"github.com/lilter96/styk/internal/testpublication"
 )
 
 func sameSyncConditions(a, b domain.StockSyncReview) bool {
@@ -36,7 +38,7 @@ func sameSyncConditions(a, b domain.StockSyncReview) bool {
 func (s *Store) RefreshStockSync(ctx context.Context, now time.Time) error {
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
-	_, err := s.Pool.Exec(ctx, `UPDATE stock_publication_targets SET state='UNKNOWN',safe_error='WORKER_OUTCOME_UNKNOWN' WHERE state='DISPATCHING' AND dispatched_at<$1`, now.Add(-time.Minute))
+	_, err := s.Pool.Exec(ctx, `UPDATE stock_publication_targets t SET state='UNKNOWN',safe_error='WORKER_OUTCOME_UNKNOWN' WHERE state='DISPATCHING' AND dispatched_at<$1 AND NOT EXISTS(SELECT 1 FROM outbox_tasks q WHERE q.publication_operation_id=t.operation_id AND q.task_type='stock_publication')`, now.Add(-time.Minute))
 	if err != nil {
 		return err
 	}
@@ -66,6 +68,11 @@ func (s *Store) RefreshStockSync(ctx context.Context, now time.Time) error {
 	return nil
 }
 func (s *Store) refreshStockScope(ctx context.Context, scope domain.StockSyncScope, now time.Time) error {
+	// Controlled real-account requests require a fresh operator review each
+	// time; a worker must never turn this scope into recurring publication.
+	if scope == testpublication.Scope() {
+		return nil
+	}
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -150,6 +157,20 @@ func (s *Store) refreshStockScope(ctx context.Context, scope domain.StockSyncSco
 // NextStockPublication atomically fences a write before I/O. Dispatching claims
 // have no lease retry path. A crash can become UNKNOWN, never QUEUED again.
 func (s *Store) NextStockPublication(ctx context.Context, now time.Time) (*domain.StockPublication, error) {
+	return s.nextStockPublication(ctx, now, nil)
+}
+
+// NextControlledStockPublication claims only the fixed test scope and its
+// single-attempt outbox task. It cannot claim another account's publication.
+func (s *Store) NextControlledStockPublication(ctx context.Context, now time.Time) (*domain.StockPublication, error) {
+	scope := testpublication.Scope()
+	if !testpublication.Enabled(scope) {
+		return nil, nil
+	}
+	return s.nextStockPublication(ctx, now, &scope)
+}
+
+func (s *Store) nextStockPublication(ctx context.Context, now time.Time, controlled *domain.StockSyncScope) (*domain.StockPublication, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
 	tx, err := s.Pool.Begin(ctx)
@@ -159,7 +180,16 @@ func (s *Store) NextStockPublication(ctx context.Context, now time.Time) (*domai
 	defer tx.Rollback(context.Background())
 	var scope domain.StockSyncScope
 	var opID string
-	err = tx.QueryRow(ctx, `SELECT p.id,p.tenant_id,p.moysklad_account,p.ozon_account FROM stock_publications p JOIN stock_sync_settings s USING(tenant_id,moysklad_account,ozon_account) WHERE s.enabled AND EXISTS(SELECT 1 FROM stock_publication_targets t WHERE t.operation_id=p.id AND t.state='QUEUED') AND NOT EXISTS(SELECT 1 FROM stock_publication_dispatch_clock clock WHERE clock.ozon_account=p.ozon_account AND clock.dispatched_at>$1::timestamptz-interval '1 second') AND NOT EXISTS(SELECT 1 FROM stock_publication_targets queued JOIN stock_publication_targets prior ON prior.ozon_account=queued.ozon_account AND prior.product_id=queued.product_id AND prior.warehouse_id=queued.warehouse_id WHERE queued.operation_id=p.id AND queued.state='QUEUED' AND prior.dispatched_at>$1::timestamptz-interval '30 seconds') ORDER BY p.created_at,p.id LIMIT 1`, now).Scan(&opID, &scope.Tenant, &scope.MoyskladAccount, &scope.OzonAccount)
+	query := `SELECT p.id,p.tenant_id,p.moysklad_account,p.ozon_account FROM stock_publications p JOIN stock_sync_settings s USING(tenant_id,moysklad_account,ozon_account) WHERE s.enabled AND EXISTS(SELECT 1 FROM stock_publication_targets t WHERE t.operation_id=p.id AND t.state='QUEUED') AND NOT EXISTS(SELECT 1 FROM stock_publication_dispatch_clock clock WHERE clock.ozon_account=p.ozon_account AND clock.dispatched_at>$1::timestamptz-interval '1 second') AND NOT EXISTS(SELECT 1 FROM stock_publication_targets queued JOIN stock_publication_targets prior ON prior.ozon_account=queued.ozon_account AND prior.product_id=queued.product_id AND prior.warehouse_id=queued.warehouse_id WHERE queued.operation_id=p.id AND queued.state='QUEUED' AND prior.dispatched_at>$1::timestamptz-interval '30 seconds')`
+	args := []any{now}
+	if controlled != nil {
+		query += ` AND p.tenant_id=$2 AND p.moysklad_account=$3 AND p.ozon_account=$4 AND EXISTS(SELECT 1 FROM outbox_tasks q WHERE q.publication_operation_id=p.id AND q.task_type='stock_publication' AND q.state='pending' AND q.attempts=0)`
+		args = append(args, controlled.Tenant, controlled.MoyskladAccount, controlled.OzonAccount)
+	} else {
+		query += ` AND NOT EXISTS(SELECT 1 FROM outbox_tasks q WHERE q.publication_operation_id=p.id AND q.task_type='stock_publication')`
+	}
+	query += ` ORDER BY p.created_at,p.id LIMIT 1`
+	err = tx.QueryRow(ctx, query, args...).Scan(&opID, &scope.Tenant, &scope.MoyskladAccount, &scope.OzonAccount)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -199,6 +229,11 @@ func (s *Store) NextStockPublication(ctx context.Context, now time.Time) (*domai
 		_, err = tx.Exec(ctx, `UPDATE stock_publication_targets SET state='BLOCKED',safe_error='EVIDENCE_CHANGED_OR_EXPIRED',finished_at=$2 WHERE operation_id=$1 AND state='QUEUED'`, opID, now)
 		if err != nil {
 			return nil, err
+		}
+		if controlled != nil {
+			if _, err = tx.Exec(ctx, `UPDATE outbox_tasks SET state='failed',last_error='EVIDENCE_CHANGED_OR_EXPIRED',updated_at=$2 WHERE publication_operation_id=$1 AND state='pending'`, opID, now); err != nil {
+				return nil, err
+			}
 		}
 		if err = tx.Commit(ctx); err != nil {
 			return nil, err
@@ -241,6 +276,20 @@ func (s *Store) NextStockPublication(ctx context.Context, now time.Time) (*domai
 	if err != nil {
 		return nil, err
 	}
+	if controlled != nil {
+		token, e := stockSyncID()
+		if e != nil {
+			return nil, e
+		}
+		tag, e := tx.Exec(ctx, `UPDATE outbox_tasks SET state='running',attempts=1,claim_token=$2,lease_until=$3,updated_at=$4 WHERE publication_operation_id=$1 AND state='pending' AND attempts=0`, opID, token, now.Add(time.Minute), now)
+		if e != nil {
+			return nil, e
+		}
+		if tag.RowsAffected() != 1 {
+			return nil, nil
+		}
+		op.OutboxClaimToken = token
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return nil, err
 	}
@@ -251,47 +300,129 @@ func (s *Store) StockPublicationStillEnabled(ctx context.Context, scope domain.S
 	err := s.Pool.QueryRow(ctx, `SELECT enabled FROM stock_sync_settings WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount).Scan(&enabled)
 	return enabled, err
 }
+
+// RecoverControlledStockPublications never requeues an expired write. The
+// target remains fenced as UNKNOWN (or ACKNOWLEDGED awaiting readback).
+func (s *Store) RecoverControlledStockPublications(ctx context.Context, now time.Time) error {
+	scope := testpublication.Scope()
+	if !testpublication.Enabled(scope) {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
+	defer cancel()
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(context.Background())
+	if err = syncLock(ctx, tx, scope); err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `UPDATE stock_publication_targets t SET state='UNKNOWN',safe_error='WORKER_OUTCOME_UNKNOWN' FROM stock_publications p JOIN outbox_tasks q ON q.publication_operation_id=p.id WHERE t.operation_id=p.id AND p.tenant_id=$1 AND p.moysklad_account=$2 AND p.ozon_account=$3 AND q.state='running' AND q.lease_until<=$4 AND t.state='DISPATCHING'`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, now)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `UPDATE outbox_tasks q SET state='failed',last_error='WORKER_OUTCOME_UNKNOWN',claim_token=NULL,lease_until=NULL,updated_at=$4 FROM stock_publications p WHERE q.publication_operation_id=p.id AND p.tenant_id=$1 AND p.moysklad_account=$2 AND p.ozon_account=$3 AND q.state='running' AND q.lease_until<=$4`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, now)
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
 func (s *Store) FinishStockTarget(ctx context.Context, scope domain.StockSyncScope, operationID string, targetID int64, state, code string, now time.Time) error {
-	if state != "SUCCEEDED" && state != "FAILED" && state != "UNKNOWN" && state != "BLOCKED" && state != "CANCELLED" && state != "CONFIRMED_EFFECTIVE" {
+	return s.FinishStockTargetHTTP(ctx, scope, operationID, targetID, state, code, nil, now)
+}
+
+// FinishStockTargetHTTP persists the provider acknowledgement or uncertainty
+// together with the controlled outbox result. It never reschedules a write.
+func (s *Store) FinishStockTargetHTTP(ctx context.Context, scope domain.StockSyncScope, operationID string, targetID int64, state, code string, status *int, now time.Time) error {
+	if state != "SUCCEEDED" && state != "ACKNOWLEDGED" && state != "FAILED" && state != "UNKNOWN" && state != "BLOCKED" && state != "CANCELLED" && state != "CONFIRMED_EFFECTIVE" {
 		return errors.New("invalid publication result")
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(context.Background())
+	if err = syncLock(ctx, tx, scope); err != nil {
+		return err
+	}
 	allowed := "DISPATCHING"
 	if state == "CONFIRMED_EFFECTIVE" {
 		allowed = "UNKNOWN"
 	}
-	query := `UPDATE stock_publication_targets t SET state=$6,safe_error=$7,finished_at=$8 FROM stock_publications p WHERE t.operation_id=p.id AND p.id=$4 AND t.id=$5 AND p.tenant_id=$1 AND p.moysklad_account=$2 AND p.ozon_account=$3 AND t.state=$9`
-	args := []any{scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, operationID, targetID, state, code, now, allowed}
-	if state == "CONFIRMED_EFFECTIVE" {
-		tx, err := s.Pool.Begin(ctx)
-		if err != nil {
-			return err
-		}
-		defer tx.Rollback(context.Background())
-		if err = syncLock(ctx, tx, scope); err != nil {
-			return err
-		}
-		tag, err := tx.Exec(ctx, query, args...)
-		if err != nil {
-			return err
-		}
-		if tag.RowsAffected() != 1 {
-			return domain.ErrStockSyncStale
-		}
-		if _, err = tx.Exec(ctx, `UPDATE stock_sync_settings SET enabled=false,updated_at=$4 WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, now); err != nil {
-			return err
-		}
-		return tx.Commit(ctx)
-	}
-	tag, err := s.Pool.Exec(ctx, query, args...)
+	query := `UPDATE stock_publication_targets t SET state=$6,safe_error=$7,finished_at=$8,acknowledged_at=CASE WHEN $6='ACKNOWLEDGED' THEN $8 ELSE t.acknowledged_at END,http_status=COALESCE($10,t.http_status) FROM stock_publications p WHERE t.operation_id=p.id AND p.id=$4 AND t.id=$5 AND p.tenant_id=$1 AND p.moysklad_account=$2 AND p.ozon_account=$3 AND t.state=$9`
+	tag, err := tx.Exec(ctx, query, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, operationID, targetID, state, code, now, allowed, status)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() != 1 {
 		return domain.ErrStockSyncStale
 	}
-	return nil
+	if state == "CONFIRMED_EFFECTIVE" {
+		if _, err = tx.Exec(ctx, `UPDATE stock_sync_settings SET enabled=false,updated_at=$4 WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, now); err != nil {
+			return err
+		}
+	} else if state != "ACKNOWLEDGED" {
+		if _, err = tx.Exec(ctx, `UPDATE outbox_tasks SET state='failed',last_error=NULLIF($2,''),claim_token=NULL,lease_until=NULL,updated_at=$3 WHERE publication_operation_id=$1 AND state='running'`, operationID, code, now); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+// RecordStockReadback stores an actual observation separately from the HTTP
+// acknowledgement. Missing or mismatched reads retain the target fence.
+func (s *Store) RecordStockReadback(ctx context.Context, scope domain.StockSyncScope, operationID string, targetID int64, observed *int64, now time.Time) error {
+	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
+	defer cancel()
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(context.Background())
+	if err = syncLock(ctx, tx, scope); err != nil {
+		return err
+	}
+	var desired string
+	err = tx.QueryRow(ctx, `SELECT t.quantity FROM stock_publication_targets t JOIN stock_publications p ON p.id=t.operation_id WHERE p.id=$1 AND p.tenant_id=$2 AND p.moysklad_account=$3 AND p.ozon_account=$4 AND t.id=$5 AND t.state='ACKNOWLEDGED' FOR UPDATE OF t`, operationID, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, targetID).Scan(&desired)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.ErrStockSyncStale
+	}
+	if err != nil {
+		return err
+	}
+	state, code := "ACKNOWLEDGED", "READBACK_UNAVAILABLE"
+	readbackOutcome := "UNAVAILABLE"
+	var value any
+	var at any
+	if observed != nil && *observed >= 0 {
+		value = strconv.FormatInt(*observed, 10)
+		at = now
+		code = "READBACK_MISMATCH"
+		readbackOutcome = "MISMATCH"
+		if value == desired {
+			state, code = "RECONCILED", ""
+			readbackOutcome = "MATCH"
+		}
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO stock_publication_readbacks(target_id,observed_at,quantity,outcome) VALUES($1,$2,$3,$4)`, targetID, now, value, readbackOutcome); err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `UPDATE stock_publication_targets SET state=$2,safe_error=$3,readback_quantity=COALESCE($4,readback_quantity),readback_at=COALESCE($5,readback_at),finished_at=CASE WHEN $2='RECONCILED' THEN $6 ELSE finished_at END WHERE id=$1`, targetID, state, code, value, at, now)
+	if err != nil {
+		return err
+	}
+	outboxState := "failed"
+	if state == "RECONCILED" {
+		outboxState = "succeeded"
+	}
+	_, err = tx.Exec(ctx, `UPDATE outbox_tasks SET state=$2,result=CASE WHEN $2='succeeded' THEN 'RECONCILED' ELSE NULL END,last_error=NULLIF($3,''),claim_token=NULL,lease_until=NULL,updated_at=$4 WHERE publication_operation_id=$1 AND state='running'`, operationID, outboxState, code, now)
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *Store) StockPublication(ctx context.Context, scope domain.StockSyncScope, id string) (domain.StockPublication, error) {
@@ -355,6 +486,24 @@ func (s *Store) StockPublicationCanDispatch(ctx context.Context, op domain.Stock
 		return false, err
 	}
 	if !enabled {
+		return false, nil
+	}
+	if op.StockSyncScope == testpublication.Scope() {
+		if !testpublication.Enabled(op.StockSyncScope) || op.OutboxClaimToken == "" || len(op.Targets) != 1 {
+			return false, nil
+		}
+		t := op.Targets[0]
+		if !testpublication.TargetAllowed(op.StockSyncScope, t.ProductID, t.WarehouseID, t.Decision.Request.Pool.ItemID, t.Decision.Request.Pool.WarehouseID, t.Quantity) {
+			return false, nil
+		}
+		var owned bool
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM outbox_tasks WHERE publication_operation_id=$1 AND task_type='stock_publication' AND state='running' AND claim_token=$2 AND lease_until>$3)`, op.ID, op.OutboxClaimToken, now).Scan(&owned); err != nil {
+			return false, err
+		}
+		if !owned {
+			return false, nil
+		}
+	} else if op.OutboxClaimToken != "" {
 		return false, nil
 	}
 	// A worker may have been paused while recovery marked its claim UNKNOWN.
