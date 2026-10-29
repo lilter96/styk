@@ -267,3 +267,65 @@ React at revision 17 after the final reconciliation. The prior superseded
 UNKNOWN remains historical; no new publication outcome is unresolved. The
 fixed-scope test mode is separate from the default-off production publication
 policy, and these test observations do not establish production readiness.
+
+
+## Engineering push: catalog, orders and dispatch fencing (2026-10-29)
+
+**SUCCESS for the bounded read validation; no new live stock write was attempted.**
+The merchant model remains one user per isolated account. Migrations 40–42
+preserve existing identities, mappings, credentials and publication history.
+The local database was backed up, and its credential-encryption key digest was
+verified unchanged. Automatic synchronization remains disabled.
+
+The normal credential-resolving worker completed merchant-authenticated Ozon
+import `24878b2e77db09ada75683f9b6c38bb8`, linked to completed batch **38**:
+**5 requests/5 attempts**, 33 products, 13 warehouses and 6 stock observations.
+All 33 products received observed names through `/v3/product/info/list`.
+Names are display/search metadata, never mapping evidence. The shared traversal
+budget includes this extra request (the former four-request test cap must be
+at least five for this account). Historical absent names remain unknown.
+The exact ordinary target was freshly observed at Ozon free stock **0**.
+
+A frozen seven-day order traversal completed through the merchant API:
+**13 MoySklad attempts**, source batch **2**, six orders and seven positions;
+**1 Ozon attempt**, posting batch **3**, no postings returned in that window.
+The API returned HTTP 200; all recorded provider attempts completed successfully.
+The completed progress and its original interval remained available after
+browser reload. This run needed no continuation; larger-window continuation,
+interruptions, conflicting repeats and partial-result exclusion were verified
+against deterministic providers and isolated PostgreSQL schemas. Absence from
+this bounded posting response does not prove absence of obligations. Aggregate
+reserves and observed positions are not subtracted twice.
+
+Order checks retain the 15-attempt per-provider bound per invocation. Completed
+subintervals can be resumed with versioned stored credentials for up to 30 minutes,
+with a 4 MiB staging bound per provider. Dense indivisible intervals remain
+`LIMIT_REACHED`; environment credentials are deliberately single-shot. Checks
+remain operator-initiated, not continuous complete order coverage.
+
+Catalog matching now indexes confirmed mappings. On the documented deterministic
+10,000-product fixture, median single-iteration evaluation changed from **2.31 s
+to 9.47 ms**, while allocated bytes rose from **7.41 MB to 11.67 MB**. The warm
+PostgreSQL target-name search changed from one **65.64 s** baseline run to a
+**35.1 ms** median of three runs; its repeated source scan became one scan.
+These are local synthetic measurements, not provider or synchronization latency.
+Repeatable benchmarks and EXPLAIN instructions are included in the test files.
+
+The dispatch fixes require a consumed, exact-target intent for every controlled
+write, recheck authorization after rate-limit waits, and obtain a fresh database
+snapshot after scope locks. Expired leases cannot revive after row-lock waits.
+Order progress and dispatch share one credential-lock order; the regression
+passes with that order and fails with the old order restored by a build overlay.
+Migration 42 rechecks merchant session expiry under acquired actor locks and
+retains that security correction on rollback. Historical superseded UNKNOWN is
+shown separately from an active unknown result; its original outcome is unchanged.
+PostgreSQL transaction-pooling proxies are unsupported by the session-lock path,
+and no database fence guarantees ordering after an HTTP request has left STYK.
+
+Desktop and mobile catalog search and persisted order-evidence screens were
+inspected with the real account. The complete two-merchant browser test also
+exercises registration, verified login, connections, imports, reviewed mappings,
+inventory rules, scheduler/outbox/worker publication, reconciliation and durable
+order checks through deterministic providers. The live read journal and local
+screenshots remain under `.local/dev-run/`; credentials and raw provider payloads
+are excluded from commits. Production publication remains disabled.
