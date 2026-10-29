@@ -44,8 +44,11 @@ type StockSourceEvidence struct {
 	ObservationFound                               bool
 	Physical, Reserve                              *string
 	ObservedAt                                     *time.Time
-	TimeBasis                                      string
-	TraversalComplete                              bool
+	// FreshTraversal records a later completed traversal of the same persisted
+	// content. It is not a source watermark or a per-row observation time.
+	FreshTraversal    *StockTraversalEvidence
+	TimeBasis         string
+	TraversalComplete bool
 }
 
 type StockMarketplaceEvidence struct {
@@ -54,8 +57,19 @@ type StockMarketplaceEvidence struct {
 	StockRowFound                           bool
 	Present, Reserved, FreeStock            *int64
 	ObservedAt                              *time.Time
+	FreshTraversal                          *StockTraversalEvidence
 	PostingWindowFrom                       *time.Time
 	PostingWindowTo                         *time.Time
+}
+
+// StockTraversalEvidence links a scoped completed import operation to its
+// deduplicated batch. StartedAt is the conservative freshness boundary; the
+// traversal is not necessarily an atomic marketplace snapshot.
+type StockTraversalEvidence struct {
+	OperationID string
+	ImportID    int64
+	StartedAt   time.Time
+	FinishedAt  time.Time
 }
 
 type StockConnectionReference struct {

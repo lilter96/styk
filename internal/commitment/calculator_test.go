@@ -66,6 +66,39 @@ func TestConditionalCalculationAndReflection(t *testing.T) {
 	}
 }
 
+func TestFreshTraversalDoesNotRewriteHistoricalObservation(t *testing.T) {
+	r, e, now := provenFixture()
+	old := now.Add(-2 * time.Hour)
+	e.Source.ObservedAt = &old
+	started := now.Add(-2 * time.Minute)
+	finished := now.Add(-time.Minute)
+	for code, proof := range e.Proofs {
+		proof.AsOf = started.Add(-time.Second)
+		e.Proofs[code] = proof
+	}
+	stale := Evaluate(r, e, now)
+	if !hasReason(stale, "SOURCE_OBSERVATION_STALE") {
+		t.Fatal("an old observation without a new traversal must be stale")
+	}
+	e.Source.FreshTraversal = &domain.StockTraversalEvidence{OperationID: "scoped-completed-operation", ImportID: *e.Source.ImportID, StartedAt: started, FinishedAt: finished}
+	fresh := Evaluate(r, e, now)
+	if fresh.Status != domain.StockReady || fresh.Quantity == nil || *fresh.Quantity != "6" {
+		t.Fatalf("matching fresh traversal did not restore eligibility: %+v", fresh.ReasonCodes)
+	}
+	if !fresh.Evidence.Source.ObservedAt.Equal(old) || fresh.SourceObservationAge == nil || *fresh.SourceObservationAge != "2m0s" {
+		t.Fatal("the original observation time was overwritten or the start boundary was not used")
+	}
+	e.Source.FreshTraversal.ImportID++
+	if got := Evaluate(r, e, now); !hasReason(got, "SOURCE_OBSERVATION_STALE") {
+		t.Fatal("a traversal of another content batch cannot refresh this observation")
+	}
+	e.Source.FreshTraversal.ImportID--
+	e.Source.FreshTraversal.FinishedAt = now.Add(time.Second)
+	if got := Evaluate(r, e, now); !hasReason(got, "SOURCE_OBSERVATION_STALE") {
+		t.Fatal("an unfinished traversal cannot refresh this observation")
+	}
+}
+
 func TestMissingAndConflictingEvidence(t *testing.T) {
 	cases := []struct {
 		name, reason string

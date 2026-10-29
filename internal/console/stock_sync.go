@@ -70,12 +70,20 @@ func (a *stockSyncAPI) shadow(w http.ResponseWriter, r *http.Request) {
 		MarketplaceBatchStarted   *time.Time              `json:"marketplace_batch_started"`
 		SourceBatchFinished       *time.Time              `json:"source_batch_finished"`
 		MarketplaceBatchFinished  *time.Time              `json:"marketplace_batch_finished"`
+		SourceTraversalFinished   *time.Time              `json:"source_traversal_finished,omitempty"`
+		MarketTraversalFinished   *time.Time              `json:"marketplace_traversal_finished,omitempty"`
 		Checks                    []domain.StockSyncCheck `json:"checks"`
 	}
 	targets := make([]target, 0, len(view.Targets))
 	for _, v := range view.Targets {
 		d := v.Decision
 		t := target{ProductID: v.ProductID, WarehouseID: v.WarehouseID, SourceItemID: v.SourceItemID, SourceWarehouseID: v.SourceWarehouseID, Physical: d.Evidence.Source.Physical, Reserve: d.Evidence.Source.Reserve, Unreflected: d.Evidence.Unreflected, UnseenBound: d.Evidence.UnseenBound, SourceBatchFinished: d.Evidence.Source.ObservedAt, MarketplaceBatchFinished: d.Evidence.Marketplace.ObservedAt, Checks: v.Checks}
+		if d.Evidence.Source.FreshTraversal != nil {
+			t.SourceTraversalFinished = &d.Evidence.Source.FreshTraversal.FinishedAt
+		}
+		if d.Evidence.Marketplace.FreshTraversal != nil {
+			t.MarketTraversalFinished = &d.Evidence.Marketplace.FreshTraversal.FinishedAt
+		}
 		t.ProductMappingConfirmed = d.Evidence.ProductMapping != nil
 		t.WarehouseMappingConfirmed = d.Evidence.WarehouseMapping != nil
 		if d.Evidence.Unreflected != nil {

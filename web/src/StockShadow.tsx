@@ -32,6 +32,8 @@ type Target = {
   marketplace_batch_finished: string | null;
   source_batch_started: string | null;
   marketplace_batch_started: string | null;
+  source_traversal_finished?: string | null;
+  marketplace_traversal_finished?: string | null;
   checks: Check[];
 };
 type Data = { targets: Target[]; checks: Check[]; state: string };
@@ -277,6 +279,14 @@ export function StockShadow({
                       Время каждой отдельной записи неизвестно; загрузки систем
                       не обязательно одновременны.
                     </p>
+                    {(t.source_traversal_finished ||
+                      t.marketplace_traversal_finished) && (
+                      <p>
+                        Последняя завершённая загрузка: МойСклад —{" "}
+                        {date(t.source_traversal_finished || null)}; Ozon —{" "}
+                        {date(t.marketplace_traversal_finished || null)}.
+                      </p>
+                    )}
                     <p>
                       Указано оператором: обязательства — {value(t.unreflected)}
                       , страховой запас — {value(t.safety_stock)}, другие

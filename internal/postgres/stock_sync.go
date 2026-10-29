@@ -256,6 +256,12 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 				return review, err
 			}
 		}
+		if t := e.Source.FreshTraversal; t != nil && !t.FinishedAt.After(now) {
+			sourceStarted = t.StartedAt
+		}
+		if t := e.Marketplace.FreshTraversal; t != nil && !t.FinishedAt.After(now) {
+			marketStarted = t.StartedAt
+		}
 		sourceTraversalFresh := !sourceStarted.IsZero() && !sourceStarted.After(now) && now.Sub(sourceStarted) < 15*time.Minute
 		marketTraversalFresh := !marketStarted.IsZero() && !marketStarted.After(now) && now.Sub(marketStarted) < 15*time.Minute
 		beforeTraversal := !sourceStarted.IsZero()
@@ -275,8 +281,12 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 		checks = append(checks, domain.StockSyncCheck{Code: "OZON_STOCK_BASELINE_REQUIRED", Passed: stockComplete, Message: "В полной загрузке Ozon есть остаток выбранного товара на складе."})
 		validStockValues := e.Marketplace.Present != nil && e.Marketplace.Reserved != nil && e.Marketplace.FreeStock != nil && *e.Marketplace.Present >= 0 && *e.Marketplace.Reserved >= 0 && *e.Marketplace.FreeStock >= 0
 		checks = append(checks, domain.StockSyncCheck{Code: "OZON_STOCK_VALUES_INVALID", Passed: validStockValues, Message: "Числа остатков и резервов Ozon присутствуют и неотрицательны."})
-		if e.Marketplace.ObservedAt != nil {
-			stockComplete = stockComplete && !e.Marketplace.ObservedAt.After(now) && now.Sub(*e.Marketplace.ObservedAt) < 15*time.Minute
+		marketFreshness := e.Marketplace.ObservedAt
+		if t := e.Marketplace.FreshTraversal; t != nil && !t.FinishedAt.After(now) {
+			marketFreshness = &t.StartedAt
+		}
+		if marketFreshness != nil {
+			stockComplete = stockComplete && !marketFreshness.After(now) && now.Sub(*marketFreshness) < 15*time.Minute
 		} else {
 			stockComplete = false
 		}

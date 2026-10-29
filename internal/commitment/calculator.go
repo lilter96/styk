@@ -43,6 +43,7 @@ var proofDescriptions = map[string]string{
 // Only whole, nonnegative pieces are supported; no rounding is performed.
 func Evaluate(req domain.StockCalculationRequest, e domain.StockEvidence, now time.Time) domain.StockDecision {
 	now = now.UTC()
+	sourceFreshness := SourceFreshnessTime(e.Source, now)
 	d := domain.StockDecision{Request: req, Evidence: e, EvaluatedAt: now, Status: domain.StockReady, ListingMayBeExposed: true, ReasonCodes: []string{}}
 	type check struct {
 		code, message, ref string
@@ -73,8 +74,8 @@ func Evaluate(req domain.StockCalculationRequest, e domain.StockEvidence, now ti
 	add("SOURCE_OBSERVATION_MISSING", "A warehouse stock observation exists in the selected import.", "", e.Source.ObservationFound && e.Source.ImportID != nil && *e.Source.ImportID > 0, false)
 	add("SOURCE_TRAVERSAL_INCOMPLETE", "The selected import traversal completed.", "", e.Source.TraversalComplete, false)
 	observationFresh := false
-	if e.Source.ObservedAt != nil {
-		age := now.Sub(*e.Source.ObservedAt)
+	if sourceFreshness != nil {
+		age := now.Sub(*sourceFreshness)
 		ageText := age.String()
 		d.SourceObservationAge = &ageText
 		observationFresh = validPolicy && age >= 0 && age < req.Policy.MaxObservationAge
@@ -84,7 +85,7 @@ func Evaluate(req domain.StockCalculationRequest, e domain.StockEvidence, now ti
 	if e.CustomerOrders != nil {
 		orders := e.CustomerOrders
 		coverage, provided := e.Proofs[ProofCustomerOrders]
-		coverageVerified := provided && coverage.State == domain.ProofVerified && strings.TrimSpace(coverage.Reference) != "" && !coverage.AsOf.IsZero() && !coverage.AsOf.After(now) && coverage.ValidUntil.After(now) && e.Source.ObservedAt != nil && !coverage.AsOf.After(*e.Source.ObservedAt) && coverage.ValidUntil.Sub(coverage.AsOf) <= 15*time.Minute
+		coverageVerified := provided && coverage.State == domain.ProofVerified && strings.TrimSpace(coverage.Reference) != "" && !coverage.AsOf.IsZero() && !coverage.AsOf.After(now) && coverage.ValidUntil.After(now) && sourceFreshness != nil && !coverage.AsOf.After(*sourceFreshness) && coverage.ValidUntil.Sub(coverage.AsOf) <= 15*time.Minute
 		if provided {
 			add(ProofCustomerOrders, "Complete customer-order and reservation coverage, including baseline inclusion, was explicitly verified.", coverage.Reference, coverageVerified, false)
 		}
@@ -155,8 +156,8 @@ func Evaluate(req domain.StockCalculationRequest, e domain.StockEvidence, now ti
 	if customerCoverageExpiry != nil && customerCoverageExpiry.Before(expires) {
 		expires = *customerCoverageExpiry
 	}
-	if e.Source.ObservedAt != nil && validPolicy {
-		if ageExpiry := e.Source.ObservedAt.Add(req.Policy.MaxObservationAge); ageExpiry.Before(expires) {
+	if sourceFreshness != nil && validPolicy {
+		if ageExpiry := sourceFreshness.Add(req.Policy.MaxObservationAge); ageExpiry.Before(expires) {
 			expires = ageExpiry
 		}
 	}
@@ -164,7 +165,7 @@ func Evaluate(req domain.StockCalculationRequest, e domain.StockEvidence, now ti
 		p, ok := e.Proofs[code]
 		verified := ok && p.State == domain.ProofVerified && strings.TrimSpace(p.Reference) != "" && !p.AsOf.IsZero() && !p.AsOf.After(now) && p.ValidUntil.After(now)
 		if verified && code != ProofOwnership && code != ProofProductMapping && code != ProofWarehouseMapping && code != ProofUnit {
-			verified = e.Source.ObservedAt != nil && !p.AsOf.After(*e.Source.ObservedAt)
+			verified = sourceFreshness != nil && !p.AsOf.After(*sourceFreshness)
 		}
 		if verified && p.ValidUntil.Before(expires) {
 			expires = p.ValidUntil
@@ -201,6 +202,16 @@ func Evaluate(req domain.StockCalculationRequest, e domain.StockEvidence, now ti
 		d.ExpiresAt = &expires
 	}
 	return d
+}
+
+// SourceFreshnessTime keeps the original row timestamp intact while allowing
+// a completed, same-content durable traversal to serve as a conservative
+// freshness boundary. It does not assert a source-side timestamp or snapshot.
+func SourceFreshnessTime(source domain.StockSourceEvidence, now time.Time) *time.Time {
+	if t := source.FreshTraversal; t != nil && source.ImportID != nil && t.ImportID == *source.ImportID && t.OperationID != "" && !t.StartedAt.IsZero() && !t.FinishedAt.Before(t.StartedAt) && !t.FinishedAt.After(now) {
+		return &t.StartedAt
+	}
+	return source.ObservedAt
 }
 
 func wholeNonnegative(s string) (*big.Int, bool) {

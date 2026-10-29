@@ -266,6 +266,10 @@ func loadStockObservations(ctx context.Context, tx pgx.Tx, r domain.StockCalcula
 			e.Source.ObservationFound = true
 			e.Source.Physical, e.Source.Reserve, e.Source.ObservedAt = &stock, &reserve, &observed
 			e.Source.TimeBasis = "local_batch_finished"
+			e.Source.FreshTraversal, err = loadMatchingTraversal(ctx, tx, r.Pool.Tenant, "moysklad", r.Pool.MoyskladAccount, sourceID)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	var ozonID int64
@@ -284,6 +288,10 @@ func loadStockObservations(ctx context.Context, tx pgx.Tx, r domain.StockCalcula
 		if err == nil {
 			e.Marketplace.StockRowFound = true
 			e.Marketplace.Present, e.Marketplace.Reserved, e.Marketplace.FreeStock, e.Marketplace.ObservedAt = &present, &reserved, &free, &observed
+			e.Marketplace.FreshTraversal, err = loadMatchingTraversal(ctx, tx, r.Pool.Tenant, "ozon", r.Target.OzonAccount, ozonID)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	var batch int64
@@ -296,6 +304,30 @@ func loadStockObservations(ctx context.Context, tx pgx.Tx, r domain.StockCalcula
 		e.Marketplace.PostingBatchID, e.Marketplace.PostingWindowFrom, e.Marketplace.PostingWindowTo = &batch, &from, &to
 	}
 	return nil
+}
+
+// The newest completed, fenced traversal is useful only if it returned the
+// currently selected content batch. An old or different batch must never make
+// a later snapshot fresh; nor may another tenant's operation attest this one.
+func loadMatchingTraversal(ctx context.Context, tx pgx.Tx, tenant, provider, account string, batchID int64) (*domain.StockTraversalEvidence, error) {
+	var traversal domain.StockTraversalEvidence
+	err := tx.QueryRow(ctx, `SELECT o.id,o.batch_id,o.attempt_started_at,o.finished_at
+		FROM ozon_import_operations o JOIN outbox_tasks t ON t.import_operation_id=o.id
+		WHERE o.tenant_id=$1 AND o.provider=$2 AND o.account_id=$3
+		  AND o.phase='COMPLETED' AND o.outcome='COMPLETE_TRAVERSAL'
+		  AND t.state='succeeded' AND o.attempt_started_at IS NOT NULL AND o.finished_at>=o.attempt_started_at
+		ORDER BY o.attempt_started_at DESC,o.finished_at DESC,o.id DESC LIMIT 1`, tenant, provider, account).
+		Scan(&traversal.OperationID, &traversal.ImportID, &traversal.StartedAt, &traversal.FinishedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read completed scoped traversal: %w", err)
+	}
+	if traversal.ImportID != batchID {
+		return nil, nil
+	}
+	return &traversal, nil
 }
 
 func persistStockDecision(ctx context.Context, tx pgx.Tx, poolID int64, d domain.StockDecision) error {

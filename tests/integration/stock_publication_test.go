@@ -1033,6 +1033,78 @@ func TestStockPublicationReusedBatchDoesNotRefreshObservationTime(t *testing.T) 
 	}
 }
 
+func TestStockPublicationFreshDurableTraversalReusesHistoricalBatch(t *testing.T) {
+	f := publicationData(t, false)
+	ctx := context.Background()
+	var batchID int64
+	var fingerprint string
+	if err := f.db.Pool.QueryRow(ctx, `SELECT id,fingerprint FROM source_imports WHERE source='moysklad' AND account_id=$1 ORDER BY id DESC LIMIT 1`, f.scope.MoyskladAccount).Scan(&batchID, &fingerprint); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Microsecond)
+	if _, err := f.db.Pool.Exec(ctx, `UPDATE source_warehouse_stock_observations SET observed_at=$1 WHERE import_id=$2`, old, batchID); err != nil {
+		t.Fatal(err)
+	}
+	if review := f.preview(t, true); review.Ready {
+		t.Fatal("old source observation unexpectedly became fresh")
+	}
+	op, _, err := f.db.SubmitCatalogImport(ctx, f.scope.Tenant, "moysklad", f.scope.MoyskladAccount, "fresh-reused-traversal-"+f.scope.Tenant, "synthetic-session", domain.DefaultMoyskladImportLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := f.db.ClaimForCatalogWorker(ctx, time.Minute, "", f.scope.MoyskladAccount)
+	if err != nil || task == nil || task.ImportOperationID != op.ID {
+		t.Fatalf("claim durable traversal: %+v %v", task, err)
+	}
+	snap := f.source
+	snap.StartedAt = time.Now().UTC()
+	snap.FinishedAt = snap.StartedAt.Add(time.Microsecond)
+	if err = f.db.CommitClaimedMoyskladImport(ctx, *task, snap, fingerprint, domain.ImportCounts{}, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	completed, err := f.db.GetCatalogOperation(ctx, f.scope.Tenant, "moysklad", f.scope.MoyskladAccount, op.ID)
+	if err != nil || completed.BatchID == nil || *completed.BatchID != batchID || completed.BatchCreated == nil || *completed.BatchCreated {
+		t.Fatalf("identical content did not reuse its durable batch: %+v %v", completed, err)
+	}
+	review := f.preview(t, true)
+	if !review.Ready || review.Targets[0].Quantity == nil || *review.Targets[0].Quantity != "8" {
+		t.Fatalf("fresh completed traversal did not permit the existing calculation: %+v", review.Targets[0].Checks)
+	}
+	evidence := review.Targets[0].Decision.Evidence.Source
+	if evidence.ObservedAt == nil || !evidence.ObservedAt.Equal(old) || evidence.FreshTraversal == nil || evidence.FreshTraversal.OperationID != op.ID || evidence.FreshTraversal.ImportID != batchID {
+		t.Fatalf("historical row and scoped traversal not preserved: %+v", evidence)
+	}
+	var marketID int64
+	if err = f.db.Pool.QueryRow(ctx, `SELECT id,fingerprint FROM source_imports WHERE source='ozon' AND account_id=$1 ORDER BY id DESC LIMIT 1`, f.scope.OzonAccount).Scan(&marketID, &fingerprint); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.db.Pool.Exec(ctx, `UPDATE ozon_fbs_stock_observations SET observed_at=$1 WHERE import_id=$2`, old, marketID); err != nil {
+		t.Fatal(err)
+	}
+	if review = f.preview(t, true); review.Ready {
+		t.Fatal("old marketplace observation unexpectedly became fresh")
+	}
+	marketOp, _, err := f.db.SubmitCatalogImport(ctx, f.scope.Tenant, "ozon", f.scope.OzonAccount, "fresh-market-traversal-"+f.scope.Tenant, "synthetic-session", domain.DefaultOzonImportLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err = f.db.ClaimForCatalogWorker(ctx, time.Minute, f.scope.OzonAccount, "")
+	if err != nil || task == nil || task.ImportOperationID != marketOp.ID {
+		t.Fatalf("claim marketplace traversal: %+v %v", task, err)
+	}
+	market := f.market
+	market.StartedAt = time.Now().UTC()
+	market.FinishedAt = market.StartedAt.Add(time.Microsecond)
+	if err = f.db.CommitClaimedOzonImport(ctx, *task, market, fingerprint, domain.ImportCounts{}, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	review = f.preview(t, true)
+	marketEvidence := review.Targets[0].Decision.Evidence.Marketplace
+	if !review.Ready || marketEvidence.ObservedAt == nil || !marketEvidence.ObservedAt.Equal(old) || marketEvidence.FreshTraversal == nil || marketEvidence.FreshTraversal.OperationID != marketOp.ID || marketEvidence.FreshTraversal.ImportID != marketID {
+		t.Fatalf("marketplace batch or traversal not preserved: ready=%v evidence=%+v", review.Ready, marketEvidence)
+	}
+}
+
 func TestStockPublicationDisableCannotUndoInFlightRequest(t *testing.T) {
 	f := publicationData(t, false)
 	f.enable(t)
