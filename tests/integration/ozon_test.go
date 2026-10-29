@@ -48,18 +48,18 @@ func TestOzonImport(t *testing.T) {
 				t.Error(err)
 			}
 			if request.Filter.Visibility == "ARCHIVED" {
-				fmt.Fprint(w, `{"result":{"items":[],"total_items":0}}`)
+				fixtureText(t, w, `{"result":{"items":[],"total_items":0}}`)
 			} else {
-				fmt.Fprint(w, `{"result":{"items":[{"product_id":1,"offer_id":"offer","sku":99,"archived":false}],"total_items":1}}`)
+				fixtureText(t, w, `{"result":{"items":[{"product_id":1,"offer_id":"offer","sku":99,"archived":false}],"total_items":1}}`)
 			}
 		case "/v2/warehouse/list":
 			if partial.Load() {
-				fmt.Fprint(w, `{"warehouses":[]}`)
+				fixtureText(t, w, `{"warehouses":[]}`)
 			} else {
-				fmt.Fprint(w, `{"warehouses":[{"warehouse_id":100,"name":"one","is_rfbs":false}],"has_next":false}`)
+				fixtureText(t, w, `{"warehouses":[{"warehouse_id":100,"name":"one","is_rfbs":false}],"has_next":false}`)
 			}
 		case "/v2/product/info/stocks-by-warehouse/fbs":
-			fmt.Fprint(w, `{"products":[{"product_id":1,"offer_id":"offer","sku":99,"warehouse_id":100,"present":10,"reserved":2,"free_stock":8}],"has_next":false}`)
+			fixtureText(t, w, `{"products":[{"product_id":1,"offer_id":"offer","sku":99,"warehouse_id":100,"present":10,"reserved":2,"free_stock":8}],"has_next":false}`)
 		default:
 			t.Errorf("unexpected endpoint %s", r.URL.Path)
 		}

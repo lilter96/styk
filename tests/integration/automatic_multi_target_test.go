@@ -142,7 +142,7 @@ func TestAutomaticMultipleTargetsScopesAndUnknownIsolation(t *testing.T) {
 			mu.Lock()
 			market[fmt.Sprintf("%s:%d:%d", account, x.ProductID, x.WarehouseID)] = x.Stock
 			mu.Unlock()
-			fmt.Fprintf(w, `{"result":[{"product_id":%d,"warehouse_id":%d,"updated":true,"errors":[]}]}`, x.ProductID, x.WarehouseID)
+			fixturePrintf(t, w, `{"result":[{"product_id":%d,"warehouse_id":%d,"updated":true,"errors":[]}]}`, x.ProductID, x.WarehouseID)
 		case "/v2/product/info/stocks-by-warehouse/fbs":
 			var in struct {
 				OfferID []string `json:"offer_id"`
@@ -167,7 +167,7 @@ func TestAutomaticMultipleTargetsScopesAndUnknownIsolation(t *testing.T) {
 			mu.Lock()
 			value := market[fmt.Sprintf("%s:%d:%d", account, product, warehouse)]
 			mu.Unlock()
-			fmt.Fprintf(w, `{"products":[{"product_id":%d,"warehouse_id":%d,"offer_id":%q,"present":%d,"reserved":0,"free_stock":%d}],"has_next":false,"cursor":""}`, product, warehouse, in.OfferID[0], value, value)
+			fixturePrintf(t, w, `{"products":[{"product_id":%d,"warehouse_id":%d,"offer_id":%q,"present":%d,"reserved":0,"free_stock":%d}],"has_next":false,"cursor":""}`, product, warehouse, in.OfferID[0], value, value)
 		default:
 			t.Errorf("unexpected path: %s", r.URL.Path)
 			http.Error(w, "bad", 500)
@@ -218,7 +218,8 @@ func TestAutomaticMultipleTargetsScopesAndUnknownIsolation(t *testing.T) {
 			}
 			now := time.Now().UTC()
 			counts := domain.ImportCounts{Attempts: 1, Requests: 1, CompletedRequests: 1}
-			if task.Type == domain.MoyskladCatalogTask {
+			switch task.Type {
+			case domain.MoyskladCatalogTask:
 				snap := f.source
 				snap.StartedAt = now
 				snap.FinishedAt = now
@@ -229,7 +230,7 @@ func TestAutomaticMultipleTargetsScopesAndUnknownIsolation(t *testing.T) {
 				if e = db.CommitClaimedMoyskladImport(ctx, *task, snap, fingerprint, counts, 5*time.Second); e != nil {
 					t.Fatal(e)
 				}
-			} else if task.Type == domain.OzonCatalogTask {
+			case domain.OzonCatalogTask:
 				snap := f.market
 				snap.StartedAt = now
 				snap.FinishedAt = now
@@ -240,7 +241,7 @@ func TestAutomaticMultipleTargetsScopesAndUnknownIsolation(t *testing.T) {
 				if e = db.CommitClaimedOzonImport(ctx, *task, snap, fingerprint, counts, 5*time.Second); e != nil {
 					t.Fatal(e)
 				}
-			} else {
+			default:
 				t.Fatalf("unexpected task: %+v", task)
 			}
 		}

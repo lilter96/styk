@@ -380,7 +380,7 @@ func TestMappingConfirmationConcurrentDifferentPayloadSameKey(t *testing.T) {
 	}
 	close(start)
 	a, b := <-done, <-done
-	if !((a.Code == 200 && b.Code == 409) || (a.Code == 409 && b.Code == 200)) {
+	if (a.Code != http.StatusOK || b.Code != http.StatusConflict) && (a.Code != http.StatusConflict || b.Code != http.StatusOK) {
 		t.Fatalf("expected one success and one conflict: %d/%d", a.Code, b.Code)
 	}
 	conflict := a
@@ -407,7 +407,7 @@ func TestMappingConfirmationConcurrentCompetingReviews(t *testing.T) {
 	}
 	close(start)
 	first, second := <-done, <-done
-	if !((first.Code == 200 && second.Code == 409) || (first.Code == 409 && second.Code == 200)) {
+	if (first.Code != http.StatusOK || second.Code != http.StatusConflict) && (first.Code != http.StatusConflict || second.Code != http.StatusOK) {
 		t.Fatalf("competing reviews both succeeded or failed: %d/%d", first.Code, second.Code)
 	}
 	failed := first
@@ -463,7 +463,7 @@ func TestReviewBoundHistoryRequiresAuditAndIdempotencyAtCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback(ctx)
+	defer rollbackLeaseTest(t, tx)
 	var id int64
 	err = tx.QueryRow(ctx, `INSERT INTO product_mappings(tenant_id,ozon_account,ozon_product_id,ozon_offer_id,moysklad_account,target_kind,target_id,version,provenance) VALUES($1,$2,'manual-product','seller-offer',$3,'variant','manual-variant',1,'LOCAL_OPERATOR_SESSION') RETURNING id`, h.f.req.Pool.Tenant, h.f.req.Target.OzonAccount, h.f.req.Pool.MoyskladAccount).Scan(&id)
 	if err != nil {
@@ -618,7 +618,7 @@ func TestMappingConfirmationRevalidatesAfterImportLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback(ctx)
+	defer rollbackLeaseTest(t, tx)
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "ozon:"+h.f.req.Target.OzonAccount); err != nil {
 		t.Fatal(err)
 	}
@@ -757,7 +757,7 @@ func TestMappingConfirmationTimeoutAndCancellationRollBack(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer tx.Rollback(ctx)
+		defer rollbackLeaseTest(t, tx)
 		if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "ozon:"+h.f.req.Target.OzonAccount); err != nil {
 			t.Fatal(err)
 		}
@@ -780,7 +780,7 @@ func TestMappingConfirmationTimeoutAndCancellationRollBack(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer tx.Rollback(background)
+		defer rollbackLeaseTest(t, tx)
 		if _, err = tx.Exec(background, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "ozon:"+h.f.req.Target.OzonAccount); err != nil {
 			t.Fatal(err)
 		}
@@ -790,8 +790,8 @@ func TestMappingConfirmationTimeoutAndCancellationRollBack(t *testing.T) {
 		done := make(chan error, 1)
 		go func() { _, e := h.f.store.ConfirmMappingReview(ctx, request); done <- e }()
 		select {
-		case <-done:
-			t.Fatal("confirmation did not wait for the import lock")
+		case err := <-done:
+			t.Fatalf("confirmation did not wait for the import lock: %v", err)
 		case <-time.After(50 * time.Millisecond):
 		}
 		cancel()
@@ -868,7 +868,7 @@ func TestMappingConfirmationCanceledWhenOperatorLogsOut(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback(ctx)
+	defer rollbackLeaseTest(t, tx)
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "ozon:"+h.f.req.Target.OzonAccount); err != nil {
 		t.Fatal(err)
 	}
@@ -1090,7 +1090,7 @@ func TestReviewBoundCommitRejectsMismatchedAuditOrActiveMapping(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer tx.Rollback(ctx)
+			defer rollbackLeaseTest(t, tx)
 			var id int64
 			err = tx.QueryRow(ctx, `INSERT INTO product_mappings(tenant_id,ozon_account,ozon_product_id,ozon_offer_id,moysklad_account,target_kind,target_id,version,provenance) VALUES($1,$2,'manual-product','seller-offer',$3,'variant','manual-variant',1,'LOCAL_OPERATOR_SESSION') RETURNING id`, h.f.req.Pool.Tenant, h.f.req.Target.OzonAccount, h.f.req.Pool.MoyskladAccount).Scan(&id)
 			if err != nil {
@@ -1181,7 +1181,7 @@ func TestMappingConfirmationTimestampFollowsLockWait(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback(ctx)
+	defer rollbackLeaseTest(t, tx)
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "ozon:"+h.f.req.Target.OzonAccount); err != nil {
 		t.Fatal(err)
 	}
@@ -1224,7 +1224,7 @@ func TestMappingConfirmationConcurrentDifferentKeysSameReview(t *testing.T) {
 	}
 	close(start)
 	a, b := <-done, <-done
-	if !((a.Code == 200 && b.Code == 409) || (a.Code == 409 && b.Code == 200)) {
+	if (a.Code != http.StatusOK || b.Code != http.StatusConflict) && (a.Code != http.StatusConflict || b.Code != http.StatusOK) {
 		t.Fatalf("different keys produced unexpected outcomes: %d/%d", a.Code, b.Code)
 	}
 	conflict := a
@@ -1244,7 +1244,8 @@ func TestConfirmationAuditRejectsCrossTenantAndCrossAccountReferences(t *testing
 			review := source.createReview(t, "manual-product", "variant", "manual-variant", domain.MappingOperatorAttested)
 			session := source.sessionID(t, review.Review.ID)
 			owner := source
-			tenant, ozon, moy := source.f.req.Pool.Tenant, source.f.req.Target.OzonAccount, source.f.req.Pool.MoyskladAccount
+			tenant, moy := source.f.req.Pool.Tenant, source.f.req.Pool.MoyskladAccount
+			var ozon string
 			if mode == "tenant" {
 				owner = newConfirmationHarness(t)
 				tenant, ozon, moy = owner.f.req.Pool.Tenant, owner.f.req.Target.OzonAccount, owner.f.req.Pool.MoyskladAccount

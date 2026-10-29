@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -158,7 +159,10 @@ func (p *ordersProcessChild) stop(t *testing.T, kill bool) {
 		if err = p.cmd.Process.Kill(); err != nil {
 			t.Error("kill unresponsive orders process")
 		}
-		<-p.done
+		var exit *exec.ExitError
+		if err = <-p.done; err != nil && !errors.As(err, &exit) {
+			t.Error("wait for killed orders process")
+		}
 		t.Error("orders process did not stop")
 	}
 }

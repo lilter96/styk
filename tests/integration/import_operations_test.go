@@ -72,7 +72,7 @@ func reconcileLostImportCommit(t *testing.T, provider string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer listener.Close()
+	defer closeFixture(t, listener)
 	dropped := make(chan struct{}, 1)
 	go func() {
 		for {
@@ -83,11 +83,11 @@ func reconcileLostImportCommit(t *testing.T, provider string) {
 			go func() {
 				upstream, e := net.Dial("tcp", target)
 				if e != nil {
-					client.Close()
+					closeFixture(t, client)
 					return
 				}
-				defer client.Close()
-				defer upstream.Close()
+				defer closeFixture(t, client)
+				defer closeFixture(t, upstream)
 				go func() { _, _ = io.Copy(upstream, client) }()
 				for {
 					header := make([]byte, 5)
@@ -226,16 +226,16 @@ func catalogServer(t *testing.T) *httptest.Server {
 				t.Error("request decode")
 			}
 			if b.Filter.Visibility == "ARCHIVED" {
-				fmt.Fprint(w, `{"result":{"items":[],"total_items":0}}`)
+				fixtureText(t, w, `{"result":{"items":[],"total_items":0}}`)
 			} else if b.Last == "" {
-				fmt.Fprint(w, `{"result":{"items":[{"product_id":1,"offer_id":"one","archived":false}],"last_id":"next","total_items":2}}`)
+				fixtureText(t, w, `{"result":{"items":[{"product_id":1,"offer_id":"one","archived":false}],"last_id":"next","total_items":2}}`)
 			} else {
-				fmt.Fprint(w, `{"result":{"items":[{"product_id":2,"offer_id":"two","archived":false}],"total_items":2}}`)
+				fixtureText(t, w, `{"result":{"items":[{"product_id":2,"offer_id":"two","archived":false}],"total_items":2}}`)
 			}
 		case "/v2/warehouse/list":
-			fmt.Fprint(w, `{"warehouses":[{"warehouse_id":10,"name":"synthetic","is_rfbs":false}],"has_next":false}`)
+			fixtureText(t, w, `{"warehouses":[{"warehouse_id":10,"name":"synthetic","is_rfbs":false}],"has_next":false}`)
 		case "/v2/product/info/stocks-by-warehouse/fbs":
-			fmt.Fprint(w, `{"products":[{"product_id":1,"offer_id":"one","warehouse_id":10,"present":0,"reserved":0,"free_stock":0}],"has_next":false}`)
+			fixtureText(t, w, `{"products":[{"product_id":1,"offer_id":"one","warehouse_id":10,"present":0,"reserved":0,"free_stock":0}],"has_next":false}`)
 		default:
 			t.Errorf("unexpected marketplace method %s", r.URL.Path)
 			w.WriteHeader(405)
@@ -624,7 +624,7 @@ func TestImportFailuresNeverPersistProviderResponse(t *testing.T) {
 	op := f.submit(t, "api-failure", domain.DefaultOzonImportLimits())
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		fmt.Fprint(w, `{"code":"synthetic-secret-never-persist","customer":"private"}`)
+		fixtureText(t, w, `{"code":"synthetic-secret-never-persist","customer":"private"}`)
 	}))
 	defer server.Close()
 	if err := runnerFor(t, f, server).ProcessImport(context.Background(), f.claim(t), time.Second); err != nil {
@@ -661,9 +661,9 @@ func TestImportWorkerEmptyCatalogAndLimitVariants(t *testing.T) {
 				}
 				switch r.URL.Path {
 				case "/v3/product/list":
-					fmt.Fprint(w, `{"result":{"items":[],"total_items":0}}`)
+					fixtureText(t, w, `{"result":{"items":[],"total_items":0}}`)
 				case "/v2/warehouse/list":
-					fmt.Fprint(w, `{"warehouses":[],"has_next":false}`)
+					fixtureText(t, w, `{"warehouses":[],"has_next":false}`)
 				default:
 					t.Error("unexpected endpoint")
 				}
@@ -718,14 +718,14 @@ func TestImportPersistenceErrorRollsBackBatch(t *testing.T) {
 			}
 			_ = json.NewDecoder(r.Body).Decode(&b)
 			if b.Filter.Visibility == "ARCHIVED" {
-				fmt.Fprint(w, `{"result":{"items":[],"total_items":0}}`)
+				fixtureText(t, w, `{"result":{"items":[],"total_items":0}}`)
 			} else {
-				fmt.Fprint(w, `{"result":{"items":[{"product_id":1,"offer_id":"one"}],"total_items":1}}`)
+				fixtureText(t, w, `{"result":{"items":[{"product_id":1,"offer_id":"one"}],"total_items":1}}`)
 			}
 		case "/v2/warehouse/list":
-			fmt.Fprint(w, `{"warehouses":[],"has_next":false}`)
+			fixtureText(t, w, `{"warehouses":[],"has_next":false}`)
 		case "/v2/product/info/stocks-by-warehouse/fbs":
-			fmt.Fprint(w, `{"products":[],"has_next":false}`)
+			fixtureText(t, w, `{"products":[],"has_next":false}`)
 		default:
 			t.Error("unexpected endpoint")
 		}
@@ -764,11 +764,11 @@ func TestImportInFlightLeaseLossCannotCommitStaleBatch(t *testing.T) {
 					return
 				}
 			}
-			fmt.Fprint(w, `{"result":{"items":[],"total_items":0}}`)
+			fixtureText(t, w, `{"result":{"items":[],"total_items":0}}`)
 			return
 		}
 		if r.URL.Path == "/v2/warehouse/list" {
-			fmt.Fprint(w, `{"warehouses":[],"has_next":false}`)
+			fixtureText(t, w, `{"warehouses":[],"has_next":false}`)
 			return
 		}
 		t.Error("unexpected path")
@@ -791,7 +791,10 @@ func TestImportInFlightLeaseLossCannotCommitStaleBatch(t *testing.T) {
 	}
 	close(release)
 	select {
-	case <-done:
+	case err := <-done:
+		if err != nil && !errors.Is(err, postgres.ErrImportClaimLost) && !errors.Is(err, context.Canceled) {
+			t.Fatalf("stale worker returned an unexpected error: %v", err)
+		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("stale worker failed to stop")
 	}
@@ -816,10 +819,7 @@ func TestImportWorkerDispatcherAndLeaseExhaustion(t *testing.T) {
 		done <- (application.Worker{Store: f.db, Handler: application.MockHandler{}, Imports: runner, ImportAccount: f.account, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Poll: 5 * time.Millisecond, Lease: time.Second, Retry: time.Millisecond}).Run(ctx)
 	}()
 	deadline := time.Now().Add(4 * time.Second)
-	for {
-		if f.inspect(t, op.ID).State == "SUCCEEDED" {
-			break
-		}
+	for f.inspect(t, op.ID).State != "SUCCEEDED" {
 		if time.Now().After(deadline) {
 			cancel()
 			t.Fatal("worker did not finish")
@@ -859,7 +859,7 @@ func TestImportProgressIsVisibleBeforeBatchCommit(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v3/product/list":
-			fmt.Fprint(w, `{"result":{"items":[],"total_items":0}}`)
+			fixtureText(t, w, `{"result":{"items":[],"total_items":0}}`)
 		case "/v2/warehouse/list":
 			close(arrived)
 			select {
@@ -867,7 +867,7 @@ func TestImportProgressIsVisibleBeforeBatchCommit(t *testing.T) {
 			case <-r.Context().Done():
 				return
 			}
-			fmt.Fprint(w, `{"warehouses":[],"has_next":false}`)
+			fixtureText(t, w, `{"warehouses":[],"has_next":false}`)
 		default:
 			t.Error("unexpected request")
 		}
@@ -1000,11 +1000,12 @@ func TestImportDoesNotAttachHiddenHistoricalBatch(t *testing.T) {
 	}
 	f := importFixture{db, tenant, account}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v3/product/list" {
-			fmt.Fprint(w, `{"result":{"items":[],"total_items":0}}`)
-		} else if r.URL.Path == "/v2/warehouse/list" {
-			fmt.Fprint(w, `{"warehouses":[],"has_next":false}`)
-		} else {
+		switch r.URL.Path {
+		case "/v3/product/list":
+			fixtureText(t, w, `{"result":{"items":[],"total_items":0}}`)
+		case "/v2/warehouse/list":
+			fixtureText(t, w, `{"warehouses":[],"has_next":false}`)
+		default:
 			t.Error("unexpected request")
 		}
 	}))
@@ -1151,7 +1152,7 @@ func TestImportRetryAttemptBudgetAndMalformedResponse(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls.Add(1)
 				w.WriteHeader(tc.status)
-				fmt.Fprint(w, tc.body)
+				fixtureText(t, w, tc.body)
 			}))
 			defer server.Close()
 			client, err := ozon.New(ozon.Options{BaseURL: server.URL, ClientID: f.account, APIKey: "synthetic", Timeout: time.Second, Interval: time.Millisecond, Backoff: time.Millisecond, MaxRetryAfter: time.Second, Attempts: tc.attempts, PageSize: 1})

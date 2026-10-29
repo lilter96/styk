@@ -288,7 +288,7 @@ func TestStockDecisionRequiresEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback(ctx)
+	defer rollbackLeaseTest(t, tx)
 	var id int64
 	err = tx.QueryRow(ctx, `INSERT INTO stock_decisions(tenant_id,pool_id,moysklad_account,moysklad_warehouse_id,item_kind,item_id,ozon_account,ozon_warehouse_id,ozon_product_id,policy_version,evaluated_at,status,decision) SELECT tenant_id,pool_id,moysklad_account,moysklad_warehouse_id,item_kind,item_id,ozon_account,ozon_warehouse_id,ozon_product_id,policy_version,evaluated_at,status,decision FROM stock_decisions WHERE id=$1 RETURNING id`, d.ID).Scan(&id)
 	if err != nil {
@@ -348,13 +348,13 @@ func TestStockOwnershipAndScopedEvidence(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer tx.Rollback(ctx)
+			defer rollbackLeaseTest(t, tx)
 			var id int64
 			err = tx.QueryRow(ctx, `INSERT INTO stock_decisions(tenant_id,pool_id,moysklad_account,moysklad_warehouse_id,item_kind,item_id,ozon_account,ozon_warehouse_id,ozon_product_id,offer_id,product_mapping_id,product_mapping_version,warehouse_mapping_id,warehouse_mapping_version,policy_version,evaluated_at,status,decision) SELECT tenant_id,pool_id,moysklad_account,moysklad_warehouse_id,item_kind,item_id,ozon_account,ozon_warehouse_id,ozon_product_id,offer_id,product_mapping_id,product_mapping_version,warehouse_mapping_id,warehouse_mapping_version,policy_version,evaluated_at,status,decision FROM stock_decisions WHERE id=$1 RETURNING id`, d.ID).Scan(&id)
 			if err != nil {
 				t.Fatal(err)
 			}
-			query := `INSERT INTO stock_decision_evidence(decision_id,tenant_id,pool_id,moysklad_account,moysklad_warehouse_id,item_kind,item_id,ozon_account,ozon_warehouse_id,ozon_product_id,moysklad_import_id,moysklad_stock_import_id,ozon_import_id,ozon_stock_import_id,posting_batch_id,snapshot) SELECT $1,tenant_id,pool_id,moysklad_account,moysklad_warehouse_id,item_kind,item_id,ozon_account,ozon_warehouse_id,ozon_product_id,moysklad_import_id,moysklad_stock_import_id,ozon_import_id,ozon_stock_import_id,posting_batch_id,snapshot FROM stock_decision_evidence WHERE decision_id=$2`
+			var query string
 			switch mode {
 			case "tenant":
 				query = `INSERT INTO stock_decision_evidence(decision_id,tenant_id,pool_id,moysklad_account,moysklad_warehouse_id,item_kind,item_id,ozon_account,ozon_warehouse_id,ozon_product_id,snapshot) SELECT $1,$3,pool_id,moysklad_account,moysklad_warehouse_id,item_kind,item_id,ozon_account,ozon_warehouse_id,ozon_product_id,snapshot FROM stock_decision_evidence WHERE decision_id=$2`
@@ -538,7 +538,7 @@ func TestStockMappingChangeDuringCalculation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback(ctx)
+	defer rollbackLeaseTest(t, tx)
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "matching:"+f.req.Pool.Tenant); err != nil {
 		t.Fatal(err)
 	}

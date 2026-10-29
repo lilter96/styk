@@ -110,7 +110,7 @@ func TestStockShadowBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(config.Name())
+	defer removeFixtureFile(t, config.Name())
 	if _, err = fmt.Fprintf(config, `import {defineConfig} from 'vite'; export default defineConfig({server:{host:'127.0.0.1',port:15176,strictPort:true,proxy:{'/api':%q}}});`, api.URL); err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestStockShadowBrowser(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		resp, e := http.Get(origin)
 		if e == nil {
-			resp.Body.Close()
+			closeFixture(t, resp.Body)
 			ready = true
 			break
 		}

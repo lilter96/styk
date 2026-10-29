@@ -562,7 +562,7 @@ func TestWarehouseReviewBoundHistoryRequiresAuditAndOutcome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback(ctx)
+	defer rollbackLeaseTest(t, tx)
 	var id int64
 	var at time.Time
 	err = tx.QueryRow(ctx, `INSERT INTO warehouse_mappings(tenant_id,moysklad_account,ozon_account,moysklad_warehouse_id,ozon_warehouse_id,status,version,provenance,confirmed_at) VALUES($1,$2,$3,'warehouse-a','ozon-a','active',1,'LOCAL_OPERATOR_SESSION',clock_timestamp()) RETURNING id,confirmed_at`, h.f.req.Pool.Tenant, h.f.req.Pool.MoyskladAccount, h.f.req.Target.OzonAccount).Scan(&id, &at)
@@ -587,7 +587,7 @@ func TestWarehouseConfirmationTimeoutLeavesNoPartialState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer blocker.Rollback(ctx)
+	defer rollbackLeaseTest(t, blocker)
 	if _, err = blocker.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "ozon:"+h.f.req.Target.OzonAccount); err != nil {
 		t.Fatal(err)
 	}
@@ -823,7 +823,7 @@ func TestWarehouseReviewBoundCommitRejectsMismatchedEvidence(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer tx.Rollback(ctx)
+			defer rollbackLeaseTest(t, tx)
 			id := insertManualWarehouseHistory(t, tx, h.f.req.Pool.Tenant, h.f.req.Pool.MoyskladAccount, h.f.req.Target.OzonAccount, review.Review)
 			if scenario == "active-mapping-differs" {
 				if _, err = tx.Exec(ctx, `UPDATE warehouse_mappings SET ozon_warehouse_id='ozon-b' WHERE id=$1`, id); err != nil {
@@ -870,7 +870,7 @@ func TestWarehouseConfirmationAuditRejectsCrossTenantAndAccount(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer tx.Rollback(ctx)
+			defer rollbackLeaseTest(t, tx)
 			id := insertManualWarehouseHistory(t, tx, tenant, moy, ozon, review.Review)
 			err = insertManualWarehouseAudit(ctx, tx, id, session, 0)
 			var pgerr *pgconn.PgError
@@ -919,7 +919,7 @@ func TestWarehouseReviewBoundCommitRejectsExpiredReview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback(ctx)
+	defer rollbackLeaseTest(t, tx)
 	id := insertManualWarehouseHistory(t, tx, h.f.req.Pool.Tenant, h.f.req.Pool.MoyskladAccount, h.f.req.Target.OzonAccount, review.Review)
 	if err = insertManualWarehouseAudit(ctx, tx, id, session, 0); err != nil {
 		t.Fatal(err)
@@ -990,7 +990,7 @@ func TestWarehouseConfirmationCancelledWhenOperatorLogsOut(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback(ctx)
+	defer rollbackLeaseTest(t, tx)
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "ozon:"+h.f.req.Target.OzonAccount); err != nil {
 		t.Fatal(err)
 	}

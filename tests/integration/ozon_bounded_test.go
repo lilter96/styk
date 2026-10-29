@@ -78,9 +78,9 @@ func TestBoundedCatalogPersistenceAndFailure(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v3/product/list":
-			fmt.Fprint(w, `{"result":{"items":[],"total_items":0}}`)
+			fixtureText(t, w, `{"result":{"items":[],"total_items":0}}`)
 		case "/v2/warehouse/list":
-			fmt.Fprint(w, `{"warehouses":[],"has_next":false}`)
+			fixtureText(t, w, `{"warehouses":[],"has_next":false}`)
 		default:
 			t.Error("unexpected endpoint")
 		}
@@ -124,7 +124,7 @@ func TestBoundedCatalogPersistenceAndFailure(t *testing.T) {
 	defer stopInflight()
 	interrupted := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		stopInflight()
-		fmt.Fprint(w, `{"result":{"items":[],"total_items":0}}`)
+		fixtureText(t, w, `{"result":{"items":[],"total_items":0}}`)
 	}))
 	defer interrupted.Close()
 	imp.Reader = boundedCatalog{boundedClient(t, interrupted.URL, account), l}
@@ -158,9 +158,9 @@ func TestBoundedPostingPersistenceAndFailure(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v4/posting/fbs/list":
-			fmt.Fprint(w, `{"postings":[{"posting_number":"synthetic"}],"has_next":false,"cursor":""}`)
+			fixtureText(t, w, `{"postings":[{"posting_number":"synthetic"}],"has_next":false,"cursor":""}`)
 		case "/v3/posting/fbs/get":
-			fmt.Fprint(w, `{"result":{"posting_number":"synthetic","order_id":1,"order_number":"order","status":"awaiting_packaging","products":[{"offer_id":"offer","sku":1,"quantity":1}]}}`)
+			fixtureText(t, w, `{"result":{"posting_number":"synthetic","order_id":1,"order_number":"order","status":"awaiting_packaging","products":[{"offer_id":"offer","sku":1,"quantity":1}]}}`)
 		default:
 			t.Error("unexpected endpoint")
 		}
@@ -205,7 +205,7 @@ func TestBoundedPostingPersistenceAndFailure(t *testing.T) {
 	defer stopInflight()
 	interrupted := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		stopInflight()
-		fmt.Fprint(w, `{"postings":[],"has_next":false}`)
+		fixtureText(t, w, `{"postings":[],"has_next":false}`)
 	}))
 	defer interrupted.Close()
 	imp.Reader = boundedPosting{boundedClient(t, interrupted.URL, account), l}

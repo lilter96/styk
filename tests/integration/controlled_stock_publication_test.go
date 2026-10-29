@@ -135,10 +135,10 @@ func TestControlledStockPublicationOutboxAndRecovery(t *testing.T) {
 			switch r.URL.Path {
 			case "/v2/products/stocks":
 				writes.Add(1)
-				fmt.Fprint(w, `{"result":[{"product_id":2764544165,"warehouse_id":1020001323428000,"updated":true,"errors":[]}]}`)
+				fixtureText(t, w, `{"result":[{"product_id":2764544165,"warehouse_id":1020001323428000,"updated":true,"errors":[]}]}`)
 			case "/v2/product/info/stocks-by-warehouse/fbs":
 				reads.Add(1)
-				fmt.Fprint(w, `{"products":[{"product_id":2764544165,"warehouse_id":1020001323428000,"offer_id":"ATEST-897677","free_stock":7,"reserved":0,"present":7}],"has_next":false,"cursor":""}`)
+				fixtureText(t, w, `{"products":[{"product_id":2764544165,"warehouse_id":1020001323428000,"offer_id":"ATEST-897677","free_stock":7,"reserved":0,"present":7}],"has_next":false,"cursor":""}`)
 			default:
 				t.Errorf("unexpected fake endpoint %s", r.URL.Path)
 				http.Error(w, "unexpected", 500)
@@ -226,7 +226,7 @@ func TestControlledStockPublicationUncertainResultsNeverRetry(t *testing.T) {
 					return
 				}
 				w.WriteHeader(tc.status)
-				fmt.Fprint(w, tc.body)
+				fixtureText(t, w, tc.body)
 			})
 			runner := stocksync.Runner{Enabled: true, ControlledTest: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return client, nil }}
 			if _, err := runner.RunNext(ctx); err != nil {
@@ -296,11 +296,11 @@ func TestControlledStockPublicationReadbackMismatchIsFenced(t *testing.T) {
 	client := publicationClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v2/products/stocks" {
 			writes.Add(1)
-			fmt.Fprint(w, `{"result":[{"product_id":2764544165,"warehouse_id":1020001323428000,"updated":true,"errors":[]}]}`)
+			fixtureText(t, w, `{"result":[{"product_id":2764544165,"warehouse_id":1020001323428000,"updated":true,"errors":[]}]}`)
 			return
 		}
 		reads.Add(1)
-		fmt.Fprintf(w, `{"products":[{"product_id":2764544165,"warehouse_id":1020001323428000,"offer_id":"ATEST-897677","free_stock":%d,"reserved":0,"present":%d}],"has_next":false,"cursor":""}`, observed.Load(), observed.Load())
+		fixturePrintf(t, w, `{"products":[{"product_id":2764544165,"warehouse_id":1020001323428000,"offer_id":"ATEST-897677","free_stock":%d,"reserved":0,"present":%d}],"has_next":false,"cursor":""}`, observed.Load(), observed.Load())
 	})
 	runner := stocksync.Runner{Enabled: true, ControlledTest: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return client, nil }}
 	if _, err := runner.RunNext(ctx); err != nil {
@@ -339,7 +339,7 @@ func TestControlledUnknownReadbackIsAuditedWithoutResending(t *testing.T) {
 			return
 		}
 		reads.Add(1)
-		fmt.Fprint(w, `{"products":[{"product_id":2764544165,"warehouse_id":1020001323428000,"offer_id":"ATEST-897677","free_stock":0,"reserved":0,"present":0}],"has_next":false,"cursor":""}`)
+		fixtureText(t, w, `{"products":[{"product_id":2764544165,"warehouse_id":1020001323428000,"offer_id":"ATEST-897677","free_stock":0,"reserved":0,"present":0}],"has_next":false,"cursor":""}`)
 	})
 	runner := stocksync.Runner{Enabled: true, ControlledTest: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return client, nil }}
 	if _, err := runner.RunNext(ctx); err != nil {

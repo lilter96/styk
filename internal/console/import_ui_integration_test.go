@@ -101,7 +101,7 @@ func testProviderImportBrowser(t *testing.T, provider string) {
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintf(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":%s}`, rows)
+			fixturePrintf(t, w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":%s}`, rows)
 			return
 		}
 		if r.Method != http.MethodPost || r.Header.Get("Client-Id") != account || r.Header.Get("Api-Key") != "synthetic-import-key" {
@@ -123,7 +123,7 @@ func testProviderImportBrowser(t *testing.T, provider string) {
 				return
 			}
 			if body.Filter.Visibility == "ARCHIVED" {
-				fmt.Fprint(w, `{"result":{"items":[],"total_items":0}}`)
+				fixtureText(t, w, `{"result":{"items":[],"total_items":0}}`)
 				return
 			}
 			startedOnce.Do(func() { close(started) })
@@ -132,11 +132,11 @@ func testProviderImportBrowser(t *testing.T, provider string) {
 			case <-r.Context().Done():
 				return
 			}
-			fmt.Fprint(w, `{"result":{"items":[{"product_id":1,"offer_id":"synthetic-offer","archived":false}],"total_items":1}}`)
+			fixtureText(t, w, `{"result":{"items":[{"product_id":1,"offer_id":"synthetic-offer","archived":false}],"total_items":1}}`)
 		case "/v2/warehouse/list":
-			fmt.Fprint(w, `{"warehouses":[{"warehouse_id":10,"name":"Synthetic FBS","status":"created","is_rfbs":false}],"has_next":false}`)
+			fixtureText(t, w, `{"warehouses":[{"warehouse_id":10,"name":"Synthetic FBS","status":"created","is_rfbs":false}],"has_next":false}`)
 		case "/v2/product/info/stocks-by-warehouse/fbs":
-			fmt.Fprint(w, `{"products":[{"product_id":1,"offer_id":"synthetic-offer","warehouse_id":10,"warehouse_name":"Synthetic FBS","present":0,"reserved":0,"free_stock":0}],"has_next":false}`)
+			fixtureText(t, w, `{"products":[{"product_id":1,"offer_id":"synthetic-offer","warehouse_id":10,"warehouse_name":"Synthetic FBS","present":0,"reserved":0,"free_stock":0}],"has_next":false}`)
 		default:
 			t.Error("unallowlisted marketplace operation")
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -210,7 +210,7 @@ func testProviderImportBrowser(t *testing.T, provider string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(config.Name())
+	defer removeFixtureFile(t, config.Name())
 	_, err = fmt.Fprintf(config, `import {defineConfig} from 'vite'; export default defineConfig({server:{host:'127.0.0.1',port:15175,strictPort:true,proxy:{'/api':%q}}});`, api.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -230,7 +230,7 @@ func testProviderImportBrowser(t *testing.T, provider string) {
 	for i := 0; i < 100; i++ {
 		resp, e := http.Get("http://127.0.0.1:15175/")
 		if e == nil {
-			resp.Body.Close()
+			closeFixture(t, resp.Body)
 			ready = true
 			break
 		}

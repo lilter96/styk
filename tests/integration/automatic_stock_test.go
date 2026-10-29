@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -45,14 +44,14 @@ func TestAutomaticStockCyclesUseOutboxAndDeduplicate(t *testing.T) {
 			}
 			_ = json.NewDecoder(r.Body).Decode(&in)
 			if in.Filter.Visibility == "ARCHIVED" {
-				fmt.Fprint(w, `{"result":{"items":[],"total_items":0,"last_id":""}}`)
+				fixtureText(t, w, `{"result":{"items":[],"total_items":0,"last_id":""}}`)
 				return
 			}
-			fmt.Fprint(w, `{"result":{"items":[{"product_id":2764544165,"offer_id":"ATEST-897677","sku":2889277907,"archived":false}],"total_items":1,"last_id":""}}`)
+			fixtureText(t, w, `{"result":{"items":[{"product_id":2764544165,"offer_id":"ATEST-897677","sku":2889277907,"archived":false}],"total_items":1,"last_id":""}}`)
 		case "/v2/warehouse/list":
-			fmt.Fprint(w, `{"warehouses":[{"warehouse_id":1020001323428000,"name":"FBS","status":"created","is_rfbs":false}],"has_next":false,"cursor":""}`)
+			fixtureText(t, w, `{"warehouses":[{"warehouse_id":1020001323428000,"name":"FBS","status":"created","is_rfbs":false}],"has_next":false,"cursor":""}`)
 		case "/v2/product/info/stocks-by-warehouse/fbs":
-			fmt.Fprintf(w, `{"products":[{"product_id":2764544165,"offer_id":"ATEST-897677","sku":2889277907,"warehouse_id":1020001323428000,"present":%d,"reserved":0,"free_stock":%d}],"has_next":false,"cursor":""}`, marketplace.Load(), marketplace.Load())
+			fixturePrintf(t, w, `{"products":[{"product_id":2764544165,"offer_id":"ATEST-897677","sku":2889277907,"warehouse_id":1020001323428000,"present":%d,"reserved":0,"free_stock":%d}],"has_next":false,"cursor":""}`, marketplace.Load(), marketplace.Load())
 		case "/v2/products/stocks":
 			var in struct {
 				Stocks []struct {
@@ -68,17 +67,17 @@ func TestAutomaticStockCyclesUseOutboxAndDeduplicate(t *testing.T) {
 			}
 			writes.Add(1)
 			marketplace.Store(in.Stocks[0].Stock)
-			fmt.Fprint(w, `{"result":[{"product_id":2764544165,"warehouse_id":1020001323428000,"updated":true,"errors":[]}]}`)
+			fixtureText(t, w, `{"result":[{"product_id":2764544165,"warehouse_id":1020001323428000,"updated":true,"errors":[]}]}`)
 		case "/entity/product":
-			fmt.Fprintf(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Test","article":"synthetic"}]}`, testpublication.SourceProduct)
+			fixturePrintf(t, w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Test","article":"synthetic"}]}`, testpublication.SourceProduct)
 		case "/entity/variant":
-			fmt.Fprint(w, `{"meta":{"size":0,"limit":100,"offset":0},"rows":[]}`)
+			fixtureText(t, w, `{"meta":{"size":0,"limit":100,"offset":0},"rows":[]}`)
 		case "/entity/store":
-			fmt.Fprintf(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Test"}]}`, testpublication.SourceWarehouse)
+			fixturePrintf(t, w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Test"}]}`, testpublication.SourceWarehouse)
 		case "/report/stock/all":
-			fmt.Fprintf(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stock":%d,"reserve":0,"inTransit":0,"quantity":%d}]}`, testpublication.SourceProduct, source.Load(), source.Load())
+			fixturePrintf(t, w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stock":%d,"reserve":0,"inTransit":0,"quantity":%d}]}`, testpublication.SourceProduct, source.Load(), source.Load())
 		case "/report/stock/bystore":
-			fmt.Fprintf(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stockByStore":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/store/%s","type":"store"},"stock":%d,"reserve":0,"inTransit":0}]}]}`, testpublication.SourceProduct, testpublication.SourceWarehouse, source.Load())
+			fixturePrintf(t, w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stockByStore":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/store/%s","type":"store"},"stock":%d,"reserve":0,"inTransit":0}]}]}`, testpublication.SourceProduct, testpublication.SourceWarehouse, source.Load())
 		default:
 			t.Errorf("unexpected provider path: %s", r.URL.Path)
 			http.Error(w, "unexpected", 500)
@@ -98,7 +97,12 @@ func TestAutomaticStockCyclesUseOutboxAndDeduplicate(t *testing.T) {
 	worker := application.Worker{Store: db, Handler: application.MockHandler{}, Imports: imports, Publications: pub, Automatic: stocksync.AutomaticRunner{Store: db, Publisher: pub}, ImportAccount: scope.OzonAccount, MoyskladImportAccount: scope.MoyskladAccount, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Poll: 50 * time.Millisecond, Lease: time.Minute, Retry: time.Second}
 	done := make(chan error, 1)
 	go func() { done <- worker.Run(ctx) }()
-	defer func() { cancel(); <-done }()
+	defer func() {
+		cancel()
+		if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+			t.Errorf("stop automatic stock fixture worker: %v", err)
+		}
+	}()
 	req := domain.AutomaticStockRequest{StockSyncScope: scope, Enabled: true, IntervalSeconds: 30, ValidMinutes: 60, ProductID: testpublication.OzonProduct, WarehouseID: testpublication.OzonWarehouse, SafetyStock: "0", Unreflected: "0", UnseenBound: "0", Maximum: 7, Acknowledge: true, SessionID: "synthetic-operator", IdempotencyKey: "automatic-enable-0001"}
 	bad := req
 	bad.OzonAccount = "different-account"

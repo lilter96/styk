@@ -20,8 +20,16 @@ func TestPostingsPersistence(t *testing.T) {
 	}
 	defer db.Pool.Close()
 	tenant := fmt.Sprint(time.Now().UnixNano())
-	defer db.Pool.Exec(ctx, `DELETE FROM ozon_posting_identities WHERE tenant_id=$1`, tenant)
-	defer db.Pool.Exec(ctx, `DELETE FROM ozon_posting_batches WHERE tenant_id=$1`, tenant)
+	defer func() {
+		if _, err := db.Pool.Exec(ctx, `DELETE FROM ozon_posting_identities WHERE tenant_id=$1`, tenant); err != nil {
+			t.Errorf("remove fixture posting identities: %v", err)
+		}
+	}()
+	defer func() {
+		if _, err := db.Pool.Exec(ctx, `DELETE FROM ozon_posting_batches WHERE tenant_id=$1`, tenant); err != nil {
+			t.Errorf("remove fixture posting batches: %v", err)
+		}
+	}()
 	now := time.Now()
 	b := domain.PostingImport{Tenant: tenant, Account: "account", Since: now.Add(-time.Hour), Until: now, StartedAt: now, FinishedAt: now, Postings: []domain.PostingObservation{{PostingNumber: "p1", OrderID: "o1", OrderNumber: "order", Status: "cancelled", ObservedAt: now, ObservedTimeBasis: "detail_received", Lines: []domain.PostingLine{{OfferID: "a", SKU: "10", Quantity: 2}}}}}
 	id, e := db.SavePostings(ctx, b)

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -102,19 +103,19 @@ func controlledStockBrowserMode(t *testing.T, recovery, automatic, multi bool) {
 			var body bytes.Buffer
 			_, _ = io.Copy(&body, r.Body)
 			if bytes.Contains(body.Bytes(), []byte(`"ARCHIVED"`)) {
-				fmt.Fprint(w, `{"result":{"items":[],"total_items":0,"last_id":""}}`)
+				fixtureText(t, w, `{"result":{"items":[],"total_items":0,"last_id":""}}`)
 			} else if multi {
-				fmt.Fprint(w, `{"result":{"items":[{"product_id":2764544165,"offer_id":"ATEST-897677","sku":2889277907,"archived":false},{"product_id":2764939447,"offer_id":"ATEST-0010987","sku":2889575995,"archived":false}],"total_items":2,"last_id":""}}`)
+				fixtureText(t, w, `{"result":{"items":[{"product_id":2764544165,"offer_id":"ATEST-897677","sku":2889277907,"archived":false},{"product_id":2764939447,"offer_id":"ATEST-0010987","sku":2889575995,"archived":false}],"total_items":2,"last_id":""}}`)
 			} else {
-				fmt.Fprint(w, `{"result":{"items":[{"product_id":2764544165,"offer_id":"ATEST-897677","sku":2889277907,"archived":false}],"total_items":1,"last_id":""}}`)
+				fixtureText(t, w, `{"result":{"items":[{"product_id":2764544165,"offer_id":"ATEST-897677","sku":2889277907,"archived":false}],"total_items":1,"last_id":""}}`)
 			}
 		case "/v2/warehouse/list":
-			fmt.Fprint(w, `{"warehouses":[{"warehouse_id":1020001323428000,"name":"Тестовый FBS","status":"created","is_rfbs":false}],"has_next":false,"cursor":""}`)
+			fixtureText(t, w, `{"warehouses":[{"warehouse_id":1020001323428000,"name":"Тестовый FBS","status":"created","is_rfbs":false}],"has_next":false,"cursor":""}`)
 		case "/v2/product/info/stocks-by-warehouse/fbs":
 			if multi {
-				fmt.Fprintf(w, `{"products":[{"product_id":2764544165,"offer_id":"ATEST-897677","sku":2889277907,"warehouse_id":1020001323428000,"present":%d,"reserved":0,"free_stock":%d},{"product_id":2764939447,"offer_id":"ATEST-0010987","sku":2889575995,"warehouse_id":1020001323428000,"present":%d,"reserved":0,"free_stock":%d}],"has_next":false,"cursor":""}`, stock.Load(), stock.Load(), secondStock.Load(), secondStock.Load())
+				fixturePrintf(t, w, `{"products":[{"product_id":2764544165,"offer_id":"ATEST-897677","sku":2889277907,"warehouse_id":1020001323428000,"present":%d,"reserved":0,"free_stock":%d},{"product_id":2764939447,"offer_id":"ATEST-0010987","sku":2889575995,"warehouse_id":1020001323428000,"present":%d,"reserved":0,"free_stock":%d}],"has_next":false,"cursor":""}`, stock.Load(), stock.Load(), secondStock.Load(), secondStock.Load())
 			} else {
-				fmt.Fprintf(w, `{"products":[{"product_id":2764544165,"offer_id":"ATEST-897677","sku":2889277907,"warehouse_id":1020001323428000,"present":%d,"reserved":0,"free_stock":%d}],"has_next":false,"cursor":""}`, stock.Load(), stock.Load())
+				fixturePrintf(t, w, `{"products":[{"product_id":2764544165,"offer_id":"ATEST-897677","sku":2889277907,"warehouse_id":1020001323428000,"present":%d,"reserved":0,"free_stock":%d}],"has_next":false,"cursor":""}`, stock.Load(), stock.Load())
 			}
 		case "/v2/products/stocks":
 			writes.Add(1)
@@ -141,32 +142,32 @@ func controlledStockBrowserMode(t *testing.T, recovery, automatic, multi bool) {
 					http.Error(w, "bad", 400)
 					return
 				}
-				fmt.Fprintf(w, `{"result":[{"product_id":%d,"warehouse_id":1020001323428000,"updated":true,"errors":[]}]}`, p.ProductID)
+				fixturePrintf(t, w, `{"result":[{"product_id":%d,"warehouse_id":1020001323428000,"updated":true,"errors":[]}]}`, p.ProductID)
 			} else {
 				stock.Store(7)
-				fmt.Fprint(w, `{"result":[{"product_id":2764544165,"warehouse_id":1020001323428000,"updated":true,"errors":[]}]}`)
+				fixtureText(t, w, `{"result":[{"product_id":2764544165,"warehouse_id":1020001323428000,"updated":true,"errors":[]}]}`)
 			}
 		case "/entity/product":
 			if multi {
-				fmt.Fprintf(w, `{"meta":{"size":2,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Первый товар"},{"id":"ea33e770-d389-11f1-0a80-0d480029c772","name":"Товар с резервом"}]}`, testpublication.SourceProduct)
+				fixturePrintf(t, w, `{"meta":{"size":2,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Первый товар"},{"id":"ea33e770-d389-11f1-0a80-0d480029c772","name":"Товар с резервом"}]}`, testpublication.SourceProduct)
 			} else {
-				fmt.Fprintf(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Тестовый товар","article":"synthetic"}]}`, testpublication.SourceProduct)
+				fixturePrintf(t, w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Тестовый товар","article":"synthetic"}]}`, testpublication.SourceProduct)
 			}
 		case "/entity/variant":
-			fmt.Fprint(w, `{"meta":{"size":0,"limit":100,"offset":0},"rows":[]}`)
+			fixtureText(t, w, `{"meta":{"size":0,"limit":100,"offset":0},"rows":[]}`)
 		case "/entity/store":
-			fmt.Fprintf(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Тестовый склад"}]}`, testpublication.SourceWarehouse)
+			fixturePrintf(t, w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Тестовый склад"}]}`, testpublication.SourceWarehouse)
 		case "/report/stock/all":
 			if multi {
-				fmt.Fprintf(w, `{"meta":{"size":2,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stock":4,"reserve":0,"inTransit":0,"quantity":4},{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/ea33e770-d389-11f1-0a80-0d480029c772","type":"product"},"stock":10,"reserve":3,"inTransit":0,"quantity":7}]}`, testpublication.SourceProduct)
+				fixturePrintf(t, w, `{"meta":{"size":2,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stock":4,"reserve":0,"inTransit":0,"quantity":4},{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/ea33e770-d389-11f1-0a80-0d480029c772","type":"product"},"stock":10,"reserve":3,"inTransit":0,"quantity":7}]}`, testpublication.SourceProduct)
 			} else {
-				fmt.Fprintf(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stock":7,"reserve":0,"inTransit":0,"quantity":7}]}`, testpublication.SourceProduct)
+				fixturePrintf(t, w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stock":7,"reserve":0,"inTransit":0,"quantity":7}]}`, testpublication.SourceProduct)
 			}
 		case "/report/stock/bystore":
 			if multi {
-				fmt.Fprintf(w, `{"meta":{"size":2,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stockByStore":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/store/%s","type":"store"},"stock":4,"reserve":0,"inTransit":0}]},{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/ea33e770-d389-11f1-0a80-0d480029c772","type":"product"},"stockByStore":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/store/%s","type":"store"},"stock":10,"reserve":3,"inTransit":0}]}]}`, testpublication.SourceProduct, testpublication.SourceWarehouse, testpublication.SourceWarehouse)
+				fixturePrintf(t, w, `{"meta":{"size":2,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stockByStore":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/store/%s","type":"store"},"stock":4,"reserve":0,"inTransit":0}]},{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/ea33e770-d389-11f1-0a80-0d480029c772","type":"product"},"stockByStore":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/store/%s","type":"store"},"stock":10,"reserve":3,"inTransit":0}]}]}`, testpublication.SourceProduct, testpublication.SourceWarehouse, testpublication.SourceWarehouse)
 			} else {
-				fmt.Fprintf(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stockByStore":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/store/%s","type":"store"},"stock":7,"reserve":0,"inTransit":0}]}]}`, testpublication.SourceProduct, testpublication.SourceWarehouse)
+				fixturePrintf(t, w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stockByStore":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/store/%s","type":"store"},"stock":7,"reserve":0,"inTransit":0}]}]}`, testpublication.SourceProduct, testpublication.SourceWarehouse)
 			}
 		default:
 			t.Errorf("unexpected synthetic provider path %s", r.URL.Path)
@@ -200,7 +201,9 @@ func controlledStockBrowserMode(t *testing.T, recovery, automatic, multi bool) {
 	defer func() {
 		cancel()
 		if started.Load() {
-			<-done
+			if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+				t.Errorf("stop controlled browser fixture worker: %v", err)
+			}
 		}
 	}()
 	const origin = "http://127.0.0.1:15178"
@@ -222,7 +225,7 @@ func controlledStockBrowserMode(t *testing.T, recovery, automatic, multi bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(config.Name())
+	defer removeFixtureFile(t, config.Name())
 	_, _ = fmt.Fprintf(config, `import {defineConfig} from 'vite'; export default defineConfig({server:{host:'127.0.0.1',port:15178,strictPort:true,proxy:{'/api':%q}}});`, api.URL)
 	_ = config.Close()
 	vite := exec.CommandContext(ctx, "node", "node_modules/vite/bin/vite.js", "--config", config.Name())
@@ -238,7 +241,7 @@ func controlledStockBrowserMode(t *testing.T, recovery, automatic, multi bool) {
 	for i := 0; i < 100; i++ {
 		resp, e := http.Get(origin)
 		if e == nil {
-			resp.Body.Close()
+			closeFixture(t, resp.Body)
 			ready = true
 			break
 		}

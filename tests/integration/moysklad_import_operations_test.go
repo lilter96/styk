@@ -323,7 +323,7 @@ func TestMoyPersistenceRollbackTimeoutAndScope(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				defer held.Rollback(context.Background())
+				defer rollbackLeaseTest(t, held)
 				if _, err = held.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "moysklad:"+f.account); err != nil {
 					t.Fatal(err)
 				}
@@ -378,7 +378,7 @@ func TestMoyHeartbeatAndWorkerShutdown(t *testing.T) {
 		if r.URL.Path == "/entity/product" {
 			time.Sleep(550 * time.Millisecond)
 		}
-		fmt.Fprint(w, `{"meta":{"size":0,"limit":1,"offset":0},"rows":[]}`)
+		fixtureText(t, w, `{"meta":{"size":0,"limit":1,"offset":0},"rows":[]}`)
 	}))
 	defer s.Close()
 	op := submitMoy(t, f, "heartbeat", domain.DefaultMoyskladImportLimits())
@@ -411,11 +411,11 @@ func TestMoyOperationSafeProviderErrors(t *testing.T) {
 				switch mode {
 				case "auth":
 					w.WriteHeader(401)
-					fmt.Fprint(w, "secret payload")
+					fixtureText(t, w, "secret payload")
 				case "timeout":
 					<-r.Context().Done()
 				default:
-					fmt.Fprint(w, `{}`)
+					fixtureText(t, w, `{}`)
 				}
 			}))
 			defer s.Close()
@@ -470,7 +470,9 @@ func TestMoyExistingWorkerDispatchesAndReportsProgress(t *testing.T) {
 		}
 		if got.State == "FAILED" || ctx.Err() != nil {
 			cancel()
-			<-done
+			if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+				t.Errorf("stop MoySklad fixture worker: %v", err)
+			}
 			t.Fatalf("worker did not complete: %+v", got)
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -566,7 +568,7 @@ func TestMoyLeaseLossDuringHTTPStopsStaleTraversal(t *testing.T) {
 			<-r.Context().Done()
 			return
 		}
-		fmt.Fprint(w, `{"meta":{"size":0,"limit":1,"offset":0},"rows":[]}`)
+		fixtureText(t, w, `{"meta":{"size":0,"limit":1,"offset":0},"rows":[]}`)
 	}))
 	defer s.Close()
 	op := submitMoy(t, f, "in-flight", domain.DefaultMoyskladImportLimits())

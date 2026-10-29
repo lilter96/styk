@@ -5,7 +5,6 @@ package integration
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -30,13 +29,13 @@ func TestPostingImportAtomicityAndRetry(t *testing.T) {
 		case "/v4/posting/fbs/list":
 			switch mode.Load() {
 			case 1:
-				fmt.Fprint(w, `{"postings":[{"posting_number":"p"}],"has_next":true}`)
+				fixtureText(t, w, `{"postings":[{"posting_number":"p"}],"has_next":true}`)
 			case 2:
-				fmt.Fprint(w, `{"postings":[{"posting_number":"p"},{"posting_number":"p"}],"has_next":false}`)
+				fixtureText(t, w, `{"postings":[{"posting_number":"p"},{"posting_number":"p"}],"has_next":false}`)
 			case 3:
-				fmt.Fprint(w, `{"postings":[{"posting_number":"p"}],"has_next":false}`)
+				fixtureText(t, w, `{"postings":[{"posting_number":"p"}],"has_next":false}`)
 			default:
-				fmt.Fprint(w, `{"postings":[{"posting_number":"p"}],"has_next":false}`)
+				fixtureText(t, w, `{"postings":[{"posting_number":"p"}],"has_next":false}`)
 			}
 		case "/v3/posting/fbs/get":
 			if mode.Load() == 3 {
@@ -47,7 +46,7 @@ func TestPostingImportAtomicityAndRetry(t *testing.T) {
 					return
 				}
 			}
-			fmt.Fprint(w, `{"result":{"posting_number":"p","order_id":10,"order_number":"order","status":"awaiting_packaging","products":[{"sku":11,"offer_id":"offer","quantity":3}]}}`)
+			fixtureText(t, w, `{"result":{"posting_number":"p","order_id":10,"order_number":"order","status":"awaiting_packaging","products":[{"sku":11,"offer_id":"offer","quantity":3}]}}`)
 		default:
 			t.Error("unexpected write endpoint")
 		}

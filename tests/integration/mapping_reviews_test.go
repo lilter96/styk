@@ -227,7 +227,7 @@ func TestReviewCreationCoordinatesWithImportLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback(ctx)
+	defer rollbackLeaseTest(t, tx)
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "ozon:"+f.req.Target.OzonAccount); err != nil {
 		t.Fatal(err)
 	}

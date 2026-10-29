@@ -237,10 +237,10 @@ func TestStockPublicationUnknownNeverReplaysAndReadbackIsExplicit(t *testing.T) 
 		case "/v2/products/stocks":
 			writes.Add(1)
 			w.WriteHeader(500)
-			fmt.Fprint(w, "private raw failure")
+			fixtureText(t, w, "private raw failure")
 		case "/v2/product/info/stocks-by-warehouse/fbs":
 			reads.Add(1)
-			fmt.Fprint(w, `{"products":[{"product_id":123,"warehouse_id":456,"offer_id":"offer","free_stock":8}],"has_next":false,"cursor":""}`)
+			fixtureText(t, w, `{"products":[{"product_id":123,"warehouse_id":456,"offer_id":"offer","free_stock":8}],"has_next":false,"cursor":""}`)
 		default:
 			t.Error("unexpected external operation")
 			w.WriteHeader(400)
@@ -306,7 +306,7 @@ func TestStockPublicationSuccessfulResultAndContinuousChangedEvidence(t *testing
 	var writes atomic.Int32
 	client := publicationClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		writes.Add(1)
-		fmt.Fprint(w, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]},{"product_id":124,"warehouse_id":456,"updated":true,"errors":[]}]}`)
+		fixtureText(t, w, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]},{"product_id":124,"warehouse_id":456,"updated":true,"errors":[]}]}`)
 	})
 	runner := publicationRunner(f, client)
 	if _, err := runner.RunNext(context.Background()); err != nil {
@@ -376,9 +376,9 @@ func TestStockPublicationPartialReadbackKeepsUnknownTargetsVisible(t *testing.T)
 			return
 		}
 		if request.Offers[0] == "offer" {
-			fmt.Fprint(w, `{"products":[{"product_id":123,"warehouse_id":456,"offer_id":"offer","free_stock":8}],"has_next":false,"cursor":""}`)
+			fixtureText(t, w, `{"products":[{"product_id":123,"warehouse_id":456,"offer_id":"offer","free_stock":8}],"has_next":false,"cursor":""}`)
 		} else {
-			fmt.Fprint(w, `{"products":[{"product_id":124,"warehouse_id":456,"offer_id":"offer2","free_stock":7}],"has_next":false,"cursor":""}`)
+			fixtureText(t, w, `{"products":[{"product_id":124,"warehouse_id":456,"offer_id":"offer2","free_stock":7}],"has_next":false,"cursor":""}`)
 		}
 	})
 	runner := publicationRunner(f, client)
@@ -597,7 +597,7 @@ func TestStockPublicationHTTPExplicitEnableReplayAndDisable(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer response.Body.Close()
+		defer closeFixture(t, response.Body)
 		raw, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 		if err != nil {
 			t.Fatal(err)
@@ -878,7 +878,7 @@ func TestStockPublicationPartialErrorKeepsUncertainTargetFenced(t *testing.T) {
 	var writes atomic.Int32
 	c := publicationClient(t, func(w http.ResponseWriter, r *http.Request) {
 		writes.Add(1)
-		fmt.Fprint(w, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]},{"product_id":124,"warehouse_id":456,"updated":false,"errors":[{"code":"INTERNAL_ERROR"}]}]}`)
+		fixtureText(t, w, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]},{"product_id":124,"warehouse_id":456,"updated":false,"errors":[{"code":"INTERNAL_ERROR"}]}]}`)
 	})
 	runner := publicationRunner(f, c)
 	if _, err := runner.RunNext(context.Background()); err != nil {
@@ -956,7 +956,7 @@ func TestStockPublicationDatabaseFailureAfterDispatchDoesNotReplay(t *testing.T)
 		writes.Add(1)
 		close(started)
 		<-release
-		fmt.Fprint(w, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]}]}`)
+		fixtureText(t, w, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]}]}`)
 	})
 	runner := publicationRunner(f, c)
 	runner.Store = workerDB
@@ -1136,7 +1136,7 @@ func TestStockPublicationDisableCannotUndoInFlightRequest(t *testing.T) {
 		calls.Add(1)
 		close(started)
 		<-release
-		fmt.Fprint(w, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]}]}`)
+		fixtureText(t, w, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]}]}`)
 	})
 	runner := publicationRunner(f, client)
 	done := make(chan error, 1)
@@ -1262,7 +1262,7 @@ func TestStockPublicationWorkerCrashAfterDispatchIsNotRetried(t *testing.T) {
 			close(started)
 		}
 		<-release
-		fmt.Fprint(w, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]}]}`)
+		fixtureText(t, w, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]}]}`)
 	}))
 	defer server.Close()
 	binary, err := os.Executable()

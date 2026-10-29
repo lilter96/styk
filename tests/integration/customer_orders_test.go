@@ -248,16 +248,16 @@ func TestCustomerOrderMockImportDoesNotPersistPII(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			t.Error("external write attempted")
-			http.Error(w, "bad method", 405)
+			http.Error(w, "bad method", http.StatusMethodNotAllowed)
 			return
 		}
 		switch r.URL.Path {
 		case "/entity/customerorder":
-			fmt.Fprintf(w, `{"meta":{"size":1,"limit":1,"offset":0},"rows":[{"id":%q,"accountId":%q}]}`, id, account)
+			fixturePrintf(t, w, `{"meta":{"size":1,"limit":1,"offset":0},"rows":[{"id":%q,"accountId":%q}]}`, id, account)
 		case "/entity/customerorder/" + id:
-			fmt.Fprintf(w, `{"id":%q,"accountId":%q,"agent":{"name":"PII_SENTINEL"},"shipmentAddress":"PII_SENTINEL","description":"PII_SENTINEL","externalCode":"PII_SENTINEL"}`, id, account)
+			fixturePrintf(t, w, `{"id":%q,"accountId":%q,"agent":{"name":"PII_SENTINEL"},"shipmentAddress":"PII_SENTINEL","description":"PII_SENTINEL","externalCode":"PII_SENTINEL"}`, id, account)
 		case "/entity/customerorder/" + id + "/positions":
-			fmt.Fprintf(w, `{"meta":{"size":1,"limit":1,"offset":0},"rows":[{"id":"30000000-0000-0000-0000-000000000001","accountId":%q,"reserve":0,"quantity":1}]}`, account)
+			fixturePrintf(t, w, `{"meta":{"size":1,"limit":1,"offset":0},"rows":[{"id":"30000000-0000-0000-0000-000000000001","accountId":%q,"reserve":0,"quantity":1}]}`, account)
 		default:
 			http.NotFound(w, r)
 		}
@@ -297,11 +297,11 @@ func TestCustomerOrderInterruptedTraversalKeepsPreviousBatch(t *testing.T) {
 				http.Error(w, "temporary", http.StatusServiceUnavailable)
 				return
 			}
-			fmt.Fprintf(w, `{"meta":{"size":2,"limit":1,"offset":0},"rows":[{"id":%q,"accountId":%q}]}`, id, account)
+			fixturePrintf(t, w, `{"meta":{"size":2,"limit":1,"offset":0},"rows":[{"id":%q,"accountId":%q}]}`, id, account)
 		case "/entity/customerorder/" + id:
-			fmt.Fprintf(w, `{"id":%q,"accountId":%q}`, id, account)
+			fixturePrintf(t, w, `{"id":%q,"accountId":%q}`, id, account)
 		case "/entity/customerorder/" + id + "/positions":
-			fmt.Fprint(w, `{"meta":{"size":0,"limit":1,"offset":0},"rows":[]}`)
+			fixtureText(t, w, `{"meta":{"size":0,"limit":1,"offset":0},"rows":[]}`)
 		default:
 			http.NotFound(w, r)
 		}

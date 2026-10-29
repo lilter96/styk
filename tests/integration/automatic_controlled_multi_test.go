@@ -90,7 +90,7 @@ func TestControlledAutomaticEnrolledTargetsShareTraversal(t *testing.T) {
 			stock[v.ProductID] = v.Stock
 			writes[v.ProductID]++
 			mu.Unlock()
-			fmt.Fprintf(w, `{"result":[{"product_id":%d,"warehouse_id":%d,"updated":true,"errors":[]}]}`, v.ProductID, v.WarehouseID)
+			fixturePrintf(t, w, `{"result":[{"product_id":%d,"warehouse_id":%d,"updated":true,"errors":[]}]}`, v.ProductID, v.WarehouseID)
 		case "/v2/product/info/stocks-by-warehouse/fbs":
 			var body struct {
 				OfferID []string `json:"offer_id"`
@@ -107,7 +107,7 @@ func TestControlledAutomaticEnrolledTargetsShareTraversal(t *testing.T) {
 			mu.Lock()
 			n := stock[id]
 			mu.Unlock()
-			fmt.Fprintf(w, `{"products":[{"product_id":%d,"warehouse_id":1020001323428000,"offer_id":%q,"present":%d,"reserved":0,"free_stock":%d}],"has_next":false,"cursor":""}`, id, body.OfferID[0], n, n)
+			fixturePrintf(t, w, `{"products":[{"product_id":%d,"warehouse_id":1020001323428000,"offer_id":%q,"present":%d,"reserved":0,"free_stock":%d}],"has_next":false,"cursor":""}`, id, body.OfferID[0], n, n)
 		default:
 			http.Error(w, "unexpected", 400)
 		}

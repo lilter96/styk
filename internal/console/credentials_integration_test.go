@@ -69,12 +69,12 @@ func newCredentialFixture(t *testing.T) *credentialFixture {
 			if r.Method != "GET" {
 				t.Error("unsafe identity request")
 			}
-			fmt.Fprintf(w, `{"accountId":%q}`, f.moy)
+			fixturePrintf(t, w, `{"accountId":%q}`, f.moy)
 		case "/entity/product":
 			if r.Method != "GET" || r.URL.Query().Get("limit") != "1" {
 				t.Error("unbounded credential probe")
 			}
-			fmt.Fprintf(w, `{"meta":{"size":1},"rows":[{"id":"p","accountId":%q}]}`, f.moy)
+			fixturePrintf(t, w, `{"meta":{"size":1},"rows":[{"id":"p","accountId":%q}]}`, f.moy)
 		case "/v3/product/list":
 			if r.Method != "POST" {
 				t.Error("unexpected catalog verb")
@@ -88,14 +88,14 @@ func newCredentialFixture(t *testing.T) *credentialFixture {
 				t.Error("invalid catalog request")
 			}
 			if body.Filter.Visibility == "ARCHIVED" {
-				fmt.Fprint(w, `{"result":{"items":[],"total_items":0}}`)
+				fixtureText(t, w, `{"result":{"items":[],"total_items":0}}`)
 			} else {
-				fmt.Fprint(w, `{"result":{"items":[{"product_id":1,"offer_id":"synthetic-offer","archived":false}],"total_items":1}}`)
+				fixtureText(t, w, `{"result":{"items":[{"product_id":1,"offer_id":"synthetic-offer","archived":false}],"total_items":1}}`)
 			}
 		case "/v2/warehouse/list":
-			fmt.Fprint(w, `{"warehouses":[{"warehouse_id":10,"name":"Synthetic","status":"created","is_rfbs":false}],"has_next":false}`)
+			fixtureText(t, w, `{"warehouses":[{"warehouse_id":10,"name":"Synthetic","status":"created","is_rfbs":false}],"has_next":false}`)
 		case "/v2/product/info/stocks-by-warehouse/fbs":
-			fmt.Fprint(w, `{"products":[{"product_id":1,"offer_id":"synthetic-offer","warehouse_id":10,"present":3,"reserved":1,"free_stock":2}],"has_next":false}`)
+			fixtureText(t, w, `{"products":[{"product_id":1,"offer_id":"synthetic-offer","warehouse_id":10,"present":3,"reserved":1,"free_stock":2}],"has_next":false}`)
 		default:
 			t.Error("unallowlisted provider request")
 			w.WriteHeader(405)
@@ -143,7 +143,7 @@ func (f *credentialFixture) request(t *testing.T, method, path string, body any,
 	if err != nil {
 		t.Fatal("local request failed")
 	}
-	defer response.Body.Close()
+	defer closeFixture(t, response.Body)
 	var out bytes.Buffer
 	_, _ = out.ReadFrom(response.Body)
 	if response.StatusCode != status {
@@ -183,7 +183,7 @@ func TestCredentialStorageIdentityReplayScopeAndStoredWorker(t *testing.T) {
 	if err != nil {
 		t.Fatal("local origin rejection failed")
 	}
-	response.Body.Close()
+	closeFixture(t, response.Body)
 	if response.StatusCode != 403 || f.calls.Load() != before {
 		t.Fatal("cross-origin credential mutation reached provider")
 	}

@@ -58,7 +58,7 @@ func shadowClient(t *testing.T, f publicationFixture) func(domain.StockSyncScope
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	closeFixture(t, resp.Body)
 	if resp.StatusCode != 204 {
 		t.Fatalf("session: %d", resp.StatusCode)
 	}
@@ -69,7 +69,7 @@ func shadowClient(t *testing.T, f publicationFixture) func(domain.StockSyncScope
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer resp.Body.Close()
+		defer closeFixture(t, resp.Body)
 		if resp.StatusCode != status {
 			t.Fatalf("shadow returned %d, expected %d", resp.StatusCode, status)
 		}

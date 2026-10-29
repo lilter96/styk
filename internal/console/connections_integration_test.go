@@ -37,9 +37,9 @@ func connectionFixture(t *testing.T, accountSuffix string) (*postgres.Store, htt
 	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == "GET" && r.URL.Path == "/entity/product":
-			fmt.Fprintf(w, `{"meta":{"size":1},"rows":[{"id":"synthetic","accountId":%q}]}`, msAccount)
+			fixturePrintf(t, w, `{"meta":{"size":1},"rows":[{"id":"synthetic","accountId":%q}]}`, msAccount)
 		case r.Method == "POST" && r.URL.Path == "/v3/product/list":
-			fmt.Fprint(w, `{"result":{"items":[]}}`)
+			fixtureText(t, w, `{"result":{"items":[]}}`)
 		default:
 			t.Error("unexpected external operation")
 			w.WriteHeader(405)
@@ -72,7 +72,7 @@ func TestConnectionBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(config.Name())
+	defer removeFixtureFile(t, config.Name())
 	_, err = fmt.Fprintf(config, `import {defineConfig} from 'vite'; export default defineConfig({server:{host:'127.0.0.1',port:15174,strictPort:true,proxy:{'/api':%q}}});`, api.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -95,7 +95,7 @@ func TestConnectionBrowser(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		resp, e := http.Get("http://127.0.0.1:15174/")
 		if e == nil {
-			resp.Body.Close()
+			closeFixture(t, resp.Body)
 			ready = true
 			break
 		}
@@ -254,7 +254,7 @@ func TestConcurrentRegistrationDoesNotTransferAccount(t *testing.T) {
 		}(tenant)
 	}
 	a, b := <-results, <-results
-	if !((a == 200 && b == 409) || (a == 409 && b == 200)) {
+	if (a != http.StatusOK || b != http.StatusConflict) && (a != http.StatusConflict || b != http.StatusOK) {
 		t.Fatalf("conflicting results: %d %d", a, b)
 	}
 	var count int
