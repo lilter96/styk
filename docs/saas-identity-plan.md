@@ -44,7 +44,7 @@ Email verification requires the mailbox holder to set the login password; it
 replaces any password entered before address ownership was established.
 
 To claim historical development data, first register and verify the intended
-owner. On the database host, inspect the verified user ID locally and run
+owner. On the database host, export the loopback `DATABASE_URL`, inspect the verified user ID locally and run
 `STYK_LOCAL_CLAIM_ENABLE=true go run ./cmd/claim-workspace -tenant <tenant> -user-id <user-id>`
 against a loopback PostgreSQL connection. The command rejects conflicting legacy
 references and cannot be called through the HTTP API. Back up the database and
