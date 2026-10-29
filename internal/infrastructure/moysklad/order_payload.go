@@ -158,6 +158,9 @@ func (c *OrderClient) addOrderCollections(body map[string]any, command orders.Co
 	}
 	attributes := c.orderAttributes(command.CustomerOrder.Attributes, owned)
 	if len(attributes) > 0 {
+		if command.Action == orders.ActionMirrorUpdate {
+			return orders.ErrBlocked
+		}
 		body["attributes"] = attributes
 	}
 	return nil

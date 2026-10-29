@@ -3,7 +3,6 @@ package moysklad
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"time"
 
 	"github.com/lilter96/styk/internal/ordermoney"
@@ -58,7 +57,7 @@ func (c *OrderClient) decodeOrderAttributes(raw json.RawMessage) ([]orders.Attri
 	result := make([]orders.AttributeWrite, 0, len(attributes))
 	seen := make(map[string]bool, len(attributes))
 	for _, attribute := range attributes {
-		if !strings.HasPrefix(attribute.Name, "styk-order-attribute-") || !orderUUID.MatchString(strings.TrimPrefix(attribute.Name, "styk-order-attribute-")) {
+		if !validOrderAttributeMarker(attribute.Name) {
 			continue
 		}
 		if attribute.Type != "string" && attribute.Type != "text" {
