@@ -18,7 +18,7 @@ func (m *merchantAuth) publicRequest(w http.ResponseWriter, r *http.Request, out
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if !m.safe(r) || r.Header.Get("Origin") != m.origin || err != nil || media != "application/json" {
+	if !m.safe(r) || !m.sameOrigin(r) || err != nil || media != "application/json" {
 		writeError(w, http.StatusForbidden, "FORBIDDEN")
 		return false
 	}
@@ -56,14 +56,16 @@ func (m *merchantAuth) allowIdentity(w http.ResponseWriter, r *http.Request, key
 
 func (m *merchantAuth) register(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Email     string `json:"email"`
+		Email string `json:"email"`
+		// Older clients sent this field; only the verified mailbox holder sets
+		// the usable password, so its value is intentionally ignored.
 		Password  string `json:"password"`
 		Workspace string `json:"workspace"`
 	}
 	if !m.publicRequest(w, r, &body, "register") || !m.allowIdentity(w, r, "register:email:"+strings.ToLower(strings.TrimSpace(body.Email)), 10) {
 		return
 	}
-	_, _, err := m.identity.Register(r.Context(), body.Email, body.Password, body.Workspace)
+	_, _, err := m.identity.RegisterPending(r.Context(), body.Email, body.Workspace)
 	if errors.Is(err, identity.ErrInvalid) {
 		writeError(w, http.StatusBadRequest, "INVALID_REQUEST")
 		return

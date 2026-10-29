@@ -82,6 +82,8 @@ func (b *merchantBrowser) request(t *testing.T, method, path, body string, csrf 
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A local reverse proxy preserves the public browser Host header.
+	req.Host = "127.0.0.1:5173"
 	if method != http.MethodGet {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Origin", "http://127.0.0.1:5173")
@@ -107,12 +109,19 @@ func (b *merchantBrowser) request(t *testing.T, method, path, body string, csrf 
 
 func (b *merchantBrowser) registerAndLogin(t *testing.T, mailbox *testMailbox, email string) merchantSession {
 	t.Helper()
-	body, err := json.Marshal(map[string]string{"email": email, "password": "long-merchant-password", "workspace": email})
+	body, err := json.Marshal(map[string]string{"email": email, "workspace": email})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if status, _ := b.request(t, http.MethodPost, "/api/registration", string(body), false); status != 202 {
 		t.Fatalf("registration status %d", status)
+	}
+	login, err := json.Marshal(map[string]string{"email": email, "password": "long-merchant-password"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, _ := b.request(t, http.MethodPost, "/api/session", string(login), false); status != 401 {
+		t.Fatalf("unverified registration authenticated: %d", status)
 	}
 	token := mailbox.token(email, "VERIFY_EMAIL")
 	verification, err := json.Marshal(map[string]string{"token": token, "password": "long-merchant-password"})
@@ -121,10 +130,6 @@ func (b *merchantBrowser) registerAndLogin(t *testing.T, mailbox *testMailbox, e
 	}
 	if status, _ := b.request(t, http.MethodPost, "/api/verification", string(verification), false); status != 204 {
 		t.Fatalf("verification status %d", status)
-	}
-	login, err := json.Marshal(map[string]string{"email": email, "password": "long-merchant-password"})
-	if err != nil {
-		t.Fatal(err)
 	}
 	if status, _ := b.request(t, http.MethodPost, "/api/session", string(login), false); status != 204 {
 		t.Fatalf("login status %d", status)

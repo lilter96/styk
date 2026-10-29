@@ -35,6 +35,16 @@ func (s *Store) Register(ctx context.Context, email, password, name string) (Use
 	return user, workspace, nil
 }
 
+// RegisterPending reserves an address without asking for a password before
+// ownership is established. Email verification replaces this random value.
+func (s *Store) RegisterPending(ctx context.Context, email, name string) (User, Workspace, error) {
+	placeholder, err := randomToken(32)
+	if err != nil {
+		return User{}, Workspace{}, err
+	}
+	return s.Register(ctx, email, placeholder, name)
+}
+
 func (s *Store) insertRegistration(ctx context.Context, user User, workspace Workspace, hash []byte) error {
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()

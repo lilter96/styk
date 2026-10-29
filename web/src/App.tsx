@@ -10,7 +10,7 @@ import {
 } from "./ImportSubmission";
 import { ProductMappingPage } from "./ProductMappingPage";
 import { WarehouseReview } from "./WarehouseReview";
-import { MerchantAuth } from "./MerchantAuth";
+import { hasAuthLink, MerchantAuth } from "./MerchantAuth";
 import { WorkspaceSettings } from "./WorkspaceSettings";
 import {
   ConfirmationNotice,
@@ -28,6 +28,7 @@ import {
 } from "react-router-dom";
 import {
   api,
+  ApiError,
   authFetch,
   params,
   setCSRF,
@@ -740,8 +741,12 @@ export function App() {
       return value;
     },
     retry: false,
-    refetchInterval: 15000,
-    refetchOnWindowFocus: true,
+    // A failed initial session check is the normal signed-out state. Refetching
+    // it while the user is filling in a form remounts that form and loses input.
+    // Continue checking active sessions for expiration and membership changes.
+    refetchInterval: (query) =>
+      query.state.status === "success" ? 15000 : false,
+    refetchOnWindowFocus: (query) => query.state.status === "success",
   });
   const authMode = useQuery({
     queryKey: ["auth-mode"],
@@ -750,6 +755,16 @@ export function App() {
     enabled: session.isError,
     retry: false,
   });
+  const [authLinkInSession, setAuthLinkInSession] = useState(false);
+  useEffect(() => {
+    if (!session.data) return;
+    const openLink = () => {
+      if (hasAuthLink()) setAuthLinkInSession(true);
+    };
+    openLink();
+    window.addEventListener("hashchange", openLink);
+    return () => window.removeEventListener("hashchange", openLink);
+  }, [session.data]);
   const [initialWorkspace] = useState(savedWorkspace);
   const [workspaceOpen, setWorkspaceOpen] = useState(!initialWorkspace.tenant);
   const [tenant, setTenant] = useState(initialWorkspace.tenant),
@@ -788,6 +803,15 @@ export function App() {
     window.addEventListener("styk-session-expired", expired);
     return () => window.removeEventListener("styk-session-expired", expired);
   }, [client]);
+  useEffect(() => {
+    if (!(session.error instanceof ApiError) || session.error.status !== 401)
+      return;
+    setCSRF("");
+    client.removeQueries({
+      predicate: (query) =>
+        !["session", "auth-mode"].includes(String(query.queryKey[0])),
+    });
+  }, [session.error, client]);
   useEffect(() => {
     try {
       sessionStorage.setItem(
@@ -831,7 +855,21 @@ export function App() {
       api<Report>("/api/diagnostics?" + scopeParams(scope), signal),
     enabled: session.isSuccess && !!chosen && permittedWorkspace,
   });
-  if (session.isLoading)
+  if (authLinkInSession) {
+    const leaveLink = () => {
+      setCSRF("");
+      try {
+        sessionStorage.removeItem("styk-workspace");
+      } catch {
+        // A full navigation still discards the in-memory tenant cache.
+      }
+      window.location.assign("/");
+    };
+    return <MerchantAuth onDone={leaveLink} onReturn={leaveLink} />;
+  }
+  // Keep an already displayed sign-in flow mounted if an explicit session
+  // refresh is in flight; its in-memory form and email-link token must survive.
+  if (session.isLoading && !authMode.data)
     return (
       <main className="login">
         <Loading />

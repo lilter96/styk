@@ -40,8 +40,12 @@ behind a trusted TLS proxy; configure `STYK_TRUSTED_PROXY_CIDRS` only for
 proxies that sanitize and append the client address. Do not publish the API
 listener directly. Merchant mode is the default; the old operator mode must be
 explicitly selected with `STYK_AUTH_MODE=local` and remains loopback-only.
-Email verification requires the mailbox holder to set the login password; it
-replaces any password entered before address ownership was established.
+For local development, the frontend proxy must preserve the browser's Host
+header. `localhost` and `127.0.0.1` are accepted only when the Origin matches
+that Host and the configured frontend port.
+Registration asks for an email address and workspace name. The mailbox holder
+sets the login password using the verification link. The API accepts the older
+registration password field for compatibility but does not use it.
 
 To claim historical development data, first register and verify the intended
 owner. On the database host, export the loopback `DATABASE_URL`, inspect the verified user ID locally and run
@@ -71,7 +75,7 @@ The local development database was migrated from version 32 to 38 on
 2026-10-29. Counts before and after were unchanged: 2 connections, 4 product
 mappings, 1 warehouse mapping, 33 source imports, 20 publications and 1
 recovery. Automatic synchronization was disabled. The existing `cross-e2e`
-workspace remains unclaimed with no assigned members; its owner must complete
-the explicit claim after registering and verifying an address. A protected
+workspace was initially unclaimed with no assigned members; claiming it
+requires a registered, verified owner and the explicit local procedure above. A protected
 local pre-migration backup was made outside version control. No provider write
 was performed as part of this identity migration.

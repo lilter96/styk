@@ -43,7 +43,7 @@ test("two merchants register, import independently and switch only through membe
         : route.abort(),
     );
   }
-  await register(a, aEmail, "Магазин A");
+  await register(a, aEmail, "Магазин A", !simulation);
   await register(b, bEmail, "Магазин B");
   const claim = await a.request.post(`${testAPI}/__test/claim`, {
     headers: { "X-Test-Secret": testSecret },
@@ -248,18 +248,27 @@ test("two merchants register, import independently and switch only through membe
   expect(
     await b.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
   ).toBe(true);
+  await checkPasswordReset(b, browser, bEmail);
   await aContext.close();
   await bContext.close();
 });
 
-async function register(page: Page, email: string, name: string) {
+async function register(page: Page, email: string, name: string, slow = false) {
   await page.goto(origin + "/");
   await page.getByRole("button", { name: "Создать аккаунт" }).click();
   await page.getByLabel("Электронная почта").fill(email);
-  await page.getByLabel("Пароль").fill(password);
   await page.getByLabel("Название магазина").fill(name);
+  if (slow) {
+    await page.waitForTimeout(16_000);
+    await expect(page.getByLabel("Электронная почта")).toHaveValue(email);
+    await expect(page.getByLabel("Название магазина")).toHaveValue(name);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(
+      page.getByRole("heading", { name: "Создать аккаунт" }),
+    ).toBeVisible();
+  }
   await page.getByRole("button", { name: "Создать аккаунт" }).click();
-  await expect(page.getByText(/Если адрес подходит/)).toBeVisible();
+  await expect(page.getByText(/Если адрес доступен/)).toBeVisible();
   const result = await page.request.get(
     `${testAPI}/__test/mail?email=${encodeURIComponent(email)}`,
     { headers: { "X-Test-Secret": testSecret } },
@@ -267,8 +276,12 @@ async function register(page: Page, email: string, name: string) {
   const { token } = await result.json();
   expect(token).toBeTruthy();
   await page.goto(`${origin}/#verify=${token}`);
-  await page.reload();
   await page.getByLabel("Новый пароль").fill(password);
+  if (slow) {
+    await page.waitForTimeout(16_000);
+    await expect(page.getByLabel("Новый пароль")).toHaveValue(password);
+    expect(await page.evaluate(() => location.hash)).toBe("");
+  }
   await page.getByRole("button", { name: "Подтвердить адрес" }).click();
   await expect(page.getByText(/Почта подтверждена/)).toBeVisible();
   await page.getByLabel("Электронная почта").fill(email);
@@ -280,6 +293,70 @@ async function register(page: Page, email: string, name: string) {
   expect(await page.evaluate(() => document.cookie)).not.toContain(
     "styk_session",
   );
+}
+
+async function checkPasswordReset(
+  page: Page,
+  browser: import("@playwright/test").Browser,
+  email: string,
+) {
+  const otherSession = await browser.newContext();
+  try {
+    const login = await otherSession.request.post(`${origin}/api/session`, {
+      headers: { Origin: origin },
+      data: { email, password },
+    });
+    expect(login.status()).toBe(204);
+    expect(
+      (await otherSession.request.get(`${origin}/api/session`)).status(),
+    ).toBe(200);
+    const otherPage = await otherSession.newPage();
+    await otherPage.goto(origin + "/");
+    await expect(
+      otherPage.getByRole("link", { name: "Интеграции", exact: true }),
+    ).toBeVisible();
+    const selector = page.locator(".workspace-selector");
+    if ((await selector.getAttribute("open")) === null)
+      await selector.locator("summary").first().click();
+    await selector.getByRole("button", { name: "Выйти" }).click();
+    await page.getByRole("button", { name: "Забыли пароль?" }).click();
+    await page.getByLabel("Электронная почта").fill(email);
+    await page.getByRole("button", { name: "Отправить письмо" }).click();
+    await expect(page.getByText(/Если адрес подходит/)).toBeVisible();
+    const result = await page.request.get(`${testAPI}/__test/mail`, {
+      headers: { "X-Test-Secret": testSecret },
+      params: { email, purpose: "RESET_PASSWORD" },
+    });
+    const { token } = await result.json();
+    expect(token).toBeTruthy();
+    await otherPage.goto(`${origin}/#reset=${token}`);
+    await otherPage
+      .getByLabel("Новый пароль")
+      .fill("replacement-test-password");
+    await otherPage.getByRole("button", { name: "Сохранить пароль" }).click();
+    await expect(otherPage.getByText(/Пароль изменён/)).toBeVisible();
+    expect(
+      (await otherSession.request.get(`${origin}/api/session`)).status(),
+    ).toBe(401);
+    await otherPage
+      .getByRole("button", { name: "Вернуться в приложение" })
+      .click();
+    await expect(
+      otherPage.getByRole("heading", { name: "Войти в STYK" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Вернуться ко входу" }).click();
+    await page.getByLabel("Электронная почта").fill(email);
+    await page.getByLabel("Пароль").fill(password);
+    await page.getByRole("button", { name: "Войти", exact: true }).click();
+    await expect(page.getByRole("alert")).toContainText("Не удалось войти");
+    await page.getByLabel("Пароль").fill("replacement-test-password");
+    await page.getByRole("button", { name: "Войти", exact: true }).click();
+    await expect(
+      page.getByRole("link", { name: "Интеграции", exact: true }),
+    ).toBeVisible();
+  } finally {
+    await otherSession.close();
+  }
 }
 
 async function selectWorkspace(page: Page, id: string) {

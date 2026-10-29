@@ -79,6 +79,13 @@ func (a *auth) safe(r *http.Request) bool {
 	return origin == "" || origin == a.origin
 }
 
+func (a *auth) sameOrigin(r *http.Request) bool {
+	if a.merchant != nil {
+		return a.merchant.sameOrigin(r)
+	}
+	return r.Header.Get("Origin") == a.origin
+}
+
 func (a *auth) login(w http.ResponseWriter, r *http.Request) {
 	if !a.safe(r) || r.Header.Get("Origin") != a.origin || !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
 		writeError(w, http.StatusForbidden, "FORBIDDEN")

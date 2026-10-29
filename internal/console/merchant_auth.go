@@ -71,8 +71,28 @@ func (m *merchantAuth) safe(r *http.Request) bool {
 	} else if !strings.EqualFold(r.Host, m.host) {
 		return false
 	}
-	origin := r.Header.Get("Origin")
-	return origin == "" || origin == m.origin
+	return r.Header.Get("Origin") == "" || m.sameOrigin(r)
+}
+
+// Local development may use either loopback spelling, but the browser Origin
+// must still match the requested host and the configured port exactly.
+func (m *merchantAuth) sameOrigin(r *http.Request) bool {
+	values := r.Header.Values("Origin")
+	if len(values) != 1 {
+		return false
+	}
+	if !m.local {
+		return values[0] == m.origin
+	}
+	want, err := url.Parse(m.origin)
+	if err != nil {
+		return false
+	}
+	got, err := url.Parse(values[0])
+	if err != nil || got.Scheme != want.Scheme || got.User != nil || got.Path != "" || got.RawQuery != "" || got.ForceQuery || got.Fragment != "" || got.Opaque != "" {
+		return false
+	}
+	return loopbackHost(got.Hostname()) && got.Port() == want.Port() && strings.EqualFold(got.Host, r.Host)
 }
 
 func (m *merchantAuth) authorized(next http.HandlerFunc) http.HandlerFunc {
@@ -122,7 +142,7 @@ func (m *merchantAuth) checkCSRF(r *http.Request, session identity.Session) bool
 	if r.Method == http.MethodGet || r.Method == http.MethodHead {
 		return true
 	}
-	return r.Header.Get("Origin") == m.origin && subtle.ConstantTimeCompare([]byte(r.Header.Get("X-STYK-CSRF")), []byte(session.CSRF)) == 1
+	return m.sameOrigin(r) && subtle.ConstantTimeCompare([]byte(r.Header.Get("X-STYK-CSRF")), []byte(session.CSRF)) == 1
 }
 
 func sessionFrom(r *http.Request) identity.Session {

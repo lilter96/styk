@@ -64,3 +64,37 @@ func TestMerchantRolesAndCSRF(t *testing.T) {
 		t.Fatal("cross-origin mutation accepted")
 	}
 }
+
+func TestMerchantLocalOriginRequiresMatchingLoopbackHostAndPort(t *testing.T) {
+	t.Parallel()
+	m := merchantAuth{origin: "http://127.0.0.1:5173", local: true}
+	tests := []struct {
+		name, host, origin string
+		allowed            bool
+	}{
+		{"canonical", "127.0.0.1:5173", "http://127.0.0.1:5173", true},
+		{"localhost", "localhost:5173", "http://localhost:5173", true},
+		{"different loopback host", "localhost:5173", "http://127.0.0.1:5173", false},
+		{"different port", "localhost:5174", "http://localhost:5174", false},
+		{"foreign host", "attacker.example:5173", "http://attacker.example:5173", false},
+		{"foreign origin", "localhost:5173", "http://attacker.example:5173", false},
+		{"userinfo", "localhost:5173", "http://attacker@localhost:5173", false},
+		{"query", "localhost:5173", "http://localhost:5173?", false},
+		{"null origin", "localhost:5173", "null", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := httptest.NewRequest(http.MethodPost, "http://"+tc.host+"/api/session", nil)
+			r.RemoteAddr = "127.0.0.1:1234"
+			r.Header.Set("Origin", tc.origin)
+			r.Header.Set("X-STYK-CSRF", "csrf-value")
+			if got := m.sameOrigin(r); got != tc.allowed {
+				t.Fatalf("sameOrigin = %v, want %v", got, tc.allowed)
+			}
+			if got := m.safe(r) && m.checkCSRF(r, identity.Session{CSRF: "csrf-value"}); got != tc.allowed {
+				t.Fatalf("authorized origin = %v, want %v", got, tc.allowed)
+			}
+		})
+	}
+}

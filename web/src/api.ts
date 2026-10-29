@@ -17,6 +17,7 @@ export async function authFetch(path: string, init: RequestInit = {}) {
   if (
     response.status === 401 &&
     path !== "/api/session" &&
+    path !== "/api/registration" &&
     !path.startsWith("/api/verification") &&
     !path.startsWith("/api/password-reset")
   ) {

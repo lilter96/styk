@@ -13,7 +13,17 @@ function fragment() {
   return { screen: (verify ? "verify" : "reset") as Screen, token };
 }
 
-export function MerchantAuth({ onDone }: { onDone: () => void }) {
+export function hasAuthLink() {
+  return !!fragment().token;
+}
+
+export function MerchantAuth({
+  onDone,
+  onReturn,
+}: {
+  onDone: () => void;
+  onReturn?: () => void;
+}) {
   const [initial] = useState(fragment);
   const [screen, setScreen] = useState<Screen>(initial.screen);
   const [token, setToken] = useState(initial.token);
@@ -33,6 +43,25 @@ export function MerchantAuth({ onDone }: { onDone: () => void }) {
         window.location.pathname + window.location.search,
       );
   }, [initial.token]);
+
+  useEffect(() => {
+    function openLink() {
+      const incoming = fragment();
+      if (!incoming.token) return;
+      setToken(incoming.token);
+      setScreen(incoming.screen);
+      setPassword("");
+      setMessage("");
+      setError("");
+      window.history.replaceState(
+        null,
+        "",
+        window.location.pathname + window.location.search,
+      );
+    }
+    window.addEventListener("hashchange", openLink);
+    return () => window.removeEventListener("hashchange", openLink);
+  }, []);
 
   function move(next: Screen) {
     setScreen(next);
@@ -66,7 +95,7 @@ export function MerchantAuth({ onDone }: { onDone: () => void }) {
           response.status === 429
             ? "Слишком много попыток. Попробуйте позже."
             : screen === "login"
-              ? "Не удалось войти. Проверьте почту, пароль и подтверждение адреса."
+              ? "Не удалось войти. Проверьте почту и пароль, заданный после подтверждения. Если забыли пароль, восстановите его."
               : "Не удалось выполнить запрос. Проверьте данные или попробуйте позже.",
         );
       }
@@ -78,8 +107,12 @@ export function MerchantAuth({ onDone }: { onDone: () => void }) {
         setScreen("login");
         setMessage(
           screen === "verify"
-            ? "Почта подтверждена. Теперь можно войти."
+            ? "Почта подтверждена. Войдите с паролем, который только что задали."
             : "Пароль изменён. Войдите с новым паролем.",
+        );
+      } else if (screen === "register") {
+        setMessage(
+          "Если адрес доступен, мы отправим письмо. Откройте ссылку и задайте пароль. Если вы уже зарегистрированы, войдите или восстановите пароль.",
         );
       } else {
         setMessage(
@@ -120,11 +153,11 @@ export function MerchantAuth({ onDone }: { onDone: () => void }) {
         <h1>{titles[screen]}</h1>
         <p>
           {screen === "register"
-            ? "Создайте пространство для своего магазина."
+            ? "Укажите почту и название магазина. Пароль вы зададите по ссылке из письма."
             : screen === "login"
               ? "Управляйте остатками своего магазина в одном месте."
               : screen === "verify"
-                ? "Подтвердите адрес и задайте пароль для входа. Ранее указанный пароль будет заменён."
+                ? "Подтвердите адрес и задайте пароль для входа."
                 : "Используйте адрес, указанный при регистрации."}
         </p>
         <form onSubmit={(event) => void submit(event)}>
@@ -142,7 +175,6 @@ export function MerchantAuth({ onDone }: { onDone: () => void }) {
             </>
           )}
           {(screen === "login" ||
-            screen === "register" ||
             screen === "verify" ||
             screen === "reset") && (
             <>
@@ -194,6 +226,11 @@ export function MerchantAuth({ onDone }: { onDone: () => void }) {
           )}
         </form>
         <div className="merchant-auth-links">
+          {onReturn && (
+            <button type="button" className="text-action" onClick={onReturn}>
+              Вернуться в приложение
+            </button>
+          )}
           {screen === "login" ? (
             <>
               <button
@@ -247,7 +284,7 @@ function requestFor(
     case "register":
       return {
         path: "/api/registration",
-        body: { email, password, workspace },
+        body: { email, workspace },
       };
     case "forgot":
       return { path: "/api/password-reset/request", body: { email } };

@@ -26,7 +26,7 @@ func (a *auth) confirmWarehouseReview(db *postgres.Store) http.HandlerFunc {
 // Both confirmation operations use the same local session, origin and request contract.
 func (a *auth) confirmationHandler(confirm func(context.Context, domain.MappingConfirmationRequest) (domain.MappingConfirmationResult, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Origin") != a.origin {
+		if !a.sameOrigin(r) {
 			writeError(w, http.StatusForbidden, "FORBIDDEN")
 			return
 		}

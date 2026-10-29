@@ -176,7 +176,15 @@ func merchantBrowserAPI(t *testing.T, db *postgres.Store, mailbox *testMailbox, 
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"token": mailbox.token(r.URL.Query().Get("email"), "VERIFY_EMAIL")})
+		purpose := r.URL.Query().Get("purpose")
+		if purpose == "" {
+			purpose = "VERIFY_EMAIL"
+		}
+		if purpose != "VERIFY_EMAIL" && purpose != "RESET_PASSWORD" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"token": mailbox.token(r.URL.Query().Get("email"), purpose)})
 	})
 	mux.HandleFunc("POST /__test/claim", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Test-Secret") != "synthetic-browser-harness" {
@@ -224,7 +232,7 @@ func runMerchantPlaywright(t *testing.T, ctx context.Context, apiURL string) {
 			t.Errorf("remove temporary Vite config: %v", err)
 		}
 	}()
-	if _, err = fmt.Fprintf(configFile, `import {defineConfig} from 'vite'; export default defineConfig({server:{host:'127.0.0.1',port:15179,strictPort:true,proxy:{'/api':%q}}});`, apiURL); err != nil {
+	if _, err = fmt.Fprintf(configFile, `import {defineConfig} from 'vite'; export default defineConfig({server:{host:'127.0.0.1',port:15179,strictPort:true,proxy:{'/api':{target:%q,changeOrigin:false}}}});`, apiURL); err != nil {
 		t.Fatal(err)
 	}
 	if err = configFile.Close(); err != nil {

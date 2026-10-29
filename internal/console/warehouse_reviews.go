@@ -28,7 +28,7 @@ func warehouseReviewError(w http.ResponseWriter, err error) {
 func (a *auth) createWarehouseReview(db *postgres.Store, lifetime time.Duration) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if r.Header.Get("Origin") != a.origin {
+		if !a.sameOrigin(r) {
 			writeError(w, 403, "FORBIDDEN")
 			return
 		}

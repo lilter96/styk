@@ -25,7 +25,7 @@ func reviewError(w http.ResponseWriter, err error) {
 }
 func (a *auth) createMappingReview(db *postgres.Store, lifetime time.Duration) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Origin") != a.origin || !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		if !a.sameOrigin(r) || !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
 			writeError(w, http.StatusForbidden, "FORBIDDEN")
 			return
 		}

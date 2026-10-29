@@ -419,7 +419,7 @@ func (c *connections) register(w http.ResponseWriter, r *http.Request) {
 func (a *auth) connectionMutation(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if r.Header.Get("Origin") != a.origin {
+		if !a.sameOrigin(r) {
 			writeError(w, 403, "FORBIDDEN")
 			return
 		}
