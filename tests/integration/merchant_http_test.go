@@ -182,9 +182,18 @@ func assertMerchantIsolation(t *testing.T, a, b *merchantBrowser, wa, wb string)
 		browser *merchantBrowser
 		tenant  string
 	}{{a, wb}, {b, wa}} {
-		status, _ := tc.browser.request(t, http.MethodGet, "/api/registrations?tenant="+url.QueryEscape(tc.tenant), "", false)
-		if status != 404 {
-			t.Fatalf("cross-tenant read status %d", status)
+		query := "?tenant=" + url.QueryEscape(tc.tenant) + "&moysklad_account=synthetic-moy&ozon_account=synthetic-ozon"
+		for _, path := range []string{"/api/registrations", "/api/products", "/api/stock-sync", "/api/stock-sync/automatic", "/api/stock-sync/order-evidence"} {
+			status, _ := tc.browser.request(t, http.MethodGet, path+query, "", false)
+			if status != 404 {
+				t.Fatalf("cross-tenant read %s status %d", path, status)
+			}
+		}
+		for _, path := range []string{"/api/imports", "/api/product-mapping-reviews", "/api/warehouse-mapping-reviews", "/api/stock-sync/automatic", "/api/stock-sync/enable", "/api/stock-sync/operations/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/supersede", "/api/stock-sync/operations/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/reconcile"} {
+			status, _ := tc.browser.request(t, http.MethodPost, path, `{"tenant":"`+tc.tenant+`","moysklad_account":"synthetic-moy","ozon_account":"synthetic-ozon"}`, true)
+			if status != 404 {
+				t.Fatalf("cross-tenant mutation %s status %d", path, status)
+			}
 		}
 	}
 	if status, _ := a.request(t, http.MethodGet, "/api/workspaces/"+wb+"/audit", "", false); status != 404 {
