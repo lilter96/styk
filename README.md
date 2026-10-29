@@ -95,6 +95,10 @@ The engine compares Ozon `offer_id` against MoySklad product or variant `article
 
 Confirmation re-reads the latest completed imports and revalidates the selected candidate under database locks. It creates a versioned current mapping and an audit history entry containing both import IDs and provenance in one transaction. Different Ozon offers may map to one MoySklad item; each Ozon product and offer may have at most one mapping per tenant and Ozon account. Existing mappings cannot be overwritten by this CLI, including when evidence changes. Mapping replacement and revocation are not implemented; version 1 and its confirmation are retained. Absence from a later import never deletes a mapping. Imports may be incomplete or change during traversal, so suggestions are not proof of identity. Suggestions are generated on demand and not persisted. No stock publication is enabled.
 
+## Local connection management
+
+The Integrations page can explicitly test locally configured MoySklad and Ozon credentials and register the configured account to a selected tenant after operator acknowledgement. Checks are bounded read-only probes; registration is a trusted local attestation, not production tenant authorization. The local console displays external account identifiers, including the Ozon client ID, to the authenticated operator; these identifiers do not authorize marketplace access. Tokens and API keys remain server-side and are not stored in PostgreSQL. Historical imports are excluded by default. See [connection management](docs/connection-management-v1.md).
+
 ## Warehouse mapping V1
 
 Authenticated local operators can create and inspect revision-bound durable warehouse reviews and explicitly confirm them through the local API. Confirmation is operator attestation with transactional audit and idempotency, not independent proof of physical identity or stock safety. See [warehouse review backend](docs/warehouse-mapping-reviews-backend.md).

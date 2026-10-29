@@ -7,6 +7,8 @@ import (
 	"net/url"
 )
 
+var ErrProbeAccountMismatch = errors.New("probe account mismatch")
+
 // Probe performs one bounded product GET; an empty result cannot verify account identity.
 func (c *Client) Probe(ctx context.Context, account string) (bool, error) {
 	raw, err := c.get(ctx, "entity/product", url.Values{"limit": {"1"}, "offset": {"0"}})
@@ -20,8 +22,11 @@ func (c *Client) Probe(ctx context.Context, account string) (bool, error) {
 	verified := false
 	for _, r := range *p.Rows {
 		var e entity
-		if json.Unmarshal(r, &e) != nil || e.AccountID != account {
-			return false, errors.New("probe account mismatch")
+		if json.Unmarshal(r, &e) != nil {
+			return false, errors.New("invalid probe product")
+		}
+		if e.AccountID != account {
+			return false, ErrProbeAccountMismatch
 		}
 		verified = true
 	}

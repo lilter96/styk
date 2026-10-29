@@ -41,6 +41,11 @@ func TestConsoleScopedAuthenticatedReads(t *testing.T) {
 	if w := request("GET", "/api/registrations?tenant="+url.QueryEscape(f.req.Pool.Tenant), "", nil); w.Code != 401 {
 		t.Fatal("missing authentication")
 	}
+	for _, path := range []string{"/api/products?tenant=" + url.QueryEscape(f.req.Pool.Tenant), "/api/warehouses?tenant=" + url.QueryEscape(f.req.Pool.Tenant), "/api/stock?tenant=" + url.QueryEscape(f.req.Pool.Tenant), "/api/diagnostics?tenant=" + url.QueryEscape(f.req.Pool.Tenant)} {
+		if w := request("GET", path, "", nil); w.Code != 401 {
+			t.Fatalf("unauthenticated business read accepted: %s", path)
+		}
+	}
 	w := request("POST", "/api/session", fmt.Sprintf(`{"secret":%q}`, secret), nil)
 	if w.Code != 204 {
 		t.Fatal("login failed")
@@ -86,16 +91,36 @@ func TestConsoleScopedAuthenticatedReads(t *testing.T) {
 	if w.Code != 404 || strings.Contains(w.Body.String(), "offer") {
 		t.Fatal("cross-tenant product access")
 	}
+	q.Set("tenant", f.req.Pool.Tenant)
+	q.Set("ozon_account", f.req.Target.OzonAccount+"-other")
+	if w = request("GET", "/api/products?"+q.Encode(), "", cookie); w.Code != 404 {
+		t.Fatal("cross-account product access")
+	}
 	q = url.Values{"tenant": {f.req.Pool.Tenant}, "source": {"ozon"}, "account": {f.req.Target.OzonAccount}}
 	w = request("GET", "/api/warehouses?"+q.Encode(), "", cookie)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"stock_rows":1`) {
 		t.Fatal("warehouse stock evidence unavailable")
 	}
+	q.Set("tenant", f.req.Pool.Tenant+"-other")
+	if w = request("GET", "/api/warehouses?"+q.Encode(), "", cookie); w.Code != 404 {
+		t.Fatal("cross-tenant warehouse access")
+	}
+	q.Set("tenant", f.req.Pool.Tenant)
+	q.Set("account", f.req.Target.OzonAccount+"-other")
+	if w = request("GET", "/api/warehouses?"+q.Encode(), "", cookie); w.Code != 404 {
+		t.Fatal("cross-account warehouse access")
+	}
+	q.Set("account", f.req.Target.OzonAccount)
 	q.Set("warehouse", f.req.Target.WarehouseID)
 	w = request("GET", "/api/stock?"+q.Encode(), "", cookie)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"present":"5"`) || !strings.Contains(w.Body.String(), `"stock":null`) {
 		t.Fatal("source stock fields were collapsed or missing")
 	}
+	q.Set("account", f.req.Target.OzonAccount+"-other")
+	if w = request("GET", "/api/stock?"+q.Encode(), "", cookie); w.Code != 404 {
+		t.Fatal("cross-account stock access")
+	}
+	q.Set("account", f.req.Target.OzonAccount)
 	if _, err := f.store.Pool.Exec(context.Background(), `UPDATE ozon_fbs_stock_observations SET present=0 WHERE import_id=(SELECT id FROM source_imports WHERE source='ozon' AND account_id=$1 ORDER BY id DESC LIMIT 1)`, f.req.Target.OzonAccount); err != nil {
 		t.Fatal(err)
 	}

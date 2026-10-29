@@ -14,6 +14,12 @@ import (
 
 // Handler exposes scoped reads and explicit local mapping operations to an authenticated local operator.
 func Handler(db *postgres.Store, secret, origin string) (http.Handler, error) {
+	return handlerWithConnections(db, secret, origin, nil)
+}
+
+// Injection is used by package tests; the production handler always constructs
+// clients for the official provider hosts from local process configuration.
+func handlerWithConnections(db *postgres.Store, secret, origin string, connections *connections) (http.Handler, error) {
 	if db == nil {
 		return nil, errors.New("console database required")
 	}
@@ -30,9 +36,15 @@ func Handler(db *postgres.Store, secret, origin string) (http.Handler, error) {
 		}
 	}
 	mux := http.NewServeMux()
+	if connections == nil {
+		connections = newConnections(db)
+	}
 	mux.HandleFunc("POST /api/session", a.login)
 	mux.HandleFunc("DELETE /api/session", a.authorized(a.logout))
 	mux.HandleFunc("GET /api/session", a.authorized(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	mux.HandleFunc("GET /api/integrations", a.authorized(connections.list))
+	mux.HandleFunc("POST /api/integrations/{provider}/probe", a.authorized(a.connectionMutation(connections.probe)))
+	mux.HandleFunc("POST /api/integrations/{provider}/register", a.authorized(a.connectionMutation(connections.register)))
 	mux.HandleFunc("GET /api/registrations", a.authorized(func(w http.ResponseWriter, r *http.Request) {
 		tenant := strings.TrimSpace(r.URL.Query().Get("tenant"))
 		if tenant == "" || len(tenant) > 256 {

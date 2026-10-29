@@ -1,3 +1,4 @@
+import { Integrations } from "./Integrations";
 import { ProductReview } from "./ProductReview";
 import { WarehouseReview } from "./WarehouseReview";
 import {
@@ -878,6 +879,9 @@ export function App() {
           <NavLink to="/" end>
             <span>◫</span>Overview
           </NavLink>
+          <NavLink to="/integrations">
+            <span>◈</span>Integrations
+          </NavLink>
           <NavLink to="/products">
             <span>◇</span>Products
           </NavLink>
@@ -985,6 +989,18 @@ export function App() {
             )}
           </div>
           <Routes>
+            <Route
+              path="/integrations"
+              element={
+                <Integrations
+                  key={chosen}
+                  tenant={chosen}
+                  accounts={accounts.data?.accounts ?? []}
+                  selected={{ moy, ozon }}
+                  report={report.data}
+                />
+              }
+            />
             <Route
               path="/"
               element={
