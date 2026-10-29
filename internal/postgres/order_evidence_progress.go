@@ -9,7 +9,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/lilter96/styk/internal/application"
-	"github.com/lilter96/styk/internal/credentials"
 	"github.com/lilter96/styk/internal/domain"
 )
 
@@ -64,8 +63,8 @@ func scanOrderEvidence(row pgx.Row, scope domain.StockSyncScope) (OrderEvidenceR
 }
 
 func lockOrderCredentialRevisions(ctx context.Context, tx pgx.Tx, scope domain.StockSyncScope) (int64, int64, error) {
-	for _, item := range []credentials.Scope{{Provider: "moysklad", Account: scope.MoyskladAccount}, {Provider: "ozon", Account: scope.OzonAccount}} {
-		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, credentials.ScopeKey(item)); err != nil {
+	for _, key := range pairedCredentialLockKeys(scope) {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, key); err != nil {
 			return 0, 0, fmt.Errorf("lock credential revision: %w", err)
 		}
 	}

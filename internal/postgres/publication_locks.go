@@ -9,7 +9,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/lilter96/styk/internal/credentials"
 	"github.com/lilter96/styk/internal/domain"
 )
 
@@ -27,7 +26,8 @@ func (s *Store) lockDispatchConnection(ctx context.Context, scope domain.StockSy
 	// Import commits lock credentials before their source account; use that
 	// order here too, including when a credential row does not yet exist.
 	keys := make([]string, 0, 7)
-	keys = append(keys, syncKey(scope), credentials.ScopeKey(credentials.Scope{Provider: "ozon", Account: scope.OzonAccount}), credentials.ScopeKey(credentials.Scope{Provider: "moysklad", Account: scope.MoyskladAccount}))
+	keys = append(keys, syncKey(scope))
+	keys = append(keys, pairedCredentialLockKeys(scope)...)
 	keys = append(keys, stockReviewLockKeys(scope)...)
 	for _, key := range keys {
 		if _, err = conn.Exec(ctx, `SELECT pg_advisory_lock(hashtextextended($1,0))`, key); err != nil {

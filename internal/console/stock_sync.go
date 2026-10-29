@@ -145,6 +145,7 @@ func (a *stockSyncAPI) shadow(w http.ResponseWriter, r *http.Request) {
 		ProductMappingConfirmed   bool                    `json:"product_mapping_confirmed"`
 		WarehouseMappingConfirmed bool                    `json:"warehouse_mapping_confirmed"`
 		UncertainWrite            bool                    `json:"uncertain_write"`
+		HistoricalUncertainWrite  bool                    `json:"historical_uncertain_write"`
 		ExpiredEvidence           bool                    `json:"expired_evidence"`
 		Physical                  *string                 `json:"physical"`
 		Reserve                   *string                 `json:"reserve"`
@@ -226,8 +227,29 @@ func (a *stockSyncAPI) shadow(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		// An uncertain physical target fences all scopes for this Ozon account.
-		err = a.db.Pool.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM stock_publication_targets t JOIN stock_publications p ON p.id=t.operation_id WHERE p.ozon_account=$1 AND t.product_id=$2 AND t.warehouse_id=$3 AND t.state='UNKNOWN')`, scope.OzonAccount, v.ProductID, v.WarehouseID).Scan(&t.UncertainWrite)
+		// Physical fences apply across scopes for this Ozon account. A recovered
+		// UNKNOWN remains history; only its own fence or missing audit leaves it unresolved.
+		err = a.db.Pool.QueryRow(r.Context(), `WITH unknowns AS (
+		 SELECT p.ozon_account=t.ozon_account AS scope_valid,
+		  EXISTS(SELECT 1 FROM stock_publication_target_fences f WHERE f.target_id=t.id) AS fenced,
+		  EXISTS(SELECT 1 FROM stock_publication_recoveries r
+		   JOIN stock_publication_readbacks b ON b.id=r.readback_id AND b.target_id=t.id
+		   WHERE r.target_id=t.id AND r.tenant_id=p.tenant_id AND r.moysklad_account=p.moysklad_account
+		    AND r.ozon_account=t.ozon_account AND r.product_id=t.product_id AND r.warehouse_id=t.warehouse_id
+		    AND r.accepted_uncertainty AND r.worker_stopped_assertion
+		    AND b.quantity=r.observed_quantity AND b.observed_at=r.observed_at AND b.outcome IN ('MATCH','MISMATCH')) AS recovered
+		 FROM stock_publication_targets t JOIN stock_publications p ON p.id=t.operation_id
+		 WHERE t.ozon_account=$1 AND t.product_id=$2 AND t.warehouse_id=$3 AND t.state='UNKNOWN'
+		)
+		SELECT COALESCE(bool_or(NOT scope_valid OR fenced OR NOT recovered),false)
+		 OR EXISTS(SELECT 1 FROM stock_publication_target_fences f
+		  LEFT JOIN stock_publication_targets t ON t.id=f.target_id
+		  LEFT JOIN stock_publications p ON p.id=t.operation_id
+		  WHERE f.ozon_account=$1 AND f.product_id=$2 AND f.warehouse_id=$3
+		   AND (t.id IS NULL OR p.id IS NULL OR t.ozon_account IS DISTINCT FROM f.ozon_account
+		    OR t.product_id IS DISTINCT FROM f.product_id OR t.warehouse_id IS DISTINCT FROM f.warehouse_id
+		    OR p.ozon_account IS DISTINCT FROM f.ozon_account OR t.state NOT IN ('QUEUED','DISPATCHING','ACKNOWLEDGED','UNKNOWN'))),
+		 COALESCE(bool_or(scope_valid AND NOT fenced AND recovered),false) FROM unknowns`, scope.OzonAccount, v.ProductID, v.WarehouseID).Scan(&t.UncertainWrite, &t.HistoricalUncertainWrite)
 		if err != nil {
 			stockSyncError(w, err)
 			return

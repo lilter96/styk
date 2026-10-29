@@ -10,7 +10,17 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/lilter96/styk/internal/credentials"
+	"github.com/lilter96/styk/internal/domain"
 )
+
+// Every operation locking both providers must use this order. Single-account
+// credential rotations and import commits participate in the same locks.
+func pairedCredentialLockKeys(scope domain.StockSyncScope) []string {
+	return []string{
+		credentials.ScopeKey(credentials.Scope{Provider: "ozon", Account: scope.OzonAccount}),
+		credentials.ScopeKey(credentials.Scope{Provider: "moysklad", Account: scope.MoyskladAccount}),
+	}
+}
 
 const credentialColumns = `tenant_id,provider,account_id,name,revision,enabled,updated_at,checked_at,last_request_id`
 
