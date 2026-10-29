@@ -48,8 +48,11 @@ func TestProviderCoordinationResponseScopes(t *testing.T) {
 		providerSend(t, gate, r, 403, nil)
 		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 		defer cancel()
-		if _, err := gate.Begin(ctx, r); !errors.Is(err, context.DeadlineExceeded) {
+		if _, err := gate.Begin(ctx, r); !errors.Is(err, providercall.ErrMethodForbidden) {
 			t.Fatalf("denied method %v", err)
+		}
+		if _, err := providerCoordinator(t, db).Begin(ctx, r); !errors.Is(err, providercall.ErrMethodForbidden) {
+			t.Fatalf("another coordinator lost the persisted method denial: %v", err)
 		}
 		r.Method = "POST /v3/product/info/list"
 		providerSend(t, gate, r, 200, nil)

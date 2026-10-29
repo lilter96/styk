@@ -15,6 +15,7 @@ var (
 	ErrLeaseLost           = errors.New("provider call permit expired")
 	ErrAlreadyStarted      = errors.New("provider call permit already started")
 	ErrCooldownUnbounded   = errors.New("provider retry delay requires operator review")
+	ErrMethodForbidden     = errors.New("provider operation permission is temporarily denied")
 )
 
 // Scope is bound by the credential factory after tenant authorization. PendingID

@@ -56,14 +56,19 @@ func expireProviderPermits(ctx context.Context, tx pgx.Tx, a providercall.Attemp
 }
 
 func providerDelay(ctx context.Context, tx pgx.Tx, a providercall.Attempt, now time.Time, inflight bool) (time.Duration, error) {
-	var blocked bool
+	var blocked, methodForbidden bool
 	var seconds, occupied float64
-	err := tx.QueryRow(ctx, `SELECT a.cooldown_blocked,GREATEST(0,EXTRACT(epoch FROM GREATEST(a.next_send_at,a.cooldown_until,m.cooldown_until,COALESCE(t.next_send_at,'-infinity'::timestamptz))-$5))::double precision,CASE WHEN $6 AND (SELECT count(*) FROM provider_call_permits p WHERE p.provider=a.provider AND p.account_id=a.account_id AND p.state IN ('reserved','sending') AND p.lease_until>$5)>=a.max_inflight THEN LEAST(0.25,GREATEST(0,EXTRACT(epoch FROM (SELECT min(lease_until) FROM provider_call_permits p WHERE p.provider=a.provider AND p.account_id=a.account_id AND p.state IN ('reserved','sending') AND p.lease_until>$5)-$5)))::double precision ELSE 0 END FROM provider_call_accounts a JOIN provider_call_methods m ON m.provider=a.provider AND m.account_id=a.account_id AND m.method_key=$3 LEFT JOIN provider_call_targets t ON t.provider=a.provider AND t.account_id=a.account_id AND t.target_key=$4 WHERE a.provider=$1 AND a.account_id=$2`, a.Scope.Provider, a.Scope.Account, a.Method, a.TargetKey, now, inflight).Scan(&blocked, &seconds, &occupied)
+	err := tx.QueryRow(ctx, `SELECT a.cooldown_blocked,GREATEST(0,EXTRACT(epoch FROM GREATEST(a.next_send_at,a.cooldown_until,m.cooldown_until,COALESCE(t.next_send_at,'-infinity'::timestamptz))-$5))::double precision,CASE WHEN $6 AND (SELECT count(*) FROM provider_call_permits p WHERE p.provider=a.provider AND p.account_id=a.account_id AND p.state IN ('reserved','sending') AND p.lease_until>$5)>=a.max_inflight THEN LEAST(0.25,GREATEST(0,EXTRACT(epoch FROM (SELECT min(lease_until) FROM provider_call_permits p WHERE p.provider=a.provider AND p.account_id=a.account_id AND p.state IN ('reserved','sending') AND p.lease_until>$5)-$5)))::double precision ELSE 0 END,m.cooldown_until>$5 FROM provider_call_accounts a JOIN provider_call_methods m ON m.provider=a.provider AND m.account_id=a.account_id AND m.method_key=$3 LEFT JOIN provider_call_targets t ON t.provider=a.provider AND t.account_id=a.account_id AND t.target_key=$4 WHERE a.provider=$1 AND a.account_id=$2`, a.Scope.Provider, a.Scope.Account, a.Method, a.TargetKey, now, inflight).Scan(&blocked, &seconds, &occupied, &methodForbidden)
 	if err != nil {
 		return 0, fmt.Errorf("read provider admission delay: %w", err)
 	}
 	if blocked {
 		return 0, providercall.ErrCooldownUnbounded
+	}
+	// Only HTTP 403 sets a method cooldown. Return its precise cause instead
+	// of waiting and turning a known permission denial into a generic timeout.
+	if methodForbidden {
+		return 0, providercall.ErrMethodForbidden
 	}
 	seconds = max(seconds, occupied)
 	if seconds <= 0 {

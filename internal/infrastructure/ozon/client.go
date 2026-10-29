@@ -19,6 +19,7 @@ import (
 
 	"github.com/lilter96/styk/internal/catalog"
 	"github.com/lilter96/styk/internal/domain"
+	"github.com/lilter96/styk/internal/providercall"
 	"github.com/lilter96/styk/internal/testpublication"
 )
 
@@ -242,6 +243,9 @@ func (c *Client) post(ctx context.Context, path string, body any, out any) error
 		retry := false
 		var delay time.Duration
 		if e != nil {
+			if errors.Is(e, providercall.ErrMethodForbidden) {
+				return fmt.Errorf("ozon operation admission denied: %w", providercall.ErrMethodForbidden)
+			}
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
