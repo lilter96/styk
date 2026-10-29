@@ -120,7 +120,7 @@ func assertMerchantHistoryRollbackGuard(t *testing.T, db *postgres.Store, automa
 	if err := db.Pool.QueryRow(context.Background(), `SELECT count(*),count(*) FILTER (WHERE enabled) FROM stock_auto_configs WHERE tenant_id<>$1`, testpublication.Tenant).Scan(&count, &enabled); err != nil || count != 1 || (enabled == 1) != automatic {
 		t.Fatalf("unexpected merchant policy count=%d enabled=%d error=%v", count, enabled, err)
 	}
-	cmd := exec.Command("go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", db.Pool.Config().ConnString(), "down")
+	cmd := exec.Command("go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", db.Pool.Config().ConnString(), "down-to", "38")
 	output, err := cmd.CombinedOutput()
 	if err == nil || !strings.Contains(string(output), "refusing to discard merchant ownership bindings") && !strings.Contains(string(output), "refusing to discard observed Ozon product names") {
 		t.Fatal("migration rollback did not protect merchant publication scope")
