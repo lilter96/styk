@@ -283,6 +283,13 @@ type Poller interface {
 	PollCatalog(context.Context, catalog.Command, catalog.Receipt) (catalog.Receipt, error)
 }
 
+// CreationReader proves absence or resolves one existing target by the command's
+// exact durable marker. CreateID can be a sync ID, never assumed a provider ID.
+// MoySklad creation requires this port; ordinary search cannot prove absence.
+type CreationReader interface {
+	ReadCatalogCreation(context.Context, catalog.Command) (catalog.Snapshot, error)
+}
+
 // Binding asserts exact tenant/account and credential revision checked by the
 // resolver. Service/Runner reject a binding that differs from the frozen scope.
 type Binding struct {
