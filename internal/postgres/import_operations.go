@@ -260,11 +260,26 @@ func (s *Store) CancelCatalogImport(ctx context.Context, tenant, provider, accou
 // lockImportClaim serializes claim replacement, progress and final persistence.
 func lockImportClaim(ctx context.Context, tx pgx.Tx, t domain.Task) error {
 	var id int64
-	err := tx.QueryRow(ctx, `SELECT id FROM outbox_tasks WHERE id=$1 AND import_operation_id=$2 AND task_type IN ('ozon_catalog_import','moysklad_catalog_import') AND state='running' AND claim_token=$3 AND lease_until>clock_timestamp() FOR UPDATE`, t.ID, t.ImportOperationID, t.ClaimToken).Scan(&id)
+	err := tx.QueryRow(ctx, `SELECT id FROM outbox_tasks WHERE id=$1 AND import_operation_id=$2 AND task_type IN ('ozon_catalog_import','moysklad_catalog_import') AND state='running' AND claim_token=$3 FOR UPDATE`, t.ID, t.ImportOperationID, t.ClaimToken).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrImportClaimLost
 	}
-	return err
+	if err != nil {
+		return fmt.Errorf("lock import claim: %w", err)
+	}
+	return checkLockedImportLease(ctx, tx, t.ID)
+}
+
+// The row is already locked; evaluate the database clock after any lock wait.
+func checkLockedImportLease(ctx context.Context, tx pgx.Tx, id int64) error {
+	var valid bool
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(lease_until>clock_timestamp(),false) FROM outbox_tasks WHERE id=$1`, id).Scan(&valid); err != nil {
+		return fmt.Errorf("check import lease: %w", err)
+	}
+	if !valid {
+		return ErrImportClaimLost
+	}
+	return nil
 }
 func (s *Store) ImportForClaim(ctx context.Context, t domain.Task) (domain.ImportOperation, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
@@ -307,6 +322,9 @@ func (s *Store) ImportProgress(ctx context.Context, t domain.Task, phase string,
 		return err
 	}
 	if _, err = tx.Exec(ctx, `UPDATE ozon_import_operations SET phase=$2,counters=$3,progress_at=clock_timestamp() WHERE id=$1`, t.ImportOperationID, phase, raw); err != nil {
+		return err
+	}
+	if err = checkLockedImportLease(ctx, tx, t.ID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -124,20 +125,46 @@ func (s *Store) claim(ctx context.Context, lease time.Duration, account, moyskla
 func (s *Store) Finish(ctx context.Context, t domain.Task, result string, processErr error, delay time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin task completion: %w", err)
+	}
+	defer rollbackTask(tx)
+	var id int64
+	err = tx.QueryRow(ctx, `SELECT id FROM outbox_tasks WHERE id=$1 AND task_type='mock' AND state='running' AND claim_token=$2 FOR UPDATE`, t.ID, t.ClaimToken).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("task %d claim no longer owned", t.ID)
+	}
+	if err != nil {
+		return fmt.Errorf("lock task completion: %w", err)
+	}
 	state := domain.Succeeded
 	msg := ""
 	if processErr != nil {
 		state = domain.FailureState(t.Attempts, t.MaxAttempts)
 		msg = processErr.Error()
 	}
-	tag, err := s.Pool.Exec(ctx, `UPDATE outbox_tasks SET state=$3,result=NULLIF($4,''),last_error=NULLIF($5,''),available_at=now()+$6::interval,lease_until=NULL,claim_token=NULL,updated_at=now() WHERE id=$1 AND task_type='mock' AND state='running' AND claim_token=$2`, t.ID, t.ClaimToken, state, result, msg, delay.String())
+	// Check the clock only after acquiring the row lock. An UPDATE predicate can
+	// otherwise be evaluated before waiting on another transaction's row lock.
+	tag, err := tx.Exec(ctx, `UPDATE outbox_tasks SET state=$3,result=NULLIF($4,''),last_error=NULLIF($5,''),available_at=now()+$6::interval,lease_until=NULL,claim_token=NULL,updated_at=now() WHERE id=$1 AND task_type='mock' AND state='running' AND claim_token=$2 AND lease_until>clock_timestamp()`, t.ID, t.ClaimToken, state, result, msg, delay.String())
 	if err != nil {
 		return fmt.Errorf("finish task: %w", err)
 	}
 	if tag.RowsAffected() != 1 {
 		return fmt.Errorf("task %d claim no longer owned", t.ID)
 	}
+	if err = tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit task completion: %w", err)
+	}
 	return nil
+}
+
+func rollbackTask(tx pgx.Tx) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+		slog.Error("task transaction rollback unavailable")
+	}
 }
 
 // Exhausted leases are terminal because their final attempt may have died before completion.
@@ -164,12 +191,23 @@ func (s *Store) ExpireExhausted(ctx context.Context) error {
 func (s *Store) RenewImportClaim(ctx context.Context, t domain.Task, lease time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
-	tag, err := s.Pool.Exec(ctx, `UPDATE outbox_tasks SET lease_until=clock_timestamp()+$3::interval,updated_at=clock_timestamp() WHERE id=$1 AND claim_token=$2 AND task_type IN ('ozon_catalog_import','moysklad_catalog_import') AND state='running' AND lease_until>clock_timestamp()`, t.ID, t.ClaimToken, lease.String())
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin import renewal: %w", err)
+	}
+	defer rollbackTask(tx)
+	if err = lockImportClaim(ctx, tx, t); err != nil {
+		return err
+	}
+	tag, err := tx.Exec(ctx, `UPDATE outbox_tasks SET lease_until=clock_timestamp()+$3::interval,updated_at=clock_timestamp() WHERE id=$1 AND claim_token=$2 AND task_type IN ('ozon_catalog_import','moysklad_catalog_import') AND state='running' AND lease_until>clock_timestamp()`, t.ID, t.ClaimToken, lease.String())
 	if err != nil {
 		return fmt.Errorf("renew import claim: %w", err)
 	}
 	if tag.RowsAffected() != 1 {
 		return ErrImportClaimLost
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit import renewal: %w", err)
 	}
 	return nil
 }
