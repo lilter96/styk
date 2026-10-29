@@ -17,9 +17,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/lilter96/styk/internal/application"
 	"github.com/lilter96/styk/internal/console"
 	"github.com/lilter96/styk/internal/credentials"
@@ -80,7 +82,7 @@ func runMerchantBrowser(t *testing.T, automatic bool) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
 	defer cancel()
-	startMerchantImportWorker(t, ctx, db, vault, providerServer.URL, automatic)
+	stopWorker := startMerchantImportWorker(t, ctx, db, vault, providerServer.URL, automatic)
 	mailbox := &testMailbox{tokens: map[string]string{}}
 	handler, err := console.MerchantLoopbackTestHandler(db, "http://127.0.0.1:15179", mailbox, providerServer.URL, providerServer.URL)
 	if err != nil {
@@ -96,6 +98,7 @@ func runMerchantBrowser(t *testing.T, automatic bool) {
 	if automatic && (provider.writes.Load() != 1 || provider.stockB.Load() != 2) {
 		t.Fatalf("simulator did not receive exactly one scoped publication: writes=%d stock=%d", provider.writes.Load(), provider.stockB.Load())
 	}
+	stopWorker()
 	assertMerchantHistoryRollbackGuard(t, db, automatic)
 }
 
@@ -120,11 +123,47 @@ func assertMerchantHistoryRollbackGuard(t *testing.T, db *postgres.Store, automa
 	if err := db.Pool.QueryRow(context.Background(), `SELECT count(*),count(*) FILTER (WHERE enabled) FROM stock_auto_configs WHERE tenant_id<>$1`, testpublication.Tenant).Scan(&count, &enabled); err != nil || count != 1 || (enabled == 1) != automatic {
 		t.Fatalf("unexpected merchant policy count=%d enabled=%d error=%v", count, enabled, err)
 	}
-	cmd := exec.Command("go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", db.Pool.Config().ConnString(), "down-to", "38")
-	output, err := cmd.CombinedOutput()
-	if err == nil || !strings.Contains(string(output), "refusing to discard merchant ownership bindings") && !strings.Contains(string(output), "refusing to discard observed Ozon product names") {
-		t.Fatal("migration rollback did not protect merchant publication scope")
+	before := merchantRollbackSnapshot(t, db)
+	merchantRollbackRejected(t, db)
+	after := merchantRollbackSnapshot(t, db)
+	for table, digest := range before {
+		if after[table] != digest {
+			t.Errorf("guarded rollback changed merchant history in %s", table)
+		}
 	}
+}
+
+func merchantRollbackSnapshot(t *testing.T, db *postgres.Store) map[string]string {
+	t.Helper()
+	history := make(map[string]string)
+	for _, table := range []string{"saas_merchant_accounts", "stock_connections", "stock_auto_configs", "stock_auto_config_audits", "order_evidence_progress", "moy_order_batches", "ozon_posting_batches", "provider_call_accounts", "provider_call_permits"} {
+		query := `SELECT count(*)::text||':'||COALESCE(md5(jsonb_agg(to_jsonb(entry) ORDER BY to_jsonb(entry)::text)::text),'empty') FROM ` + pgx.Identifier{table}.Sanitize() + ` entry`
+		var digest string
+		if err := db.Pool.QueryRow(context.Background(), query).Scan(&digest); err != nil {
+			t.Fatalf("read merchant rollback evidence for %s: %v", table, err)
+		}
+		history[table] = digest
+	}
+	return history
+}
+
+func merchantRollbackRejected(t *testing.T, db *postgres.Store) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", db.Pool.Config().ConnString(), "down-to", "38")
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("migration rollback discarded merchant publication history")
+	}
+	for _, reason := range []string{"refusing to discard merchant ownership bindings", "refusing to discard observed Ozon product names", "refusing to discard active provider coordination or attempt history"} {
+		if strings.Contains(string(output), "ERROR: "+reason+" (SQLSTATE") {
+			t.Logf("migration rollback rejected by safety guard: %s", reason)
+			return
+		}
+	}
+	redacted := strings.ReplaceAll(string(output), db.Pool.Config().ConnString(), "[private local test DSN]")
+	t.Fatalf("migration rollback failed without an expected history guard: %s", redacted)
 }
 
 func seedMerchantBrowserCredentials(t *testing.T, db *postgres.Store, vault *credentials.Vault) {
@@ -146,7 +185,7 @@ func seedMerchantBrowserCredentials(t *testing.T, db *postgres.Store, vault *cre
 	}
 }
 
-func startMerchantImportWorker(t *testing.T, ctx context.Context, db *postgres.Store, vault *credentials.Vault, base string, automatic bool) {
+func startMerchantImportWorker(t *testing.T, ctx context.Context, db *postgres.Store, vault *credentials.Vault, base string, automatic bool) func() {
 	t.Helper()
 	resolver := &credentials.Resolver{Store: db, Vault: vault}
 	imports := ozonjob.Runner{Store: db, Resolver: resolver, NewOzon: func(account, secret string) (*ozon.Client, error) {
@@ -172,12 +211,22 @@ func startMerchantImportWorker(t *testing.T, ctx context.Context, db *postgres.S
 	done := make(chan error, 1)
 	workerCtx, stop := context.WithCancel(ctx)
 	go func() { done <- worker.Run(workerCtx) }()
-	t.Cleanup(func() {
-		stop()
-		if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
-			t.Errorf("stop synthetic worker: %v", err)
-		}
-	})
+	stopWorker := merchantWorkerStop(t, stop, done)
+	t.Cleanup(stopWorker)
+	return stopWorker
+}
+
+func merchantWorkerStop(t *testing.T, cancel context.CancelFunc, done <-chan error) func() {
+	t.Helper()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			cancel()
+			if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+				t.Errorf("stop synthetic worker: %v", err)
+			}
+		})
+	}
 }
 
 func merchantBrowserAPI(t *testing.T, db *postgres.Store, mailbox *testMailbox, handler http.Handler) *httptest.Server {
