@@ -38,6 +38,16 @@ type AutoView = {
     publication_id?: string;
     metrics: Record<string, unknown>;
   };
+  unresolved?: {
+    operation_id: string;
+    ozon_product_id: string;
+    ozon_warehouse_id: string;
+    quantity: string;
+    state: string;
+    dispatched_at?: string;
+    readback_at?: string;
+    readback_quantity?: string;
+  }[];
 };
 
 const outcomes: Record<string, string> = {
@@ -62,6 +72,8 @@ const outcomes: Record<string, string> = {
   READ_CONFIGURATION_ERROR:
     "Не удалось прочитать данные. Проверьте подключение.",
   TRAVERSAL_SUPERSEDED: "Данные загрузки изменились. Запустите новую проверку.",
+  TARGETS_NEED_ATTENTION:
+    "Некоторые товары требуют проверки; остальные продолжают проверяться.",
 };
 
 export function AutomaticStockControls({
@@ -91,7 +103,7 @@ export function AutomaticStockControls({
     enabled = !!data?.policy?.enabled;
   const [open, setOpen] = useState(false),
     [ack, setAck] = useState(false),
-    [selected, setSelected] = useState(""),
+    [selected, setSelected] = useState<string[] | null>(null),
     [interval, setInterval] = useState("60"),
     [validMinutes, setValidMinutes] = useState("240"),
     [safety, setSafety] = useState("0"),
@@ -106,18 +118,21 @@ export function AutomaticStockControls({
     onEnabledChange(enabled);
   }, [enabled, onEnabledChange]);
   useEffect(() => {
-    setSelected("");
+    setSelected(null);
     setOpen(false);
     setAck(false);
     setPending(null);
     setMessage("");
   }, [scope.tenant, scope.moysklad_account, scope.ozon_account]);
   if (!data?.available) return null;
-  const current =
-    targets.find(
-      (t) => `${t.ozon_product_id}:${t.ozon_warehouse_id}` === selected,
-    ) || targets[0];
+  const keyFor = (t: Target) => `${t.ozon_product_id}:${t.ozon_warehouse_id}`;
+  const selection = selected ?? targets.slice(0, 1).map(keyFor);
+  const selectedTargets = targets.filter((t) => selection.includes(keyFor(t)));
+  const current = selectedTargets[0];
   const cycle = data.last_cycle;
+  const needsAttention =
+    cycle?.state === "BLOCKED" ||
+    Number(cycle?.metrics?.blocked_targets || 0) > 0;
   const activeCycle =
     cycle &&
     ["STARTING", "READING", "WAITING_PUBLICATION"].includes(cycle.state);
@@ -190,12 +205,25 @@ export function AutomaticStockControls({
         ? {
             interval_seconds: Number(interval),
             valid_minutes: Number(validMinutes),
-            ozon_product_id: current.ozon_product_id,
-            ozon_warehouse_id: current.ozon_warehouse_id,
-            safety_stock: safety,
-            unreflected,
-            unseen_bound: bound,
-            maximum: Number(maximum),
+            ...(selectedTargets.length === 1
+              ? {
+                  ozon_product_id: current.ozon_product_id,
+                  ozon_warehouse_id: current.ozon_warehouse_id,
+                  safety_stock: safety,
+                  unreflected,
+                  unseen_bound: bound,
+                  maximum: Number(maximum),
+                }
+              : {
+                  targets: selectedTargets.map((t) => ({
+                    ozon_product_id: t.ozon_product_id,
+                    ozon_warehouse_id: t.ozon_warehouse_id,
+                    safety_stock: safety,
+                    unreflected,
+                    unseen_bound: bound,
+                    maximum: Number(maximum),
+                  })),
+                }),
           }
         : {}),
     };
@@ -222,14 +250,46 @@ export function AutomaticStockControls({
       setBusy(false);
     }
   }
+  async function inspectOperation(id: string) {
+    if (busy || pending) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      await post(
+        `/api/stock-sync/operations/${id}/reconcile`,
+        { ...scope, acknowledge: true },
+        AbortSignal.timeout(30000),
+      );
+      await Promise.all([
+        query.refetch(),
+        client.invalidateQueries({
+          queryKey: [
+            "stock-sync",
+            scope.tenant,
+            scope.moysklad_account,
+            scope.ozon_account,
+          ],
+        }),
+      ]);
+    } catch {
+      setMessage(
+        "Не удалось уточнить остаток Ozon. Повторная отправка не выполнялась.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <>
-      <section className="sync-card" aria-label="Автоматическая синхронизация">
+      <section
+        className="sync-card automatic-stock-card"
+        aria-label="Автоматическая синхронизация"
+      >
         <div>
           <div className="provider-heading">
             <h2>Автоматическая синхронизация</h2>
             <span
-              className={`connection-state ${cycle?.state === "BLOCKED" || expired ? "warning" : enabled ? "verified" : ""}`}
+              className={`connection-state ${needsAttention || expired ? "warning" : enabled ? "verified" : ""}`}
             >
               {!enabled
                 ? "Выключена"
@@ -237,7 +297,7 @@ export function AutomaticStockControls({
                   ? "Нужна проверка"
                   : activeCycle
                     ? "Проверяем остатки"
-                    : cycle?.state === "BLOCKED"
+                    : needsAttention
                       ? "Требуется внимание"
                       : cycle?.outcome === "NO_CHANGE" ||
                           cycle?.outcome === "RECONCILED"
@@ -257,8 +317,9 @@ export function AutomaticStockControls({
             <p>
               МойСклад: {value("source_physical", current?.source_physical)} шт.
               · Резерв: {value("source_reserve", current?.source_reserve)} ·
-              Ozon: {number(latestMarket ?? current?.marketplace_free)} ·
-              Расчётный остаток: {value("candidate", current?.quantity)}
+              Ozon{activeCycle ? " (последняя загрузка)" : ""}:{" "}
+              {number(latestMarket ?? current?.marketplace_free)} · Расчётный
+              остаток: {value("candidate", current?.quantity)}
             </p>
           )}
           {data.last_cycle_at && (
@@ -266,6 +327,41 @@ export function AutomaticStockControls({
               Последняя проверка:{" "}
               {new Date(data.last_cycle_at).toLocaleString("ru-RU")}.
             </p>
+          )}
+          {!!data.unresolved?.length && (
+            <details className="technical-details">
+              <summary>
+                Отправки, требующие проверки ({data.unresolved.length})
+              </summary>
+              {data.unresolved.map((item) => (
+                <div key={item.operation_id}>
+                  <p>
+                    Товар {item.ozon_product_id} · склад{" "}
+                    {item.ozon_warehouse_id} · запрос {item.quantity} шт.
+                  </p>
+                  <p>
+                    {item.state === "UNKNOWN"
+                      ? "Ответ Ozon не подтверждён; повторная отправка заблокирована."
+                      : "Ozon ответил, но остаток ещё проверяется."}{" "}
+                    {item.dispatched_at &&
+                      `Попытка: ${new Date(item.dispatched_at).toLocaleString("ru-RU")}.`}
+                  </p>
+                  <p>
+                    Последний остаток: {item.readback_quantity ?? "нет данных"}
+                    {item.readback_at &&
+                      ` · ${new Date(item.readback_at).toLocaleString("ru-RU")}`}
+                    .
+                  </p>
+                  <button
+                    className="text-action"
+                    disabled={busy || !!pending}
+                    onClick={() => void inspectOperation(item.operation_id)}
+                  >
+                    Уточнить этот результат
+                  </button>
+                </div>
+              ))}
+            </details>
           )}
           {enabled && data.next_run_at && (
             <p>
@@ -319,7 +415,9 @@ export function AutomaticStockControls({
                   if (policy) setInterval(String(policy.interval_seconds));
                   if (target) {
                     setSelected(
-                      `${target.ozon_product_id}:${target.ozon_warehouse_id}`,
+                      policy?.targets.map(
+                        (t) => `${t.ozon_product_id}:${t.ozon_warehouse_id}`,
+                      ) || [],
                     );
                     setSafety(target.safety_stock);
                     setUnreflected(target.unreflected);
@@ -356,27 +454,47 @@ export function AutomaticStockControls({
               остатки и отправлять изменения в Ozon. Положительный остаток может
               быть доступен реальным покупателям.
             </p>
-            <label className="integration-field">
-              Товар и склад
-              <select
-                value={
-                  selected ||
-                  (current
-                    ? `${current.ozon_product_id}:${current.ozon_warehouse_id}`
-                    : "")
-                }
-                onChange={(e) => setSelected(e.target.value)}
-              >
+            {targets.length > 1 ? (
+              <fieldset className="integration-field">
+                <legend>Товары и склады для синхронизации</legend>
                 {targets.map((t) => (
-                  <option
-                    key={`${t.ozon_product_id}:${t.ozon_warehouse_id}`}
-                    value={`${t.ozon_product_id}:${t.ozon_warehouse_id}`}
-                  >
+                  <label className="integration-ack" key={keyFor(t)}>
+                    <input
+                      type="checkbox"
+                      checked={selection.includes(keyFor(t))}
+                      onChange={(e) =>
+                        setSelected(
+                          e.target.checked
+                            ? [...selection, keyFor(t)]
+                            : selection.filter((v) => v !== keyFor(t)),
+                        )
+                      }
+                    />
                     Товар {t.ozon_product_id}, склад {t.ozon_warehouse_id}
-                  </option>
+                  </label>
                 ))}
-              </select>
-            </label>
+              </fieldset>
+            ) : (
+              <label className="integration-field">
+                Товар и склад
+                <select
+                  value={current ? keyFor(current) : ""}
+                  onChange={(e) => setSelected([e.target.value])}
+                >
+                  {targets.map((t) => (
+                    <option key={keyFor(t)} value={keyFor(t)}>
+                      Товар {t.ozon_product_id}, склад {t.ozon_warehouse_id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {selectedTargets.length > 1 && (
+              <p>
+                Указанные ниже количества и предел применяются к каждой
+                выбранной паре.
+              </p>
+            )}
             <label className="integration-field">
               Интервал проверки, секунд
               <input

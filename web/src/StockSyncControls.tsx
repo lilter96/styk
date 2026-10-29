@@ -42,6 +42,8 @@ type Publication = SyncScope & {
     safe_error?: string;
     dispatched_at?: string;
     http_status?: number;
+    provider_updated?: boolean;
+    provider_error_codes?: string[];
     acknowledged_at?: string;
     readback_at?: string;
     readback_quantity?: string;
@@ -775,6 +777,9 @@ export function StockSyncControls({
                       · <code>{target.safe_error}</code>
                     </>
                   )}
+                  {target.provider_error_codes?.length ? (
+                    <> · Коды Ozon: {target.provider_error_codes.join(", ")}</>
+                  ) : null}
                 </p>
               ))}
             </details>

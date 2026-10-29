@@ -1023,6 +1023,10 @@ body {
   flex-wrap: wrap;
   flex: none;
 }
+.automatic-stock-card {
+  align-items: flex-start;
+  flex-direction: column;
+}
 .support-facts {
   display: grid;
   grid-template-columns: 130px minmax(0, 1fr);
