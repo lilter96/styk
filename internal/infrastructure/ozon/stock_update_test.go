@@ -142,11 +142,14 @@ func TestStockWritePartialResultsAndFrozenPayload(t *testing.T) {
 		if _, exists := body.Stocks[0]["offer_id"]; exists {
 			t.Error("ambiguous product/offer precedence")
 		}
-		fmt.Fprint(w, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]},{"product_id":124,"warehouse_id":456,"updated":false,"errors":[{"code":"PRICE_IS_NOT_SENT","message":"synthetic-private-key"}]}]}`)
+		fmt.Fprint(w, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]},{"product_id":124,"warehouse_id":456,"updated":false,"errors":[{"code":"PRICE_IS_NOT_SENT","message":"synthetic-private-key"},{"code":"INVALID_ARGUMENT"},{"code":"synthetic-private-key"}]}]}`)
 	})
 	result, err := c.UpdateStocks(context.Background(), []StockUpdate{{"123", "456", 0}, {"124", "456", 8}})
 	if err != nil || len(result) != 2 || result[0].State != "SUCCEEDED" || result[1].State != "UNKNOWN" || result[1].SafeError != "PRICE_IS_NOT_SENT" {
 		t.Fatalf("incorrect partial results: %#v %v", result, err)
+	}
+	if result[0].Updated == nil || !*result[0].Updated || result[1].Updated == nil || *result[1].Updated || len(result[1].ErrorCodes) != 3 || result[1].ErrorCodes[0] != "PRICE_IS_NOT_SENT" || result[1].ErrorCodes[1] != "INVALID_ARGUMENT" || result[1].ErrorCodes[2] != "MARKETPLACE_REJECTED" {
+		t.Fatalf("per-target response lost or exposed unsafe text: %+v", result)
 	}
 }
 func TestStockWriteMissingMalformedOrDuplicateResultsAreUnknown(t *testing.T) {

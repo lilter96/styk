@@ -135,6 +135,10 @@ func TestStockShadowProjectionBoundaries(t *testing.T) {
 			if tc.name == "explicit zero" {
 				f.attest[0].SafetyStock = "0"
 				f.enable(t)
+				approved, err := f.db.StockSyncStatus(ctx, f.scope, time.Now().UTC())
+				if err != nil || len(approved.Targets) != 1 || approved.Targets[0].Quantity == nil || *approved.Targets[0].Quantity != "0" {
+					t.Fatalf("approved simulation lost the explicit zero: %+v %v", approved.Targets, err)
+				}
 			}
 			get := shadowClient(t, f)
 			var before, after [4]int
@@ -167,8 +171,8 @@ func TestStockShadowProjectionBoundaries(t *testing.T) {
 					t.Fatal("invalid calculation exposed candidate")
 				}
 			}
-			if tc.name == "explicit zero" && (got.Targets[0].Physical == nil || *got.Targets[0].Physical != "0" || actual == nil || *actual != "0") {
-				t.Fatal("explicit zero was lost")
+			if tc.name == "explicit zero" && (got.Targets[0].Physical == nil || *got.Targets[0].Physical != "0" || actual != nil) {
+				t.Fatal("explicit source zero was lost or an unapproved assumption produced a candidate")
 			}
 			other := f.scope
 			other.Tenant = "other-tenant"

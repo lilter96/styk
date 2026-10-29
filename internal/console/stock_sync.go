@@ -153,7 +153,7 @@ func (a *stockSyncAPI) shadow(w http.ResponseWriter, r *http.Request) {
 		// target passed its checks. Other targets can still block the whole scope.
 		t.Candidate = v.Quantity
 		for _, proof := range d.Evidence.Proofs {
-			if proof.State == domain.ProofVerified && !proof.ValidUntil.IsZero() && !proof.ValidUntil.After(now) {
+			if (proof.State == domain.ProofVerified || proof.State == domain.ProofAttested) && !proof.ValidUntil.IsZero() && !proof.ValidUntil.After(now) {
 				t.ExpiredEvidence = true
 			}
 		}

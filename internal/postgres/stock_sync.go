@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/lilter96/styk/internal/commitment"
+	"github.com/lilter96/styk/internal/config"
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/testpublication"
 )
@@ -148,7 +149,14 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 			review.Checks = append(review.Checks, domain.StockSyncCheck{Code: "OUT_OF_ORDER_IMPORT", Message: "Обнаружены пересекающиеся загрузки в неверном порядке. Повторите загрузку перед отправкой."})
 		}
 	}
-	rows, err := tx.Query(ctx, `SELECT pm.ozon_product_id,pm.target_kind,pm.target_id,wm.ozon_warehouse_id,wm.moysklad_warehouse_id FROM product_mappings pm CROSS JOIN warehouse_mappings wm WHERE pm.tenant_id=$1 AND pm.moysklad_account=$2 AND pm.ozon_account=$3 AND wm.tenant_id=pm.tenant_id AND wm.moysklad_account=pm.moysklad_account AND wm.ozon_account=pm.ozon_account AND wm.status='active' ORDER BY pm.ozon_product_id,wm.ozon_warehouse_id LIMIT 101`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount)
+	var automaticProducts, automaticWarehouses []string
+	for _, a := range attestations {
+		if a.AutomaticPolicyRevision != 0 {
+			automaticProducts = append(automaticProducts, a.ProductID)
+			automaticWarehouses = append(automaticWarehouses, a.WarehouseID)
+		}
+	}
+	rows, err := tx.Query(ctx, `SELECT pm.ozon_product_id,pm.target_kind,pm.target_id,wm.ozon_warehouse_id,wm.moysklad_warehouse_id FROM product_mappings pm CROSS JOIN warehouse_mappings wm WHERE pm.tenant_id=$1 AND pm.moysklad_account=$2 AND pm.ozon_account=$3 AND wm.tenant_id=pm.tenant_id AND wm.moysklad_account=pm.moysklad_account AND wm.ozon_account=pm.ozon_account AND wm.status='active' AND (NOT $4::boolean OR EXISTS(SELECT 1 FROM unnest($5::text[],$6::text[]) AS selected(product_id,warehouse_id) WHERE selected.product_id=pm.ozon_product_id AND selected.warehouse_id=wm.ozon_warehouse_id)) ORDER BY pm.ozon_product_id,wm.ozon_warehouse_id LIMIT 101`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, len(automaticProducts) > 0, automaticProducts, automaticWarehouses)
 	if err != nil {
 		return review, err
 	}
@@ -193,7 +201,8 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 	}
 	for _, t := range targets {
 		a, attested := inputs[t.pid+":"+t.wid]
-		r := domain.StockCalculationRequest{Pool: domain.StockPool{Tenant: scope.Tenant, MoyskladAccount: scope.MoyskladAccount, WarehouseID: t.sourceWarehouse, ItemKind: t.kind, ItemID: t.item}, Target: domain.StockTarget{OzonAccount: scope.OzonAccount, WarehouseID: t.wid, ProductID: t.pid}, Policy: domain.StockCalculationPolicy{Version: 1, Unit: "piece", SafetyStock: a.SafetyStock, MaxObservationAge: 15 * time.Minute, DecisionLifetime: 2 * time.Minute, AcceptOperatorAttested: testpublication.Enabled(scope)}}
+		_, simulator := config.StockPublicationTestEndpoint()
+		r := domain.StockCalculationRequest{Pool: domain.StockPool{Tenant: scope.Tenant, MoyskladAccount: scope.MoyskladAccount, WarehouseID: t.sourceWarehouse, ItemKind: t.kind, ItemID: t.item}, Target: domain.StockTarget{OzonAccount: scope.OzonAccount, WarehouseID: t.wid, ProductID: t.pid}, Policy: domain.StockCalculationPolicy{Version: 1, Unit: "piece", SafetyStock: a.SafetyStock, MaxObservationAge: 15 * time.Minute, DecisionLifetime: 2 * time.Minute, AcceptOperatorAttested: testpublication.Enabled(scope) || simulator}}
 		var automaticTarget *domain.AutomaticStockTarget
 		automaticValid := a.AutomaticPolicyRevision == 0
 		if a.AutomaticPolicyRevision != 0 {
@@ -235,11 +244,7 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 			e.Unreflected = &a.Unreflected
 			e.UnseenBound = &a.UnseenBound
 			for _, p := range a.Proofs {
-				state := domain.ProofVerified
-				if r.Policy.AcceptOperatorAttested {
-					state = domain.ProofAttested
-				}
-				e.Proofs[p.Code] = domain.StockProof{State: state, EvidenceClass: "OPERATOR_ATTESTED", Reference: "operator-attested: " + p.Reference, AsOf: p.AsOf, ValidUntil: p.ValidUntil}
+				e.Proofs[p.Code] = domain.StockProof{State: domain.ProofAttested, EvidenceClass: "OPERATOR_ATTESTED", Reference: "operator-attested: " + p.Reference, AsOf: p.AsOf, ValidUntil: p.ValidUntil}
 			}
 		}
 		d := commitment.Evaluate(r, e, now)
@@ -791,7 +796,7 @@ func readPublication(ctx context.Context, tx pgx.Tx, scope domain.StockSyncScope
 	if err != nil {
 		return op, err
 	}
-	rows, err := tx.Query(ctx, `SELECT id,product_id,warehouse_id,quantity,state,safe_error,dispatched_at,finished_at,decision,acknowledged_at,readback_at,readback_quantity,http_status FROM stock_publication_targets WHERE operation_id=$1 ORDER BY id LIMIT 100`, id)
+	rows, err := tx.Query(ctx, `SELECT id,product_id,warehouse_id,quantity,state,safe_error,dispatched_at,finished_at,decision,acknowledged_at,readback_at,readback_quantity,http_status,provider_updated,provider_error_codes FROM stock_publication_targets WHERE operation_id=$1 ORDER BY id LIMIT 100`, id)
 	if err != nil {
 		return op, err
 	}
@@ -800,7 +805,7 @@ func readPublication(ctx context.Context, tx pgx.Tx, scope domain.StockSyncScope
 	for rows.Next() {
 		v := domain.StockPublicationTarget{OperationID: id}
 		var raw []byte
-		if err = rows.Scan(&v.ID, &v.ProductID, &v.WarehouseID, &v.Quantity, &v.State, &v.SafeError, &v.DispatchedAt, &v.FinishedAt, &raw, &v.AcknowledgedAt, &v.ReadbackAt, &v.ReadbackQuantity, &v.HTTPStatus); err != nil {
+		if err = rows.Scan(&v.ID, &v.ProductID, &v.WarehouseID, &v.Quantity, &v.State, &v.SafeError, &v.DispatchedAt, &v.FinishedAt, &raw, &v.AcknowledgedAt, &v.ReadbackAt, &v.ReadbackQuantity, &v.HTTPStatus, &v.ProviderUpdated, &v.ProviderErrorCodes); err != nil {
 			return op, err
 		}
 		if err = json.Unmarshal(raw, &v.Decision); err != nil {

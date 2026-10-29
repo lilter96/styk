@@ -95,21 +95,23 @@ type StockSyncReview struct {
 	OzonCredentialRevision     int64                  `json:"ozon_credential_revision"`
 }
 type StockPublicationTarget struct {
-	ID               int64                      `json:"id"`
-	OperationID      string                     `json:"operation_id"`
-	ProductID        string                     `json:"ozon_product_id"`
-	WarehouseID      string                     `json:"ozon_warehouse_id"`
-	Quantity         string                     `json:"quantity"`
-	State            string                     `json:"state"`
-	SafeError        string                     `json:"safe_error,omitempty"`
-	DispatchedAt     *time.Time                 `json:"dispatched_at,omitempty"`
-	FinishedAt       *time.Time                 `json:"finished_at,omitempty"`
-	AcknowledgedAt   *time.Time                 `json:"acknowledged_at,omitempty"`
-	ReadbackAt       *time.Time                 `json:"readback_at,omitempty"`
-	ReadbackQuantity *string                    `json:"readback_quantity,omitempty"`
-	HTTPStatus       *int                       `json:"http_status,omitempty"`
-	Readbacks        []StockPublicationReadback `json:"readbacks,omitempty"`
-	Decision         StockDecision              `json:"decision"`
+	ID                 int64                      `json:"id"`
+	OperationID        string                     `json:"operation_id"`
+	ProductID          string                     `json:"ozon_product_id"`
+	WarehouseID        string                     `json:"ozon_warehouse_id"`
+	Quantity           string                     `json:"quantity"`
+	State              string                     `json:"state"`
+	SafeError          string                     `json:"safe_error,omitempty"`
+	DispatchedAt       *time.Time                 `json:"dispatched_at,omitempty"`
+	FinishedAt         *time.Time                 `json:"finished_at,omitempty"`
+	AcknowledgedAt     *time.Time                 `json:"acknowledged_at,omitempty"`
+	ReadbackAt         *time.Time                 `json:"readback_at,omitempty"`
+	ReadbackQuantity   *string                    `json:"readback_quantity,omitempty"`
+	HTTPStatus         *int                       `json:"http_status,omitempty"`
+	ProviderUpdated    *bool                      `json:"provider_updated,omitempty"`
+	ProviderErrorCodes []string                   `json:"provider_error_codes,omitempty"`
+	Readbacks          []StockPublicationReadback `json:"readbacks,omitempty"`
+	Decision           StockDecision              `json:"decision"`
 }
 type StockPublicationReadback struct {
 	ObservedAt time.Time `json:"observed_at"`

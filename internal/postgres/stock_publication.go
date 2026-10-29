@@ -42,7 +42,7 @@ func (s *Store) RefreshStockSync(ctx context.Context, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT tenant_id,moysklad_account,ozon_account FROM stock_sync_settings WHERE enabled AND last_proof_check_at<$1 ORDER BY last_proof_check_at LIMIT 5`, now.Add(-5*time.Second))
+	rows, err := s.Pool.Query(ctx, `SELECT s.tenant_id,s.moysklad_account,s.ozon_account FROM stock_sync_settings s WHERE s.enabled AND s.last_proof_check_at<$1 AND NOT EXISTS(SELECT 1 FROM stock_auto_configs a WHERE a.tenant_id=s.tenant_id AND a.moysklad_account=s.moysklad_account AND a.ozon_account=s.ozon_account AND a.enabled) ORDER BY s.last_proof_check_at LIMIT 5`, now.Add(-5*time.Second))
 	if err != nil {
 		return err
 	}
@@ -71,6 +71,13 @@ func (s *Store) refreshStockScope(ctx context.Context, scope domain.StockSyncSco
 	// Controlled real-account requests require a fresh operator review each
 	// time; a worker must never turn this scope into recurring publication.
 	if scope == testpublication.Scope() {
+		return nil
+	}
+	var automatic bool
+	if err := s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_auto_configs WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND enabled)`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount).Scan(&automatic); err != nil {
+		return err
+	}
+	if automatic {
 		return nil
 	}
 	tx, err := s.Pool.Begin(ctx)
@@ -156,6 +163,12 @@ func (s *Store) refreshStockScope(ctx context.Context, scope domain.StockSyncSco
 
 // NextStockPublication atomically fences a write before I/O. Dispatching claims
 // have no lease retry path. A crash can become UNKNOWN, never QUEUED again.
+func (s *Store) IsAutomaticPublication(ctx context.Context, scope domain.StockSyncScope, id string) (bool, error) {
+	var result bool
+	err := s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_auto_cycles WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND publication_id=$4)`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, id).Scan(&result)
+	return result, err
+}
+
 func (s *Store) NextStockPublication(ctx context.Context, now time.Time) (*domain.StockPublication, error) {
 	return s.nextStockPublication(ctx, now, nil)
 }
@@ -335,6 +348,22 @@ func (s *Store) FinishStockTarget(ctx context.Context, scope domain.StockSyncSco
 // FinishStockTargetHTTP persists the provider acknowledgement or uncertainty
 // together with the controlled outbox result. It never reschedules a write.
 func (s *Store) FinishStockTargetHTTP(ctx context.Context, scope domain.StockSyncScope, operationID string, targetID int64, state, code string, status *int, now time.Time) error {
+	return s.finishStockTargetResult(ctx, scope, operationID, targetID, state, code, status, nil, nil, now)
+}
+
+// FinishStockTargetProvider stores only bounded, sanitized provider error codes
+// together with the per-target updated flag and the existing durable outcome.
+func (s *Store) FinishStockTargetProvider(ctx context.Context, scope domain.StockSyncScope, operationID string, targetID int64, state, code string, status *int, updated *bool, codes []string, now time.Time) error {
+	if updated == nil && len(codes) > 0 {
+		return errors.New("provider codes require an updated result")
+	}
+	if len(codes) > 32 {
+		return errors.New("too many provider error codes")
+	}
+	return s.finishStockTargetResult(ctx, scope, operationID, targetID, state, code, status, updated, codes, now)
+}
+
+func (s *Store) finishStockTargetResult(ctx context.Context, scope domain.StockSyncScope, operationID string, targetID int64, state, code string, status *int, updated *bool, codes []string, now time.Time) error {
 	if state != "SUCCEEDED" && state != "ACKNOWLEDGED" && state != "FAILED" && state != "UNKNOWN" && state != "BLOCKED" && state != "CANCELLED" && state != "CONFIRMED_EFFECTIVE" {
 		return errors.New("invalid publication result")
 	}
@@ -352,8 +381,8 @@ func (s *Store) FinishStockTargetHTTP(ctx context.Context, scope domain.StockSyn
 	if state == "CONFIRMED_EFFECTIVE" {
 		allowed = "UNKNOWN"
 	}
-	query := `UPDATE stock_publication_targets t SET state=$6,safe_error=$7,finished_at=$8,acknowledged_at=CASE WHEN $6='ACKNOWLEDGED' THEN $8 ELSE t.acknowledged_at END,http_status=COALESCE($10,t.http_status) FROM stock_publications p WHERE t.operation_id=p.id AND p.id=$4 AND t.id=$5 AND p.tenant_id=$1 AND p.moysklad_account=$2 AND p.ozon_account=$3 AND t.state=$9`
-	tag, err := tx.Exec(ctx, query, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, operationID, targetID, state, code, now, allowed, status)
+	query := `UPDATE stock_publication_targets t SET state=$6,safe_error=$7,finished_at=$8,acknowledged_at=CASE WHEN $6='ACKNOWLEDGED' THEN $8 ELSE t.acknowledged_at END,http_status=COALESCE($10,t.http_status),provider_updated=COALESCE($11,t.provider_updated),provider_error_codes=CASE WHEN $11::boolean IS NOT NULL THEN COALESCE($12::text[],'{}'::text[]) ELSE t.provider_error_codes END FROM stock_publications p WHERE t.operation_id=p.id AND p.id=$4 AND t.id=$5 AND p.tenant_id=$1 AND p.moysklad_account=$2 AND p.ozon_account=$3 AND t.state=$9`
+	tag, err := tx.Exec(ctx, query, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, operationID, targetID, state, code, now, allowed, status, updated, codes)
 	if err != nil {
 		return err
 	}

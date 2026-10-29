@@ -42,6 +42,7 @@ func TestConditionalCalculationAndReflection(t *testing.T) {
 	for _, tc := range []struct{ name, physical, reserve, unreflected, safety, bound, want string }{
 		{"unreflected", "10", "1", "2", "1", "0", "6"},
 		{"fully reflected", "10", "3", "0", "1", "0", "6"},
+		{"reservation subtracted once", "10", "3", "0", "0", "0", "7"},
 		{"partially reflected", "10", "2", "1", "1", "0", "6"},
 		{"zero reported stock", "0", "0", "0", "0", "0", "0"},
 		{"safety exceeds stock", "2", "0", "0", "5", "0", "0"},

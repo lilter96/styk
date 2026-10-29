@@ -32,18 +32,28 @@ type AutomaticStockPolicy struct {
 
 type AutomaticStockRequest struct {
 	StockSyncScope
-	Enabled         bool   `json:"enabled"`
-	IntervalSeconds int    `json:"interval_seconds"`
-	ValidMinutes    int    `json:"valid_minutes"`
-	ProductID       string `json:"ozon_product_id"`
-	WarehouseID     string `json:"ozon_warehouse_id"`
-	SafetyStock     string `json:"safety_stock"`
-	Unreflected     string `json:"unreflected"`
-	UnseenBound     string `json:"unseen_bound"`
-	Maximum         int64  `json:"maximum"`
-	Acknowledge     bool   `json:"acknowledge"`
-	IdempotencyKey  string `json:"idempotency_key"`
-	SessionID       string `json:"-"`
+	Enabled         bool                          `json:"enabled"`
+	IntervalSeconds int                           `json:"interval_seconds"`
+	ValidMinutes    int                           `json:"valid_minutes"`
+	ProductID       string                        `json:"ozon_product_id"`
+	WarehouseID     string                        `json:"ozon_warehouse_id"`
+	SafetyStock     string                        `json:"safety_stock"`
+	Unreflected     string                        `json:"unreflected"`
+	UnseenBound     string                        `json:"unseen_bound"`
+	Maximum         int64                         `json:"maximum"`
+	Targets         []AutomaticStockTargetRequest `json:"targets,omitempty"`
+	Acknowledge     bool                          `json:"acknowledge"`
+	IdempotencyKey  string                        `json:"idempotency_key"`
+	SessionID       string                        `json:"-"`
+}
+
+type AutomaticStockTargetRequest struct {
+	ProductID   string `json:"ozon_product_id"`
+	WarehouseID string `json:"ozon_warehouse_id"`
+	SafetyStock string `json:"safety_stock"`
+	Unreflected string `json:"unreflected"`
+	UnseenBound string `json:"unseen_bound"`
+	Maximum     int64  `json:"maximum"`
 }
 
 type AutomaticStockCycle struct {
@@ -61,9 +71,22 @@ type AutomaticStockCycle struct {
 }
 
 type AutomaticStockView struct {
-	Available   bool                  `json:"available"`
-	Policy      *AutomaticStockPolicy `json:"policy,omitempty"`
-	NextRunAt   *time.Time            `json:"next_run_at,omitempty"`
-	LastCycleAt *time.Time            `json:"last_cycle_at,omitempty"`
-	LastCycle   *AutomaticStockCycle  `json:"last_cycle,omitempty"`
+	Available   bool                       `json:"available"`
+	Policy      *AutomaticStockPolicy      `json:"policy,omitempty"`
+	NextRunAt   *time.Time                 `json:"next_run_at,omitempty"`
+	LastCycleAt *time.Time                 `json:"last_cycle_at,omitempty"`
+	LastCycle   *AutomaticStockCycle       `json:"last_cycle,omitempty"`
+	Unresolved  []AutomaticStockUnresolved `json:"unresolved,omitempty"`
+}
+
+type AutomaticStockUnresolved struct {
+	OperationID      string     `json:"operation_id"`
+	ProductID        string     `json:"ozon_product_id"`
+	WarehouseID      string     `json:"ozon_warehouse_id"`
+	Quantity         string     `json:"quantity"`
+	State            string     `json:"state"`
+	SafeError        string     `json:"safe_error,omitempty"`
+	DispatchedAt     *time.Time `json:"dispatched_at,omitempty"`
+	ReadbackAt       *time.Time `json:"readback_at,omitempty"`
+	ReadbackQuantity *string    `json:"readback_quantity,omitempty"`
 }

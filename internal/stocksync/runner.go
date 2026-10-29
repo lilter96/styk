@@ -79,6 +79,11 @@ func (r Runner) RunNext(ctx context.Context) (bool, error) {
 		defer cancel()
 		return r.Store.FinishStockTargetHTTP(save, op.StockSyncScope, op.ID, target.ID, state, code, status, time.Now().UTC())
 	}
+	finishProvider := func(target domain.StockPublicationTarget, state, code string, status *int, updated *bool, codes []string) error {
+		save, cancel := context.WithTimeout(context.WithoutCancel(ctx), r.Store.Timeout)
+		defer cancel()
+		return r.Store.FinishStockTargetProvider(save, op.StockSyncScope, op.ID, target.ID, state, code, status, updated, codes, time.Now().UTC())
+	}
 	enabled, err := r.Store.StockPublicationStillEnabled(ctx, op.StockSyncScope)
 	if err != nil {
 		return true, err
@@ -119,6 +124,10 @@ func (r Runner) RunNext(ctx context.Context) (bool, error) {
 	}
 	if len(items) == 0 {
 		return true, nil
+	}
+	automatic, err := r.Store.IsAutomaticPublication(ctx, op.StockSyncScope, op.ID)
+	if err != nil {
+		return true, err
 	}
 	valid, checkErr := r.Store.StockPublicationCanDispatch(ctx, *op, time.Now().UTC())
 	if checkErr != nil {
@@ -163,14 +172,14 @@ func (r Runner) RunNext(ctx context.Context) (bool, error) {
 			continue
 		}
 		state := result.State
-		if r.ControlledTest && state == "SUCCEEDED" {
+		if (r.ControlledTest || automatic) && state == "SUCCEEDED" {
 			state = "ACKNOWLEDGED"
 		}
 		status := result.HTTPStatus
-		if err = finish(t, state, result.SafeError, &status); err != nil {
+		if err = finishProvider(t, state, result.SafeError, &status, result.Updated, result.ErrorCodes); err != nil {
 			return true, err
 		}
-		if r.ControlledTest && state == "ACKNOWLEDGED" && t.Decision.Evidence.ProductMapping != nil {
+		if (r.ControlledTest || automatic) && state == "ACKNOWLEDGED" && t.Decision.Evidence.ProductMapping != nil {
 			readCtx, readCancel := context.WithTimeout(ctx, 20*time.Second)
 			quantity, readErr := client.ReadStockQuantity(readCtx, t.ProductID, t.WarehouseID, t.Decision.Evidence.ProductMapping.OfferID)
 			readCancel()

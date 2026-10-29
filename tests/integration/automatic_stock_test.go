@@ -11,6 +11,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -145,6 +147,9 @@ func TestAutomaticStockCyclesUseOutboxAndDeduplicate(t *testing.T) {
 	if writes.Load() != 0 {
 		t.Fatal("no-op wrote marketplace stock")
 	}
+	if first.LastCycle.Metrics["moysklad_requests"] != float64(5) || first.LastCycle.Metrics["ozon_requests"] != float64(4) || first.LastCycle.Metrics["external_writes"] != float64(0) {
+		t.Fatalf("incorrect no-op provider metrics: %+v", first.LastCycle.Metrics)
+	}
 	source.Store(5)
 	if _, err = db.RequestAutomaticCycle(ctx, scope, time.Now()); err != nil {
 		t.Fatal(err)
@@ -152,6 +157,9 @@ func TestAutomaticStockCyclesUseOutboxAndDeduplicate(t *testing.T) {
 	second := waitCycle("RECONCILED", first.LastCycle.ID)
 	if writes.Load() != 1 || marketplace.Load() != 5 || second.LastCycle.PublicationID == "" {
 		t.Fatalf("write=%d stock=%d cycle=%+v", writes.Load(), marketplace.Load(), second.LastCycle)
+	}
+	if second.LastCycle.Metrics["external_writes"] != float64(1) || second.LastCycle.Metrics["reconciled_operations"] != float64(1) || second.LastCycle.Metrics["readback_requests"] != float64(1) {
+		t.Fatalf("incorrect publication metrics: %+v", second.LastCycle.Metrics)
 	}
 	if _, err = db.RequestAutomaticCycle(ctx, scope, time.Now()); err != nil {
 		t.Fatal(err)
@@ -236,6 +244,7 @@ func TestAutomaticReadFailureClassificationAndRestart(t *testing.T) {
 	}{
 		{"authorization", 403, "AUTHORIZATION_REQUIRED", false},
 		{"rate_limit", 429, "RATE_LIMITED", false},
+		{"rate_limit_before_attempt_budget", -1, "RATE_LIMITED", false},
 		{"unavailable", 500, "RETRYABLE_READ_FAILURE", true},
 		{"transport", 0, "RETRYABLE_READ_FAILURE", true},
 	} {
@@ -276,11 +285,21 @@ func TestAutomaticReadFailureClassificationAndRestart(t *testing.T) {
 				t.Fatalf("claim: %+v %v", task, err)
 			}
 			counts := domain.ImportCounts{Attempts: 1, HTTPStatus: tc.status}
-			if tc.status == 429 {
+			if tc.status == 429 || tc.status == -1 {
 				counts.RateLimitResponses = 1
+			}
+			if tc.status == -1 {
+				counts.HTTPStatus = 0
 			}
 			if err = db.FailImport(ctx, *task, "API_FAILURE", "", counts); err != nil {
 				t.Fatal(err)
+			}
+			other, e := db.ClaimForCatalogWorker(ctx, time.Minute, scope.OzonAccount, scope.MoyskladAccount)
+			if e != nil || other == nil {
+				t.Fatalf("claim second import: %+v %v", other, e)
+			}
+			if e = db.FailImport(ctx, *other, "API_FAILURE", "", domain.ImportCounts{Attempts: 1, HTTPStatus: 500}); e != nil {
+				t.Fatal(e)
 			}
 			if _, _, err = db.AdvanceAutomaticStock(ctx, now.Add(10*time.Second)); err != nil {
 				t.Fatal(err)
@@ -295,6 +314,18 @@ func TestAutomaticReadFailureClassificationAndRestart(t *testing.T) {
 			if !tc.retry {
 				if _, worked, err := db.AdvanceAutomaticStock(ctx, now.Add(time.Hour)); err != nil || worked {
 					t.Fatalf("forbidden automatic retry: %v %v", worked, err)
+				}
+			}
+			if tc.name == "authorization" {
+				down := func() ([]byte, error) {
+					return exec.Command("go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", db.Pool.Config().ConnString(), "down").CombinedOutput()
+				}
+				if _, e := down(); e != nil {
+					t.Fatal("could not roll back empty provider-result migration")
+				}
+				out, e := down()
+				if e == nil || !strings.Contains(string(out), "refusing to discard automatic synchronization audit") {
+					t.Fatal("migration did not protect automatic policy history")
 				}
 			}
 		})

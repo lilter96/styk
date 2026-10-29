@@ -168,6 +168,9 @@ func TestControlledStockPublicationOutboxAndRecovery(t *testing.T) {
 		if writes.Load() != 1 || reads.Load() != 1 || attempts != 1 || state != "succeeded" || op.State != "RECONCILED" {
 			t.Fatalf("writes=%d reads=%d outbox=%s/%d operation=%+v", writes.Load(), reads.Load(), state, attempts, op)
 		}
+		if op.Targets[0].ProviderUpdated == nil || !*op.Targets[0].ProviderUpdated || len(op.Targets[0].ProviderErrorCodes) != 0 {
+			t.Fatalf("provider acknowledgement missing: %+v", op.Targets[0])
+		}
 	})
 	t.Run("expired claim is never replayed", func(t *testing.T) {
 		db, review := controlledFixture(t)
@@ -201,7 +204,7 @@ func TestControlledStockPublicationUncertainResultsNeverRetry(t *testing.T) {
 		lost   bool
 	}{
 		{"forbidden", 403, "", false}, {"rate_limited", 429, "", false}, {"server_error", 500, "", false},
-		{"lost_response", 0, "", true}, {"per_target_error", 200, `{"result":[{"product_id":2764544165,"warehouse_id":1020001323428000,"updated":false,"errors":[{"code":"PRICE_IS_NOT_SENT"}]}]}`, false},
+		{"lost_response", 0, "", true}, {"per_target_error", 200, `{"result":[{"product_id":2764544165,"warehouse_id":1020001323428000,"updated":false,"errors":[{"code":"PRICE_IS_NOT_SENT"},{"code":"INVALID_ARGUMENT"},{"code":"synthetic-private-key"}]}]}`, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db, review := controlledFixture(t)
@@ -246,6 +249,21 @@ func TestControlledStockPublicationUncertainResultsNeverRetry(t *testing.T) {
 			}
 			if tc.status > 0 && (op.Targets[0].HTTPStatus == nil || *op.Targets[0].HTTPStatus != tc.status) {
 				t.Fatalf("HTTP status not persisted: %+v", op.Targets[0])
+			}
+			if tc.name == "per_target_error" {
+				v := op.Targets[0]
+				if v.ProviderUpdated == nil || *v.ProviderUpdated || len(v.ProviderErrorCodes) != 3 || v.ProviderErrorCodes[0] != "PRICE_IS_NOT_SENT" || v.ProviderErrorCodes[1] != "INVALID_ARGUMENT" || v.ProviderErrorCodes[2] != "MARKETPLACE_REJECTED" {
+					t.Fatalf("per-target errors lost or exposed: %+v", v)
+				}
+				if _, err = db.Pool.Exec(ctx, `UPDATE stock_publication_targets SET provider_updated=true WHERE id=$1`, v.ID); err == nil {
+					t.Fatal("provider result was mutable")
+				}
+				// The rollback must refuse to discard persisted provider evidence.
+				cmd := exec.Command("go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", db.Pool.Config().ConnString(), "down")
+				output, rollbackErr := cmd.CombinedOutput()
+				if rollbackErr == nil || !strings.Contains(string(output), "refusing to discard provider result evidence") {
+					t.Fatal("migration allowed or failed to protect the provider result")
+				}
 			}
 		})
 	}

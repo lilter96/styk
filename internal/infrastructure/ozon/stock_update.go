@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 
 	"github.com/lilter96/styk/internal/testpublication"
 )
@@ -28,6 +27,8 @@ type StockUpdate struct {
 type StockUpdateResult struct {
 	ProductID, WarehouseID, State, SafeError string
 	HTTPStatus                               int
+	Updated                                  *bool
+	ErrorCodes                               []string
 }
 
 // StockWriteError preserves a safe HTTP status without treating any error
@@ -38,9 +39,11 @@ func (e *StockWriteError) Error() string { return ErrStockWriteUnknown.Error() }
 func (e *StockWriteError) Unwrap() error { return ErrStockWriteUnknown }
 
 func safeStockCode(v string) string {
-	switch strings.ToUpper(strings.ReplaceAll(v, " ", "_")) {
+	// The provider response is untrusted. Preserve known protocol codes, but
+	// never persist arbitrary strings that could contain credentials or data.
+	switch v {
 	case "SKU_STOCK_NOT_CHANGED", "PRODUCT_HAS_NOT_BEEN_TAGGED_YET", "NON_KGT_ON_KGT_WAREHOUSE", "PRICE_IS_NOT_SENT", "TOO_MANY_REQUESTS", "PRODUCT_IS_NOT_CREATED", "NOT_PASS_MODERATION", "INVALID_ARGUMENT", "PERMISSION_DENIED", "UNAUTHENTICATED", "VALIDATION_ERROR", "INTERNAL_ERROR":
-		return strings.ToUpper(strings.ReplaceAll(v, " ", "_"))
+		return v
 	default:
 		return "MARKETPLACE_REJECTED"
 	}
@@ -124,19 +127,22 @@ func (c *Client) UpdateStocks(ctx context.Context, items []StockUpdate) ([]Stock
 	for _, v := range *decoded.Result {
 		p, w := id(v.ProductID), id(v.WarehouseID)
 		key := p + ":" + w
-		if !seen[key] || v.Updated == nil || v.Errors == nil {
+		if !seen[key] || v.Updated == nil || v.Errors == nil || len(*v.Errors) > 32 {
 			return nil, &StockWriteError{HTTPStatus: resp.StatusCode}
 		}
 		if _, duplicate := returned[key]; duplicate {
 			return nil, &StockWriteError{HTTPStatus: resp.StatusCode}
 		}
-		r := StockUpdateResult{ProductID: p, WarehouseID: w, State: "UNKNOWN", SafeError: "INCOMPLETE_RESPONSE", HTTPStatus: resp.StatusCode}
+		r := StockUpdateResult{ProductID: p, WarehouseID: w, State: "UNKNOWN", SafeError: "INCOMPLETE_RESPONSE", HTTPStatus: resp.StatusCode, Updated: v.Updated, ErrorCodes: []string{}}
+		for _, problem := range *v.Errors {
+			r.ErrorCodes = append(r.ErrorCodes, safeStockCode(problem.Code))
+		}
 		if *v.Updated && len(*v.Errors) == 0 {
 			r.State, r.SafeError = "SUCCEEDED", ""
 		} else if !*v.Updated && len(*v.Errors) > 0 {
 			// Without a verified provider guarantee that an error excludes a
 			// delayed effect, retain the target fence and require reconciliation.
-			r.State, r.SafeError = "UNKNOWN", safeStockCode((*v.Errors)[0].Code)
+			r.State, r.SafeError = "UNKNOWN", r.ErrorCodes[0]
 		}
 		returned[key] = r
 	}

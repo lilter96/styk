@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/lilter96/styk/internal/config"
 	"github.com/lilter96/styk/internal/postgres"
 )
 
@@ -18,7 +19,8 @@ type AutomaticRunner struct {
 }
 
 func (r AutomaticRunner) RunNext(ctx context.Context) (bool, error) {
-	if r.Store == nil || !r.Publisher.ControlledTest || !r.Publisher.Enabled {
+	_, simulator := config.StockPublicationTestEndpoint()
+	if r.Store == nil || (!r.Publisher.ControlledTest && !simulator) || !r.Publisher.Enabled {
 		return false, nil
 	}
 	action, worked, err := r.Store.AdvanceAutomaticStock(ctx, time.Now().UTC())

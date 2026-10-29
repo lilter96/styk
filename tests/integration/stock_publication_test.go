@@ -39,6 +39,9 @@ type publicationFixture struct {
 
 func publicationData(t *testing.T, two bool) publicationFixture {
 	t.Helper()
+	// Synthetic assertions are accepted only by the explicit loopback simulator.
+	t.Setenv("STYK_STOCK_PUBLICATION_ENABLED", "true")
+	t.Setenv("STYK_STOCK_PUBLICATION_TEST_ENDPOINT", "http://127.0.0.1:1")
 	ctx := context.Background()
 	url := os.Getenv("TEST_DATABASE_URL")
 	if !strings.Contains(url, "127.0.0.1") || !strings.Contains(url, "styk_stock_publication_v1_test") {
@@ -104,6 +107,24 @@ func publicationData(t *testing.T, two bool) publicationFixture {
 		}
 	})
 	return publicationFixture{db, scope, source, market, attest}
+}
+
+func TestStockPublicationOperatorAssertionsAreNeverProviderProof(t *testing.T) {
+	f := publicationData(t, false)
+	review := f.preview(t, true)
+	if !review.Ready {
+		t.Fatal("loopback simulation did not accept synthetic assumptions")
+	}
+	for _, proof := range review.Targets[0].Decision.Evidence.Proofs {
+		if proof.EvidenceClass == "OPERATOR_ATTESTED" && proof.State != domain.ProofAttested {
+			t.Fatal("operator assertion was misclassified as independently verified")
+		}
+	}
+	t.Setenv("STYK_STOCK_PUBLICATION_ENABLED", "")
+	withoutSimulator := f.preview(t, true)
+	if withoutSimulator.Ready || withoutSimulator.Targets[0].Quantity != nil {
+		t.Fatal("ordinary customer policy accepted test assumptions")
+	}
 }
 func (f publicationFixture) preview(t *testing.T, attested bool) domain.StockSyncReview {
 	t.Helper()
@@ -492,7 +513,7 @@ func TestStockPublicationTargetFenceSpansMoyskladScopes(t *testing.T) {
 		t.Helper()
 		_, err := f.db.Pool.Exec(ctx, `INSERT INTO stock_publication_targets(operation_id,ozon_account,product_id,warehouse_id,quantity,state,decision) VALUES($1,$2,'123','456','8','QUEUED',$3::jsonb)`, operationID, other.OzonAccount, raw)
 		var conflict *pgconn.PgError
-		if !errors.As(err, &conflict) || conflict.Code != "23505" || conflict.ConstraintName != "stock_publication_target_fence" {
+		if !errors.As(err, &conflict) || conflict.Code != "23505" || (conflict.ConstraintName != "stock_publication_target_fence" && conflict.ConstraintName != "stock_publication_target_fences_pkey") {
 			t.Fatalf("cross-source target not fenced in %s: %v", state, err)
 		}
 	}

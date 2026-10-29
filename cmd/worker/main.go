@@ -219,6 +219,9 @@ func run() error {
 		}}
 	}
 	var automatic application.PublicationRunner
+	if publicationEnabled {
+		automatic = stocksync.AutomaticRunner{Store: db, Publisher: publications, Log: slog.Default()}
+	}
 	if controlled {
 		automatic = stocksync.AutomaticRunner{Store: db, Publisher: publications, Log: slog.Default()}
 		presenceCtx, stopPresence := context.WithCancel(ctx)

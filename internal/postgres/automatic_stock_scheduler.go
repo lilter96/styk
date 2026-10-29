@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/lilter96/styk/internal/config"
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/testpublication"
 )
@@ -39,6 +40,25 @@ func automaticImportLimits(provider string) (domain.ImportLimits, error) {
 	return limits, nil
 }
 
+func automaticReadFailure(operations ...domain.ImportOperation) (string, bool) {
+	for _, op := range operations {
+		if (op.State == "FAILED" || op.State == "CANCELLED") && (op.Counts.HTTPStatus == 401 || op.Counts.HTTPStatus == 403) {
+			return "AUTHORIZATION_REQUIRED", false
+		}
+	}
+	for _, op := range operations {
+		if (op.State == "FAILED" || op.State == "CANCELLED") && (op.Counts.HTTPStatus == 429 || op.Counts.RateLimitResponses > 0) {
+			return "RATE_LIMITED", false
+		}
+	}
+	for _, op := range operations {
+		if (op.State == "FAILED" || op.State == "CANCELLED") && op.Outcome != nil && (*op.Outcome == "CONFIGURATION_UNAVAILABLE" || *op.Outcome == "INVALID_RESPONSE") {
+			return "READ_CONFIGURATION_ERROR", false
+		}
+	}
+	return "RETRYABLE_READ_FAILURE", true
+}
+
 // AdvanceAutomaticStock serializes short database-only scheduling steps across
 // worker processes. No transaction or advisory lock spans provider I/O.
 // Cycle/import identities survive restarts and import submissions are
@@ -46,6 +66,25 @@ func automaticImportLimits(provider string) (domain.ImportLimits, error) {
 func (s *Store) AdvanceAutomaticStock(ctx context.Context, now time.Time) (*AutomaticReconcile, bool, error) {
 	scope := testpublication.Scope()
 	if !testpublication.Enabled(scope) {
+		// Only the pre-existing loopback simulator may exercise other scopes.
+		// The live database's account constraint still rejects such policies.
+		_, simulator := config.StockPublicationTestEndpoint()
+		if !simulator {
+			return nil, false, nil
+		}
+		err := s.Pool.QueryRow(ctx, `SELECT tenant_id,moysklad_account,ozon_account FROM stock_auto_configs c WHERE enabled AND tenant_id LIKE 'synthetic-auto-%' AND (next_run_at<=$1 OR EXISTS(SELECT 1 FROM stock_auto_cycles x WHERE x.tenant_id=c.tenant_id AND x.moysklad_account=c.moysklad_account AND x.ozon_account=c.ozon_account AND x.state IN ('STARTING','READING','WAITING_PUBLICATION') AND x.next_action_at<=$1)) ORDER BY LEAST(COALESCE(next_run_at,'infinity'::timestamptz),COALESCE((SELECT min(x.next_action_at) FROM stock_auto_cycles x WHERE x.tenant_id=c.tenant_id AND x.moysklad_account=c.moysklad_account AND x.ozon_account=c.ozon_account AND x.state IN ('STARTING','READING','WAITING_PUBLICATION')),'infinity'::timestamptz)),tenant_id LIMIT 1`, now).Scan(&scope.Tenant, &scope.MoyskladAccount, &scope.OzonAccount)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, false, nil
+		}
+		if err != nil {
+			return nil, false, err
+		}
+	}
+	return s.advanceAutomaticStockScope(ctx, scope, now)
+}
+
+func (s *Store) advanceAutomaticStockScope(ctx context.Context, scope domain.StockSyncScope, now time.Time) (*AutomaticReconcile, bool, error) {
+	if !automaticScopeAllowed(scope) {
 		return nil, false, nil
 	}
 	now = now.UTC().Truncate(time.Microsecond)
@@ -143,27 +182,17 @@ func (s *Store) AdvanceAutomaticStock(ctx context.Context, now time.Time) (*Auto
 		if e != nil {
 			return nil, false, e
 		}
-		if moy.State == "FAILED" || moy.State == "CANCELLED" || ozon.State == "FAILED" || ozon.State == "CANCELLED" {
-			failed := moy
-			if ozon.State == "FAILED" || ozon.State == "CANCELLED" {
-				failed = ozon
-			}
-			outcome, retry := "RETRYABLE_READ_FAILURE", true
-			if failed.Counts.HTTPStatus == 401 || failed.Counts.HTTPStatus == 403 {
-				outcome, retry = "AUTHORIZATION_REQUIRED", false
-			} else if failed.Counts.HTTPStatus == 429 {
-				// The import has exhausted its bounded retry policy; its final
-				// Retry-After is not retained. Do not guess a reset interval.
-				outcome, retry = "RATE_LIMITED", false
-			} else if failed.Outcome != nil && (*failed.Outcome == "CONFIGURATION_UNAVAILABLE" || *failed.Outcome == "INVALID_RESPONSE") {
-				outcome, retry = "READ_CONFIGURATION_ERROR", false
-			}
-			metrics := automaticMetrics(c, moy, ozon, now)
-			return nil, true, s.finishAutomaticCycle(lockCtx, scope, c.ID, "BLOCKED", outcome, metrics, now, retry)
-		}
-		if moy.State != "SUCCEEDED" || ozon.State != "SUCCEEDED" {
+		terminal := func(state string) bool { return state == "SUCCEEDED" || state == "FAILED" || state == "CANCELLED" }
+		if !terminal(moy.State) || !terminal(ozon.State) {
 			_, e = s.Pool.Exec(lockCtx, `UPDATE stock_auto_cycles SET next_action_at=$2 WHERE id=$1 AND state='READING'`, c.ID, now.Add(2*time.Second))
 			return nil, false, e
+		}
+		if moy.State == "FAILED" || moy.State == "CANCELLED" || ozon.State == "FAILED" || ozon.State == "CANCELLED" {
+			// If either provider denies access or rate-limits, never let the
+			// other provider's transient failure hide the stricter condition.
+			outcome, retry := automaticReadFailure(moy, ozon)
+			metrics := automaticMetrics(c, moy, ozon, now)
+			return nil, true, s.finishAutomaticCycle(lockCtx, scope, c.ID, "BLOCKED", outcome, metrics, now, retry)
 		}
 		return nil, true, s.evaluateAutomaticCycle(lockCtx, scope, policy, c, moy, ozon, now)
 	}
@@ -176,20 +205,20 @@ func (s *Store) AdvanceAutomaticStock(ctx context.Context, now time.Time) (*Auto
 		case "RECONCILED":
 			return nil, true, s.finishAutomaticCycle(lockCtx, scope, c.ID, "COMPLETE", "RECONCILED", map[string]any{"reconciled_operations": 1}, now, true)
 		case "UNKNOWN", "PARTIAL":
-			return nil, true, s.finishAutomaticCycle(lockCtx, scope, c.ID, "BLOCKED", "PUBLICATION_UNKNOWN", map[string]any{"unknown_outcomes": 1, "blocked_targets": 1}, now, false)
+			return nil, true, s.finishAutomaticCycle(lockCtx, scope, c.ID, "BLOCKED", "PUBLICATION_UNKNOWN", map[string]any{"unknown_outcomes": 1, "blocked_targets": 1}, now, len(policy.Targets) > 1)
 		case "FAILED", "BLOCKED", "CANCELLED":
-			return nil, true, s.finishAutomaticCycle(lockCtx, scope, c.ID, "BLOCKED", "PUBLICATION_REJECTED", map[string]any{"blocked_targets": 1}, now, false)
+			return nil, true, s.finishAutomaticCycle(lockCtx, scope, c.ID, "BLOCKED", "PUBLICATION_REJECTED", map[string]any{"blocked_targets": 1}, now, len(policy.Targets) > 1)
 		case "ACKNOWLEDGED":
 			// An unavailable readback may have been an authorization failure or
 			// a 429 with an unknown reset time. Do not poll it blindly. A known
 			// HTTP-200 mismatch can be observed again at a bounded interval.
 			for _, target := range op.Targets {
 				if len(target.Readbacks) > 0 && target.Readbacks[0].Outcome == "UNAVAILABLE" {
-					return nil, true, s.finishAutomaticCycle(lockCtx, scope, c.ID, "BLOCKED", "RECONCILIATION_PENDING", map[string]any{"blocked_targets": 1}, now, false)
+					return nil, true, s.finishAutomaticCycle(lockCtx, scope, c.ID, "BLOCKED", "RECONCILIATION_PENDING", map[string]any{"blocked_targets": 1}, now, len(policy.Targets) > 1)
 				}
 			}
 			if c.ReconcileAttempts >= 3 {
-				return nil, true, s.finishAutomaticCycle(lockCtx, scope, c.ID, "BLOCKED", "RECONCILIATION_PENDING", map[string]any{"blocked_targets": 1}, now, false)
+				return nil, true, s.finishAutomaticCycle(lockCtx, scope, c.ID, "BLOCKED", "RECONCILIATION_PENDING", map[string]any{"blocked_targets": 1}, now, len(policy.Targets) > 1)
 			}
 			tag, e := s.Pool.Exec(lockCtx, `UPDATE stock_auto_cycles SET reconcile_attempts=reconcile_attempts+1,next_action_at=$2 WHERE id=$1 AND state='WAITING_PUBLICATION' AND reconcile_attempts=$3`, c.ID, now.Add(15*time.Second), c.ReconcileAttempts)
 			if e != nil || tag.RowsAffected() != 1 {
@@ -256,13 +285,20 @@ func (s *Store) evaluateAutomaticCycle(ctx context.Context, scope domain.StockSy
 	}
 	metrics := automaticMetrics(c, moy, ozon, now)
 	block := func(outcome string, checks []string) error {
-		metrics["blocked_targets"] = len(policy.Targets)
+		if metrics["blocked_targets"] == 0 {
+			metrics["blocked_targets"] = len(policy.Targets)
+		}
 		metrics["failed_checks"] = checks
 		raw, _ := json.Marshal(metrics)
 		if _, e := tx.Exec(ctx, `UPDATE stock_auto_cycles SET state='BLOCKED',outcome=$2,finished_at=$3,metrics=$4 WHERE id=$1 AND state='READING'`, c.ID, outcome, now, raw); e != nil {
 			return e
 		}
-		if _, e := tx.Exec(ctx, `UPDATE stock_auto_configs SET last_cycle_at=$4,next_run_at=NULL WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND revision=$5`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, now, policy.Revision); e != nil {
+		var next *time.Time
+		if outcome == "TARGETS_NEED_ATTENTION" && len(policy.Targets) > 1 {
+			v := now.Add(time.Duration(policy.IntervalSeconds) * time.Second)
+			next = &v
+		}
+		if _, e := tx.Exec(ctx, `UPDATE stock_auto_configs SET last_cycle_at=$4,next_run_at=$6 WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND revision=$5`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, now, policy.Revision, next); e != nil {
 			return e
 		}
 		return tx.Commit(ctx)
@@ -270,70 +306,102 @@ func (s *Store) evaluateAutomaticCycle(ctx context.Context, scope domain.StockSy
 	if !policy.Enabled || !policy.ValidUntil.After(now) || len(policy.Targets) == 0 {
 		return block("POLICY_EXPIRED", nil)
 	}
-	attestations := make([]domain.StockSyncAttestation, 0, len(policy.Targets))
-	for _, t := range policy.Targets {
-		attestations = append(attestations, automaticAttestation(policy, t))
+	// Review targets independently: a fenced or invalid product must not block
+	// another physical target. The least-recently attempted changed target wins
+	// this cycle; a separate one-target operation preserves existing fencing.
+	type candidate struct {
+		review domain.StockSyncReview
+		target domain.StockSyncTarget
+		last   *time.Time
 	}
-	review, err := s.stockSyncReview(ctx, tx, scope, attestations, now)
-	if err != nil {
-		return err
-	}
-	metrics["evaluated_targets"] = len(review.Targets)
+	var chosen, noOp *candidate
+	changed, blocked := 0, 0
 	var failed []string
-	for _, check := range review.Checks {
-		if !check.Passed {
-			failed = append(failed, check.Code)
+	for _, configured := range policy.Targets {
+		r, e := s.stockSyncReview(ctx, tx, scope, []domain.StockSyncAttestation{automaticAttestation(policy, configured)}, now)
+		if e != nil {
+			return e
 		}
-	}
-	for _, target := range review.Targets {
-		for _, check := range target.Checks {
-			if !check.Passed {
-				failed = append(failed, check.Code)
+		metrics["evaluated_targets"] = metrics["evaluated_targets"].(int) + 1
+		if !r.Ready || len(r.Targets) != 1 {
+			blocked++
+			for _, check := range r.Checks {
+				if !check.Passed {
+					failed = append(failed, check.Code)
+				}
 			}
+			for _, target := range r.Targets {
+				for _, check := range target.Checks {
+					if !check.Passed {
+						failed = append(failed, check.Code)
+					}
+				}
+			}
+			continue
 		}
-	}
-	if !review.Ready || len(review.Targets) != len(policy.Targets) {
-		return block("EVIDENCE_BLOCKED", failed)
-	}
-	// A cycle must evaluate the imports it actually requested, not another
-	// older or overlapping traversal that happened to finish nearby.
-	changed := 0
-	for _, target := range review.Targets {
-		source := target.Decision.Evidence.Source.FreshTraversal
-		market := target.Decision.Evidence.Marketplace.FreshTraversal
+		target := r.Targets[0]
+		source, market := target.Decision.Evidence.Source.FreshTraversal, target.Decision.Evidence.Marketplace.FreshTraversal
 		if source == nil || market == nil || source.OperationID != moy.ID || market.OperationID != ozon.ID {
-			return block("TRAVERSAL_SUPERSEDED", []string{"CYCLE_TRAVERSAL_CHANGED"})
+			blocked++
+			failed = append(failed, "CYCLE_TRAVERSAL_CHANGED")
+			continue
 		}
-		metrics["source_lag_ms"] = now.Sub(source.StartedAt).Milliseconds()
-		metrics["source_physical"] = target.SourcePhysical
-		metrics["source_reserve"] = target.SourceReserve
-		metrics["marketplace_free"] = target.MarketplaceFree
-		metrics["candidate"] = target.Quantity
 		if target.Quantity == nil || target.MarketplaceFree == nil {
-			return block("EVIDENCE_BLOCKED", []string{"STOCK_OBSERVATION_MISSING"})
+			blocked++
+			failed = append(failed, "STOCK_OBSERVATION_MISSING")
+			continue
 		}
-		// Standing test assumptions do not override an observed marketplace
-		// reservation whose attribution has not been established.
 		if target.MarketplaceReserved == nil || *target.MarketplaceReserved != 0 {
-			return block("EVIDENCE_BLOCKED", []string{"MARKETPLACE_RESERVATION_REQUIRES_REVIEW"})
+			blocked++
+			failed = append(failed, "MARKETPLACE_RESERVATION_REQUIRES_REVIEW")
+			continue
 		}
-		var fenced bool
-		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_publication_target_fences WHERE ozon_account=$1 AND product_id=$2 AND warehouse_id=$3)`, scope.OzonAccount, target.ProductID, target.WarehouseID).Scan(&fenced); err != nil {
+		var fenced, rejected bool
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_publication_target_fences WHERE ozon_account=$1 AND product_id=$2 AND warehouse_id=$3), EXISTS(SELECT 1 FROM stock_auto_cycles c JOIN stock_publication_targets t ON t.operation_id=c.publication_id WHERE c.tenant_id=$4 AND c.moysklad_account=$5 AND c.ozon_account=$1 AND c.config_revision=$6 AND c.outcome='PUBLICATION_REJECTED' AND t.product_id=$2 AND t.warehouse_id=$3)`, scope.OzonAccount, target.ProductID, target.WarehouseID, scope.Tenant, scope.MoyskladAccount, policy.Revision).Scan(&fenced, &rejected); err != nil {
 			return err
 		}
-		if fenced {
-			return block("TARGET_UNRESOLVED", []string{"PUBLICATION_UNKNOWN_OR_PENDING"})
+		if fenced || rejected {
+			blocked++
+			failed = append(failed, "PUBLICATION_UNKNOWN_OR_PENDING")
+			continue
 		}
-		if *target.Quantity != strconv.FormatInt(*target.MarketplaceFree, 10) {
-			changed++
+		item := candidate{review: r, target: target}
+		if *target.Quantity == strconv.FormatInt(*target.MarketplaceFree, 10) {
+			if noOp == nil {
+				v := item
+				noOp = &v
+			}
+			continue
+		}
+		changed++
+		if err = tx.QueryRow(ctx, `SELECT max(p.created_at) FROM stock_publications p JOIN stock_publication_targets t ON t.operation_id=p.id WHERE p.tenant_id=$1 AND p.moysklad_account=$2 AND p.ozon_account=$3 AND t.product_id=$4 AND t.warehouse_id=$5`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, target.ProductID, target.WarehouseID).Scan(&item.last); err != nil {
+			return err
+		}
+		if chosen == nil || (item.last == nil && chosen.last != nil) || (item.last != nil && chosen.last != nil && item.last.Before(*chosen.last)) {
+			v := item
+			chosen = &v
 		}
 	}
-	metrics["changed_targets"] = changed
-	// The live test allowlist is currently one target. Do not batch unrelated
-	// targets until the production publisher has a separate approved rollout.
-	if len(review.Targets) != 1 {
-		return block("TARGET_POLICY_UNSUPPORTED", nil)
+	metrics["changed_targets"], metrics["blocked_targets"], metrics["failed_checks"] = changed, blocked, failed
+	if chosen == nil && blocked > 0 {
+		outcome := "TARGETS_NEED_ATTENTION"
+		if len(policy.Targets) == 1 {
+			outcome = "EVIDENCE_BLOCKED"
+		}
+		return block(outcome, failed)
 	}
+	if chosen == nil {
+		chosen = noOp
+	}
+	if chosen == nil {
+		return block("EVIDENCE_BLOCKED", failed)
+	}
+	review, target := chosen.review, chosen.target
+	metrics["source_traversal_age_ms"] = now.Sub(target.Decision.Evidence.Source.FreshTraversal.StartedAt).Milliseconds()
+	// Neither import is an atomic source snapshot or a provider change event;
+	// the true time from an external stock change to reconciliation is unknown.
+	metrics["sync_lag_ms"] = nil
+	metrics["source_physical"], metrics["source_reserve"], metrics["marketplace_free"], metrics["candidate"] = target.SourcePhysical, target.SourceReserve, target.MarketplaceFree, target.Quantity
 	review.ID, err = stockSyncID()
 	if err != nil {
 		return err
@@ -379,9 +447,10 @@ func (s *Store) finishAutomaticCycle(ctx context.Context, scope domain.StockSync
 	if err = syncLock(ctx, tx, scope); err != nil {
 		return err
 	}
-	var writes, readbacks int
+	var writes, readbacks, writeRateLimits, previousRateLimits int
+	var previouslyBlocked int
 	var uncertainDispatch bool
-	if err = tx.QueryRow(ctx, `SELECT count(*) FILTER(WHERE t.http_status IS NOT NULL OR t.safe_error='REQUEST_OUTCOME_UNKNOWN'), count(r.id), COALESCE(bool_or(t.safe_error='WORKER_OUTCOME_UNKNOWN'),false) FROM stock_auto_cycles c LEFT JOIN stock_publication_targets t ON t.operation_id=c.publication_id LEFT JOIN stock_publication_readbacks r ON r.target_id=t.id WHERE c.id=$1`, id).Scan(&writes, &readbacks, &uncertainDispatch); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT count(*) FILTER(WHERE t.http_status IS NOT NULL OR t.safe_error='REQUEST_OUTCOME_UNKNOWN'), count(r.id), COALESCE(bool_or(t.safe_error='WORKER_OUTCOME_UNKNOWN'),false),COALESCE(max((c.metrics->>'blocked_targets')::int),0),count(DISTINCT t.id) FILTER(WHERE t.http_status=429),COALESCE(max((c.metrics->>'rate_limit_responses')::int),0) FROM stock_auto_cycles c LEFT JOIN stock_publication_targets t ON t.operation_id=c.publication_id LEFT JOIN stock_publication_readbacks r ON r.target_id=t.id WHERE c.id=$1`, id).Scan(&writes, &readbacks, &uncertainDispatch, &previouslyBlocked, &writeRateLimits, &previousRateLimits); err != nil {
 		return err
 	}
 	// The join above repeats a target for each readback. An operation contains
@@ -395,6 +464,10 @@ func (s *Store) finishAutomaticCycle(ctx context.Context, scope domain.StockSync
 	additions["external_writes"] = writes
 	additions["readback_requests"] = readbacks
 	additions["write_dispatch_unknown"] = uncertainDispatch
+	additions["rate_limit_responses"] = previousRateLimits + writeRateLimits
+	if outcome == "PUBLICATION_UNKNOWN" || outcome == "PUBLICATION_REJECTED" || outcome == "RECONCILIATION_PENDING" {
+		additions["blocked_targets"] = previouslyBlocked + 1
+	}
 	raw, _ := json.Marshal(additions)
 	var revision int64
 	err = tx.QueryRow(ctx, `UPDATE stock_auto_cycles SET state=$2,outcome=$3,finished_at=$4,metrics=metrics || $5::jsonb || jsonb_build_object('duration_ms',GREATEST(0,extract(epoch from ($4-started_at))*1000)::bigint) WHERE id=$1 AND state IN ('STARTING','READING','WAITING_PUBLICATION') RETURNING config_revision`, id, state, outcome, now, raw).Scan(&revision)
