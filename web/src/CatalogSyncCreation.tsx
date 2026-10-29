@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   displayValue,
   providerLabel,
@@ -56,6 +57,12 @@ export function CatalogSyncCreation({
 }) {
   const creation = enrollment.create!;
   const ozon = enrollment.target.account.provider === "ozon";
+  const [imagesText, setImagesText] = useState(() =>
+    creation.values.images?.state === "known" &&
+    Array.isArray(creation.values.images.data)
+      ? creation.values.images.data.join("\n")
+      : "",
+  );
   function setValue(field: string, text: string) {
     const values = { ...creation.values };
     if (!text) delete values[field];
@@ -162,13 +169,9 @@ export function CatalogSyncCreation({
             Ссылки на изображения нового товара (по одной на строку)
             <textarea
               rows={3}
-              value={
-                creation.values.images?.state === "known" &&
-                Array.isArray(creation.values.images.data)
-                  ? creation.values.images.data.join("\n")
-                  : ""
-              }
+              value={imagesText}
               onChange={(event) => {
+                setImagesText(event.target.value);
                 const images = event.target.value
                   .split("\n")
                   .map((line) => line.trim())

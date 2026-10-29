@@ -12,6 +12,7 @@ import { CatalogSync } from "./CatalogSync";
 import { CatalogSyncPreview } from "./CatalogSyncPreview";
 import { CatalogSyncFacts } from "./CatalogSyncFacts";
 import { makeCatalogFacts } from "./CatalogSyncFacts";
+import { CatalogSyncCreation, newCatalogCreation } from "./CatalogSyncCreation";
 import {
   displayValue,
   scopeBody,
@@ -1058,3 +1059,78 @@ it.each([true, false])(
       ).toBeTruthy();
   },
 );
+
+it("preserves a newline while entering reviewed image URLs and keeps two exact image facts", () => {
+  const changed = vi.fn();
+  mount(
+    <CatalogSyncCreation
+      enrollment={newCatalogCreation(product(), scope)}
+      onChange={changed}
+    />,
+  );
+  const input = screen.getByLabelText(
+    /Ссылки на изображения нового товара/,
+  ) as HTMLTextAreaElement;
+  fireEvent.change(input, {
+    target: { value: "https://images.invalid/first.png\n" },
+  });
+  expect(input.value).toBe("https://images.invalid/first.png\n");
+  fireEvent.change(input, {
+    target: { value: input.value + "https://images.invalid/second.png" },
+  });
+  expect(
+    changed.mock.calls[changed.mock.calls.length - 1][0].create.values.images,
+  ).toEqual({
+    state: "known",
+    data: [
+      "https://images.invalid/first.png",
+      "https://images.invalid/second.png",
+    ],
+  });
+});
+
+it("direction presets keep unsupported fields excluded instead of blocking otherwise valid products", async () => {
+  const configured = configuration({
+    rules: {
+      name: "MOYSKLAD_AUTHORITATIVE",
+      description: "MOYSKLAD_AUTHORITATIVE",
+      price: "IGNORE",
+      category: "IGNORE",
+    },
+    fields: [
+      { field: "name", writable: true },
+      { field: "description", writable: true },
+      { field: "price", writable: false },
+      { field: "category", writable: false },
+    ],
+  });
+  const fetcher = mockAPI((url, init) => {
+    if (!url.pathname.endsWith("/config")) return undefined;
+    return json(
+      init?.method === "POST"
+        ? { ...JSON.parse(init.body as string).config, revision: 2 }
+        : configured,
+    );
+  });
+  mount();
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Ozon → МойСклад" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Сохранить настройки" }));
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Сохранить настройки",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true),
+  );
+  const saved = fetcher.mock.calls.find(([, init]) => init?.method === "POST")!;
+  expect(JSON.parse(saved[1]!.body as string).config.rules).toEqual({
+    name: "OZON_AUTHORITATIVE",
+    description: "OZON_AUTHORITATIVE",
+    price: "IGNORE",
+    category: "IGNORE",
+  });
+});

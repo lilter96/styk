@@ -57,6 +57,19 @@ export function CatalogSyncConfig({
     setPolicies(next);
     onDirty(isDirty(next));
   }
+  function direction(authority: Authority) {
+    const writable = config.fields
+      ? config.fields
+          .filter((field) => field.writable)
+          .map((field) => field.field)
+      : Object.entries(config.rules)
+          .filter(([, value]) => value !== "IGNORE")
+          .map(([field]) => field);
+    change({
+      ...policies,
+      ...Object.fromEntries(writable.map((field) => [field, authority])),
+    });
+  }
   async function save(event: FormEvent) {
     event.preventDefault();
     if (lock.current || !dirty) return;
@@ -164,13 +177,7 @@ export function CatalogSyncConfig({
             type="button"
             className="secondary"
             disabled={busy}
-            onClick={() =>
-              change(
-                Object.fromEntries(
-                  fields.map((f) => [f, "MOYSKLAD_AUTHORITATIVE"]),
-                ),
-              )
-            }
+            onClick={() => direction("MOYSKLAD_AUTHORITATIVE")}
           >
             МойСклад → Ozon
           </button>
@@ -178,13 +185,7 @@ export function CatalogSyncConfig({
             type="button"
             className="secondary"
             disabled={busy}
-            onClick={() =>
-              change(
-                Object.fromEntries(
-                  fields.map((f) => [f, "OZON_AUTHORITATIVE"]),
-                ),
-              )
-            }
+            onClick={() => direction("OZON_AUTHORITATIVE")}
           >
             Ozon → МойСклад
           </button>

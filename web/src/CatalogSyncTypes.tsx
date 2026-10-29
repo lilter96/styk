@@ -339,6 +339,12 @@ export function requestError(error: unknown): string {
   if (!(error instanceof ApiError))
     return "Нет ответа от STYK. Проверьте соединение.";
   if (error.status === 401) return "Сессия завершилась. Войдите снова.";
+  if (error.code === "CATALOG_PUBLICATION_BLOCKED")
+    return "Отправка каталога для выбранного аккаунта заблокирована. Проверьте разрешение и настройки синхронизации.";
+  if (error.code === "CATALOG_INVALID_REQUEST")
+    return "Проверьте настройки и обязательные данные выбранных товаров.";
+  if (error.code === "CATALOG_CONFLICT")
+    return "Запрос конфликтует с ранее сохранённым решением. Проверьте статусы отправок и выполните новую проверку.";
   if (error.status === 409 || error.status === 410)
     return "Данные или настройки изменились. Обновите данные и выполните проверку заново.";
   if (error.status === 403) return "Нет доступа к выбранной паре аккаунтов.";
