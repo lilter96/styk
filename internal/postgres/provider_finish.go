@@ -49,7 +49,7 @@ func finishProviderPermit(ctx context.Context, tx pgx.Tx, a providercall.Attempt
 	if prior == "reserved" {
 		return nil
 	}
-	_, err = tx.Exec(ctx, `UPDATE provider_call_accounts SET completed=completed+1,rate_limited=rate_limited+CASE WHEN $3=429 THEN 1 ELSE 0 END,updated_at=$4 WHERE provider=$1 AND account_id=$2 AND EXISTS(SELECT 1 FROM provider_call_permits p WHERE p.id=$5 AND p.started_at IS NOT NULL)`, a.Scope.Provider, a.Scope.Account, r.Status, now, a.ID)
+	_, err = tx.Exec(ctx, `UPDATE provider_call_accounts SET completed=completed+1,next_send_at=GREATEST(next_send_at,$4::timestamptz+(interval_ns::double precision/1000000000)*interval '1 second'),rate_limited=rate_limited+CASE WHEN $3=429 THEN 1 ELSE 0 END,updated_at=$4 WHERE provider=$1 AND account_id=$2 AND EXISTS(SELECT 1 FROM provider_call_permits p WHERE p.id=$5 AND p.started_at IS NOT NULL)`, a.Scope.Provider, a.Scope.Account, r.Status, now, a.ID)
 	if err != nil {
 		return fmt.Errorf("complete provider attempt count: %w", err)
 	}

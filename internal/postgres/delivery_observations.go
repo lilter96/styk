@@ -44,6 +44,10 @@ func (s *Store) SaveDeliveryObservations(ctx context.Context, scope delivery.Sco
 }
 
 func saveDeliveryProfile(ctx context.Context, tx pgx.Tx, profile delivery.Profile) error {
+	profile.ObservedAt = profile.ObservedAt.UTC().Truncate(time.Microsecond)
+	profile.CheckedAt = profile.CheckedAt.UTC().Truncate(time.Microsecond)
+	profile.ValidUntil = profile.ValidUntil.UTC().Truncate(time.Microsecond)
+	profile.Contract.CheckedAt = profile.Contract.CheckedAt.UTC().Truncate(time.Microsecond)
 	raw, err := json.Marshal(profile)
 	if err != nil {
 		return orders.ErrInvalid
@@ -57,7 +61,14 @@ func saveDeliveryProfile(ctx context.Context, tx pgx.Tx, profile delivery.Profil
 		return ordersError("save delivery observation", err)
 	}
 	if tag.RowsAffected() != 1 {
-		return orders.ErrStale
+		var identical bool
+		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM delivery_capability_observations WHERE tenant_id=$1 AND ozon_account=$2 AND warehouse_id=$3 AND delivery_method_id=$4 AND revision=$5 AND id=$6 AND contract_hash=$7 AND contract_checked_at=$8 AND checked_at >= $9)`, profile.Scope.Tenant, profile.Scope.OzonAccount, profile.WarehouseID, method, profile.Revision, profile.ID, profile.Contract.Hash, profile.Contract.CheckedAt, profile.CheckedAt).Scan(&identical)
+		if err != nil {
+			return ordersError("verify repeated delivery evidence", err)
+		}
+		if !identical {
+			return orders.ErrStale
+		}
 	}
 	return nil
 }

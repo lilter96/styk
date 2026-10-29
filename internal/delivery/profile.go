@@ -13,6 +13,7 @@ import (
 )
 
 func Classify(scope Scope, warehouse Warehouse, method *Method, evidence ContractEvidence, checked time.Time) (Profile, error) {
+	checked = checked.UTC().Truncate(time.Microsecond)
 	p := Profile{Scope: scope, WarehouseID: warehouse.ID, WarehouseType: warehouse.Type, WarehouseStatus: warehouse.Status,
 		Express: warehouse.Express, Contract: evidence, ObservedAt: checked, CheckedAt: checked, ValidUntil: checked.Add(Validity),
 		VerifiedDimensions: []string{"warehouse"}}
