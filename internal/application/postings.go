@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"example.com/styk/internal/domain"
+	"github.com/lilter96/styk/internal/domain"
 )
 
 type PostingReader interface {

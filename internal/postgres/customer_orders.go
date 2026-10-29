@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"example.com/styk/internal/domain"
 	"github.com/jackc/pgx/v5"
+	"github.com/lilter96/styk/internal/domain"
 )
 
 func (s *Store) CheckCustomerOrderAccount(ctx context.Context, tenant, account string) error {

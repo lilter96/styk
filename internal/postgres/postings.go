@@ -3,8 +3,8 @@ package postgres
 import (
 	"context"
 	"errors"
-	"example.com/styk/internal/domain"
 	"fmt"
+	"github.com/lilter96/styk/internal/domain"
 	"strings"
 
 	"github.com/jackc/pgx/v5"

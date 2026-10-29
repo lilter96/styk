@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"example.com/styk/internal/domain"
 	"github.com/jackc/pgx/v5"
+	"github.com/lilter96/styk/internal/domain"
 )
 
 func (s *Store) SaveInventoryImport(ctx context.Context, snap domain.InventoryImport, fingerprint string) (bool, error) {

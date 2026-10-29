@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"example.com/styk/internal/application"
+	"github.com/lilter96/styk/internal/application"
 )
 
 func TestExecutionOutcomes(t *testing.T) {

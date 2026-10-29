@@ -3,7 +3,7 @@ package ordercorrelation
 import (
 	"testing"
 
-	"example.com/styk/internal/domain"
+	"github.com/lilter96/styk/internal/domain"
 )
 
 type syntheticIdentity struct{ posting, order, ref string }

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"example.com/styk/internal/domain"
+	"github.com/lilter96/styk/internal/domain"
 )
 
 // Limits bound one catalog traversal. Reaching a limit never returns a snapshot.

@@ -16,12 +16,12 @@ import (
 	"testing"
 	"time"
 
-	"example.com/styk/internal/commitment"
-	"example.com/styk/internal/console"
-	"example.com/styk/internal/domain"
-	"example.com/styk/internal/matching"
-	"example.com/styk/internal/postgres"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/lilter96/styk/internal/commitment"
+	"github.com/lilter96/styk/internal/console"
+	"github.com/lilter96/styk/internal/domain"
+	"github.com/lilter96/styk/internal/matching"
+	"github.com/lilter96/styk/internal/postgres"
 )
 
 const confirmationTestOrigin = "http://127.0.0.1:5173"

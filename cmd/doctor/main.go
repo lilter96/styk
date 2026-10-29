@@ -11,11 +11,11 @@ import (
 	"syscall"
 	"time"
 
-	"example.com/styk/internal/doctor"
-	"example.com/styk/internal/doctordemo"
-	"example.com/styk/internal/infrastructure/moysklad"
-	"example.com/styk/internal/infrastructure/ozon"
-	"example.com/styk/internal/postgres"
+	"github.com/lilter96/styk/internal/doctor"
+	"github.com/lilter96/styk/internal/doctordemo"
+	"github.com/lilter96/styk/internal/infrastructure/moysklad"
+	"github.com/lilter96/styk/internal/infrastructure/ozon"
+	"github.com/lilter96/styk/internal/postgres"
 )
 
 func probeEligible(registered bool, configured, selected, secret string) bool {

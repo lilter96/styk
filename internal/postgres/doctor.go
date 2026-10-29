@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"example.com/styk/internal/commitment"
-	"example.com/styk/internal/doctor"
-	"example.com/styk/internal/domain"
 	"github.com/jackc/pgx/v5"
+	"github.com/lilter96/styk/internal/commitment"
+	"github.com/lilter96/styk/internal/doctor"
+	"github.com/lilter96/styk/internal/domain"
 )
 
 // Doctor reads a consistent local view. Scope is trusted administrative input.

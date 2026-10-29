@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"example.com/styk/internal/console"
-	"example.com/styk/internal/domain"
-	"example.com/styk/internal/postgres"
+	"github.com/lilter96/styk/internal/console"
+	"github.com/lilter96/styk/internal/domain"
+	"github.com/lilter96/styk/internal/postgres"
 )
 
 func TestDurableReviewScopedSessionAndSourceRevisions(t *testing.T) {

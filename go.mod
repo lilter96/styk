@@ -1,4 +1,4 @@
-module example.com/styk
+module github.com/lilter96/styk
 
 go 1.27.3
 

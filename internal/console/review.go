@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"example.com/styk/internal/postgres"
+	"github.com/lilter96/styk/internal/postgres"
 )
 
 // reviewScope validates both trusted registrations before exposing either source.
@@ -44,7 +44,7 @@ func searchTargets(db *postgres.Store) http.HandlerFunc {
 			writeError(w, 404, "SCOPE_NOT_REGISTERED")
 			return
 		}
-		rows, err := db.Pool.Query(ctx, `WITH latest AS (SELECT i.id FROM source_imports i JOIN stock_connections c ON c.tenant_id=$1 AND c.source=i.source AND c.account_id=i.account_id WHERE i.source='moysklad' AND i.account_id=$2 AND (c.include_import_history OR i.started_at>=c.registered_at) ORDER BY i.id DESC LIMIT 1) SELECT e.kind,e.external_id,e.article,e.code,e.parent_id FROM source_entities e JOIN latest l ON l.id=e.import_id WHERE e.kind IN ('product','variant') AND ($3='' OR e.external_id ILIKE '%'||$3||'%' OR e.article ILIKE '%'||$3||'%' OR e.code ILIKE '%'||$3||'%') ORDER BY e.kind,e.external_id LIMIT 51 OFFSET $4`, tenant, moy, search, offset)
+		rows, err := db.Pool.Query(ctx, `WITH latest AS (SELECT i.id FROM source_imports i JOIN stock_connections c ON c.tenant_id=$1 AND c.source=i.source AND c.account_id=i.account_id WHERE i.source='moysklad' AND i.account_id=$2 AND (c.include_import_history OR i.started_at>=c.registered_at) ORDER BY i.id DESC LIMIT 1) SELECT e.kind,e.external_id,e.name,e.article,e.code,e.parent_id FROM source_entities e JOIN latest l ON l.id=e.import_id WHERE e.kind IN ('product','variant') AND ($3='' OR e.external_id ILIKE '%'||$3||'%' OR e.name ILIKE '%'||$3||'%' OR e.article ILIKE '%'||$3||'%' OR e.code ILIKE '%'||$3||'%') ORDER BY e.kind,e.external_id LIMIT 51 OFFSET $4`, tenant, moy, search, offset)
 		if err != nil {
 			writeError(w, 503, "SEARCH_UNAVAILABLE")
 			return
@@ -53,6 +53,7 @@ func searchTargets(db *postgres.Store) http.HandlerFunc {
 		type item struct {
 			Kind     string `json:"kind"`
 			ID       string `json:"id"`
+			Name     string `json:"name"`
 			Article  string `json:"article"`
 			Code     string `json:"code"`
 			ParentID string `json:"parent_id"`
@@ -60,7 +61,7 @@ func searchTargets(db *postgres.Store) http.HandlerFunc {
 		items := []item{}
 		for rows.Next() {
 			var v item
-			if rows.Scan(&v.Kind, &v.ID, &v.Article, &v.Code, &v.ParentID) != nil {
+			if rows.Scan(&v.Kind, &v.ID, &v.Name, &v.Article, &v.Code, &v.ParentID) != nil {
 				writeError(w, 503, "SEARCH_UNAVAILABLE")
 				return
 			}

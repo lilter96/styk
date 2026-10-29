@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"example.com/styk/internal/console"
-	"example.com/styk/internal/domain"
+	"github.com/lilter96/styk/internal/console"
+	"github.com/lilter96/styk/internal/domain"
 )
 
 func TestConsoleScopedAuthenticatedReads(t *testing.T) {
@@ -117,7 +117,7 @@ func TestConsoleAmbiguousCandidatesAreNotConfirmed(t *testing.T) {
 	m := f.source
 	m.StartedAt = now
 	m.FinishedAt = now.Add(time.Second)
-	m.Entities = append(m.Entities, domain.ExternalEntity{Kind: "product", ID: "duplicate-a", Article: "duplicate"}, domain.ExternalEntity{Kind: "variant", ID: "duplicate-b", Article: "duplicate", ParentID: "parent-product"})
+	m.Entities = append(m.Entities, domain.ExternalEntity{Kind: "product", ID: "duplicate-a", Article: "duplicate"}, domain.ExternalEntity{Kind: "variant", ID: "duplicate-b", Name: "Synthetic variant name", Article: "duplicate", ParentID: "parent-product"})
 	if _, e := f.store.SaveInventoryImport(ctx, m, "console-match-moy"); e != nil {
 		t.Fatal(e)
 	}
@@ -151,14 +151,14 @@ func TestConsoleAmbiguousCandidatesAreNotConfirmed(t *testing.T) {
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"match_status":"AMBIGUOUS"`) || !strings.Contains(w.Body.String(), `"candidate_count":2`) || !strings.Contains(w.Body.String(), `"sku":null`) {
 		t.Fatal("ambiguous candidates or missing SKU not preserved")
 	}
-	q.Set("search", "duplicate-b")
+	q.Set("search", "Synthetic variant name")
 	search := httptest.NewRequest("GET", "http://127.0.0.1:8080/api/moysklad-products?"+q.Encode(), nil)
 	search.RemoteAddr = "127.0.0.1:1234"
 	search.AddCookie(r.Cookies()[0])
 	result := httptest.NewRecorder()
 	h.ServeHTTP(result, search)
-	if result.Code != 200 || !strings.Contains(result.Body.String(), `"parent_id":"parent-product"`) {
-		t.Fatal("variant parent identity not preserved")
+	if result.Code != 200 || !strings.Contains(result.Body.String(), `"parent_id":"parent-product"`) || !strings.Contains(result.Body.String(), `"name":"Synthetic variant name"`) {
+		t.Fatal("variant name or parent identity not preserved")
 	}
 }
 

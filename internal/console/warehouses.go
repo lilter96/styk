@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"example.com/styk/internal/postgres"
+	"github.com/lilter96/styk/internal/postgres"
 )
 
 func warehouses(db *postgres.Store) http.HandlerFunc {

@@ -2,7 +2,7 @@ package application
 
 import (
 	"context"
-	"example.com/styk/internal/domain"
+	"github.com/lilter96/styk/internal/domain"
 	"testing"
 )
 

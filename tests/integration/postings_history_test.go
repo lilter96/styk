@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"example.com/styk/internal/domain"
-	"example.com/styk/internal/postgres"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/lilter96/styk/internal/domain"
+	"github.com/lilter96/styk/internal/postgres"
 )
 
 func postingStore(t *testing.T) (*postgres.Store, string) {

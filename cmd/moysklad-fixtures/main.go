@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"example.com/styk/internal/moyskladfixture"
+	"github.com/lilter96/styk/internal/moyskladfixture"
 )
 
 const manifestDir = ".local/moysklad-fixtures"

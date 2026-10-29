@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"example.com/styk/internal/application"
-	"example.com/styk/internal/domain"
-	"example.com/styk/internal/infrastructure/ozon"
+	"github.com/lilter96/styk/internal/application"
+	"github.com/lilter96/styk/internal/domain"
+	"github.com/lilter96/styk/internal/infrastructure/ozon"
 )
 
 func TestPostingImportAtomicityAndRetry(t *testing.T) {

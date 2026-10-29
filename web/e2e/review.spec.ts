@@ -22,7 +22,9 @@ test("review synthetic mapping and audit without writing", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "Product review" }),
   ).toBeVisible();
-  await page.getByLabel("Article, code or identity").fill("offer");
+  await page
+    .getByLabel("Search by name, article, code or identity")
+    .fill("offer");
   await page.getByRole("button", { name: "product · item" }).click();
   await expect(
     page.getByRole("button", { name: "Create review" }),

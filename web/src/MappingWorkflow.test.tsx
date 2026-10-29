@@ -55,6 +55,7 @@ function setup(status = "CURRENT", conflict = false) {
             {
               kind: "variant",
               id: "v",
+              name: "Synthetic variant",
               article: "different",
               code: "code",
               parent_id: "parent",
@@ -119,10 +120,18 @@ function setup(status = "CURRENT", conflict = false) {
 }
 async function createReview() {
   fireEvent.click(await screen.findByRole("button", { name: "Review" }));
-  fireEvent.change(screen.getByLabelText("Article, code or identity"), {
-    target: { value: "different" },
-  });
-  fireEvent.click(await screen.findByRole("button", { name: "variant · v" }));
+  fireEvent.change(
+    screen.getByLabelText("Search by name, article, code or identity"),
+    {
+      target: { value: "different" },
+    },
+  );
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Synthetic variant, variant · v",
+    }),
+  );
+  expect(screen.getByText("Selected item: Synthetic variant")).toBeTruthy();
   expect(screen.getAllByText(/parent product: parent/i).length).toBeGreaterThan(
     0,
   );

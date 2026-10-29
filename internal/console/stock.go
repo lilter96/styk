@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"example.com/styk/internal/postgres"
+	"github.com/lilter96/styk/internal/postgres"
 )
 
 // stock returns source-reported fields separately and never fills missing rows.

@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"example.com/styk/internal/domain"
+	"github.com/lilter96/styk/internal/domain"
 )
 
 // verifiedIdentity is sealed: no current connector implements it. An arbitrary

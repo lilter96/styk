@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"example.com/styk/internal/application"
-	"example.com/styk/internal/domain"
-	"example.com/styk/internal/infrastructure/moysklad"
-	"example.com/styk/internal/postgres"
+	"github.com/lilter96/styk/internal/application"
+	"github.com/lilter96/styk/internal/domain"
+	"github.com/lilter96/styk/internal/infrastructure/moysklad"
+	"github.com/lilter96/styk/internal/postgres"
 )
 
 func TestMoyskladIngestion(t *testing.T) {

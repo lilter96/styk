@@ -10,9 +10,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"example.com/styk/internal/config"
-	"example.com/styk/internal/matching"
-	"example.com/styk/internal/postgres"
+	"github.com/lilter96/styk/internal/config"
+	"github.com/lilter96/styk/internal/matching"
+	"github.com/lilter96/styk/internal/postgres"
 )
 
 func run() error {

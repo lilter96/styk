@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"sort"
 
-	"example.com/styk/internal/domain"
+	"github.com/lilter96/styk/internal/domain"
 )
 
 type InventoryReader interface {

@@ -33,7 +33,9 @@ test("explicit manual variant confirmation survives a lost response and persists
     .getByRole("link", { name: "Products" })
     .click();
   await page.getByRole("button", { name: "Review", exact: true }).click();
-  await page.getByLabel("Article, code or identity").fill("variant");
+  await page
+    .getByLabel("Search by name, article, code or identity")
+    .fill("variant");
   await page.getByRole("button", { name: "variant · variant" }).click();
   await expect(page.getByText(/Parent product: parent/)).toBeVisible();
   await page.getByRole("button", { name: "Create review" }).click();

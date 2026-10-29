@@ -4,9 +4,9 @@ package integration
 
 import (
 	"context"
-	"example.com/styk/internal/domain"
-	"example.com/styk/internal/postgres"
 	"fmt"
+	"github.com/lilter96/styk/internal/domain"
+	"github.com/lilter96/styk/internal/postgres"
 	"os"
 	"sync"
 	"testing"

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"example.com/styk/internal/application"
+	"github.com/lilter96/styk/internal/application"
 )
 
 type Outcome string

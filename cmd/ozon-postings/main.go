@@ -13,11 +13,11 @@ import (
 	"syscall"
 	"time"
 
-	"example.com/styk/internal/application"
-	"example.com/styk/internal/config"
-	"example.com/styk/internal/domain"
-	"example.com/styk/internal/infrastructure/ozon"
-	"example.com/styk/internal/postgres"
+	"github.com/lilter96/styk/internal/application"
+	"github.com/lilter96/styk/internal/config"
+	"github.com/lilter96/styk/internal/domain"
+	"github.com/lilter96/styk/internal/infrastructure/ozon"
+	"github.com/lilter96/styk/internal/postgres"
 )
 
 type boundedReader struct {

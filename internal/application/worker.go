@@ -2,8 +2,8 @@ package application
 
 import (
 	"context"
-	"example.com/styk/internal/domain"
 	"fmt"
+	"github.com/lilter96/styk/internal/domain"
 	"log/slog"
 	"time"
 )

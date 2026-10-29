@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"example.com/styk/internal/postgres"
+	"github.com/lilter96/styk/internal/postgres"
 )
 
 // Handler exposes only explicitly scoped reads to an authenticated local operator.

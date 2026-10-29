@@ -6,8 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"example.com/styk/internal/domain"
 	"fmt"
+	"github.com/lilter96/styk/internal/domain"
 	"sort"
 )
 

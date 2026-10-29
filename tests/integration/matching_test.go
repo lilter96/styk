@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"example.com/styk/internal/domain"
-	"example.com/styk/internal/matching"
-	"example.com/styk/internal/postgres"
+	"github.com/lilter96/styk/internal/domain"
+	"github.com/lilter96/styk/internal/matching"
+	"github.com/lilter96/styk/internal/postgres"
 )
 
 func TestProductMatching(t *testing.T) {

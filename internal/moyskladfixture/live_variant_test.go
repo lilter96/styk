@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"example.com/styk/internal/application"
-	"example.com/styk/internal/infrastructure/moysklad"
-	"example.com/styk/internal/postgres"
+	"github.com/lilter96/styk/internal/application"
+	"github.com/lilter96/styk/internal/infrastructure/moysklad"
+	"github.com/lilter96/styk/internal/postgres"
 )
 
 // This opt-in check reads the existing fixture only. It is excluded from all

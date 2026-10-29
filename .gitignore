@@ -1,9 +1,7 @@
 .env
 bin/
-.local/moysklad-fixtures/
+.local/
 web/node_modules/
 web/dist/
 web/test-results/
 web/playwright-report/
-
-.local/web-validation/

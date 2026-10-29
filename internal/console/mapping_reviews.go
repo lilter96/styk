@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"example.com/styk/internal/application"
-	"example.com/styk/internal/domain"
-	"example.com/styk/internal/postgres"
+	"github.com/lilter96/styk/internal/application"
+	"github.com/lilter96/styk/internal/domain"
+	"github.com/lilter96/styk/internal/postgres"
 )
 
 func reviewError(w http.ResponseWriter, err error) {

@@ -2,7 +2,7 @@ package matching
 
 import (
 	"encoding/json"
-	"example.com/styk/internal/domain"
+	"github.com/lilter96/styk/internal/domain"
 	"testing"
 )
 

@@ -7,6 +7,7 @@ type Scope = { tenant: string; moy: string; ozon: string };
 type Target = {
   kind: string;
   id: string;
+  name?: string;
   article: string;
   code: string;
   parent_id?: string;
@@ -135,14 +136,17 @@ export function ProductReview({
     }
   }
   return (
-    <section className="warehouse-panel" aria-label="Product review">
+    <section
+      className="warehouse-panel product-review"
+      aria-label="Product review"
+    >
       <div className="heading-row">
         <h2>Product review</h2>
         <button className="secondary" onClick={close}>
           Close review
         </button>
       </div>
-      <p>
+      <p className="review-source">
         Ozon offer: {product.offer_id} · product: {product.product_id} · SKU:{" "}
         {product.sku ?? "Unknown"} ·{" "}
         {product.archived === null
@@ -151,7 +155,7 @@ export function ProductReview({
             ? "Archived"
             : "Active"}
       </p>
-      <p>
+      <p className="review-status">
         Current matching result: {product.match_status}. Suggestions are not
         identity proof.
       </p>
@@ -159,7 +163,7 @@ export function ProductReview({
       {product.candidates.length === 0 ? (
         <p>No candidates returned.</p>
       ) : (
-        <ul>
+        <ul className="review-candidates">
           {product.candidates.map((c) => (
             <li key={c.kind + c.id}>
               {c.kind} · {c.id} — evidence: {c.evidence.join(", ")}
@@ -186,9 +190,10 @@ export function ProductReview({
         </p>
       )}
       <h3>Search MoySklad products and variants</h3>
-      <label>
-        Article, code or identity
+      <label className="review-search">
+        Search by name, article, code or identity
         <input
+          placeholder="Search MoySklad products"
           disabled={creating}
           value={search}
           onChange={(e) => {
@@ -206,11 +211,22 @@ export function ProductReview({
       ) : targets.data?.items.length === 0 ? (
         <p>No products found.</p>
       ) : (
-        <ul>
+        <ul className="review-targets">
           {targets.data?.items.map((t) => (
-            <li key={t.kind + t.id}>
+            <li
+              key={t.kind + t.id}
+              className={
+                selected?.kind === t.kind && selected?.id === t.id
+                  ? "selected"
+                  : ""
+              }
+            >
               <button
-                className="link-button"
+                className="review-target-button"
+                aria-label={`${t.name ? `${t.name}, ` : ""}${t.kind} · ${t.id}`}
+                aria-pressed={
+                  selected?.kind === t.kind && selected?.id === t.id
+                }
                 disabled={creating}
                 onClick={() => {
                   setSelected(t);
@@ -218,12 +234,22 @@ export function ProductReview({
                   setEvidence("OPERATOR_ATTESTED");
                 }}
               >
-                {t.kind} · {t.id}
-              </button>{" "}
-              · article: {t.article || "Unknown"} · code: {t.code || "Unknown"}
-              {t.kind === "variant" && (
-                <> · parent product: {t.parent_id || "Unknown"}</>
-              )}
+                <span className="review-target-name">
+                  {t.name ||
+                    (t.kind === "variant"
+                      ? "Unnamed variant"
+                      : "Unnamed product")}
+                </span>
+                <span className="review-target-id">
+                  {t.kind} · {t.id}
+                </span>
+              </button>
+              <div className="review-target-meta">
+                Article: {t.article || "Unknown"} · Code: {t.code || "Unknown"}
+                {t.kind === "variant" && (
+                  <> · parent product: {t.parent_id || "Unknown"}</>
+                )}
+              </div>
             </li>
           ))}
         </ul>
@@ -245,11 +271,12 @@ export function ProductReview({
         </button>
       </div>
       {selected && (
-        <div className="notice">
+        <div className="notice review-evidence">
           <strong>Evidence review</strong>
           <p>
             Ozon {product.offer_id} → MoySklad {selected.kind} {selected.id}
           </p>
+          {selected.name && <p>Selected item: {selected.name}</p>}
           <p>
             {candidate
               ? `DETERMINISTIC_CANDIDATE: ${candidate.evidence.join(", ")}`
@@ -267,7 +294,7 @@ export function ProductReview({
             By confirming, you attest that these products represent the same
             item. This relationship has not been independently verified.
           </p>
-          <label>
+          <label className="review-field">
             Evidence classification{" "}
             <select
               disabled={creating}
@@ -286,6 +313,7 @@ export function ProductReview({
             </select>
           </label>
           <button
+            className="review-primary"
             disabled={creating || !!confirmation.pending}
             onClick={() => void createReview()}
           >
@@ -301,7 +329,7 @@ export function ProductReview({
               </p>
             ) : (
               review.data && (
-                <div>
+                <div className="review-confirmation">
                   <h3>Durable review</h3>
                   <p>
                     Ozon product {review.data.Review.Source.ID} → MoySklad{" "}
@@ -333,7 +361,7 @@ export function ProductReview({
                       review; the old revisions will not be refreshed.
                     </p>
                   )}
-                  <label>
+                  <label className="review-field">
                     Optional explanation (no credentials or customer data)
                     <input
                       value={explanation}
@@ -341,7 +369,7 @@ export function ProductReview({
                       maxLength={1000}
                     />
                   </label>
-                  <label>
+                  <label className="review-acknowledge">
                     <input
                       type="checkbox"
                       checked={acknowledge}
@@ -350,6 +378,7 @@ export function ProductReview({
                     I explicitly confirm this relationship.
                   </label>
                   <button
+                    className="review-primary"
                     disabled={
                       !acknowledge ||
                       !!confirmation.pending ||
@@ -388,7 +417,7 @@ export function ProductReview({
       ) : history.data?.items.length === 0 ? (
         <p>No confirmed mapping history for this account pair.</p>
       ) : (
-        <ul>
+        <ul className="review-history">
           {history.data?.items.map((h) => (
             <li key={h.mapping_id + ":" + h.version}>
               Mapping {h.mapping_id}, version {h.version}: {h.offer_id} →{" "}

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"example.com/styk/internal/domain"
 	"github.com/jackc/pgx/v5"
+	"github.com/lilter96/styk/internal/domain"
 )
 
 // ListPostings returns only the requested tenant and seller account. Correlations

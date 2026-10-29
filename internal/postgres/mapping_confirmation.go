@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"example.com/styk/internal/domain"
-	"example.com/styk/internal/matching"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/lilter96/styk/internal/domain"
+	"github.com/lilter96/styk/internal/matching"
 )
 
 var (

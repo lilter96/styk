@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"example.com/styk/internal/domain"
+	"github.com/lilter96/styk/internal/domain"
 )
 
 func textPtr(s string) *string { return &s }

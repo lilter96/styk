@@ -2,10 +2,10 @@ package main
 
 import (
 	"context"
-	"example.com/styk/internal/config"
-	"example.com/styk/internal/domain"
-	"example.com/styk/internal/postgres"
 	"fmt"
+	"github.com/lilter96/styk/internal/config"
+	"github.com/lilter96/styk/internal/domain"
+	"github.com/lilter96/styk/internal/postgres"
 	"log/slog"
 	"os"
 )

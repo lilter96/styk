@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"example.com/styk/internal/domain"
+	"github.com/lilter96/styk/internal/domain"
 )
 
 func TestConfirmationFingerprintBindsSemanticRequest(t *testing.T) {

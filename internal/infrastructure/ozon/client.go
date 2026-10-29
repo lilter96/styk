@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"example.com/styk/internal/domain"
+	"github.com/lilter96/styk/internal/domain"
 )
 
 const BaseURL = "https://api-seller.ozon.ru"

@@ -10,10 +10,10 @@ import (
 	"syscall"
 	"time"
 
-	"example.com/styk/internal/config"
-	"example.com/styk/internal/console"
-	"example.com/styk/internal/postgres"
-	"example.com/styk/internal/transport"
+	"github.com/lilter96/styk/internal/config"
+	"github.com/lilter96/styk/internal/console"
+	"github.com/lilter96/styk/internal/postgres"
+	"github.com/lilter96/styk/internal/transport"
 )
 
 func main() {

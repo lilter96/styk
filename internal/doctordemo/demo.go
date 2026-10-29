@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"example.com/styk/internal/domain"
-	"example.com/styk/internal/postgres"
+	"github.com/lilter96/styk/internal/domain"
+	"github.com/lilter96/styk/internal/postgres"
 )
 
 func Run(ctx context.Context, s *postgres.Store) (postgres.MatchScope, error) {

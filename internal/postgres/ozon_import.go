@@ -3,9 +3,9 @@ package postgres
 import (
 	"context"
 	"errors"
-	"example.com/styk/internal/domain"
 	"fmt"
 	"github.com/jackc/pgx/v5"
+	"github.com/lilter96/styk/internal/domain"
 )
 
 func (s *Store) SaveOzonImport(ctx context.Context, snap domain.OzonImport, fingerprint string) (bool, error) {

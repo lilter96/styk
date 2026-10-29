@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"example.com/styk/internal/domain"
-	"example.com/styk/internal/ordercorrelation"
 	"github.com/jackc/pgx/v5"
+	"github.com/lilter96/styk/internal/domain"
+	"github.com/lilter96/styk/internal/ordercorrelation"
 )
 
 type OrderCorrelationScope struct{ Tenant, MoyskladAccount, OzonAccount string }

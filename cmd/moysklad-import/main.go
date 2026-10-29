@@ -11,10 +11,10 @@ import (
 	"syscall"
 	"time"
 
-	"example.com/styk/internal/application"
-	"example.com/styk/internal/config"
-	"example.com/styk/internal/infrastructure/moysklad"
-	"example.com/styk/internal/postgres"
+	"github.com/lilter96/styk/internal/application"
+	"github.com/lilter96/styk/internal/config"
+	"github.com/lilter96/styk/internal/infrastructure/moysklad"
+	"github.com/lilter96/styk/internal/postgres"
 )
 
 func duration(name string, def time.Duration) (time.Duration, error) {

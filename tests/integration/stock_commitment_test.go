@@ -15,12 +15,12 @@ import (
 	"testing"
 	"time"
 
-	"example.com/styk/internal/application"
-	"example.com/styk/internal/commitment"
-	"example.com/styk/internal/domain"
-	"example.com/styk/internal/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/lilter96/styk/internal/application"
+	"github.com/lilter96/styk/internal/commitment"
+	"github.com/lilter96/styk/internal/domain"
+	"github.com/lilter96/styk/internal/postgres"
 )
 
 type stockFixtureData struct {

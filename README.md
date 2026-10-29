@@ -45,7 +45,7 @@ The mock retry policy treats a process interruption as safe to repeat; it must n
 
 Reconciliation and safe external operations are future milestones.
 
-The temporary module path `example.com/styk` is intentionally unowned. Before publication, replace it in `go.mod` and imports with the repository's actual module path and run `go mod tidy`.
+The Go module path is `github.com/lilter96/styk`.
 
 ## Read-only MoySklad import
 

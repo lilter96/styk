@@ -10,7 +10,7 @@ import (
 	"time"
 	_ "time/tzdata" // MoySklad timestamps use Moscow time even in minimal containers.
 
-	"example.com/styk/internal/domain"
+	"github.com/lilter96/styk/internal/domain"
 )
 
 type customerOrderDTO struct {

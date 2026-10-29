@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"example.com/styk/internal/domain"
 	"github.com/jackc/pgx/v5"
+	"github.com/lilter96/styk/internal/domain"
 )
 
 func loadStockCustomerOrders(ctx context.Context, tx pgx.Tx, req domain.StockCalculationRequest, e *domain.StockEvidence) error {
