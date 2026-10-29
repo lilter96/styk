@@ -2,6 +2,7 @@ SHELL := /bin/sh
 export GOTOOLCHAIN := go1.27.3
 -include .env
 export
+GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
 GOOSE := go run -tags="no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql" github.com/pressly/goose/v3/cmd/goose@v3.25.0
 .PHONY: up down migrate test test-integration lint build
 up:
@@ -17,6 +18,7 @@ test-integration:
 lint:
 	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './vendor/*'))" || (gofmt -l $$(find . -name '*.go' -not -path './vendor/*'); exit 1)
 	go vet ./...
+	$(GOLANGCI_LINT) run --max-issues-per-linter=0 --max-same-issues=0 ./...
 build:
 	mkdir -p bin
 	go build -o bin/api ./cmd/api
