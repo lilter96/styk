@@ -40,6 +40,7 @@ function setup({
   testAccount = false,
   attestationFails = false,
   recoveryScenario = false,
+  otherRecoveryScenario = false,
 }: {
   ready?: boolean;
   lost?: boolean;
@@ -52,6 +53,7 @@ function setup({
   testAccount?: boolean;
   attestationFails?: boolean;
   recoveryScenario?: boolean;
+  otherRecoveryScenario?: boolean;
 } = {}) {
   let accepted = 0;
   let recovered = false;
@@ -160,6 +162,11 @@ function setup({
           status: 503,
         });
       const url = new URL(path, "http://test.local");
+      if (url.pathname.endsWith("/automatic") && otherRecoveryScenario)
+        return new Response(JSON.stringify({
+          available: true,
+          unresolved: recovered ? [] : [{ operation_id: "b".repeat(32), ozon_product_id: "102", ozon_warehouse_id: "201", quantity: "6", state: "UNKNOWN", readback_at: "2026-10-29T13:27:08Z", readback_quantity: "0" }],
+        }), { status: 200 });
       return new Response(
         JSON.stringify(
           view({
@@ -507,6 +514,19 @@ it("requires explicit uncertainty acceptance before a test recovery", async () =
     expected_quantity: "0",
     expected_readback_at: "2026-10-29T13:27:08Z",
   });
+  expect(calls.some((x) => x.path.endsWith("/enable"))).toBe(false);
+});
+it("can recover an older unknown target even when it is not the latest operation", async () => {
+  const { calls } = setup({ testAccount: true, otherRecoveryScenario: true });
+  fireEvent.click(await screen.findByText(/Отправки, требующие проверки/));
+  fireEvent.click(screen.getByRole("button", { name: "Рассмотреть восстановление" }));
+  const dialog = screen.getByRole("dialog", { name: "Принять неопределённость тестовой отправки?" });
+  expect(within(dialog).getByText(/Товар 102/)).toBeTruthy();
+  fireEvent.change(within(dialog).getByLabelText("Причина решения"), { target: { value: "Оператор принимает риск тестовой операции" } });
+  fireEvent.click(within(dialog).getByLabelText(/прежний worker остановлен/));
+  fireEvent.click(within(dialog).getByLabelText(/Принимаю неопределённость/));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Записать решение оператора" }));
+  await waitFor(() => expect(calls.some((x) => x.path.endsWith(`${"b".repeat(32)}/supersede`))).toBe(true));
   expect(calls.some((x) => x.path.endsWith("/enable"))).toBe(false);
 });
 it("rejects expired reviews and unavailable state without creating an enable request", async () => {

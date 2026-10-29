@@ -8,6 +8,7 @@ type Target = {
   ozon_product_id: string;
   ozon_warehouse_id: string;
   offer_id?: string;
+  eligible?: boolean;
   source_physical?: string;
   source_reserve?: string;
   marketplace_free?: number;
@@ -16,6 +17,16 @@ type Target = {
   last_state?: string;
   readback_quantity?: string;
   readback_at?: string;
+};
+export type AutomaticRecoveryTarget = {
+  operation_id: string;
+  ozon_product_id: string;
+  ozon_warehouse_id: string;
+  quantity: string;
+  state: string;
+  dispatched_at?: string;
+  readback_at?: string;
+  readback_quantity?: string;
 };
 type AutoView = {
   available: boolean;
@@ -44,16 +55,7 @@ type AutoView = {
     publication_id?: string;
     metrics: Record<string, unknown>;
   };
-  unresolved?: {
-    operation_id: string;
-    ozon_product_id: string;
-    ozon_warehouse_id: string;
-    quantity: string;
-    state: string;
-    dispatched_at?: string;
-    readback_at?: string;
-    readback_quantity?: string;
-  }[];
+  unresolved?: AutomaticRecoveryTarget[];
 };
 
 const outcomes: Record<string, string> = {
@@ -86,10 +88,12 @@ export function AutomaticStockControls({
   scope,
   targets,
   onEnabledChange,
+  onRecover,
 }: {
   scope: Scope;
   targets: Target[];
   onEnabledChange: (enabled: boolean) => void;
+  onRecover?: (target: AutomaticRecoveryTarget) => void;
 }) {
   const client = useQueryClient();
   const key = [
@@ -132,14 +136,12 @@ export function AutomaticStockControls({
   }, [scope.tenant, scope.moysklad_account, scope.ozon_account]);
   if (!data?.available) return null;
   const keyFor = (t: Target) => `${t.ozon_product_id}:${t.ozon_warehouse_id}`;
-  const availableTargets = data.candidates ?? targets;
+  const allTargets = data.candidates ?? targets;
+  const availableTargets = allTargets.filter((t) => t.eligible !== false);
   const selection = selected ?? availableTargets.slice(0, 1).map(keyFor);
   const selectedTargets = availableTargets.filter((t) => selection.includes(keyFor(t)));
   const current = selectedTargets[0];
   const cycle = data.last_cycle;
-  const needsAttention =
-    cycle?.state === "BLOCKED" ||
-    Number(cycle?.metrics?.blocked_targets || 0) > 0;
   const activeCycle =
     cycle &&
     ["STARTING", "READING", "WAITING_PUBLICATION"].includes(cycle.state);
@@ -164,9 +166,10 @@ export function AutomaticStockControls({
     checks?: string[];
   };
   const results = (cycle?.metrics?.target_results || {}) as Record<string, TargetResult>;
-  const enrolled = availableTargets.filter((t) =>
-    data.policy?.targets.some((p) => keyFor(p) === keyFor(t)),
+  const enrolled: Target[] = (data.policy?.targets || []).map((p) =>
+    allTargets.find((t) => keyFor(t) === keyFor(p)) || { ...p, eligible: false },
   );
+  const needsAttention = cycle?.state === "BLOCKED" || Number(cycle?.metrics?.blocked_targets || 0) > 0 || enrolled.some((t) => t.eligible === false) || !!data.unresolved?.length;
   const lastSuccess = enrolled
     .filter((t) => t.last_state === "RECONCILED" && t.readback_at)
     .map((t) => t.readback_at!)
@@ -174,6 +177,7 @@ export function AutomaticStockControls({
     .at(-1);
   function targetOutcome(t: Target): string {
     const result = results[keyFor(t)];
+    if (t.eligible === false) return "Требует внимания";
     if (result?.outcome === "NO_CHANGE" || result?.outcome === "RECONCILED") return "Сверено";
     if (result?.outcome === "BLOCKED" || result?.outcome === "PUBLICATION_UNKNOWN" || result?.outcome === "PUBLICATION_REJECTED" || result?.outcome === "RECONCILIATION_PENDING") return "Требует внимания";
     return "Ожидает проверки";
@@ -371,7 +375,7 @@ export function AutomaticStockControls({
           {enrolled.length > 0 && (
             <details className="technical-details">
               <summary>
-                Товаров в настройке: {enrolled.length} · сверено: {enrolled.filter((t) => targetOutcome(t) === "Сверено").length} · требуют внимания: {enrolled.filter((t) => targetOutcome(t) === "Требует внимания").length}
+                Товаров в настройке: {enrolled.length} · сверено: {enrolled.filter((t) => targetOutcome(t) === "Сверено").length} · ожидают: {enrolled.filter((t) => targetOutcome(t) === "Ожидает проверки").length} · требуют внимания: {enrolled.filter((t) => targetOutcome(t) === "Требует внимания").length}
               </summary>
               {enrolled.map((t) => {
                 const r = results[keyFor(t)];
@@ -379,7 +383,7 @@ export function AutomaticStockControls({
                   <div key={keyFor(t)}>
                     <p>{t.offer_id || t.ozon_product_id} · склад {t.ozon_warehouse_id} · {targetOutcome(t)}</p>
                     <p>МойСклад: {number(r?.source_physical ?? t.source_physical)} · резерв: {number(r?.source_reserve ?? t.source_reserve)} · Ozon: {number(r?.readback_quantity ?? r?.marketplace_free ?? t.marketplace_free)} · расчёт: {number(r?.candidate)}</p>
-                    {r?.checks?.length ? <p>{targetProblem(r.checks)}</p> : null}
+                    {t.eligible === false ? <p>Нет актуального товара или остатка на поддерживаемом складе Ozon.</p> : r?.checks?.length ? <p>{targetProblem(r.checks)}</p> : null}
                     {r?.publication_id && <p>Последняя отправка: {r.publication_id}</p>}
                     {t.readback_at && <p>Последняя проверка Ozon: {new Date(t.readback_at).toLocaleString("ru-RU")}.</p>}
                   </div>
@@ -418,6 +422,11 @@ export function AutomaticStockControls({
                   >
                     Уточнить этот результат
                   </button>
+                  {item.state === "UNKNOWN" && item.readback_at && item.readback_quantity !== undefined && onRecover && (
+                    <button className="text-action" disabled={busy || !!pending} onClick={() => onRecover(item)}>
+                      Рассмотреть восстановление
+                    </button>
+                  )}
                 </div>
               ))}
             </details>

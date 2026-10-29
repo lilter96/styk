@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, params, post } from "./api";
 import { IntegrationDialog } from "./IntegrationDialog";
-import { AutomaticStockControls } from "./AutomaticStockControls";
+import { AutomaticStockControls, type AutomaticRecoveryTarget } from "./AutomaticStockControls";
 
 type SyncScope = {
   tenant: string;
@@ -167,6 +167,10 @@ export function useStockSyncSubmission() {
           intent.scope.ozon_account,
         ],
       });
+      if (intent.kind === "supersede")
+        await client.invalidateQueries({
+          queryKey: ["automatic-stock", intent.scope.tenant, intent.scope.moysklad_account, intent.scope.ozon_account],
+        });
     } catch (error) {
       const safeCode = error instanceof ApiError ? error.code || "" : "";
       setCode(safeCode);
@@ -416,6 +420,7 @@ export function StockSyncControls({
     [testAck, setTestAck] = useState(false),
     [testAttestations, setTestAttestations] = useState<TestAttestation[]>([]),
     [recoveryOpen, setRecoveryOpen] = useState(false),
+    [recoveryTarget, setRecoveryTarget] = useState<AutomaticRecoveryTarget | null>(null),
     [recoveryAck, setRecoveryAck] = useState(false),
     [automaticEnabled, setAutomaticEnabled] = useState(false),
     [workerStopped, setWorkerStopped] = useState(false),
@@ -452,6 +457,7 @@ export function StockSyncControls({
     setTestAck(false);
     setTestAttestations([]);
     setRecoveryOpen(false);
+    setRecoveryTarget(null);
     setRecoveryAck(false);
     setWorkerStopped(false);
     setRecoveryReason("");
@@ -885,6 +891,7 @@ export function StockSyncControls({
                   setRecoveryAck(false);
                   setWorkerStopped(false);
                   setRecoveryReason("");
+                  setRecoveryTarget({ operation_id: view.last_operation!.id, ...view.last_operation!.targets[0] });
                   setRecoveryOpen(true);
                 }}
               >
@@ -898,6 +905,13 @@ export function StockSyncControls({
           scope={scope}
           targets={view.targets}
           onEnabledChange={setAutomaticEnabled}
+          onRecover={(target) => {
+            setRecoveryAck(false);
+            setWorkerStopped(false);
+            setRecoveryReason("");
+            setRecoveryTarget(target);
+            setRecoveryOpen(true);
+          }}
         />
       )}
       {scopedPending && (
@@ -1289,7 +1303,7 @@ export function StockSyncControls({
           </div>
         </IntegrationDialog>
       )}
-      {recoveryOpen && view?.last_operation?.targets[0] && (
+      {recoveryOpen && recoveryTarget && (
         <IntegrationDialog
           title="Принять неопределённость тестовой отправки?"
           onClose={() => setRecoveryOpen(false)}
@@ -1302,13 +1316,13 @@ export function StockSyncControls({
               пары и само не отправляет остаток.
             </p>
             <p>
-              Товар {view.last_operation.targets[0].ozon_product_id} · склад{" "}
-              {view.last_operation.targets[0].ozon_warehouse_id} · запрос{" "}
-              {view.last_operation.targets[0].quantity} шт. · последняя проверка{" "}
-              {view.last_operation.targets[0].readback_quantity ?? "нет данных"}{" "}
+              Товар {recoveryTarget.ozon_product_id} · склад{" "}
+              {recoveryTarget.ozon_warehouse_id} · запрос{" "}
+              {recoveryTarget.quantity} шт. · последняя проверка{" "}
+              {recoveryTarget.readback_quantity ?? "нет данных"}{" "}
               шт.{" "}
-              {view.last_operation.targets[0].readback_at &&
-                `· ${new Date(view.last_operation.targets[0].readback_at!).toLocaleString("ru-RU")}`}
+              {recoveryTarget.readback_at &&
+                `· ${new Date(recoveryTarget.readback_at).toLocaleString("ru-RU")}`}
               .
             </p>
             <label className="integration-field">
@@ -1343,9 +1357,8 @@ export function StockSyncControls({
                   !recoveryAck ||
                   !workerStopped ||
                   recoveryReason.trim().length < 16 ||
-                  !view.last_operation.targets[0].readback_at ||
-                  view.last_operation.targets[0].readback_quantity ===
-                    undefined ||
+                  !recoveryTarget.readback_at ||
+                  recoveryTarget.readback_quantity === undefined ||
                   commands.busy ||
                   !!commands.pending
                 }
@@ -1354,12 +1367,12 @@ export function StockSyncControls({
                     scope,
                     "supersede",
                     undefined,
-                    view.last_operation!.id,
+                    recoveryTarget.operation_id,
                     {
                       expected_readback_at:
-                        view.last_operation!.targets[0].readback_at!,
+                        recoveryTarget.readback_at!,
                       expected_quantity:
-                        view.last_operation!.targets[0].readback_quantity!,
+                        recoveryTarget.readback_quantity!,
                       reason: recoveryReason.trim(),
                     },
                   )

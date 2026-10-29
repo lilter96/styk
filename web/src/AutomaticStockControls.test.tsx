@@ -174,6 +174,19 @@ it("shows each enrolled target's last calculation and blocked reason", async () 
   expect(screen.getByText(/расчёт: 5/)).toBeTruthy();
 });
 
+it("keeps an enrolled target visible when its latest marketplace row disappears", async () => {
+  const missing = { ...target, ozon_product_id: "102", offer_id: "offer-b", eligible: false, marketplace_free: undefined };
+  setup({
+    available: true,
+    candidates: [{ ...target, eligible: true }, missing],
+    policy: { enabled: true, interval_seconds: 60, valid_until: new Date(Date.now() + 3600000).toISOString(), targets: [target, missing] },
+    last_cycle: { id: "multi", state: "COMPLETE", outcome: "NO_CHANGE", started_at: "2026-10-29T13:00:00Z", metrics: { target_results: { "102:201": { outcome: "NO_CHANGE", candidate: "0" } } } },
+  });
+  fireEvent.click(await screen.findByText(/Товаров в настройке: 2/));
+  expect(screen.getByText(/offer-b.*Требует внимания/)).toBeTruthy();
+  expect(screen.getByText(/Нет актуального товара или остатка/)).toBeTruthy();
+});
+
 it("shows an unknown outcome and supports pausing without claiming synchronization", async () => {
   const calls = setup({
     available: true,
