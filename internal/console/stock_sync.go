@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/lilter96/styk/internal/config"
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/postgres"
 	"github.com/lilter96/styk/internal/stocksync"
@@ -65,7 +66,7 @@ func (a *stockSyncAPI) get(w http.ResponseWriter, r *http.Request) {
 		stockSyncError(w, err)
 		return
 	}
-	writeJSON(w, postgres.StockSyncPublic(view))
+	writeStockSyncView(w, view)
 }
 func (a *stockSyncAPI) preview(w http.ResponseWriter, r *http.Request) {
 	var req domain.StockSyncPreviewRequest
@@ -102,12 +103,18 @@ func (a *stockSyncAPI) mutate(w http.ResponseWriter, r *http.Request, action str
 		writeError(w, 400, "INVALID_REQUEST")
 		return
 	}
+	if action == "enable" {
+		if _, ok := config.StockPublicationTestEndpoint(); !ok {
+			writeError(w, http.StatusServiceUnavailable, "STOCK_PUBLICATION_DISABLED")
+			return
+		}
+	}
 	view, err := a.db.MutateStockSync(r.Context(), req.StockSyncScope, action, req.ReviewID, req.Key, time.Now().UTC())
 	if err != nil {
 		stockSyncError(w, err)
 		return
 	}
-	writeJSON(w, postgres.StockSyncPublic(view))
+	writeStockSyncView(w, view)
 }
 func (a *stockSyncAPI) reconcile(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -126,5 +133,17 @@ func (a *stockSyncAPI) reconcile(w http.ResponseWriter, r *http.Request) {
 		stockSyncError(w, err)
 		return
 	}
-	writeJSON(w, postgres.StockSyncPublic(view))
+	writeStockSyncView(w, view)
+}
+
+// Actual marketplace publication is not available during the safety hold,
+// even when the loopback-only simulator is explicitly configured.
+func writeStockSyncView(w http.ResponseWriter, view domain.StockSyncView) {
+	data, ok := postgres.StockSyncPublic(view).(map[string]any)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "STOCK_SYNC_UNAVAILABLE")
+		return
+	}
+	data["publication_available"] = false
+	writeJSON(w, data)
 }

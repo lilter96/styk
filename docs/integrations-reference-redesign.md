@@ -1,5 +1,7 @@
 # Integrations: reference redesign and scoped publication V1
 
+> **Safety audit hold:** actual marketplace stock writes are disabled in code. UI indicates unavailability; see [stock-publication-safety-audit.md](stock-publication-safety-audit.md). Historical screenshots and test descriptions below represent the pre-audit redesign.
+
 The implementation follows the seven screens in the supplied local `Интеграции — эталонный редизайн.html`: navigation, setup steps, provider cards, key editor, publication confirmation, progress, support diagnostics and product mapping. The user subsequently explicitly extended scope to encrypted key storage and stock publication. Those are implemented backend workflows, not simulated controls.
 
 ## UX assessment

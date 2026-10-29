@@ -357,6 +357,28 @@ func (s *Store) StockPublicationCanDispatch(ctx context.Context, op domain.Stock
 	if !enabled {
 		return false, nil
 	}
+	// A worker may have been paused while recovery marked its claim UNKNOWN.
+	// Its in-memory operation is not proof of current ownership.
+	if len(op.Targets) == 0 {
+		return false, nil
+	}
+	for _, target := range op.Targets {
+		if target.State != "DISPATCHING" {
+			continue
+		}
+		var currentState string
+		var product, warehouse, quantity string
+		err = tx.QueryRow(ctx, `SELECT t.state,t.product_id,t.warehouse_id,t.quantity FROM stock_publication_targets t JOIN stock_publications p ON p.id=t.operation_id WHERE p.id=$1 AND p.tenant_id=$2 AND p.moysklad_account=$3 AND p.ozon_account=$4 AND t.id=$5`, op.ID, op.Tenant, op.MoyskladAccount, op.OzonAccount, target.ID).Scan(&currentState, &product, &warehouse, &quantity)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if currentState != "DISPATCHING" || product != target.ProductID || warehouse != target.WarehouseID || quantity != target.Quantity {
+			return false, nil
+		}
+	}
 	review, err := readSyncReview(ctx, tx, op.StockSyncScope, op.ReviewID)
 	if err != nil {
 		return false, err

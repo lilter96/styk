@@ -112,7 +112,8 @@ type Scenario =
   | "unknown-operation"
   | "key-error"
   | "sync-ready"
-  | "sync-active";
+  | "sync-active"
+  | "sync-hold";
 async function openFixture(page: Page, scenario: Scenario = "success") {
   await page.clock.setFixedTime(new Date("2026-10-29T06:36:00Z"));
   await page.addInitScript(
@@ -190,12 +191,19 @@ async function openFixture(page: Page, scenario: Scenario = "success") {
     tenant,
     moysklad_account: account,
     ozon_account: account,
-    enabled: scenario === "sync-active",
-    state: scenario === "sync-active" ? "ACTIVE" : "DISABLED",
+    publication_available: scenario !== "sync-hold", // Synthetic fixtures only.
+    enabled: scenario === "sync-active" || scenario === "sync-hold",
+    state:
+      scenario === "sync-active" || scenario === "sync-hold"
+        ? "ACTIVE"
+        : "DISABLED",
     ready: scenario.startsWith("sync-"),
     checks: [],
     targets: [],
-    last_confirmed_at: scenario === "sync-active" ? observed : undefined,
+    last_confirmed_at:
+      scenario === "sync-active" || scenario === "sync-hold"
+        ? observed
+        : undefined,
   };
 
   await page.route("**/api/**", async (route) => {
@@ -370,7 +378,7 @@ const sizes = [
 ];
 const shot = async (page: Page, name: string) =>
   page.screenshot({
-    path: `../docs/screenshots/integrations-reference/${name}.png`,
+    path: `${process.env.STYK_VISUAL_SCREENSHOTS_DIR || "../docs/screenshots/integrations-reference"}/${name}.png`,
     fullPage: (await page.getByRole("dialog").count()) === 0,
   });
 for (const size of sizes) {
@@ -659,4 +667,23 @@ test("stock publication requires separate preview and explicit acknowledgement",
       .getByRole("region", { name: "Синхронизация остатков" })
       .getByText("Выключена", { exact: true }),
   ).toBeVisible();
+});
+
+test("deployment safety hold overrides a previously enabled policy", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const { syncBodies } = await openFixture(page, "sync-hold");
+  const card = page.getByRole("region", { name: "Синхронизация остатков" });
+  await expect(card.getByText("Недоступна", { exact: true })).toBeVisible();
+  await expect(
+    card.getByText(/проверка безопасности ещё не завершена/),
+  ).toBeVisible();
+  await expect(card.getByRole("button", { name: "Выключить" })).toBeVisible();
+  await expect(
+    page.getByText("Все шаги выполнены", { exact: true }),
+  ).toHaveCount(0);
+  expect(syncBodies).toHaveLength(0);
+  await assertLayout(page);
+  await shot(page, "publication-safety-hold");
 });

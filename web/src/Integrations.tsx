@@ -277,6 +277,7 @@ export function Integrations({
     syncView.moysklad_account === selected?.moy &&
     syncView.ozon_account === selected?.ozon &&
     syncView.enabled &&
+    syncView.publication_available === true &&
     syncView.ready &&
     [
       "ACTIVE",

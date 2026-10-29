@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand/v2"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -33,6 +34,7 @@ type Options struct {
 	Timeout, Interval, Backoff, MaxRetryAfter time.Duration
 	Attempts, PageSize                        int
 	HTTPClient                                *http.Client
+	AllowSyntheticStockWrites                 bool
 }
 type Client struct {
 	base                                      *url.URL
@@ -42,6 +44,7 @@ type Client struct {
 	attempts, pageSize                        int
 	mu                                        sync.Mutex
 	next                                      time.Time
+	allowSyntheticStockWrites                 bool
 }
 type APIError struct {
 	Status   int
@@ -60,6 +63,15 @@ func New(o Options) (*Client, error) {
 	if e != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "" {
 		return nil, errors.New("invalid Ozon base URL")
 	}
+	if o.AllowSyntheticStockWrites {
+		if o.HTTPClient != nil {
+			return nil, errors.New("synthetic stock writes require the standard loopback HTTP transport")
+		}
+		ip := net.ParseIP(u.Hostname())
+		if u.Scheme != "http" || ip == nil || !ip.IsLoopback() || u.Port() == "" {
+			return nil, errors.New("stock writes restricted to an explicit loopback test server")
+		}
+	}
 	if strings.TrimSpace(o.ClientID) == "" || strings.TrimSpace(o.APIKey) == "" || strings.ContainsAny(o.ClientID+o.APIKey, "\r\n") {
 		return nil, errors.New("Ozon client ID and API key are required")
 	}
@@ -73,9 +85,20 @@ func New(o Options) (*Client, error) {
 		h := *hc
 		hc = &h
 	}
+	if o.AllowSyntheticStockWrites {
+		baseTransport, ok := http.DefaultTransport.(*http.Transport)
+		if !ok {
+			return nil, errors.New("standard synthetic HTTP transport unavailable")
+		}
+		transport := baseTransport.Clone()
+		// Go's standard Transport can transparently retry requests on reused
+		// connections. Never reuse a connection for these writes.
+		transport.DisableKeepAlives = true
+		hc.Transport = transport
+	}
 	hc.Timeout = o.Timeout
 	hc.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return &Client{base: u, id: o.ClientID, key: o.APIKey, http: hc, timeout: o.Timeout, interval: o.Interval, backoff: o.Backoff, maxRetryAfter: o.MaxRetryAfter, attempts: o.Attempts, pageSize: o.PageSize}, nil
+	return &Client{base: u, id: o.ClientID, key: o.APIKey, http: hc, timeout: o.Timeout, interval: o.Interval, backoff: o.Backoff, maxRetryAfter: o.MaxRetryAfter, attempts: o.Attempts, pageSize: o.PageSize, allowSyntheticStockWrites: o.AllowSyntheticStockWrites}, nil
 }
 func sleep(ctx context.Context, d time.Duration) error {
 	if d <= 0 {

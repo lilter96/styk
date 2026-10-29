@@ -51,3 +51,38 @@ func TestStockSyncRoutesRequireSessionOriginAndExplicitAcknowledgement(t *testin
 		}
 	}
 }
+
+func TestStockPublicationDeploymentGateCannotBeBypassedByEnableRequest(t *testing.T) {
+	origin := "http://127.0.0.1:15177"
+	auth, err := newAuth(strings.Repeat("s", 32), origin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/session", auth.login)
+	db := &postgres.Store{}
+	registerStockSyncRoutes(mux, auth, db, &connections{db: db})
+	send := func(path, body string, cookie *http.Cookie) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", origin+path, strings.NewReader(body))
+		r.RemoteAddr = "127.0.0.1:31337"
+		r.Header.Set("Origin", origin)
+		r.Header.Set("Content-Type", "application/json")
+		if cookie != nil {
+			r.AddCookie(cookie)
+		}
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, r)
+		return w
+	}
+	login := send("/api/session", `{"secret":"`+strings.Repeat("s", 32)+`"}`, nil)
+	cookie := login.Result().Cookies()[0]
+	body := `{"tenant":"tenant","moysklad_account":"moy","ozon_account":"ozon","review_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","idempotency_key":"synthetic-key-12345678","acknowledge":true}`
+	for _, tc := range []struct{ flag, endpoint string }{{"", ""}, {"true", ""}, {"true", "https://api-seller.ozon.ru"}, {"true", "http://localhost:1234"}} {
+		t.Setenv("STYK_STOCK_PUBLICATION_ENABLED", tc.flag)
+		t.Setenv("STYK_STOCK_PUBLICATION_TEST_ENDPOINT", tc.endpoint)
+		w := send("/api/stock-sync/enable", body, cookie)
+		if w.Code != 503 || !strings.Contains(w.Body.String(), "STOCK_PUBLICATION_DISABLED") {
+			t.Fatalf("gate bypass: %d %s", w.Code, w.Body.String())
+		}
+	}
+}

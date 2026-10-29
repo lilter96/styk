@@ -44,6 +44,7 @@ export type StockSyncView = SyncScope & {
   targets: Target[];
   last_operation?: Publication;
   last_confirmed_at?: string;
+  publication_available?: boolean;
 };
 type Review = SyncScope & {
   review_id: string;
@@ -65,6 +66,8 @@ const sameScope = (a: SyncScope, b: SyncScope) =>
   a.moysklad_account === b.moysklad_account &&
   a.ozon_account === b.ozon_account;
 const errors: Record<string, string> = {
+  STOCK_PUBLICATION_DISABLED:
+    "Отправка остатков временно недоступна: проверка безопасности ещё не завершена.",
   STOCK_SYNC_BLOCKED:
     "Условия отправки не подтверждены. Проверьте товары, склады и данные об остатках.",
   STOCK_SYNC_STALE:
@@ -262,11 +265,23 @@ const proofLabels: Record<string, string> = {
 };
 const checkLabels: Record<string, string> = {
   ...proofLabels,
+  SOURCE_TRAVERSAL_STALE: "Повторите загрузку МойСклад: её начало устарело",
+  OZON_TRAVERSAL_STALE: "Повторите загрузку Ozon: её начало устарело",
+  PROOF_AFTER_SOURCE_TRAVERSAL_STARTED:
+    "Подтвердите условия до начала новой загрузки МойСклад",
+  OUT_OF_ORDER_IMPORT:
+    "Загрузки завершились в неверном порядке — повторите загрузку данных",
+  SOURCE_IDENTITY_UNCONFIRMED:
+    "Товар и склад должны присутствовать в актуальной загрузке МойСклад",
+  CATALOG_IDENTITY_CHANGED:
+    "Проверьте соответствие товара, предложения и SKU в актуальном каталоге Ozon",
+  WAREHOUSE_SCHEMA_UNCONFIRMED: "Проверьте, что склад относится к схеме FBS",
   MAPPINGS_REQUIRED: "Подтвердите соответствия товаров и складов",
   CONNECTION_DISABLED: "Подключение отключено. Обновите данные доступа",
   SYNC_CONDITIONS_CHANGED:
     "Соответствия или настройки изменились — проверьте условия заново",
   OZON_TARGET_IDENTITIES: "Идентификаторы товара и склада Ozon проверены",
+  OZON_STOCK_VALUES_INVALID: "Проверьте значения остатков и резервов Ozon",
   OZON_STOCK_BASELINE_REQUIRED:
     "Есть данные Ozon об остатке этого товара на складе",
   OZON_BASELINE_FRESH: "Данные Ozon получены не более пятнадцати минут назад",
@@ -462,20 +477,31 @@ export function StockSyncControls({
       view?.last_operation?.state || "",
     ) || state.includes("UNKNOWN");
   const settlementRequired = state === "EFFECT_CONFIRMED_REVIEW_REQUIRED";
+  const deploymentBlocked = !!view && view.publication_available !== true;
   const blocked = !!active && (!view?.ready || state === "BLOCKED");
+  const inFlightDuringHold =
+    deploymentBlocked &&
+    (state === "RUNNING" ||
+      state === "UPDATING" ||
+      state === "STOPPING" ||
+      view?.last_operation?.state === "RUNNING");
   const label = uncertainOperation
     ? "Результат уточняется"
     : settlementRequired
       ? "Нужна проверка перед включением"
-      : blocked
-        ? "Приостановлена"
-        : active
-          ? state === "ACTIVE" || state === "SUCCEEDED"
-            ? "Включена"
-            : "Идёт отправка"
-          : state === "STOPPING"
-            ? "Останавливается"
-            : "Выключена";
+      : inFlightDuringHold
+        ? "Останавливается"
+        : deploymentBlocked
+          ? "Недоступна"
+          : blocked
+            ? "Приостановлена"
+            : active
+              ? state === "ACTIVE" || state === "SUCCEEDED"
+                ? "Включена"
+                : "Идёт отправка"
+              : state === "STOPPING"
+                ? "Останавливается"
+                : "Выключена";
   const failedChecks = (review?.checks || []).filter((check) => !check.passed);
   const uniqueFailed = new Map<string, Check>();
   for (const check of [
@@ -500,23 +526,27 @@ export function StockSyncControls({
           <div className="provider-heading">
             <h2>Синхронизация остатков</h2>
             <span
-              className={`connection-state ${blocked || uncertainOperation || settlementRequired ? "warning" : active && view?.ready ? "verified" : ""}`}
+              className={`connection-state ${blocked || uncertainOperation || settlementRequired || deploymentBlocked ? "warning" : active && view?.ready ? "verified" : ""}`}
             >
               {label}
             </span>
           </div>
           <p>
-            {settlementRequired
-              ? "Текущий остаток в Ozon совпадает с отправленным значением. Это не подтверждает завершение прежнего запроса. Автоматическая отправка остановлена; перед включением нужна новая проверка."
-              : blocked
-                ? "Новые отправки приостановлены: нужно заново проверить условия и актуальность данных."
-                : uncertainOperation
-                  ? "Уточните результат предыдущей отправки. Повторная отправка в Ozon не запускается автоматически."
-                  : view?.last_confirmed_at
-                    ? `Последнее подтверждённое обновление — ${new Date(view.last_confirmed_at).toLocaleString("ru-RU")}.`
-                    : active
-                      ? "Отправка выполняется только для проверенных данных и подтверждённых соответствий."
-                      : "Остатки в Ozon изменятся только после явного включения и проверки условий."}
+            {uncertainOperation
+              ? "Уточните результат предыдущей отправки. Повторная отправка в Ozon не запускается автоматически."
+              : settlementRequired
+                ? "При проверке Ozon вернул ожидаемый остаток. Это не подтверждает актуальность ответа или завершение прежнего запроса. Автоматическая отправка остановлена; перед включением нужна новая проверка."
+                : inFlightDuringHold
+                  ? "Ранее отправленный запрос ещё обрабатывается и может изменить остатки. Новые отправки недоступны."
+                  : deploymentBlocked
+                    ? "Отправка остатков временно недоступна: проверка безопасности ещё не завершена."
+                    : blocked
+                      ? "Новые отправки приостановлены: нужно заново проверить условия и актуальность данных."
+                      : view?.last_confirmed_at
+                        ? `Последнее подтверждённое обновление — ${new Date(view.last_confirmed_at).toLocaleString("ru-RU")}.`
+                        : active
+                          ? "Отправка выполняется только для проверенных данных и подтверждённых соответствий."
+                          : "Остатки в Ozon изменятся только после явного включения и проверки условий."}
           </p>
           {view?.last_operation && (
             <details className="technical-details">
@@ -573,7 +603,7 @@ export function StockSyncControls({
           )}
         </div>
         <div className="sync-actions">
-          {blocked && !uncertainOperation && (
+          {blocked && !uncertainOperation && !deploymentBlocked && (
             <button
               disabled={!!commands.pending || commands.busy || !!query.error}
               onClick={() => {
@@ -601,7 +631,8 @@ export function StockSyncControls({
                 !!query.error ||
                 query.isLoading ||
                 !!commands.pending ||
-                uncertainOperation
+                uncertainOperation ||
+                deploymentBlocked
               }
               onClick={() => {
                 setOpen("enable");

@@ -122,6 +122,31 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 			review.Checks = append(review.Checks, domain.StockSyncCheck{Code: "CONNECTION_DISABLED", Message: "Подключение отключено."})
 		}
 	}
+	// An older traversal can finish after a newer one (e.g. CLI and worker).
+	// Its larger ID and recent finish must not make old reads publishable.
+	orderingValid := true
+	for _, source := range []struct {
+		provider, account string
+		registered        time.Time
+		includeHistory    bool
+	}{
+		{"moysklad", scope.MoyskladAccount, connections[0].RegisteredAt, connections[0].IncludeImportHistory},
+		{"ozon", scope.OzonAccount, connections[1].RegisteredAt, connections[1].IncludeImportHistory},
+	} {
+		var outOfOrder bool
+		err := tx.QueryRow(ctx, `SELECT EXISTS (
+			SELECT 1 FROM source_imports latest JOIN source_imports prior ON prior.source=latest.source AND prior.account_id=latest.account_id
+			WHERE latest.id=(SELECT id FROM source_imports WHERE source=$1 AND account_id=$2 AND ($3 OR started_at >= $4) ORDER BY id DESC LIMIT 1)
+			AND prior.id<latest.id AND prior.started_at>=latest.started_at AND ($3 OR prior.started_at >= $4))`, source.provider, source.account, source.includeHistory, source.registered).Scan(&outOfOrder)
+		if err != nil {
+			return review, err
+		}
+		if outOfOrder {
+			orderingValid = false
+			review.Ready = false
+			review.Checks = append(review.Checks, domain.StockSyncCheck{Code: "OUT_OF_ORDER_IMPORT", Message: "Обнаружены пересекающиеся загрузки в неверном порядке. Повторите загрузку перед отправкой."})
+		}
+	}
 	rows, err := tx.Query(ctx, `SELECT pm.ozon_product_id,pm.target_kind,pm.target_id,wm.ozon_warehouse_id,wm.moysklad_warehouse_id FROM product_mappings pm CROSS JOIN warehouse_mappings wm WHERE pm.tenant_id=$1 AND pm.moysklad_account=$2 AND pm.ozon_account=$3 AND wm.tenant_id=pm.tenant_id AND wm.moysklad_account=pm.moysklad_account AND wm.ozon_account=pm.ozon_account AND wm.status='active' ORDER BY pm.ozon_product_id,wm.ozon_warehouse_id LIMIT 101`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount)
 	if err != nil {
 		return review, err
@@ -169,6 +194,16 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 		if err = loadStockObservations(ctx, tx, r, &e); err != nil {
 			return review, err
 		}
+		if e.Source.ImportID != nil {
+			// A mapped product and one of its mapped variants can expose the
+			// same physical stock twice even though their IDs/kinds differ.
+			var productVariantOverlap bool
+			err = tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM source_entities v JOIN product_mappings other ON other.moysklad_account=$2 AND ((other.target_kind='variant' AND other.target_id=v.external_id) OR (other.target_kind='product' AND other.target_id=v.parent_id)) WHERE v.import_id=$1 AND v.kind='variant' AND v.parent_id<>'' AND (($3='product' AND v.parent_id=$4 AND other.target_kind='variant') OR ($3='variant' AND v.external_id=$4 AND other.target_kind='product')))`, *e.Source.ImportID, scope.MoyskladAccount, t.kind, t.item).Scan(&productVariantOverlap)
+			if err != nil {
+				return review, err
+			}
+			e.SharedPool = e.SharedPool || productVariantOverlap
+		}
 		if err = loadStockCustomerOrders(ctx, tx, r, &e); err != nil {
 			return review, err
 		}
@@ -181,10 +216,65 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 		}
 		d := commitment.Evaluate(r, e, now)
 		checks := syncChecks(d)
+		// A historical mapping does not prove the latest catalog still refers
+		// to the same offer, SKU, source entity, or FBS warehouse.
+		var sourceIdentity, productIdentity, warehouseIdentity bool
+		if e.Source.ImportID != nil {
+			err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM source_entities WHERE import_id=$1 AND kind=$2 AND external_id=$3) AND EXISTS(SELECT 1 FROM source_entities WHERE import_id=$1 AND kind='store' AND external_id=$4)`, *e.Source.ImportID, t.kind, t.item, t.sourceWarehouse).Scan(&sourceIdentity)
+			if err != nil {
+				return review, err
+			}
+		}
+		if e.Marketplace.ImportID != nil && e.ProductMapping != nil {
+			err = tx.QueryRow(ctx, `SELECT EXISTS(
+				SELECT 1 FROM ozon_product_observations p
+				JOIN ozon_fbs_stock_observations s ON s.import_id=p.import_id AND s.product_id=p.product_id AND s.offer_id=p.offer_id AND s.sku=p.sku
+				JOIN product_mapping_history h ON h.mapping_id=$5 AND h.version=$6
+				JOIN ozon_product_observations original ON original.import_id=h.ozon_import_id AND original.product_id=h.ozon_product_id AND original.offer_id=h.ozon_offer_id AND original.sku=p.sku
+				WHERE p.import_id=$1 AND p.product_id=$2 AND p.offer_id=$3 AND p.archived=false AND p.sku IS NOT NULL AND s.warehouse_id=$4
+			), EXISTS(SELECT 1 FROM ozon_warehouse_observations WHERE import_id=$1 AND warehouse_id=$4 AND is_rfbs=false)`, *e.Marketplace.ImportID, t.pid, e.ProductMapping.OfferID, t.wid, e.ProductMapping.ID, e.ProductMapping.Version).Scan(&productIdentity, &warehouseIdentity)
+			if err != nil {
+				return review, err
+			}
+		}
+		checks = append(checks,
+			domain.StockSyncCheck{Code: "SOURCE_IDENTITY_UNCONFIRMED", Passed: sourceIdentity, Message: "Товар и склад присутствуют в актуальной загрузке МойСклад."},
+			domain.StockSyncCheck{Code: "CATALOG_IDENTITY_CHANGED", Passed: productIdentity, Message: "Товар, предложение и SKU совпадают с подтверждённым соответствием."},
+			domain.StockSyncCheck{Code: "WAREHOUSE_SCHEMA_UNCONFIRMED", Passed: warehouseIdentity, Message: "Актуальная загрузка подтверждает склад FBS."},
+		)
+		// Batch finish timestamps are not per-row observation times. An
+		// operator assertion after a traversal started cannot prove what was
+		// already read during that traversal, especially after an unknown write.
+		var sourceStarted, marketStarted time.Time
+		if e.Source.ImportID != nil {
+			if err = tx.QueryRow(ctx, `SELECT started_at FROM source_imports WHERE id=$1`, *e.Source.ImportID).Scan(&sourceStarted); err != nil {
+				return review, err
+			}
+		}
+		if e.Marketplace.ImportID != nil {
+			if err = tx.QueryRow(ctx, `SELECT started_at FROM source_imports WHERE id=$1`, *e.Marketplace.ImportID).Scan(&marketStarted); err != nil {
+				return review, err
+			}
+		}
+		sourceTraversalFresh := !sourceStarted.IsZero() && !sourceStarted.After(now) && now.Sub(sourceStarted) < 15*time.Minute
+		marketTraversalFresh := !marketStarted.IsZero() && !marketStarted.After(now) && now.Sub(marketStarted) < 15*time.Minute
+		beforeTraversal := !sourceStarted.IsZero()
+		for _, proof := range a.Proofs {
+			if proof.Code != commitment.ProofUnit && proof.AsOf.After(sourceStarted) {
+				beforeTraversal = false
+			}
+		}
+		checks = append(checks,
+			domain.StockSyncCheck{Code: "SOURCE_TRAVERSAL_STALE", Passed: sourceTraversalFresh, Message: "Загрузка МойСклад началась не более пятнадцати минут назад."},
+			domain.StockSyncCheck{Code: "OZON_TRAVERSAL_STALE", Passed: marketTraversalFresh, Message: "Загрузка Ozon началась не более пятнадцати минут назад."},
+			domain.StockSyncCheck{Code: "PROOF_AFTER_SOURCE_TRAVERSAL_STARTED", Passed: beforeTraversal, Message: "Условия были подтверждены до начала загрузки МойСклад."},
+		)
 		validIDs := positiveAPIID(t.pid) && positiveAPIID(t.wid)
 		checks = append(checks, domain.StockSyncCheck{Code: "OZON_TARGET_IDENTITIES", Passed: validIDs, Message: "Товар и склад имеют допустимые идентификаторы Ozon."})
 		stockComplete := e.Marketplace.ImportID != nil && e.Marketplace.StockRowFound
 		checks = append(checks, domain.StockSyncCheck{Code: "OZON_STOCK_BASELINE_REQUIRED", Passed: stockComplete, Message: "В полной загрузке Ozon есть остаток выбранного товара на складе."})
+		validStockValues := e.Marketplace.Present != nil && e.Marketplace.Reserved != nil && e.Marketplace.FreeStock != nil && *e.Marketplace.Present >= 0 && *e.Marketplace.Reserved >= 0 && *e.Marketplace.FreeStock >= 0
+		checks = append(checks, domain.StockSyncCheck{Code: "OZON_STOCK_VALUES_INVALID", Passed: validStockValues, Message: "Числа остатков и резервов Ozon присутствуют и неотрицательны."})
 		if e.Marketplace.ObservedAt != nil {
 			stockComplete = stockComplete && !e.Marketplace.ObservedAt.After(now) && now.Sub(*e.Marketplace.ObservedAt) < 15*time.Minute
 		} else {
@@ -205,7 +295,7 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 			settled = settlementAt != nil && proof.State == domain.ProofVerified && proof.AsOf.After(*settlementAt) && strings.Contains(proof.Reference, settlementID)
 			checks = append(checks, domain.StockSyncCheck{Code: "UNCERTAIN_WRITER_SETTLEMENT_REQUIRED", Passed: settled, Message: "После неизвестного результата подтверждено отсутствие незавершённых отправок; проверка ссылается на исходную операцию."})
 		}
-		ready := d.Status == domain.StockReady && validIDs && stockComplete && qtyValid && settled
+		ready := d.Status == domain.StockReady && validIDs && stockComplete && qtyValid && settled && sourceIdentity && productIdentity && warehouseIdentity && orderingValid && validStockValues && sourceTraversalFresh && marketTraversalFresh && beforeTraversal
 		item := domain.StockSyncTarget{SettlementOperationID: settlementID, SettlementObservedAt: settlementAt, ProductID: t.pid, WarehouseID: t.wid, SourceItemID: t.item, SourceWarehouseID: t.sourceWarehouse, SourceImportID: e.Source.ImportID, Status: string(d.Status), Checks: checks, Decision: d}
 		if e.ProductMapping != nil {
 			item.ProductMappingVersion = e.ProductMapping.Version
@@ -217,6 +307,13 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 			item.Quantity = d.Quantity
 			if d.ExpiresAt != nil && d.ExpiresAt.Before(review.ExpiresAt) {
 				review.ExpiresAt = *d.ExpiresAt
+			}
+			// The preview must expire no later than the oldest permitted
+			// traversal, even when that traversal finished much later.
+			for _, started := range []time.Time{sourceStarted, marketStarted} {
+				if deadline := started.Add(15 * time.Minute); deadline.Before(review.ExpiresAt) {
+					review.ExpiresAt = deadline
+				}
 			}
 		} else {
 			review.Ready = false

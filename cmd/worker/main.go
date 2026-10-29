@@ -188,12 +188,11 @@ func run() error {
 			return client, nil
 		},
 	}
-	publications := stocksync.Runner{Store: db, ResolveOzon: func(ctx context.Context, tenant, account string) (*ozon.Client, error) {
-		key, err := resolver.Resolve(ctx, credentials.Scope{Tenant: tenant, Provider: "ozon", Account: account})
-		if err != nil {
-			return nil, err
-		}
-		return ozon.New(ozon.Options{BaseURL: ozon.BaseURL, ClientID: account, APIKey: key, Timeout: 20 * time.Second, Interval: 400 * time.Millisecond, Backoff: time.Second, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 100})
+	// Until remote fencing/contract validation is complete this path can send
+	// only to an explicitly configured loopback simulator, never to Ozon.
+	testEndpoint, publicationEnabled := config.StockPublicationTestEndpoint()
+	publications := stocksync.Runner{Enabled: publicationEnabled, Store: db, ResolveOzon: func(_ context.Context, _, _ string) (*ozon.Client, error) {
+		return ozon.New(ozon.Options{BaseURL: testEndpoint, ClientID: "synthetic-test-seller", APIKey: "synthetic-test-key", Timeout: 20 * time.Second, Interval: 400 * time.Millisecond, Backoff: time.Second, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 100, AllowSyntheticStockWrites: true})
 	}}
 	return (application.Worker{Publications: publications, StoredCredentials: vault != nil, MoyskladImportAccount: moyClaim, Store: db, Handler: application.MockHandler{}, Imports: imports, ImportAccount: claimAccount, Log: slog.Default(), Poll: c.PollInterval, Lease: c.LeaseDuration, Retry: c.RetryDelay}).Run(ctx)
 }

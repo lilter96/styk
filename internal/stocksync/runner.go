@@ -14,11 +14,15 @@ import (
 )
 
 type Runner struct {
+	Enabled     bool
 	Store       *postgres.Store
 	ResolveOzon func(context.Context, string, string) (*ozon.Client, error)
 }
 
 func (r Runner) RunNext(ctx context.Context) (bool, error) {
+	if !r.Enabled {
+		return false, nil
+	}
 	if r.Store == nil || r.ResolveOzon == nil {
 		return false, errors.New("stock publisher requires a store and scoped credential resolver")
 	}
@@ -121,7 +125,7 @@ func (r Runner) RunNext(ctx context.Context) (bool, error) {
 }
 
 // Reconcile performs read-only checks. CONFIRMED_EFFECTIVE means the target
-// currently has the requested free quantity; it does not prove causal execution.
+// returned the requested free quantity; it proves neither freshness nor causality.
 // A mismatching/unavailable observation leaves UNKNOWN fenced against rewrites.
 func (r Runner) Reconcile(ctx context.Context, scope domain.StockSyncScope, id string) (domain.StockSyncView, error) {
 	if r.Store == nil || r.ResolveOzon == nil {

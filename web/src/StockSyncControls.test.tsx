@@ -35,6 +35,8 @@ function setup({
   statusFailure = false,
   expired = false,
   remoteState = "",
+  deploymentUnavailable = false,
+  omitAvailability = false,
 }: {
   ready?: boolean;
   lost?: boolean;
@@ -42,6 +44,8 @@ function setup({
   statusFailure?: boolean;
   expired?: boolean;
   remoteState?: string;
+  deploymentUnavailable?: boolean;
+  omitAvailability?: boolean;
 } = {}) {
   let accepted = 0;
   const calls: { path: string; method: string; body: string }[] = [];
@@ -66,6 +70,9 @@ function setup({
   };
   const view = (selected = scope): StockSyncView => ({
     ...selected,
+    ...(omitAvailability
+      ? {}
+      : { publication_available: !deploymentUnavailable }),
     enabled:
       blocked || (accepted > 0 && selected.ozon_account === scope.ozon_account),
     state:
@@ -397,7 +404,9 @@ it("shows observed stock as requiring manual settlement, never a confirmed compl
   const { calls } = setup({ remoteState: "EFFECT_CONFIRMED_REVIEW_REQUIRED" });
   await screen.findByText("Нужна проверка перед включением");
   expect(
-    screen.getByText(/Это не подтверждает завершение прежнего запроса/),
+    screen.getByText(
+      /Это не подтверждает актуальность ответа или завершение прежнего запроса/,
+    ),
   ).toBeTruthy();
   expect(screen.queryByText(/Последнее подтверждённое обновление/)).toBeNull();
   expect(calls.every((c) => c.method === "GET")).toBe(true);
@@ -428,4 +437,77 @@ it("offers a fresh review to renew expired enabled conditions without automatica
     expect(calls.filter((c) => c.path.endsWith("/preview"))).toHaveLength(1),
   );
   expect(calls.filter((c) => c.path.endsWith("/enable"))).toHaveLength(0);
+});
+
+it("shows deployment safety hold and prevents new enable", async () => {
+  const { calls } = setup({ deploymentUnavailable: true });
+  await screen.findByText("Недоступна");
+  expect(
+    screen.getByText(/проверка безопасности ещё не завершена/),
+  ).toBeTruthy();
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Включить синхронизацию",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  expect(calls.every((call) => call.method === "GET")).toBe(true);
+});
+
+it("shows the deployment hold for an existing enabled policy and keeps disable available", async () => {
+  const { calls } = setup({ blocked: true, deploymentUnavailable: true });
+  await screen.findByText("Недоступна");
+  expect(screen.queryByText("Включена")).toBeNull();
+  expect(screen.getByRole("button", { name: "Выключить" })).toBeTruthy();
+  expect(calls.every((call) => call.method === "GET")).toBe(true);
+});
+
+it("treats a missing deployment availability field as unavailable", async () => {
+  setup({ omitAvailability: true });
+  await screen.findByText("Недоступна");
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Включить синхронизацию",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+});
+
+it("keeps the uncertain readback warning visible during the deployment hold", async () => {
+  setup({
+    remoteState: "EFFECT_CONFIRMED_REVIEW_REQUIRED",
+    deploymentUnavailable: true,
+  });
+  await screen.findByText("Нужна проверка перед включением");
+  expect(
+    screen.getByText(
+      /Это не подтверждает актуальность ответа или завершение прежнего запроса/,
+    ),
+  ).toBeTruthy();
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Включить синхронизацию",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+});
+
+it("warns that a previously dispatched request can complete during the deployment hold", async () => {
+  setup({ remoteState: "STOPPING", deploymentUnavailable: true });
+  await screen.findByText("Останавливается");
+  expect(
+    screen.getByText(
+      /Ранее отправленный запрос ещё обрабатывается и может изменить остатки/,
+    ),
+  ).toBeTruthy();
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Включить синхронизацию",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
 });

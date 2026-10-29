@@ -14,6 +14,8 @@ import (
 
 const stockUpdatePath = "/v2/products/stocks"
 
+var ErrStockWritesDisabled = errors.New("stock writes are disabled")
+
 var ErrStockWriteUnknown = errors.New("Ozon stock write outcome is unknown")
 var ErrStockReadbackUnavailable = errors.New("Ozon stock readback is unavailable")
 
@@ -36,6 +38,9 @@ func safeStockCode(v string) string {
 // reused for an external write. Any ambiguous transport/schema/server result
 // must be reconciled by an explicit read; it is not a retry instruction.
 func (c *Client) UpdateStocks(ctx context.Context, items []StockUpdate) ([]StockUpdateResult, error) {
+	if !c.allowSyntheticStockWrites {
+		return nil, ErrStockWritesDisabled
+	}
 	if len(items) == 0 || len(items) > 100 {
 		return nil, errors.New("stock update supports one to one hundred targets")
 	}
@@ -80,14 +85,9 @@ func (c *Client) UpdateStocks(ctx context.Context, items []StockUpdate) ([]Stock
 	if err != nil || len(data) > 1<<20 {
 		return nil, ErrStockWriteUnknown
 	}
+	// No available provider guarantee proves that any non-2xx response means
+	// no target was applied, especially through gateways or after partial work.
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		if resp.StatusCode == 400 || resp.StatusCode == 401 || resp.StatusCode == 403 || resp.StatusCode == 404 || resp.StatusCode == 409 || resp.StatusCode == 429 {
-			out := make([]StockUpdateResult, 0, len(items))
-			for _, v := range items {
-				out = append(out, StockUpdateResult{v.ProductID, v.WarehouseID, "FAILED", "HTTP_" + strconv.Itoa(resp.StatusCode)})
-			}
-			return out, nil
-		}
 		return nil, ErrStockWriteUnknown
 	}
 	var decoded struct {
@@ -109,7 +109,7 @@ func (c *Client) UpdateStocks(ctx context.Context, items []StockUpdate) ([]Stock
 		p, w := id(v.ProductID), id(v.WarehouseID)
 		key := p + ":" + w
 		if !seen[key] || v.Updated == nil || v.Errors == nil {
-			continue
+			return nil, ErrStockWriteUnknown
 		}
 		if _, duplicate := returned[key]; duplicate {
 			return nil, ErrStockWriteUnknown
@@ -118,7 +118,9 @@ func (c *Client) UpdateStocks(ctx context.Context, items []StockUpdate) ([]Stock
 		if *v.Updated && len(*v.Errors) == 0 {
 			r.State, r.SafeError = "SUCCEEDED", ""
 		} else if !*v.Updated && len(*v.Errors) > 0 {
-			r.State, r.SafeError = "FAILED", safeStockCode((*v.Errors)[0].Code)
+			// Without a verified provider guarantee that an error excludes a
+			// delayed effect, retain the target fence and require reconciliation.
+			r.State, r.SafeError = "UNKNOWN", safeStockCode((*v.Errors)[0].Code)
 		}
 		returned[key] = r
 	}
@@ -133,7 +135,7 @@ func (c *Client) UpdateStocks(ctx context.Context, items []StockUpdate) ([]Stock
 }
 
 // ReadStockQuantity is a bounded, read-only observation. Matching free stock
-// establishes the current effect, never that an earlier request executed.
+// is a provider-reported value, not proof of freshness or causality.
 func (c *Client) ReadStockQuantity(ctx context.Context, productID, warehouseID, offerID string) (int64, error) {
 	if productID == "" || warehouseID == "" || offerID == "" {
 		return 0, ErrStockReadbackUnavailable
@@ -142,7 +144,9 @@ func (c *Client) ReadStockQuantity(ctx context.Context, productID, warehouseID, 
 	if err := c.post(ctx, stockPath, map[string]any{"offer_id": []string{offerID}, "limit": 100, "cursor": ""}, &response); err != nil {
 		return 0, ErrStockReadbackUnavailable
 	}
-	if response.Products == nil {
+	// A single matching row is not conclusive when other pages may contain a
+	// duplicate or conflicting target. Do not settle on an incomplete page.
+	if response.Products == nil || response.HasNext == nil || *response.HasNext {
 		return 0, ErrStockReadbackUnavailable
 	}
 	found := false

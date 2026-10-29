@@ -17,7 +17,7 @@ func stockTestClient(t *testing.T, h http.HandlerFunc) *Client {
 	t.Helper()
 	server := httptest.NewServer(h)
 	t.Cleanup(server.Close)
-	c, err := New(Options{BaseURL: server.URL, ClientID: "seller", APIKey: "synthetic-private-key", Timeout: time.Second, Interval: time.Nanosecond, Backoff: time.Millisecond, MaxRetryAfter: time.Second, Attempts: 5, PageSize: 100})
+	c, err := New(Options{AllowSyntheticStockWrites: true, BaseURL: server.URL, ClientID: "seller", APIKey: "synthetic-private-key", Timeout: time.Second, Interval: time.Nanosecond, Backoff: time.Millisecond, MaxRetryAfter: time.Second, Attempts: 5, PageSize: 100})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,12 +59,12 @@ func TestStockWritePartialResultsAndFrozenPayload(t *testing.T) {
 		fmt.Fprint(w, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]},{"product_id":124,"warehouse_id":456,"updated":false,"errors":[{"code":"PRICE_IS_NOT_SENT","message":"synthetic-private-key"}]}]}`)
 	})
 	result, err := c.UpdateStocks(context.Background(), []StockUpdate{{"123", "456", 0}, {"124", "456", 8}})
-	if err != nil || len(result) != 2 || result[0].State != "SUCCEEDED" || result[1].State != "FAILED" || result[1].SafeError != "PRICE_IS_NOT_SENT" {
+	if err != nil || len(result) != 2 || result[0].State != "SUCCEEDED" || result[1].State != "UNKNOWN" || result[1].SafeError != "PRICE_IS_NOT_SENT" {
 		t.Fatalf("incorrect partial results: %#v %v", result, err)
 	}
 }
 func TestStockWriteMissingMalformedOrDuplicateResultsAreUnknown(t *testing.T) {
-	for _, body := range []string{`{}`, `{"result":[]}`, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true}]}`, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]},{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]}]}`} {
+	for _, body := range []string{`{}`, `{"result":[]}`, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true}]}`, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]},{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]}]}`, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]},{"product_id":123,"warehouse_id":456}]}`, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]},{"product_id":999,"warehouse_id":456,"updated":true,"errors":[]}]}`} {
 		c := stockTestClient(t, func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, body) })
 		result, err := c.UpdateStocks(context.Background(), []StockUpdate{{"123", "456", 8}})
 		if err == nil && (len(result) != 1 || result[0].State != "UNKNOWN") {
@@ -95,5 +95,103 @@ func TestStockWriteValidationPrecedesIOAndReadbackIsReadOnly(t *testing.T) {
 	qty, err := c.ReadStockQuantity(context.Background(), "123", "456", "offer")
 	if err != nil || qty != 8 || calls.Load() != 1 {
 		t.Fatalf("readback quantity: %d %v", qty, err)
+	}
+}
+
+func TestStockWritesRequireExplicitLoopbackOptIn(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { calls.Add(1); w.WriteHeader(http.StatusOK) }))
+	defer server.Close()
+	opts := Options{BaseURL: server.URL, ClientID: "synthetic-seller", APIKey: "synthetic-secret", Timeout: time.Second, Interval: time.Nanosecond, Backoff: time.Millisecond, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 100}
+	c, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = c.UpdateStocks(context.Background(), []StockUpdate{{"123", "456", 8}}); !errors.Is(err, ErrStockWritesDisabled) {
+		t.Fatalf("default must reject write: %v", err)
+	}
+	if calls.Load() != 0 {
+		t.Fatal("write sent without opt-in")
+	}
+	opts.AllowSyntheticStockWrites = true
+	opts.HTTPClient = &http.Client{}
+	if _, err = New(opts); err == nil {
+		t.Fatal("custom synthetic write transport could redirect the request")
+	}
+	opts.HTTPClient = nil
+	for _, endpoint := range []string{"https://api-seller.ozon.ru", "http://localhost:1234", "http://127.0.0.1.evil.example:1234"} {
+		opts.BaseURL = endpoint
+		opts.AllowSyntheticStockWrites = true
+		if _, err = New(opts); err == nil {
+			t.Fatalf("remote or DNS endpoint allowed: %s", endpoint)
+		}
+	}
+}
+
+func TestStockWriteHTTPErrorRemainsUnknownAfterPossibleApplication(t *testing.T) {
+	for _, status := range []int{400, 401, 403, 404, 409, 429, 500} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			var applied atomic.Int32
+			c := stockTestClient(t, func(w http.ResponseWriter, _ *http.Request) { applied.Add(1); w.WriteHeader(status) })
+			result, err := c.UpdateStocks(context.Background(), []StockUpdate{{"123", "456", 8}})
+			if applied.Load() != 1 || !errors.Is(err, ErrStockWriteUnknown) || result != nil {
+				t.Fatalf("possibly applied result treated as definite: calls %d, result %v, error %v", applied.Load(), result, err)
+			}
+		})
+	}
+}
+
+func TestStockWriteTimeoutWhileServerContinuesIsUnknown(t *testing.T) {
+	var calls, applied atomic.Int32
+	started, release, finished := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	c := stockTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		close(started)
+		<-release
+		applied.Add(1)
+		fmt.Fprint(w, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]}]}`)
+		close(finished)
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { _, err := c.UpdateStocks(ctx, []StockUpdate{{"123", "456", 8}}); done <- err }()
+	<-started
+	if err := <-done; !errors.Is(err, ErrStockWriteUnknown) {
+		t.Fatalf("timeout misclassified: %v", err)
+	}
+	close(release)
+	<-finished
+	if calls.Load() != 1 || applied.Load() != 1 {
+		t.Fatalf("timeout retried or server did not continue: %d %d", calls.Load(), applied.Load())
+	}
+}
+
+func TestStockReadbackRejectsIncompleteOrAmbiguousPages(t *testing.T) {
+	for _, body := range []string{
+		`{"products":[{"product_id":123,"warehouse_id":456,"offer_id":"offer","free_stock":8}],"has_next":true,"cursor":"another-page"}`,
+		`{"products":[{"product_id":123,"warehouse_id":456,"offer_id":"offer","free_stock":8}]}`,
+		`{"products":[{"product_id":123,"warehouse_id":456,"offer_id":"offer","free_stock":8},{"product_id":123,"warehouse_id":456,"offer_id":"offer","free_stock":7}],"has_next":false}`,
+	} {
+		c := stockTestClient(t, func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, body) })
+		if _, err := c.ReadStockQuantity(context.Background(), "123", "456", "offer"); !errors.Is(err, ErrStockReadbackUnavailable) {
+			t.Fatalf("ambiguous page accepted: %s", body)
+		}
+	}
+}
+
+func TestSyntheticStockWriteTransportDoesNotReuseConnections(t *testing.T) {
+	var ports []string
+	c := stockTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		ports = append(ports, r.RemoteAddr)
+		fmt.Fprint(w, `{"result":[{"product_id":123,"warehouse_id":456,"updated":true,"errors":[]}]}`)
+	})
+	for i := 0; i < 2; i++ {
+		if _, err := c.UpdateStocks(context.Background(), []StockUpdate{{"123", "456", 8}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(ports) != 2 || ports[0] == ports[1] {
+		t.Fatalf("write connections were reused: %v", ports)
 	}
 }
