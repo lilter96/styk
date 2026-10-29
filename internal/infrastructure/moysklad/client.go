@@ -30,7 +30,7 @@ func allowedReadPath(path string) bool {
 	case "context/employee", "entity/product", "entity/variant", "entity/store", "report/stock/all", "report/stock/bystore", "entity/customerorder":
 		return true
 	}
-	return orderReadPath.MatchString(path)
+	return orderReadPath.MatchString(path) || allowedCatalogReadPath(path)
 }
 
 type Options struct {
