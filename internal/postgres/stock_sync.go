@@ -1,0 +1,602 @@
+package postgres
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/lilter96/styk/internal/commitment"
+	"github.com/lilter96/styk/internal/domain"
+)
+
+var syncProofCodes = map[string]bool{
+	commitment.ProofUnit: true, commitment.ProofBaseline: true, commitment.ProofSourceOrdering: true,
+	commitment.ProofUnassigned: true, commitment.ProofAttribution: true, commitment.ProofPostingCoverage: true,
+	commitment.ProofCompeting: true, commitment.ProofBound: true, commitment.ProofCustomerOrders: true,
+}
+
+func syncKey(s domain.StockSyncScope) string {
+	return "stock-publication:" + s.Tenant + ":" + s.MoyskladAccount + ":" + s.OzonAccount
+}
+func syncLock(ctx context.Context, tx pgx.Tx, scope domain.StockSyncScope) error {
+	_, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, syncKey(scope))
+	return err
+}
+func stockSyncID() (string, error) {
+	b := make([]byte, 16)
+	if _, err := randRead(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// randRead is shared only to make secure ID allocation easy to audit.
+var randRead = func(b []byte) (int, error) { return rand.Read(b) }
+
+func syncHash(v any) string {
+	b, _ := json.Marshal(v)
+	h := sha256.Sum256(b)
+	return hex.EncodeToString(h[:])
+}
+func syncChecks(d domain.StockDecision) []domain.StockSyncCheck {
+	out := make([]domain.StockSyncCheck, 0, len(d.Checks))
+	for _, c := range d.Checks {
+		out = append(out, domain.StockSyncCheck{Code: c.Code, Passed: c.Passed, Message: c.Message})
+	}
+	return out
+}
+func positiveAPIID(v string) bool {
+	n, e := strconv.ParseInt(v, 10, 64)
+	return e == nil && n > 0 && strconv.FormatInt(n, 10) == v
+}
+func syncQuantity(v *string) bool {
+	if v == nil {
+		return false
+	}
+	n, e := strconv.ParseInt(*v, 10, 64)
+	return e == nil && n >= 0 && n <= 2147483647
+}
+func validateAttestations(items []domain.StockSyncAttestation, now time.Time) error {
+	if len(items) > 100 {
+		return errors.New("at most 100 stock targets may be attested")
+	}
+	seen := map[string]bool{}
+	for _, a := range items {
+		key := a.ProductID + ":" + a.WarehouseID
+		if a.ProductID == "" || a.WarehouseID == "" || seen[key] || len(a.Proofs) > 9 {
+			return errors.New("invalid or duplicate target attestation")
+		}
+		seen[key] = true
+		codes := map[string]bool{}
+		for _, p := range a.Proofs {
+			if !syncProofCodes[p.Code] || codes[p.Code] || len(strings.TrimSpace(p.Reference)) < 16 || len(p.Reference) > 1000 || p.AsOf.IsZero() || p.AsOf.After(now) || !p.ValidUntil.After(now) || p.ValidUntil.After(now.Add(15*time.Minute)) || p.ValidUntil.Sub(p.AsOf) > 15*time.Minute {
+				return errors.New("each proof requires scoped provenance and a validity of at most fifteen minutes")
+			}
+			codes[p.Code] = true
+		}
+	}
+	return nil
+}
+func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.StockSyncScope, attestations []domain.StockSyncAttestation, now time.Time) (domain.StockSyncReview, error) {
+	review := domain.StockSyncReview{StockSyncScope: scope, Ready: true, CreatedAt: now, ExpiresAt: now.Add(2 * time.Minute), Checks: []domain.StockSyncCheck{}, Targets: []domain.StockSyncTarget{}, Attestations: attestations}
+	// Use the established import/mapping lock order. Every target in a frozen
+	// review sees one consistent latest batch and matching version; no external
+	// request is made while these transaction locks are held.
+	for _, key := range []string{"ozon:" + scope.OzonAccount, "moysklad:" + scope.MoyskladAccount, "matching:" + scope.Tenant, "warehouse-mapping:" + scope.Tenant} {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, key); err != nil {
+			return review, err
+		}
+	}
+
+	connections := []domain.StockConnectionReference{{Source: "moysklad", Account: scope.MoyskladAccount}, {Source: "ozon", Account: scope.OzonAccount}}
+	for i := range connections {
+		c := &connections[i]
+		if err := tx.QueryRow(ctx, `SELECT provenance,registered_at,include_import_history FROM stock_connections WHERE tenant_id=$1 AND source=$2 AND account_id=$3 FOR SHARE`, scope.Tenant, c.Source, c.Account).Scan(&c.Provenance, &c.RegisteredAt, &c.IncludeImportHistory); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return review, domain.ErrStockSyncNotFound
+			}
+			return review, err
+		}
+	}
+	// A disabled stored connection is authoritative, even if environment fallback
+	// still holds old credentials. Credential revisions are frozen with review.
+	for _, p := range []struct {
+		provider, account string
+		revision          *int64
+	}{{"moysklad", scope.MoyskladAccount, &review.MoyskladCredentialRevision}, {"ozon", scope.OzonAccount, &review.OzonCredentialRevision}} {
+		var enabled bool
+		err := tx.QueryRow(ctx, `SELECT revision,enabled FROM connection_credentials WHERE tenant_id=$1 AND provider=$2 AND account_id=$3 FOR SHARE`, scope.Tenant, p.provider, p.account).Scan(p.revision, &enabled)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return review, err
+		}
+		if err == nil && !enabled {
+			review.Ready = false
+			review.Checks = append(review.Checks, domain.StockSyncCheck{Code: "CONNECTION_DISABLED", Message: "Подключение отключено."})
+		}
+	}
+	rows, err := tx.Query(ctx, `SELECT pm.ozon_product_id,pm.target_kind,pm.target_id,wm.ozon_warehouse_id,wm.moysklad_warehouse_id FROM product_mappings pm CROSS JOIN warehouse_mappings wm WHERE pm.tenant_id=$1 AND pm.moysklad_account=$2 AND pm.ozon_account=$3 AND wm.tenant_id=pm.tenant_id AND wm.moysklad_account=pm.moysklad_account AND wm.ozon_account=pm.ozon_account AND wm.status='active' ORDER BY pm.ozon_product_id,wm.ozon_warehouse_id LIMIT 101`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount)
+	if err != nil {
+		return review, err
+	}
+	type target struct{ pid, kind, item, wid, sourceWarehouse string }
+	var targets []target
+	for rows.Next() {
+		var t target
+		if err = rows.Scan(&t.pid, &t.kind, &t.item, &t.wid, &t.sourceWarehouse); err != nil {
+			rows.Close()
+			return review, err
+		}
+		targets = append(targets, t)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return review, err
+	}
+	if len(targets) == 0 || len(targets) > 100 {
+		review.Ready = false
+		code, msg := "MAPPINGS_REQUIRED", "Подтвердите соответствия товаров и складов."
+		if len(targets) > 100 {
+			code, msg = "TARGET_LIMIT_REACHED", "За один запуск поддерживается не более 100 пар товар–склад."
+		}
+		review.Checks = append(review.Checks, domain.StockSyncCheck{Code: code, Message: msg})
+		return review, nil
+	}
+	inputs := map[string]domain.StockSyncAttestation{}
+	for _, a := range attestations {
+		inputs[a.ProductID+":"+a.WarehouseID] = a
+	}
+	for _, t := range targets {
+		a, attested := inputs[t.pid+":"+t.wid]
+		r := domain.StockCalculationRequest{Pool: domain.StockPool{Tenant: scope.Tenant, MoyskladAccount: scope.MoyskladAccount, WarehouseID: t.sourceWarehouse, ItemKind: t.kind, ItemID: t.item}, Target: domain.StockTarget{OzonAccount: scope.OzonAccount, WarehouseID: t.wid, ProductID: t.pid}, Policy: domain.StockCalculationPolicy{Version: 1, Unit: "piece", SafetyStock: a.SafetyStock, MaxObservationAge: 15 * time.Minute, DecisionLifetime: 2 * time.Minute}}
+		e := domain.StockEvidence{Connections: connections, Proofs: map[string]domain.StockProof{}}
+		registered := connections[0].RegisteredAt
+		if connections[1].RegisteredAt.After(registered) {
+			registered = connections[1].RegisteredAt
+		}
+		e.Proofs[commitment.ProofOwnership] = domain.StockProof{State: domain.ProofVerified, Reference: "trusted administrator account registrations", AsOf: registered, ValidUntil: now.Add(2 * time.Minute)}
+		if err = loadStockMappings(ctx, tx, r, now, &e); err != nil {
+			return review, err
+		}
+		if err = loadStockObservations(ctx, tx, r, &e); err != nil {
+			return review, err
+		}
+		if err = loadStockCustomerOrders(ctx, tx, r, &e); err != nil {
+			return review, err
+		}
+		if attested {
+			e.Unreflected = &a.Unreflected
+			e.UnseenBound = &a.UnseenBound
+			for _, p := range a.Proofs {
+				e.Proofs[p.Code] = domain.StockProof{State: domain.ProofVerified, Reference: "operator-attested: " + p.Reference, AsOf: p.AsOf, ValidUntil: p.ValidUntil}
+			}
+		}
+		d := commitment.Evaluate(r, e, now)
+		checks := syncChecks(d)
+		validIDs := positiveAPIID(t.pid) && positiveAPIID(t.wid)
+		checks = append(checks, domain.StockSyncCheck{Code: "OZON_TARGET_IDENTITIES", Passed: validIDs, Message: "Товар и склад имеют допустимые идентификаторы Ozon."})
+		stockComplete := e.Marketplace.ImportID != nil && e.Marketplace.StockRowFound
+		checks = append(checks, domain.StockSyncCheck{Code: "OZON_STOCK_BASELINE_REQUIRED", Passed: stockComplete, Message: "В полной загрузке Ozon есть остаток выбранного товара на складе."})
+		if e.Marketplace.ObservedAt != nil {
+			stockComplete = stockComplete && !e.Marketplace.ObservedAt.After(now) && now.Sub(*e.Marketplace.ObservedAt) < 15*time.Minute
+		} else {
+			stockComplete = false
+		}
+		checks = append(checks, domain.StockSyncCheck{Code: "OZON_BASELINE_FRESH", Passed: stockComplete, Message: "Данные Ozon получены не более пятнадцати минут назад."})
+		qtyValid := d.Status == domain.StockReady && syncQuantity(d.Quantity)
+		checks = append(checks, domain.StockSyncCheck{Code: "PUBLICATION_QUANTITY_VALID", Passed: qtyValid, Message: "Доступный остаток рассчитан в целых штуках без округления."})
+		var settlementID string
+		var settlementAt *time.Time
+		settlementErr := tx.QueryRow(ctx, `SELECT operation_id,finished_at FROM stock_publication_targets WHERE ozon_account=$1 AND product_id=$2 AND warehouse_id=$3 AND state='CONFIRMED_EFFECTIVE' ORDER BY finished_at DESC,id DESC LIMIT 1`, scope.OzonAccount, t.pid, t.wid).Scan(&settlementID, &settlementAt)
+		if settlementErr != nil && !errors.Is(settlementErr, pgx.ErrNoRows) {
+			return review, settlementErr
+		}
+		settled := true
+		if settlementErr == nil {
+			proof := e.Proofs[commitment.ProofCompeting]
+			settled = settlementAt != nil && proof.State == domain.ProofVerified && proof.AsOf.After(*settlementAt) && strings.Contains(proof.Reference, settlementID)
+			checks = append(checks, domain.StockSyncCheck{Code: "UNCERTAIN_WRITER_SETTLEMENT_REQUIRED", Passed: settled, Message: "После неизвестного результата подтверждено отсутствие незавершённых отправок; проверка ссылается на исходную операцию."})
+		}
+		ready := d.Status == domain.StockReady && validIDs && stockComplete && qtyValid && settled
+		item := domain.StockSyncTarget{SettlementOperationID: settlementID, SettlementObservedAt: settlementAt, ProductID: t.pid, WarehouseID: t.wid, SourceItemID: t.item, SourceWarehouseID: t.sourceWarehouse, SourceImportID: e.Source.ImportID, Status: string(d.Status), Checks: checks, Decision: d}
+		if e.ProductMapping != nil {
+			item.ProductMappingVersion = e.ProductMapping.Version
+		}
+		if e.WarehouseMapping != nil {
+			item.WarehouseMappingVersion = e.WarehouseMapping.Version
+		}
+		if ready {
+			item.Quantity = d.Quantity
+			if d.ExpiresAt != nil && d.ExpiresAt.Before(review.ExpiresAt) {
+				review.ExpiresAt = *d.ExpiresAt
+			}
+		} else {
+			review.Ready = false
+			item.Status = "BLOCKED"
+		}
+		review.Targets = append(review.Targets, item)
+	}
+	for _, a := range attestations {
+		found := false
+		for _, t := range targets {
+			if a.ProductID == t.pid && a.WarehouseID == t.wid {
+				found = true
+			}
+		}
+		if !found {
+			review.Ready = false
+			review.Checks = append(review.Checks, domain.StockSyncCheck{Code: "ATTESTATION_TARGETS_CHANGED", Message: "Изменился набор сопоставленных товаров или складов."})
+		}
+	}
+	review.Checks = append(review.Checks, domain.StockSyncCheck{Code: "ALL_TARGETS_READY", Passed: review.Ready, Message: "Для всех выбранных товаров подтверждены условия безопасной отправки."})
+	return review, nil
+}
+func (s *Store) PreviewStockSync(ctx context.Context, req domain.StockSyncPreviewRequest, now time.Time) (domain.StockSyncReview, error) {
+	if !req.StockSyncScope.Valid() {
+		return domain.StockSyncReview{}, domain.ErrStockSyncNotFound
+	}
+	now = now.UTC().Truncate(time.Microsecond)
+	if err := validateAttestations(req.Attestations, now); err != nil {
+		return domain.StockSyncReview{}, domain.ErrStockSyncInvalid
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
+	defer cancel()
+	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
+	if err != nil {
+		return domain.StockSyncReview{}, err
+	}
+	defer tx.Rollback(context.Background())
+	review, err := s.stockSyncReview(ctx, tx, req.StockSyncScope, req.Attestations, now)
+	if err != nil {
+		return review, err
+	}
+	review.ID, err = stockSyncID()
+	if err != nil {
+		return review, err
+	}
+	raw, _ := json.Marshal(review)
+	if _, err = tx.Exec(ctx, `INSERT INTO stock_sync_reviews(id,tenant_id,moysklad_account,ozon_account,ready,snapshot,created_at,expires_at) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8)`, review.ID, req.Tenant, req.MoyskladAccount, req.OzonAccount, review.Ready, raw, now, review.ExpiresAt); err != nil {
+		return review, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return review, err
+	}
+	return review, nil
+}
+func readSyncReview(ctx context.Context, tx pgx.Tx, scope domain.StockSyncScope, id string) (domain.StockSyncReview, error) {
+	var r domain.StockSyncReview
+	var raw []byte
+	err := tx.QueryRow(ctx, `SELECT snapshot FROM stock_sync_reviews WHERE id=$1 AND tenant_id=$2 AND moysklad_account=$3 AND ozon_account=$4`, id, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return r, domain.ErrStockSyncNotFound
+	}
+	if err != nil {
+		return r, err
+	}
+	err = json.Unmarshal(raw, &r)
+	return r, err
+}
+func stableSyncEvidence(r domain.StockSyncReview) string {
+	type evidence struct {
+		P, W   string
+		D      domain.StockEvidence
+		Qty    *string
+		PM, WM int
+	}
+	out := []evidence{}
+	for _, t := range r.Targets {
+		e := t.Decision.Evidence
+		copiedProofs := make(map[string]domain.StockProof, len(e.Proofs))
+		for code, proof := range e.Proofs {
+			copiedProofs[code] = proof
+		}
+		e.Proofs = copiedProofs
+		for _, code := range []string{commitment.ProofOwnership, commitment.ProofProductMapping, commitment.ProofWarehouseMapping} {
+			p := e.Proofs[code]
+			p.ValidUntil = time.Time{}
+			e.Proofs[code] = p
+		}
+		out = append(out, evidence{t.ProductID, t.WarehouseID, e, t.Quantity, t.ProductMappingVersion, t.WarehouseMappingVersion})
+	}
+	return syncHash(struct {
+		Targets []evidence
+		M, O    int64
+	}{out, r.MoyskladCredentialRevision, r.OzonCredentialRevision})
+}
+func createPublication(ctx context.Context, tx pgx.Tx, review domain.StockSyncReview, now time.Time) (domain.StockPublication, error) {
+	id, err := stockSyncID()
+	if err != nil {
+		return domain.StockPublication{}, err
+	}
+	op := domain.StockPublication{ID: id, StockSyncScope: review.StockSyncScope, ReviewID: review.ID, State: "QUEUED", CreatedAt: now, Targets: []domain.StockPublicationTarget{}}
+	if _, err = tx.Exec(ctx, `INSERT INTO stock_publications(id,tenant_id,moysklad_account,ozon_account,review_id,created_at) VALUES($1,$2,$3,$4,$5,$6)`, id, review.Tenant, review.MoyskladAccount, review.OzonAccount, review.ID, now); err != nil {
+		return op, err
+	}
+	for _, t := range review.Targets {
+		if t.Quantity == nil {
+			return op, domain.ErrStockSyncBlocked
+		}
+		raw, _ := json.Marshal(t.Decision)
+		v := domain.StockPublicationTarget{OperationID: id, ProductID: t.ProductID, WarehouseID: t.WarehouseID, Quantity: *t.Quantity, State: "QUEUED", Decision: t.Decision}
+		err = tx.QueryRow(ctx, `INSERT INTO stock_publication_targets(operation_id,ozon_account,product_id,warehouse_id,quantity,state,decision) VALUES($1,$2,$3,$4,$5,'QUEUED',$6::jsonb) RETURNING id`, id, review.OzonAccount, t.ProductID, t.WarehouseID, *t.Quantity, raw).Scan(&v.ID)
+		if err != nil {
+			var conflict *pgconn.PgError
+			if errors.As(err, &conflict) && conflict.Code == "23505" && conflict.ConstraintName == "stock_publication_target_fence" {
+				return op, domain.ErrStockSyncBlocked
+			}
+			return op, err
+		}
+		op.Targets = append(op.Targets, v)
+	}
+	return op, nil
+}
+
+// MutateStockSync deduplicates enable/disable by the caller's immutable intent.
+func (s *Store) MutateStockSync(ctx context.Context, scope domain.StockSyncScope, action, reviewID, key string, now time.Time) (domain.StockSyncView, error) {
+	if !scope.Valid() || (action != "enable" && action != "disable") || len(key) < 16 || len(key) > 128 {
+		return domain.StockSyncView{}, domain.ErrStockSyncNotFound
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
+	defer cancel()
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return domain.StockSyncView{}, err
+	}
+	defer tx.Rollback(context.Background())
+	if err = syncLock(ctx, tx, scope); err != nil {
+		return domain.StockSyncView{}, err
+	}
+	hash := syncHash(struct {
+		Scope          domain.StockSyncScope
+		Action, Review string
+	}{scope, action, reviewID})
+	var old string
+	err = tx.QueryRow(ctx, `SELECT request_hash FROM stock_sync_mutations WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND idempotency_key=$4`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, key).Scan(&old)
+	if err == nil {
+		if old != hash {
+			return domain.StockSyncView{}, domain.ErrStockSyncConflict
+		}
+		if err = tx.Commit(ctx); err != nil {
+			return domain.StockSyncView{}, err
+		}
+		return s.StockSyncStatus(ctx, scope, now)
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return domain.StockSyncView{}, err
+	}
+	var operation any
+	if action == "enable" {
+		var alreadyEnabled bool
+		var previousReview *string
+		err = tx.QueryRow(ctx, `SELECT enabled,review_id FROM stock_sync_settings WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount).Scan(&alreadyEnabled, &previousReview)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return domain.StockSyncView{}, err
+		}
+		if alreadyEnabled && previousReview != nil && *previousReview == reviewID {
+			return domain.StockSyncView{}, domain.ErrStockSyncBlocked
+		}
+		var pending bool
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_publication_targets t JOIN stock_publications p ON p.id=t.operation_id WHERE p.tenant_id=$1 AND p.moysklad_account=$2 AND p.ozon_account=$3 AND t.state IN ('QUEUED','DISPATCHING','UNKNOWN'))`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount).Scan(&pending); err != nil {
+			return domain.StockSyncView{}, err
+		}
+		if pending {
+			return domain.StockSyncView{}, domain.ErrStockSyncBlocked
+		}
+
+		review, err := readSyncReview(ctx, tx, scope, reviewID)
+		if err != nil {
+			return domain.StockSyncView{}, err
+		}
+		if !review.Ready {
+			return domain.StockSyncView{}, domain.ErrStockSyncBlocked
+		}
+		if !review.ExpiresAt.After(now) {
+			return domain.StockSyncView{}, domain.ErrStockSyncStale
+		}
+		current, err := s.stockSyncReview(ctx, tx, scope, review.Attestations, now)
+		if err != nil {
+			return domain.StockSyncView{}, err
+		}
+		if !current.Ready || stableSyncEvidence(current) != stableSyncEvidence(review) {
+			return domain.StockSyncView{}, domain.ErrStockSyncStale
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO stock_sync_settings(tenant_id,moysklad_account,ozon_account,enabled,review_id,updated_at,last_evaluation_key) VALUES($1,$2,$3,true,$4,$5,$6) ON CONFLICT(tenant_id,moysklad_account,ozon_account) DO UPDATE SET enabled=true,review_id=EXCLUDED.review_id,updated_at=EXCLUDED.updated_at,last_evaluation_key=EXCLUDED.last_evaluation_key,last_checks='[]'::jsonb`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, review.ID, now, stableSyncEvidence(current))
+		if err != nil {
+			return domain.StockSyncView{}, err
+		}
+		op, err := createPublication(ctx, tx, review, now)
+		if err != nil {
+			return domain.StockSyncView{}, err
+		}
+		operation = op.ID
+	} else {
+		// Disabling does not undo an in-flight marketplace request. DISPATCHING and
+		// UNKNOWN remain visible until their outcomes are known.
+		var owned bool
+		if err = tx.QueryRow(ctx, `SELECT count(*)=2 FROM stock_connections WHERE tenant_id=$1 AND ((source='moysklad' AND account_id=$2) OR (source='ozon' AND account_id=$3))`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount).Scan(&owned); err != nil {
+			return domain.StockSyncView{}, err
+		}
+		if !owned {
+			return domain.StockSyncView{}, domain.ErrStockSyncNotFound
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO stock_sync_settings(tenant_id,moysklad_account,ozon_account,enabled,updated_at) VALUES($1,$2,$3,false,$4) ON CONFLICT(tenant_id,moysklad_account,ozon_account) DO UPDATE SET enabled=false,updated_at=EXCLUDED.updated_at`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, now)
+		if err != nil {
+			return domain.StockSyncView{}, err
+		}
+		_, err = tx.Exec(ctx, `UPDATE stock_publication_targets t SET state='CANCELLED',safe_error='SYNC_DISABLED',finished_at=$4 FROM stock_publications p WHERE t.operation_id=p.id AND p.tenant_id=$1 AND p.moysklad_account=$2 AND p.ozon_account=$3 AND t.state='QUEUED'`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, now)
+		if err != nil {
+			return domain.StockSyncView{}, err
+		}
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO stock_sync_mutations(tenant_id,moysklad_account,ozon_account,idempotency_key,request_hash,action,operation_id) VALUES($1,$2,$3,$4,$5,$6,$7)`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, key, hash, action, operation)
+	if err != nil {
+		return domain.StockSyncView{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return domain.StockSyncView{}, err
+	}
+	return s.StockSyncStatus(ctx, scope, now)
+}
+func (s *Store) StockSyncStatus(ctx context.Context, scope domain.StockSyncScope, now time.Time) (domain.StockSyncView, error) {
+	if !scope.Valid() {
+		return domain.StockSyncView{}, domain.ErrStockSyncNotFound
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
+	defer cancel()
+	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
+	if err != nil {
+		return domain.StockSyncView{}, err
+	}
+	defer tx.Rollback(context.Background())
+	view := domain.StockSyncView{StockSyncScope: scope, State: "DISABLED", Checks: []domain.StockSyncCheck{}, Targets: []domain.StockSyncTarget{}}
+	var reviewID *string
+	var lastChecks []byte
+	err = tx.QueryRow(ctx, `SELECT enabled,review_id,last_checks FROM stock_sync_settings WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount).Scan(&view.Enabled, &reviewID, &lastChecks)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return view, err
+	}
+	var attestations []domain.StockSyncAttestation
+	if reviewID != nil {
+		r, e := readSyncReview(ctx, tx, scope, *reviewID)
+		if e != nil {
+			return view, e
+		}
+		attestations = r.Attestations
+	}
+	ready, e := s.stockSyncReview(ctx, tx, scope, attestations, now)
+	if e != nil {
+		return view, e
+	}
+	view.Ready, view.Checks, view.Targets = ready.Ready, ready.Checks, ready.Targets
+	if reviewID != nil {
+		original, err := readSyncReview(ctx, tx, scope, *reviewID)
+		if err != nil {
+			return view, err
+		}
+		if !sameSyncConditions(original, ready) {
+			view.Ready = false
+			view.Checks = append(view.Checks, domain.StockSyncCheck{Code: "SYNC_CONDITIONS_CHANGED", Message: "Повторно проверьте условия отправки после изменения соответствий или подключения."})
+		}
+	}
+	if view.Enabled {
+		view.State = "BLOCKED"
+		if view.Ready {
+			view.State = "ENABLED"
+		}
+	}
+	var id string
+	err = tx.QueryRow(ctx, `SELECT id FROM stock_publications WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 ORDER BY created_at DESC,id DESC LIMIT 1`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount).Scan(&id)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return view, err
+	}
+	if err == nil {
+		op, e := readPublication(ctx, tx, scope, id)
+		if e != nil {
+			return view, e
+		}
+		view.LastOperation = &op
+		switch op.State {
+		case "BLOCKED", "FAILED", "CANCELLED":
+			if view.Enabled {
+				view.State = "BLOCKED"
+			}
+		case "DISPATCHING":
+			if view.Enabled {
+				view.State = "UPDATING"
+			} else {
+				view.State = "STOPPING"
+			}
+		case "UNKNOWN", "PARTIAL":
+			if view.Enabled {
+				view.State = op.State
+			} else {
+				view.State = "DISABLED_OUTCOME_UNKNOWN"
+			}
+		case "QUEUED":
+			if view.Enabled {
+				view.State = "QUEUED"
+			}
+		case "SUCCEEDED":
+			var confirmed *time.Time
+			for _, t := range op.Targets {
+				if t.FinishedAt != nil && (confirmed == nil || t.FinishedAt.After(*confirmed)) {
+					v := *t.FinishedAt
+					confirmed = &v
+				}
+			}
+			view.LastConfirmedAt = confirmed
+			if view.Enabled && view.Ready {
+				view.State = "ACTIVE"
+			}
+		}
+	}
+	if !view.Enabled && view.LastOperation != nil {
+		unresolved := false
+		for _, target := range view.LastOperation.Targets {
+			if target.State == "UNKNOWN" || target.State == "DISPATCHING" || target.State == "QUEUED" {
+				unresolved = true
+			}
+		}
+		for _, target := range view.LastOperation.Targets {
+			if !unresolved && target.State == "CONFIRMED_EFFECTIVE" {
+				view.State = "EFFECT_CONFIRMED_REVIEW_REQUIRED"
+				break
+			}
+		}
+	}
+	return view, nil
+}
+func readPublication(ctx context.Context, tx pgx.Tx, scope domain.StockSyncScope, id string) (domain.StockPublication, error) {
+	op := domain.StockPublication{ID: id, StockSyncScope: scope, Targets: []domain.StockPublicationTarget{}}
+	err := tx.QueryRow(ctx, `SELECT review_id,created_at FROM stock_publications WHERE id=$1 AND tenant_id=$2 AND moysklad_account=$3 AND ozon_account=$4`, id, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount).Scan(&op.ReviewID, &op.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return op, domain.ErrStockSyncNotFound
+	}
+	if err != nil {
+		return op, err
+	}
+	rows, err := tx.Query(ctx, `SELECT id,product_id,warehouse_id,quantity,state,safe_error,dispatched_at,finished_at,decision FROM stock_publication_targets WHERE operation_id=$1 ORDER BY id LIMIT 100`, id)
+	if err != nil {
+		return op, err
+	}
+	defer rows.Close()
+	states := map[string]int{}
+	for rows.Next() {
+		v := domain.StockPublicationTarget{OperationID: id}
+		var raw []byte
+		if err = rows.Scan(&v.ID, &v.ProductID, &v.WarehouseID, &v.Quantity, &v.State, &v.SafeError, &v.DispatchedAt, &v.FinishedAt, &raw); err != nil {
+			return op, err
+		}
+		if err = json.Unmarshal(raw, &v.Decision); err != nil {
+			return op, err
+		}
+		op.Targets = append(op.Targets, v)
+		states[v.State]++
+	}
+	if err = rows.Err(); err != nil {
+		return op, err
+	}
+	switch {
+	case states["DISPATCHING"] > 0:
+		op.State = "DISPATCHING"
+	case states["UNKNOWN"] > 0:
+		op.State = "UNKNOWN"
+	case states["QUEUED"] > 0:
+		op.State = "QUEUED"
+	case len(states) > 1:
+		op.State = "PARTIAL"
+	default:
+		for k := range states {
+			op.State = k
+		}
+	}
+	return op, nil
+}

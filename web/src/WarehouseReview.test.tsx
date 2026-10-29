@@ -76,15 +76,17 @@ for (const status of [
     mount(status);
     expect(await screen.findByText(status)).toBeTruthy();
     expect(
-      screen.queryByRole("button", { name: /confirm mapping/i }),
+      screen.queryByRole("button", {
+        name: /Подтвердить соответствие складов/,
+      }),
     ).toBeNull();
     expect(
-      screen.getAllByText(/No observation; stock is unknown/),
+      screen.getAllByText(/Данных об остатках нет. Количество неизвестно./),
     ).toHaveLength(2);
     if (status === "UNSUPPORTED_WAREHOUSE")
-      expect(screen.getByText(/Classification: rFBS/)).toBeTruthy();
+      expect(screen.getByText(/Тип склада: rFBS/)).toBeTruthy();
     if (status === "ALREADY_MAPPED")
-      expect(screen.getByText(/provenance: test/)).toBeTruthy();
+      expect(screen.getByText(/Происхождение: test/)).toBeTruthy();
   });
 it("reports a failed read", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -126,7 +128,7 @@ it("shows missing evidence and refetches for a different account", async () => {
     </QueryClientProvider>,
   );
   expect(
-    await screen.findByText(/MoySklad: no eligible observation/),
+    await screen.findByText(/МойСклад: в последней загрузке нет/),
   ).toBeTruthy();
   component.rerender(
     <QueryClientProvider client={client}>
@@ -137,7 +139,7 @@ it("shows missing evidence and refetches for a different account", async () => {
       />
     </QueryClientProvider>,
   );
-  await screen.findByText(/Ozon: no eligible observation/);
+  await screen.findByText(/Ozon: в последней загрузке нет/);
   expect(
     fetchMock.mock.calls.some(([url]) =>
       String(url).includes("ozon_account=different"),
@@ -155,7 +157,5 @@ it("shows a loading state while the review is requested", () => {
       <WarehouseReview scope={scope} moy="one" ozon="two" />
     </QueryClientProvider>,
   );
-  expect(screen.getByRole("status").textContent).toContain(
-    "Loading warehouse review",
-  );
+  expect(screen.getByRole("status").textContent).toContain("Проверяем склады");
 });

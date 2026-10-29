@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { spawn, type ChildProcess } from "node:child_process";
 import type { ImportOperation, ImportProvider, Report } from "../src/api";
 
@@ -109,7 +109,10 @@ type Scenario =
   | "failed"
   | "history-unavailable"
   | "unknown-submission"
-  | "unknown-operation";
+  | "unknown-operation"
+  | "key-error"
+  | "sync-ready"
+  | "sync-active";
 async function openFixture(page: Page, scenario: Scenario = "success") {
   await page.clock.setFixedTime(new Date("2026-10-29T06:36:00Z"));
   await page.addInitScript(
@@ -160,10 +163,41 @@ async function openFixture(page: Page, scenario: Scenario = "success") {
     decision_status: "UNKNOWN",
     decision_reasons: [],
     publication: "DISABLED",
-    mapping_counts: { products: 0, warehouses: 0 },
+    mapping_counts: {
+      products: 798,
+      warehouses: 2,
+      catalog_products: 798,
+      catalog_confirmed_products: scenario.startsWith("sync-") ? 798 : 0,
+      confirmed_warehouses: scenario.startsWith("sync-") ? 2 : 0,
+    },
   };
   const calls: string[] = [];
   const submissions: string[] = [];
+  const credentialBodies: string[] = [],
+    syncBodies: string[] = [];
+  let credential = {
+    tenant,
+    provider: "moysklad",
+    account,
+    name: "Основной магазин",
+    revision: 1,
+    enabled: true,
+    updated_at: observed,
+    checked_at: observed,
+    last_request_id: "previous-save",
+  };
+  let sync = {
+    tenant,
+    moysklad_account: account,
+    ozon_account: account,
+    enabled: scenario === "sync-active",
+    state: scenario === "sync-active" ? "ACTIVE" : "DISABLED",
+    ready: scenario.startsWith("sync-"),
+    checks: [],
+    targets: [],
+    last_confirmed_at: scenario === "sync-active" ? observed : undefined,
+  };
+
   await page.route("**/api/**", async (route) => {
     const request = route.request(),
       url = new URL(request.url());
@@ -186,6 +220,61 @@ async function openFixture(page: Page, scenario: Scenario = "success") {
         truncated: false,
       });
     if (url.pathname === "/api/diagnostics") return fulfill(report);
+    if (/\/api\/integrations\/[^/]+\/credentials$/.test(url.pathname)) {
+      const provider = url.pathname.split("/")[3];
+      if (request.method() === "POST") {
+        credentialBodies.push(request.postData() || "");
+        const body = request.postDataJSON();
+        credential = {
+          ...credential,
+          provider,
+          revision: body.expected_revision + 1,
+          enabled: true,
+          last_request_id: body.request_id,
+        };
+        if (credentialBodies.length === 1) return route.abort("failed");
+        return fulfill({ credential, idempotent_replay: true });
+      }
+      return fulfill({
+        storage_available: true,
+        credential: { ...credential, provider },
+      });
+    }
+    if (url.pathname === "/api/stock-sync") return fulfill(sync);
+    if (url.pathname === "/api/stock-sync/preview")
+      return fulfill({
+        ...sync,
+        ready: true,
+        review_id: "c".repeat(32),
+        created_at: observed,
+        expires_at: "2026-10-29T06:46:00Z",
+        checks: [],
+        targets: [
+          {
+            ozon_product_id: "100",
+            ozon_warehouse_id: "10",
+            source_item_id: "p1",
+            source_warehouse_id: "w1",
+            quantity: "4",
+            status: "READY",
+            checks: [],
+            product_mapping_version: 1,
+            warehouse_mapping_version: 1,
+          },
+        ],
+      });
+    if (
+      url.pathname === "/api/stock-sync/enable" ||
+      url.pathname === "/api/stock-sync/disable"
+    ) {
+      syncBodies.push(request.postData() || "");
+      sync = {
+        ...sync,
+        enabled: url.pathname.endsWith("enable"),
+        state: url.pathname.endsWith("enable") ? "QUEUED" : "DISABLED",
+      };
+      return fulfill(sync);
+    }
     if (url.pathname === "/api/integrations")
       return fulfill({
         providers: (["moysklad", "ozon"] as const).map((provider) => ({
@@ -194,7 +283,8 @@ async function openFixture(page: Page, scenario: Scenario = "success") {
           status:
             provider === "ozon" && scenario === "missing"
               ? "CONFIGURED_NOT_VERIFIED"
-              : provider === "moysklad" && scenario === "history-unavailable"
+              : provider === "moysklad" &&
+                  ["history-unavailable", "key-error"].includes(scenario)
                 ? "VERIFICATION_FAILED"
                 : "VERIFIED",
           registration:
@@ -205,6 +295,10 @@ async function openFixture(page: Page, scenario: Scenario = "success") {
             ? {}
             : {
                 check: {
+                  reason:
+                    scenario === "key-error" && provider === "moysklad"
+                      ? "INVALID_CREDENTIALS"
+                      : undefined,
                   checked_at:
                     scenario === "history-unavailable" && provider === "ozon"
                       ? "2026-10-29T05:35:00Z"
@@ -253,468 +347,316 @@ async function openFixture(page: Page, scenario: Scenario = "success") {
     page.getByRole("heading", { name: "Интеграции", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".integration-card")).toHaveCount(2);
-  return { calls, submissions };
+  return { calls, submissions, credentialBodies, syncBodies };
 }
-
-function providerCard(page: Page, name: "МойСклад" | "Ozon") {
-  return page.getByRole("article", { name, exact: true });
-}
-
-async function geometry(locator: Locator) {
-  return locator.evaluate((element) => {
-    const rect = element.getBoundingClientRect();
-    return {
-      x: rect.x + scrollX,
-      y: rect.y + scrollY,
-      width: rect.width,
-      height: rect.height,
-    };
-  });
-}
-
-async function expectUnchangedGeometry(
-  locator: Locator,
-  before: Awaited<ReturnType<typeof geometry>>,
-) {
-  const after = await geometry(locator);
-  for (const property of ["x", "y", "width", "height"] as const)
-    expect(Math.abs(after[property] - before[property]), property).toBeLessThan(
-      1.5,
-    );
-}
-
-async function expectActionNearContent(card: Locator) {
-  const gap = await card.locator(".import-primary").evaluate((button) => {
-    const previous = button.previousElementSibling!;
-    return (
-      button.getBoundingClientRect().top -
-      previous.getBoundingClientRect().bottom
-    );
-  });
-  expect(gap).toBeGreaterThanOrEqual(0);
-  expect(gap).toBeLessThan(64);
-}
-
-async function expectDrawerFillsViewport(drawer: Locator, height: number) {
-  const bounds = await drawer.boundingBox();
-  expect(bounds).not.toBeNull();
-  expect(bounds!.y).toBe(0);
-  expect(bounds!.height).toBe(height);
-}
-
-async function expectDrawerBottomReachable(drawer: Locator, height: number) {
-  const copy = drawer.getByRole("button", {
-    name: "Копировать идентификаторы",
-  });
-  await copy.scrollIntoViewIfNeeded();
-  await expect(copy).toBeInViewport();
-  await expect(
-    drawer.getByRole("button", { name: "Закрыть настройки" }),
-  ).toBeInViewport();
-  const scroll = await drawer
-    .locator(".provider-settings-dialog-content")
-    .evaluate((element) => ({
-      top: element.scrollTop,
-      hasOverflow: element.scrollHeight > element.clientHeight,
-    }));
-  if (scroll.hasOverflow) expect(scroll.top).toBeGreaterThan(0);
-  await expectDrawerFillsViewport(drawer, height);
-}
-
-async function assertLayout(page: Page) {
+async function assertLayout(page: Page, identifiersHidden = true) {
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
-  const visible = await page.locator("body").innerText();
-  expect(visible).not.toContain(account);
-  expect(visible).not.toContain(tenant);
-  expect(visible).not.toMatch(/a{32}|b{32}/);
-  expect(visible).not.toMatch(
-    /COMPLETE_TRAVERSAL|READING_PRODUCTS|CONFIGURED_NOT_VERIFIED|HTTP attempts/,
-  );
-  expect(visible).not.toContain("synthetic-import-key");
-  expect(visible).not.toContain("synthetic-moy-import-token");
+  if (identifiersHidden) {
+    const text = await page.locator("body").innerText();
+    expect(text).not.toContain(account);
+    expect(text).not.toContain(tenant);
+    expect(text).not.toMatch(/a{32}|b{32}|COMPLETE_TRAVERSAL|READING_PRODUCTS/);
+  }
+  expect(await page.content()).not.toContain("synthetic-secret-entered");
 }
-
-for (const viewport of [
+const sizes = [
   { width: 1440, height: 900 },
   { width: 1280, height: 800 },
   { width: 390, height: 844 },
-]) {
-  test(`both imports complete at ${viewport.width} × ${viewport.height}`, async ({
-    page,
-  }) => {
-    await page.setViewportSize(viewport);
+];
+const shot = async (page: Page, name: string) =>
+  page.screenshot({
+    path: `../docs/screenshots/integrations-reference/${name}.png`,
+    fullPage: (await page.getByRole("dialog").count()) === 0,
+  });
+for (const size of sizes) {
+  test(`reference layout ${size.width}`, async ({ page }) => {
+    await page.setViewportSize(size);
     const { calls, submissions } = await openFixture(page);
-    await expect(
-      page.getByText("Данные обеих систем загружены", { exact: true }),
-    ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Обновить данные", exact: true }),
     ).toHaveCount(2);
     await expect(
       page.getByRole("link", { name: "Сопоставить товары", exact: true }),
     ).toBeVisible();
-    await expect(
-      page.getByRole("link", { name: "Сопоставить склады", exact: true }),
-    ).toBeVisible();
-    if (viewport.width > 1000) {
-      for (const action of await page
-        .getByRole("button", { name: "Обновить данные", exact: true })
-        .all()) {
+    if (size.width > 1000) {
+      for (const action of await page.locator(".import-primary").all()) {
         const box = await action.boundingBox();
-        expect(box && box.y + box.height).toBeLessThan(viewport.height);
+        expect(box!.y + box!.height).toBeLessThan(size.height);
       }
-      const next = await page
-        .getByText("Данные обеих систем загружены", { exact: true })
-        .boundingBox();
-      expect(next && next.y + next.height).toBeLessThan(viewport.height);
     }
     await assertLayout(page);
     expect(submissions).toHaveLength(0);
     expect(
       calls
-        .filter((call) => call.includes("/api/imports?"))
-        .every((call) => call.includes("limit=10")),
+        .filter((c) => c.includes("/api/imports?"))
+        .every((c) => c.includes("limit=10")),
     ).toBe(true);
-    await page.screenshot({
-      path: `test-results/integrations-ux/success-${viewport.width}.png`,
-      fullPage: true,
+    await shot(page, `success-${size.width}`);
+  });
+  test(`settings and technical disclosure preserve geometry ${size.width}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(size);
+    await openFixture(page);
+    const cards = page.locator(".integration-cards");
+    const geometry = () =>
+      cards.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return {
+          x: r.x + scrollX,
+          y: r.y + scrollY,
+          width: r.width,
+          height: r.height,
+        };
+      });
+    const before = await geometry();
+    const settings = page
+      .getByRole("article", { name: "Ozon", exact: true })
+      .getByRole("button", { name: "Настройки", exact: true });
+    await settings.click();
+    const dialog = page.getByRole("dialog", { name: "Подключение Ozon" });
+    await expect(dialog).toBeVisible();
+    expect((await dialog.boundingBox())!.width).toBeLessThanOrEqual(
+      Math.min(480, size.width),
+    );
+    expect(await geometry()).toEqual(before);
+    await shot(page, `settings-${size.width}`);
+    await dialog.locator(".technical-details > summary").first().click();
+    await expect(
+      dialog.getByText(account, { exact: true }).first(),
+    ).toBeVisible();
+    await dialog
+      .getByRole("button", { name: "Копировать идентификаторы" })
+      .first()
+      .scrollIntoViewIfNeeded();
+    await expect(
+      dialog.getByRole("button", { name: "Копировать идентификаторы" }).first(),
+    ).toBeInViewport();
+    expect(await geometry()).toEqual(before);
+    await assertLayout(page, false);
+    await shot(page, `technical-${size.width}`);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(settings).toBeFocused();
+    expect(await geometry()).toEqual(before);
+  });
+  test(`explicit import confirmation ${size.width}`, async ({ page }) => {
+    await page.setViewportSize(size);
+    const { submissions } = await openFixture(page);
+    await page
+      .getByRole("article", { name: "МойСклад", exact: true })
+      .getByRole("button", { name: "Обновить данные", exact: true })
+      .click();
+    const dialog = page.getByRole("dialog", {
+      name: "Загрузить данные МойСклад?",
     });
+    await expect(
+      dialog.getByRole("button", { name: "Подтвердить загрузку" }),
+    ).toBeDisabled();
+    expect(submissions).toHaveLength(0);
+    await assertLayout(page);
+    await shot(page, `import-confirmation-${size.width}`);
+    await page.keyboard.press("Escape");
+    expect(submissions).toHaveLength(0);
   });
 }
-
 for (const scenario of [
   "missing",
   "running",
   "failed",
   "unknown-operation",
+  "history-unavailable",
+  "key-error",
+  "sync-active",
 ] as const) {
-  test(`integration state: ${scenario}`, async ({ page }) => {
+  test(`state ${scenario}`, async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await openFixture(page, scenario);
-    if (scenario === "missing") {
-      await expect(
-        page.getByText("Данные обеих систем загружены", { exact: true }),
-      ).toHaveCount(0);
+    if (scenario === "missing")
       await expect(
         page.getByRole("link", { name: "Сопоставить товары", exact: true }),
       ).toHaveCount(0);
-    } else if (scenario === "running") {
+    if (scenario === "running") {
       await expect(
         page.getByText("Загружаем товары…", { exact: true }).first(),
       ).toBeVisible();
       await expect(page.getByText(/Обнаружено.*842/).first()).toBeVisible();
+    }
+    if (scenario === "key-error")
       await expect(
-        page
-          .getByRole("region", { name: "МойСклад: импорт данных" })
-          .getByRole("button", { name: "Обновить данные", exact: true }),
-      ).toBeDisabled();
-    } else if (scenario === "failed") {
-      await expect(
-        page
-          .getByText(
-            /Предыдущие.*(данные|загрузки)|предыдущие.*(данные|загрузки)/,
-          )
-          .first(),
+        page.getByRole("button", { name: "Обновить ключ", exact: true }),
       ).toBeVisible();
-    } else {
+    if (scenario === "unknown-operation")
       await expect(
         page.getByText("Результат уточняется", { exact: true }).first(),
       ).toBeVisible();
+    if (scenario === "sync-active")
       await expect(
         page
-          .getByRole("region", { name: "МойСклад: импорт данных" })
-          .getByRole("button", { name: "Обновить данные", exact: true }),
-      ).toBeDisabled();
-    }
+          .getByRole("region", { name: "Синхронизация остатков" })
+          .getByText("Включена", { exact: true }),
+      ).toBeVisible();
     await assertLayout(page);
-    await page.screenshot({
-      path: `test-results/integrations-ux/${scenario}-1440.png`,
-      fullPage: true,
-    });
+    await shot(page, `${scenario}-1440`);
   });
 }
-
-test("unknown submission preserves a visible recovery action", async ({
-  page,
-}) => {
+test("unknown import submission preserves exact replay", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const { submissions } = await openFixture(page, "unknown-submission");
-  const card = page.locator(".integration-card").filter({
-    has: page.getByRole("heading", { name: "МойСклад", exact: true }),
-  });
-  await card
+  await page
+    .getByRole("article", { name: "МойСклад", exact: true })
     .getByRole("button", { name: "Обновить данные", exact: true })
     .click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("checkbox").check();
-  await dialog.getByRole("button", { name: /Подтвердить/ }).click();
+  await dialog.getByRole("button", { name: "Подтвердить загрузку" }).click();
   await expect(
-    page.getByRole("button", { name: /Повторить тот же запрос/ }),
+    page.getByRole("button", { name: "Повторить тот же запрос", exact: true }),
   ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Повторить тот же запрос", exact: true })
+    .click();
+  await expect.poll(() => submissions.length).toBe(2);
+  expect(submissions[1]).toBe(submissions[0]);
   await assertLayout(page);
-  expect(submissions).toHaveLength(1);
-  await page.screenshot({
-    path: "test-results/integrations-ux/unknown-submission-1440.png",
-    fullPage: true,
-  });
+  await shot(page, "unknown-submission-1440");
 });
-
-test("history reveals technical details only on request", async ({ page }) => {
+test("bounded history and support details", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const { calls } = await openFixture(page);
-  const history = page.locator(
+  await page
+    .getByRole("button", { name: "История обновлений", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "История обновлений",
+    exact: true,
+  });
+  const history = dialog.locator(
     'details.provider-history[aria-label="МойСклад: история обновлений"]',
   );
   await history.locator(":scope > summary").click();
   await history.locator("details.history-entry > summary").first().click();
   await history.locator("details.technical-details > summary").first().click();
   await expect(
-    page.getByText("a".repeat(32), { exact: true }).first(),
+    history.getByText("a".repeat(32), { exact: true }).first(),
   ).toBeVisible();
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBe(true);
-  await page.screenshot({
-    path: "test-results/integrations-ux/technical-details-1440.png",
-    fullPage: true,
-  });
-  await page
-    .getByRole("button", { name: /Следующ/ })
-    .first()
-    .click();
+  await assertLayout(page, false);
+  await shot(page, "operation-details-1440");
+  await history.getByRole("button", { name: /Следующ/ }).click();
   await expect
-    .poll(() => calls.some((call) => call.includes("offset=10")))
+    .poll(() => calls.some((c) => c.includes("offset=10")))
     .toBe(true);
-  expect(
-    calls
-      .filter((call) => call.includes("/api/imports?"))
-      .every((call) => call.includes("limit=10")),
-  ).toBe(true);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Диагностика для поддержки" }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Диагностика", exact: true }),
+  ).toBeVisible();
+  await shot(page, "support-1440");
 });
-
-for (const viewport of [
-  { width: 1440, height: 900 },
-  { width: 1280, height: 800 },
-  { width: 390, height: 844 },
-]) {
-  test(`provider settings drawer never reflows the page at ${viewport.width}px`, async ({
+test("credential save is explicit, secret stays out of HTML, lost response retries identical body", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const { credentialBodies, submissions } = await openFixture(
     page,
-  }) => {
-    await page.setViewportSize(viewport);
-    const { submissions } = await openFixture(page);
-    const moy = providerCard(page, "МойСклад"),
-      ozon = providerCard(page, "Ozon");
-    const moyAction = moy.locator(".import-primary"),
-      ozonAction = ozon.locator(".import-primary");
-    await expect(moyAction).toBeEnabled();
-    await expect(ozonAction).toBeEnabled();
-    const stableElements = [
-      moy,
-      moyAction,
-      ozon,
-      ozonAction,
-      page.locator(".integration-next"),
-      page.locator(".updates-history"),
-    ];
-    const baseline = await Promise.all(stableElements.map(geometry));
-    const expectNoReflow = async () => {
-      for (let i = 0; i < stableElements.length; i++)
-        await expectUnchangedGeometry(stableElements[i], baseline[i]);
-    };
-
-    await ozon.locator(".provider-settings > summary").click();
-    const ozonDrawer = page.getByRole("dialog", {
-      name: "Настройки Ozon",
-      exact: true,
-    });
-    await expect(ozonDrawer).toBeVisible();
-    await expectDrawerFillsViewport(ozonDrawer, viewport.height);
-    await expect(page.getByRole("dialog")).toHaveCount(1);
-    await expect(
-      ozonDrawer.getByRole("combobox", { name: "Ozon: аккаунт" }),
-    ).toBeVisible();
-    await expectNoReflow();
-    await expectActionNearContent(moy);
-    await expectActionNearContent(ozon);
-    await assertLayout(page);
-    await page.screenshot({
-      path: `test-results/integrations-ux/expanded-settings-${viewport.width}.png`,
-      fullPage: false,
-    });
-
-    // The first and last keyboard stops stay inside the modal.
-    const ozonClose = ozonDrawer.getByRole("button", {
-      name: "Закрыть настройки",
-    });
-    await ozonClose.focus();
-    await page.keyboard.press("Shift+Tab");
-    expect(
-      await ozonDrawer.evaluate((node) =>
-        node.contains(document.activeElement),
-      ),
-    ).toBe(true);
-    await page.keyboard.press("Tab");
-    await expect(ozonClose).toBeFocused();
-    await ozonDrawer.locator(".technical-details > summary").click();
-    await expect(
-      ozonDrawer.getByText(account, { exact: true }).first(),
-    ).toBeVisible();
-    await expectDrawerBottomReachable(ozonDrawer, viewport.height);
-    await expectNoReflow();
-    expect(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= innerWidth,
-      ),
-    ).toBe(true);
-    await page.screenshot({
-      path: `test-results/integrations-ux/expanded-provider-details-${viewport.width}.png`,
-      fullPage: false,
-    });
-    await page.keyboard.press("Escape");
-    await expect(ozonDrawer).toHaveCount(0);
-    await expect(ozon.locator(".provider-settings > summary")).toBeFocused();
-    await expectNoReflow();
-
-    await moy.locator(".provider-settings > summary").click();
-    const moyDrawer = page.getByRole("dialog", {
-      name: "Настройки МойСклад",
-      exact: true,
-    });
-    await expect(moyDrawer).toBeVisible();
-    await expectDrawerFillsViewport(moyDrawer, viewport.height);
-    await expect(page.getByRole("dialog")).toHaveCount(1);
-    await moyDrawer.locator(".technical-details > summary").click();
-    await expect(
-      moyDrawer.getByText(account, { exact: true }).first(),
-    ).toBeVisible();
-    await expectDrawerBottomReachable(moyDrawer, viewport.height);
-    await expectNoReflow();
-    await page.screenshot({
-      path: `test-results/integrations-ux/expanded-moy-settings-${viewport.width}.png`,
-      fullPage: false,
-    });
-    await moyDrawer.getByRole("button", { name: "Закрыть настройки" }).click();
-    await expect(moyDrawer).toHaveCount(0);
-    await expect(moy.locator(".provider-settings > summary")).toBeFocused();
-    await expectNoReflow();
-
-    if (viewport.width > 1000) {
-      await ozon.locator(".provider-settings > summary").click();
-      await expect(ozonDrawer).toBeVisible();
-      await page.mouse.click(10, 100);
-      await expect(ozonDrawer).toHaveCount(0);
-      await expect(ozon.locator(".provider-settings > summary")).toBeFocused();
-    }
-    await assertLayout(page);
-    await expectNoReflow();
-    expect(submissions).toHaveLength(0);
+    "key-error",
+  );
+  await page
+    .getByRole("button", { name: "Обновить ключ", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Подключение МойСклад" });
+  await dialog
+    .locator('input[type="password"]')
+    .fill("synthetic-secret-entered");
+  await assertLayout(page);
+  const save = dialog.getByRole("button", {
+    name: /Проверить и сохранить|Сохранить ключ|Сохранить и проверить/,
   });
-
-  test(`import confirmation never reflows the page at ${viewport.width}px`, async ({
-    page,
-  }) => {
-    await page.setViewportSize(viewport);
-    const { submissions } = await openFixture(page);
-    const moy = providerCard(page, "МойСклад"),
-      ozon = providerCard(page, "Ozon");
-    await expect(moy.locator(".import-primary")).toBeEnabled();
-    await expect(ozon.locator(".import-primary")).toBeEnabled();
-    const stableElements = [
-      moy,
-      moy.locator(".import-primary"),
-      ozon,
-      ozon.locator(".import-primary"),
-      page.locator(".integrations-heading"),
-      page.locator(".integration-cards"),
-      page.locator(".integration-next"),
-      page.locator(".updates-history"),
-    ];
-    const baseline = await Promise.all(stableElements.map(geometry));
-    await moy.locator(".import-primary").click();
-    const confirmation = moy.getByRole("dialog", {
-      name: "Загрузить данные МойСклад?",
-    });
-    await expect(confirmation).toBeVisible();
-    await expectDrawerFillsViewport(confirmation, viewport.height);
-    await expect(
-      confirmation.getByRole("button", { name: "Подтвердить загрузку" }),
-    ).toBeDisabled();
-    for (let i = 0; i < stableElements.length; i++)
-      await expectUnchangedGeometry(stableElements[i], baseline[i]);
-    await expectActionNearContent(moy);
-    await expectActionNearContent(ozon);
-    await assertLayout(page);
-    expect(submissions).toHaveLength(0);
-    await page.screenshot({
-      path: `test-results/integrations-ux/import-confirmation-${viewport.width}.png`,
-      fullPage: false,
-    });
-    await confirmation
-      .getByRole("button", { name: "Закрыть", exact: true })
-      .click();
-    await expect(confirmation).toHaveCount(0);
-    for (let i = 0; i < stableElements.length; i++)
-      await expectUnchangedGeometry(stableElements[i], baseline[i]);
-    expect(submissions).toHaveLength(0);
+  await expect(save).toBeDisabled();
+  await dialog
+    .getByRole("checkbox", { name: /Подтверждаю, что этот аккаунт/ })
+    .check();
+  await shot(page, "update-key-1440");
+  await save.click();
+  await expect(
+    page
+      .getByRole("button", { name: "Повторить тот же запрос", exact: true })
+      .last(),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Повторить тот же запрос", exact: true })
+    .last()
+    .click();
+  await expect.poll(() => credentialBodies.length).toBe(2);
+  expect(credentialBodies[1]).toBe(credentialBodies[0]);
+  expect(JSON.parse(credentialBodies[0]).request_id).toMatch(/^[0-9a-f-]{36}$/);
+  expect(submissions).toHaveLength(0);
+  expect(
+    await page.evaluate(() =>
+      JSON.stringify({ ...localStorage, ...sessionStorage }),
+    ),
+  ).not.toContain("synthetic-secret-entered");
+});
+test("stock publication requires separate preview and explicit acknowledgement", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const { syncBodies, submissions } = await openFixture(page, "sync-ready");
+  await page
+    .getByRole("button", { name: "Включить синхронизацию", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "Включить синхронизацию остатков?",
   });
-
-  test(`unavailable history stays compact behind settings drawer at ${viewport.width}px`, async ({
-    page,
-  }) => {
-    await page.setViewportSize(viewport);
-    const { submissions } = await openFixture(page, "history-unavailable");
-    const moy = providerCard(page, "МойСклад"),
-      ozon = providerCard(page, "Ozon");
-    await expect(moy.getByRole("alert")).toContainText("История недоступна");
-    await expect(moy.locator(".import-primary")).toBeDisabled();
-    await expect(ozon.locator(".import-primary")).toBeEnabled();
-    const stableElements = [
-      moy,
-      moy.locator(".import-primary"),
-      ozon,
-      ozon.locator(".import-primary"),
-      page.locator(".integration-next"),
-      page.locator(".updates-history"),
-    ];
-    const baseline = await Promise.all(stableElements.map(geometry));
-    await ozon.locator(".provider-settings > summary").click();
-    const drawer = page.getByRole("dialog", {
-      name: "Настройки Ozon",
+  const enable = dialog.getByRole("button", {
+    name: "Включить синхронизацию",
+    exact: true,
+  });
+  await expect(enable).toBeDisabled();
+  expect(syncBodies).toHaveLength(0);
+  await expect(dialog.getByText(/Условия отправки подтверждены/)).toBeVisible();
+  await shot(page, "enable-sync-1440");
+  await dialog
+    .getByRole("checkbox", { name: /Подтверждаю изменение остатков/ })
+    .check();
+  await enable.click();
+  await expect.poll(() => syncBodies.length).toBe(1);
+  expect(JSON.parse(syncBodies[0])).toMatchObject({
+    tenant,
+    moysklad_account: account,
+    ozon_account: account,
+    review_id: "c".repeat(32),
+    acknowledge: true,
+  });
+  expect(submissions).toHaveLength(0);
+  await expect(
+    page
+      .getByRole("region", { name: "Синхронизация остатков" })
+      .getByText("Идёт отправка", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Выключить", exact: true }).click();
+  const disable = page.getByRole("dialog", {
+    name: "Выключить синхронизацию?",
+  });
+  await expect(
+    disable.getByRole("button", {
+      name: "Выключить синхронизацию",
       exact: true,
-    });
-    await expect(drawer).toBeVisible();
-    await expectDrawerFillsViewport(drawer, viewport.height);
-    await drawer.locator(".technical-details > summary").click();
-    await expect(
-      drawer.getByText(/Перед добавлением аккаунта повторите проверку/),
-    ).toHaveCount(0);
-    await expect(
-      drawer.getByText(account, { exact: true }).first(),
-    ).toBeVisible();
-    await expectDrawerBottomReachable(drawer, viewport.height);
-    for (let i = 0; i < stableElements.length; i++)
-      await expectUnchangedGeometry(stableElements[i], baseline[i]);
-    await expectActionNearContent(moy);
-    await expectActionNearContent(ozon);
-    await expect(moy.locator(".import-primary")).toBeDisabled();
-    expect(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= innerWidth,
-      ),
-    ).toBe(true);
-    expect(submissions).toHaveLength(0);
-    await page.screenshot({
-      path: `test-results/integrations-ux/error-history-expanded-settings-${viewport.width}.png`,
-      fullPage: false,
-    });
-    await drawer.getByRole("button", { name: "Закрыть настройки" }).click();
-    for (let i = 0; i < stableElements.length; i++)
-      await expectUnchangedGeometry(stableElements[i], baseline[i]);
-  });
-}
+    }),
+  ).toBeDisabled();
+  await disable.getByRole("checkbox").check();
+  await disable
+    .getByRole("button", { name: "Выключить синхронизацию", exact: true })
+    .click();
+  await expect.poll(() => syncBodies.length).toBe(2);
+  await expect(
+    page
+      .getByRole("region", { name: "Синхронизация остатков" })
+      .getByText("Выключена", { exact: true }),
+  ).toBeVisible();
+});

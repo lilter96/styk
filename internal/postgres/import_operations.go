@@ -419,3 +419,17 @@ func (s *Store) ResolveImportCommit(ctx context.Context, t domain.Task) (bool, e
 	}
 	return false, nil
 }
+
+// CatalogImportExists allows recovery of an immutable accepted intent even when
+// its credential was subsequently disabled or removed. The subsequent submission
+// still validates the exact frozen scope, type and limits before replaying it.
+func (s *Store) CatalogImportExists(ctx context.Context, tenant, provider, account, key string) (bool, error) {
+	if !validImportScope(tenant, account) || !importKeyPattern.MatchString(key) || (provider != "moysklad" && provider != "ozon") {
+		return false, ErrImportScope
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
+	defer cancel()
+	var exists bool
+	err := s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM ozon_import_operations WHERE tenant_id=$1 AND provider=$2 AND account_id=$3 AND idempotency_key=$4)`, tenant, provider, account, key).Scan(&exists)
+	return exists, err
+}

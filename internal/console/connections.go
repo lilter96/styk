@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/lilter96/styk/internal/credentials"
 	"github.com/lilter96/styk/internal/doctor"
 	"github.com/lilter96/styk/internal/infrastructure/moysklad"
 	"github.com/lilter96/styk/internal/infrastructure/ozon"
@@ -28,6 +29,9 @@ type connections struct {
 	ozon                    *ozon.Client
 	mu                      sync.Mutex
 	checks                  map[string]map[string]connectionCheck
+	vault                   *credentials.Vault
+	moyFactory              func(string) (*moysklad.Client, error)
+	ozonFactory             func(string, string) (*ozon.Client, error)
 }
 type connectionCheck struct {
 	Status    string    `json:"status"`
@@ -36,16 +40,21 @@ type connectionCheck struct {
 	Reason    string    `json:"reason,omitempty"`
 }
 type providerView struct {
-	Provider     string           `json:"provider"`
-	Account      string           `json:"account,omitempty"`
-	Status       string           `json:"status"`
-	Check        *connectionCheck `json:"check,omitempty"`
-	Registration string           `json:"registration"`
-	Import       *doctor.Batch    `json:"import,omitempty"`
+	Provider           string           `json:"provider"`
+	Account            string           `json:"account,omitempty"`
+	Status             string           `json:"status"`
+	Check              *connectionCheck `json:"check,omitempty"`
+	Registration       string           `json:"registration"`
+	Import             *doctor.Batch    `json:"import,omitempty"`
+	Name               string           `json:"name,omitempty"`
+	StorageAvailable   bool             `json:"storage_available"`
+	CredentialsStored  bool             `json:"credentials_stored"`
+	CredentialRevision int64            `json:"credential_revision,omitempty"`
 }
 
 func newConnections(db *postgres.Store) *connections {
 	c := &connections{db: db, checks: map[string]map[string]connectionCheck{}}
+	c.vault, _ = credentials.FromEnvironment()
 	c.moyAccount = os.Getenv("MOYSKLAD_ACCOUNT_ID")
 	c.ozonAccount = os.Getenv("OZON_CLIENT_ID")
 	if token := os.Getenv("MOYSKLAD_TOKEN"); token != "" && validConnectionTenant(c.moyAccount) {
@@ -74,6 +83,9 @@ func (c *connections) getCheck(session, provider string) (connectionCheck, bool)
 func (c *connections) putCheck(session, provider string, v connectionCheck) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.checks == nil {
+		c.checks = map[string]map[string]connectionCheck{}
+	}
 	for k, checks := range c.checks {
 		expired := true
 		for _, check := range checks {
@@ -109,7 +121,10 @@ func (c *connections) putCheck(session, provider string, v connectionCheck) {
 	c.checks[session][provider] = v
 }
 func (c *connections) probe(w http.ResponseWriter, r *http.Request) {
-	var body struct{}
+	var body struct {
+		Tenant  string `json:"tenant"`
+		Account string `json:"account"`
+	}
 	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 	d.DisallowUnknownFields()
 	if d.Decode(&body) != nil || d.Decode(&struct{}{}) != io.EOF {
@@ -122,23 +137,49 @@ func (c *connections) probe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 404, "PROVIDER_NOT_FOUND")
 		return
 	}
-	if !configured {
-		writeError(w, 409, "NOT_CONFIGURED")
+	if (body.Tenant != "" || body.Account != "") && (!validConnectionTenant(body.Tenant) || !validConnectionTenant(body.Account)) {
+		writeError(w, 400, "INVALID_SCOPE")
 		return
 	}
 	session, _ := r.Context().Value(auditContextKey{}).(string)
 	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
 	defer cancel()
+	moyClient, ozonClient := c.moy, c.ozon
+	checkKey := provider
+	if body.Tenant != "" {
+		legacyConfigured := configured && body.Account == account
+		account = body.Account
+		checkKey = scopedCheckKey(body.Tenant, provider, account)
+		_, storedErr := c.db.LoadCredential(ctx, credentials.Scope{Tenant: body.Tenant, Provider: provider, Account: account})
+		// The existing trusted local operator may test the configured environment
+		// account before its separate ownership attestation/registration. A stored
+		// record always overrides that fallback, including disabled credentials.
+		if legacyConfigured && errors.Is(storedErr, credentials.ErrNotFound) {
+			configured = true
+		} else {
+			var err error
+			if provider == "moysklad" {
+				moyClient, err = c.resolveMoy(ctx, body.Tenant, account)
+			} else {
+				ozonClient, err = c.resolveOzon(ctx, body.Tenant, account)
+			}
+			configured = err == nil
+		}
+	}
+	if !configured {
+		writeError(w, 409, "NOT_CONFIGURED")
+		return
+	}
 	check := connectionCheck{Status: "VERIFICATION_FAILED", CheckedAt: time.Now().UTC(), Identity: "NOT_ESTABLISHED"}
 	var err error
 	if provider == "moysklad" {
 		var verified bool
-		verified, err = c.moy.Probe(ctx, account)
+		verified, err = moyClient.Probe(ctx, account)
 		if verified {
 			check.Identity = "MATCHED_RETURNED_PRODUCT"
 		}
 	} else {
-		err = c.ozon.Probe(ctx)
+		err = ozonClient.Probe(ctx)
 	}
 	check.CheckedAt = time.Now().UTC()
 	if err == nil {
@@ -160,7 +201,7 @@ func (c *connections) probe(w http.ResponseWriter, r *http.Request) {
 			check.Reason = "CANCELLED"
 		}
 	}
-	c.putCheck(session, provider, check)
+	c.putCheck(session, checkKey, check)
 	writeJSON(w, check)
 }
 func (c *connections) list(w http.ResponseWriter, r *http.Request) {
@@ -170,18 +211,75 @@ func (c *connections) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session, _ := r.Context().Value(auditContextKey{}).(string)
+	metas := []credentials.Metadata{}
+	{
+		var err error
+		metas, err = c.db.ListCredentialMetadata(r.Context(), tenant)
+		if err != nil && !errors.Is(err, credentials.ErrNotFound) {
+			writeError(w, 503, "DATABASE_UNAVAILABLE")
+			return
+		}
+	}
 	views := make([]providerView, 0, 2)
 	for _, provider := range []string{"moysklad", "ozon"} {
-		account, configured := c.account(provider)
-		v := providerView{Provider: provider, Status: "NOT_CONFIGURED", Registration: "NOT_CHECKED"}
-		if configured {
-			v.Account = account
+		envAccount, envConfigured := c.account(provider)
+		account, configured := envAccount, envConfigured
+		selected := r.URL.Query().Get(provider + "_account")
+		if selected != "" && !validConnectionTenant(selected) {
+			writeError(w, 400, "INVALID_SCOPE")
+			return
+		}
+		var stored *credentials.Metadata
+		if selected != "" {
+			record, err := c.db.LoadCredential(r.Context(), credentials.Scope{Tenant: tenant, Provider: provider, Account: selected})
+			if err == nil {
+				stored = &record.Metadata
+			} else if !errors.Is(err, credentials.ErrNotFound) {
+				writeError(w, 503, "DATABASE_UNAVAILABLE")
+				return
+			}
+		} else {
+			for _, m := range metas {
+				if m.Provider == provider {
+					copy := m
+					stored = &copy
+					break
+				}
+			}
+		}
+		if selected != "" {
+			account = selected
+			configured = envConfigured && selected == envAccount
+		}
+		if stored != nil {
+			account = stored.Account
+			configured = stored.Enabled && c.vault != nil
+		}
+		v := providerView{Provider: provider, Account: account, Status: "NOT_CONFIGURED", Registration: "NOT_CHECKED", StorageAvailable: c.vault != nil}
+		if stored != nil {
+			v.Name = stored.Name
+			v.CredentialsStored = true
+			v.CredentialRevision = stored.Revision
+		}
+		if account != "" {
 			v.Registration = "NOT_REGISTERED"
+		}
+		if configured {
 			v.Status = "CONFIGURED_NOT_VERIFIED"
-			if check, ok := c.getCheck(session, provider); ok {
+			if stored != nil {
+				v.Status = "VERIFIED"
+				v.Check = &connectionCheck{Status: "VERIFIED", CheckedAt: stored.CheckedAt, Identity: "AUTHENTICATED_ACCOUNT"}
+			}
+			check, ok := c.getCheck(session, scopedCheckKey(tenant, provider, account))
+			if !ok && stored == nil && account == envAccount {
+				check, ok = c.getCheck(session, provider)
+			}
+			if ok && (stored == nil || !check.CheckedAt.Before(stored.CheckedAt)) {
 				v.Status = check.Status
 				v.Check = &check
 			}
+		}
+		if account != "" {
 			ctx, cancel := context.WithTimeout(r.Context(), c.db.Timeout)
 			var owner string
 			err := c.db.Pool.QueryRow(ctx, `SELECT tenant_id FROM stock_connections WHERE source=$1 AND account_id=$2`, provider, account).Scan(&owner)
@@ -216,6 +314,7 @@ func (c *connections) list(w http.ResponseWriter, r *http.Request) {
 		Providers []providerView `json:"providers"`
 	}{views})
 }
+
 func validConnectionTenant(s string) bool {
 	return s != "" && strings.TrimSpace(s) == s && len(s) <= 256
 }
@@ -260,7 +359,10 @@ func (c *connections) register(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 503, "REGISTRATION_OUTCOME_UNKNOWN")
 		return
 	}
-	check, ok := c.getCheck(session, provider)
+	check, ok := c.getCheck(session, scopedCheckKey(body.Tenant, provider, account))
+	if !ok {
+		check, ok = c.getCheck(session, provider)
+	}
 	if !ok || check.Status != "VERIFIED" || time.Since(check.CheckedAt) > 5*time.Minute || time.Since(check.CheckedAt) < 0 {
 		writeError(w, 409, "PROBE_REQUIRED")
 		return

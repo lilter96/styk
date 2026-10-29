@@ -22,6 +22,7 @@ const (
 	ProofPostingCoverage  = "POSTING_COVERAGE_INSUFFICIENT"
 	ProofCompeting        = "COMPETING_EXPOSURE_NOT_VERIFIED"
 	ProofBound            = "UNSEEN_REDUCTION_BOUND_UNPROVEN"
+	ProofCustomerOrders   = "CUSTOMER_ORDER_COVERAGE_VERIFIED"
 )
 
 var proofDescriptions = map[string]string{
@@ -79,15 +80,27 @@ func Evaluate(req domain.StockCalculationRequest, e domain.StockEvidence, now ti
 		observationFresh = validPolicy && age >= 0 && age < req.Policy.MaxObservationAge
 	}
 	add("SOURCE_OBSERVATION_STALE", "The local observation time is within the policy age.", "", observationFresh, false)
+	var customerCoverageExpiry *time.Time
 	if e.CustomerOrders != nil {
 		orders := e.CustomerOrders
-		add("CUSTOMER_ORDER_IMPORT_MISSING", "A scoped customer-order traversal was recorded.", "", orders.BatchID != nil, false)
+		coverage, provided := e.Proofs[ProofCustomerOrders]
+		coverageVerified := provided && coverage.State == domain.ProofVerified && strings.TrimSpace(coverage.Reference) != "" && !coverage.AsOf.IsZero() && !coverage.AsOf.After(now) && coverage.ValidUntil.After(now) && e.Source.ObservedAt != nil && !coverage.AsOf.After(*e.Source.ObservedAt) && coverage.ValidUntil.Sub(coverage.AsOf) <= 15*time.Minute
+		if provided {
+			add(ProofCustomerOrders, "Complete customer-order and reservation coverage, including baseline inclusion, was explicitly verified.", coverage.Reference, coverageVerified, false)
+		}
+		if coverageVerified {
+			expiry := coverage.ValidUntil
+			customerCoverageExpiry = &expiry
+		}
+		add("CUSTOMER_ORDER_IMPORT_MISSING", "A scoped customer-order traversal or explicit independent coverage evidence was recorded.", coverage.Reference, orders.BatchID != nil || coverageVerified, false)
+		add("CUSTOMER_ORDER_EVIDENCE_TRUNCATED", "The bounded customer-order evidence was not truncated.", "", !orders.Truncated, false)
+		add("CUSTOMER_ORDER_DETAILS_WITHOUT_BATCH", "Observed order details have a durable scoped batch reference.", "", orders.BatchID != nil || len(orders.Correlations) == 0, true)
 		if orders.BatchID != nil {
-			add("CUSTOMER_ORDER_POSTING_EVIDENCE_MISSING", "A relevant scoped posting observation was considered.", "", len(orders.Correlations) > 0, false)
-			add("CUSTOMER_ORDER_BASELINE_INCLUSION_UNKNOWN", "Position reserve inclusion in the stock baseline is proven.", "", false, false)
-			add("CUSTOMER_ORDER_EVIDENCE_TRUNCATED", "The bounded customer-order evidence was not truncated.", "", !orders.Truncated, false)
+			add("CUSTOMER_ORDER_POSTING_EVIDENCE_MISSING", "A relevant scoped posting observation was considered.", "", len(orders.Correlations) > 0 || coverageVerified, false)
+			add("CUSTOMER_ORDER_BASELINE_INCLUSION_UNKNOWN", "Position reserve inclusion in the stock baseline is proven.", coverage.Reference, coverageVerified, false)
 			states := map[domain.OrderCorrelationStatus]bool{}
 			reserveObserved := false
+			reserveValid := true
 			for _, c := range orders.Correlations {
 				states[c.Status] = true
 				if c.Truncated {
@@ -97,6 +110,9 @@ func Evaluate(req domain.StockCalculationRequest, e domain.StockEvidence, now ti
 					for _, p := range candidate.Positions {
 						if p.Reserve != nil {
 							reserveObserved = true
+							if _, ok := wholeNonnegative(*p.Reserve); !ok {
+								reserveValid = false
+							}
 						}
 					}
 				}
@@ -104,7 +120,8 @@ func Evaluate(req domain.StockCalculationRequest, e domain.StockEvidence, now ti
 			for status := range states {
 				add("CUSTOMER_ORDER_"+string(status), "The customer-order correlation has an independently verified identity.", "", status == domain.OrderIdentityConfirmed, false)
 			}
-			add("CUSTOMER_ORDER_RESERVE_MISSING", "A position reserve value was observed; baseline inclusion remains unknown.", "", reserveObserved, false)
+			add("CUSTOMER_ORDER_RESERVE_MISSING", "A position reserve value was observed or independently verified empty coverage was supplied.", "", reserveObserved || (coverageVerified && len(orders.Correlations) == 0), false)
+			add("CUSTOMER_ORDER_RESERVE_UNSUPPORTED", "Observed customer-order reserves are nonnegative whole pieces.", "", reserveValid, true)
 		}
 	}
 
@@ -135,6 +152,9 @@ func Evaluate(req domain.StockCalculationRequest, e domain.StockEvidence, now ti
 	parsed = append(parsed, safety)
 
 	expires := now.Add(req.Policy.DecisionLifetime)
+	if customerCoverageExpiry != nil && customerCoverageExpiry.Before(expires) {
+		expires = *customerCoverageExpiry
+	}
 	if e.Source.ObservedAt != nil && validPolicy {
 		if ageExpiry := e.Source.ObservedAt.Add(req.Policy.MaxObservationAge); ageExpiry.Before(expires) {
 			expires = ageExpiry

@@ -805,7 +805,7 @@ it("keeps the selected MoySklad account's prior persisted import visible after a
       counts: { products: 9, variants: 2, warehouses: 3, stock_rows: 0 },
     },
   });
-  await screen.findByText("Последняя успешная загрузка");
+  await screen.findAllByText(/Предыдущие успешные загрузки доступны/);
   const counts = document.querySelector<HTMLElement>(".catalog-counts")!;
   expect(within(counts).getByText("9")).toBeTruthy();
   expect(within(counts).getByText("2")).toBeTruthy();

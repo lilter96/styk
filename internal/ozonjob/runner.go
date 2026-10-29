@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lilter96/styk/internal/application"
+	"github.com/lilter96/styk/internal/credentials"
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/infrastructure/moysklad"
 	"github.com/lilter96/styk/internal/infrastructure/ozon"
@@ -21,6 +22,9 @@ type Runner struct {
 	Store           *postgres.Store
 	Account         string
 	Client          *ozon.Client
+	Resolver        *credentials.Resolver
+	NewOzon         func(string, string) (*ozon.Client, error)
+	NewMoysklad     func(string, string) (*moysklad.Client, error)
 }
 
 func counts(c ozon.Counts) domain.ImportCounts {
@@ -71,6 +75,23 @@ func (r Runner) ProcessImport(parent context.Context, t domain.Task, lease time.
 	}
 	isMoy := op.Provider == "moysklad" && op.Type == domain.MoyskladCatalogImport && t.Type == domain.MoyskladCatalogTask
 	isOzon := op.Provider == "ozon" && op.Type == domain.OzonCatalogImport && t.Type == domain.OzonCatalogTask
+	if r.Resolver != nil {
+		secret, resolveErr := r.Resolver.Resolve(attempt, credentials.Scope{Tenant: op.Tenant, Provider: op.Provider, Account: op.Account})
+		if resolveErr != nil {
+			return r.Store.FailImport(attempt, t, "CONFIGURATION_UNAVAILABLE", "", domain.ImportCounts{})
+		}
+		if isMoy && r.NewMoysklad != nil {
+			r.MoyskladClient, resolveErr = r.NewMoysklad(op.Account, secret)
+			r.MoyskladAccount = op.Account
+		}
+		if isOzon && r.NewOzon != nil {
+			r.Client, resolveErr = r.NewOzon(op.Account, secret)
+			r.Account = op.Account
+		}
+		if resolveErr != nil {
+			return r.Store.FailImport(attempt, t, "CONFIGURATION_UNAVAILABLE", "", domain.ImportCounts{})
+		}
+	}
 	if (!isMoy && !isOzon) || (isMoy && (r.MoyskladClient == nil || r.MoyskladAccount != op.Account)) || (isOzon && (r.Client == nil || r.Account != op.Account)) {
 		return r.Store.FailImport(attempt, t, "CONFIGURATION_UNAVAILABLE", "", domain.ImportCounts{})
 	}

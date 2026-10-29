@@ -57,7 +57,7 @@ export function useConfirmation() {
       if (error instanceof ApiError && error.status === 401) {
         setSessionLost(true);
         setMessage(
-          "The session ended. The request may have committed. After signing in, inspect mapping history for the original account pair; the new session cannot replay this review.",
+          "Сессия завершилась. Подтверждение могло сохраниться. Войдите снова и проверьте историю исходной пары аккаунтов; в новой сессии эта проверка не повторяется.",
         );
         void client.invalidateQueries({ queryKey: ["session"] });
       } else if (
@@ -74,19 +74,19 @@ export function useConfirmation() {
       ) {
         setFailure({ reviewId: p.intent.reviewId, code });
         setMessage(
-          `${code}: confirmation was rejected. Create a new review or refresh the selection and resolve the conflict.`,
+          `${code}: Подтверждение отклонено. Обновите данные, устраните конфликт и проверьте соответствие заново.`,
         );
         setPending(null);
         pendingRef.current = null;
       } else if (code === "IDEMPOTENCY_CONFLICT") {
         p.uncertain = true;
         setMessage(
-          "IDEMPOTENCY_CONFLICT: inspect mapping history; do not create another confirmation until its outcome is known.",
+          "IDEMPOTENCY_CONFLICT: Проверьте историю соответствий. Не создавайте новое подтверждение, пока не уточните результат.",
         );
       } else {
         p.uncertain = true;
         setMessage(
-          "Outcome unknown: the request may have committed. Retry the exact same request to reconcile it.",
+          "Результат подтверждения неизвестен: запрос мог сохраниться. Повторите то же подтверждение, чтобы уточнить результат.",
         );
       }
     } finally {
@@ -155,53 +155,72 @@ export function ConfirmationNotice({
     pending.scope.moy === scope.moy &&
     pending.scope.ozon === scope.ozon;
   if (!pending && !message && !result) return null;
+  const visibleMessage = message.replace(/^[A-Z_]+: /, "");
+  const errorCode = message.match(/^([A-Z_]+): /)?.[1];
   return (
-    <div className="notice" aria-live="polite">
+    <div className="notice confirmation-notice" aria-live="polite">
       {pending && (
         <p>
-          Confirmation for{" "}
-          {pending.intent.kind === "warehouse" ? "warehouses" : "product"}{" "}
-          {pending.product} in {pending.scope.tenant} / {pending.scope.moy} /{" "}
-          {pending.scope.ozon}.{" "}
           {busy
-            ? "Request in progress; switching accounts does not cancel the transaction."
-            : "The original request remains in memory."}
+            ? "Сохраняем подтверждение соответствия. Смена аккаунтов не отменяет запрос."
+            : "Результат относится к исходной паре аккаунтов."}
         </p>
       )}
-      {message && <p role="alert">{message}</p>}
+      {visibleMessage && <p role="alert">{visibleMessage}</p>}
       {pending &&
         !sessionLost &&
         !busy &&
         (same ? (
-          <button onClick={confirmation.retry}>Retry same confirmation</button>
+          <button onClick={confirmation.retry}>
+            Повторить то же подтверждение
+          </button>
         ) : (
           <button onClick={() => restore(pending.scope)}>
-            Return to original account scope
+            К исходным аккаунтам
           </button>
         ))}
       {pending && sessionLost && (
         <button onClick={confirmation.dismissAfterSessionLoss}>
-          I will inspect mapping history
+          Проверю историю соответствий
         </button>
       )}
       {result && (
-        <p>
-          Confirmed mapping {result.mapping_id}, version{" "}
-          {result.mapping_version}; {result.evidence_class};{" "}
-          {new Date(result.confirmed_at).toLocaleString()}.{" "}
-          {result.idempotent_replay &&
-            "Existing confirmation recovered by idempotent replay."}{" "}
-          Principal: LOCAL_OPERATOR_SESSION.
-          {confirmation.resultContext && (
-            <>
-              {" "}
-              Pair: {confirmation.resultContext.product}; tenant{" "}
-              {confirmation.resultContext.scope.tenant}; accounts{" "}
-              {confirmation.resultContext.scope.moy} /{" "}
-              {confirmation.resultContext.scope.ozon}.
-            </>
-          )}
+        <p role="status">
+          Соответствие подтверждено ·{" "}
+          {new Date(result.confirmed_at).toLocaleString("ru-RU")}
+          {result.idempotent_replay
+            ? ". Ранее сохранённое подтверждение восстановлено."
+            : "."}
         </p>
+      )}
+      {(pending || result || errorCode) && (
+        <details className="technical-details">
+          <summary>Технические детали</summary>
+          {errorCode && (
+            <p>
+              Код результата: <code>{errorCode}</code>
+            </p>
+          )}
+          {pending && (
+            <p>
+              Объект: <code>{pending.product}</code>
+              <br />
+              Пространство: <code>{pending.scope.tenant}</code>
+              <br />
+              МойСклад: <code>{pending.scope.moy}</code>
+              <br />
+              Ozon: <code>{pending.scope.ozon}</code>
+            </p>
+          )}
+          {result && (
+            <p>
+              Соответствие: <code>{result.mapping_id}</code> · версия{" "}
+              {result.mapping_version}
+              <br />
+              Основание: <code>{result.evidence_class}</code>
+            </p>
+          )}
+        </details>
       )}
     </div>
   );

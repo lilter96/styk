@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { signIn, selectWorkspace, navigate } from "./workspace";
 import { execFileSync } from "node:child_process";
 
 test("explicit manual variant confirmation survives a lost response and persists an audit", async ({
@@ -15,45 +16,41 @@ test("explicit manual variant confirmation survives a lost response and persists
       } else await route.continue();
     },
   );
-  await page.goto("http://127.0.0.1:15173/");
-  await page
-    .getByLabel("Operator secret")
-    .fill("synthetic-browser-operator-secret-not-real-123");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.getByLabel("Tenant").fill("ui-e2e-tenant");
-  await page.getByRole("button", { name: "Open workspace" }).click();
-  await page
-    .getByRole("combobox", { name: "MoySklad" })
-    .selectOption("ui-e2e-moy");
-  await page
-    .getByRole("combobox", { name: "Ozon" })
-    .selectOption("ui-e2e-ozon");
-  await page
-    .getByRole("navigation")
-    .getByRole("link", { name: "Products" })
-    .click();
-  await page.getByRole("button", { name: "Review", exact: true }).click();
-  await page
-    .getByLabel("Search by name, article, code or identity")
-    .fill("variant");
-  await page.getByRole("button", { name: "variant · variant" }).click();
-  await expect(page.getByText(/Parent product: parent/)).toBeVisible();
-  await page.getByRole("button", { name: "Create review" }).click();
-  await expect(page.getByText("Durable review")).toBeVisible();
+  await signIn(
+    page,
+    "synthetic-browser-operator-secret-not-real-123",
+    "http://127.0.0.1:15173/",
+  );
+  await selectWorkspace(page, "ui-e2e-tenant", "ui-e2e-moy", "ui-e2e-ozon");
+  await navigate(page, "Товары");
+  await page.getByRole("button", { name: /^Сопоставить / }).click();
+  await page.getByLabel("Поиск товара МойСклад").fill("variant");
+  await page.getByRole("button", { name: "Без названия, вариант" }).click();
+  await page.getByText("Технические данные товаров", { exact: true }).click();
+  await expect(
+    page.getByText("Родительский товар", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.locator("code").getByText("parent", { exact: true }),
+  ).toBeVisible();
+  await page.getByText("Технические данные товаров", { exact: true }).click();
+  await page.getByRole("button", { name: "Проверить соответствие" }).click();
+  await expect(page.getByText("Проверка готова к подтверждению")).toBeVisible();
   await expect(page.locator(".review-confirmation time[datetime]")).toHaveCount(
     2,
   );
   await expect(
-    page.getByRole("button", { name: "Confirm mapping" }),
+    page.getByRole("button", { name: "Подтвердить соответствие" }),
   ).toBeDisabled();
-  await page.getByLabel("I explicitly confirm this relationship.").check();
-  await page.getByRole("button", { name: "Confirm mapping" }).click();
-  await expect(page.getByText(/Outcome unknown/)).toBeVisible();
-  await page.getByRole("button", { name: "Retry same confirmation" }).click();
+  await page.getByLabel("Подтверждаю, что это один и тот же товар").check();
+  await page.getByRole("button", { name: "Подтвердить соответствие" }).click();
+  await expect(page.getByText(/Результат сохранения уточняется/)).toBeVisible();
+  await page.getByRole("button", { name: "Повторить тот же запрос" }).click();
+  await expect(page.getByText(/Соответствие.*сохранено/)).toBeVisible();
+  await page.getByText("История соответствий", { exact: true }).click();
   await expect(
-    page.getByText(/Existing confirmation recovered by idempotent replay/),
+    page.locator(".mapping-history").getByText(/Соответствие .*версия 1/),
   ).toBeVisible();
-  await expect(page.getByText(/Mapping .* version 1/)).toBeVisible();
   const sql =
     "SELECT (SELECT count(*) FROM product_mappings WHERE tenant_id='ui-e2e-tenant' AND target_kind='variant' AND target_id='variant'), (SELECT count(*) FROM product_mapping_confirmation_audits WHERE tenant_id='ui-e2e-tenant' AND evidence_class='OPERATOR_ATTESTED' AND principal_type='LOCAL_OPERATOR_SESSION'), (SELECT count(*) FROM product_mapping_confirmation_idempotency), (SELECT count(*) FROM outbox_tasks)";
   expect(
@@ -74,15 +71,11 @@ test("explicit manual variant confirmation survives a lost response and persists
     ).trim(),
   ).toBe("1|1|1|0");
   await page.reload();
-  await page.getByLabel("Tenant").fill("ui-e2e-tenant");
-  await page.getByRole("button", { name: "Open workspace" }).click();
-  await page
-    .getByRole("combobox", { name: "MoySklad" })
-    .selectOption("ui-e2e-moy");
-  await page
-    .getByRole("combobox", { name: "Ozon" })
-    .selectOption("ui-e2e-ozon");
-  await expect(page.getByText("Mapped: variant · variant")).toBeVisible();
-  await page.getByRole("button", { name: "Review", exact: true }).click();
-  await expect(page.getByText(/Mapping .* version 1/)).toBeVisible();
+  await selectWorkspace(page, "ui-e2e-tenant", "ui-e2e-moy", "ui-e2e-ozon");
+  await expect(page.getByText("Подтверждено", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: /^Сопоставить / }).click();
+  await page.getByText("История соответствий", { exact: true }).click();
+  await expect(
+    page.locator(".mapping-history").getByText(/Соответствие .*версия 1/),
+  ).toBeVisible();
 });

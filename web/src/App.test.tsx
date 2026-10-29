@@ -37,7 +37,7 @@ const response = (data: unknown) =>
 describe("read-only views", () => {
   it("shows loading and missing workspace states", () => {
     const x = mount(<Overview loading error={null} />);
-    expect(screen.getByRole("status").textContent).toContain("Loading");
+    expect(screen.getByRole("status").textContent).toContain("Загружаем");
     x.rerender(
       <QueryClientProvider client={new QueryClient()}>
         <MemoryRouter>
@@ -45,7 +45,7 @@ describe("read-only views", () => {
         </MemoryRouter>
       </QueryClientProvider>,
     );
-    expect(screen.getByText(/select both registered/i)).toBeTruthy();
+    expect(screen.getByText(/Выберите оба зарегистрированных/)).toBeTruthy();
   });
   it("shows future observation warnings and review actions", () => {
     const report: Report = {
@@ -72,12 +72,16 @@ describe("read-only views", () => {
     };
     mount(<Overview report={report} loading={false} error={null} />);
     expect(
-      screen.getByText("Observation timestamp is in the future"),
+      screen.getByText(
+        "Время загрузки указано в будущем. Давность данных неизвестна.",
+      ),
     ).toBeTruthy();
-    expect(screen.getByText(/Imported .*2026/)).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Review products" })).toBeTruthy();
+    expect(screen.getByText(/Загрузка: .*2026/)).toBeTruthy();
     expect(
-      screen.getByRole("link", { name: "Review warehouses and stock" }),
+      screen.getByRole("link", { name: "Сопоставить товары" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Сопоставить склады" }),
     ).toBeTruthy();
   });
   it("shows backend failures", () => {
@@ -109,11 +113,14 @@ describe("read-only views", () => {
       }),
     );
     mount(<Products scope={scope} />);
-    expect(await screen.findByText("ambiguous")).toBeTruthy();
-    expect(screen.getByText("Unknown")).toBeTruthy();
-    fireEvent.click(screen.getByText("2 candidates"));
-    expect(screen.getByText(/variant: b/)).toBeTruthy();
-    fireEvent.change(screen.getByPlaceholderText(/offer id/i), {
+    expect(await screen.findByText("Нужно выбрать товар")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Сопоставить sample" }));
+    fireEvent.click(screen.getByText(/Возможные соответствия/));
+    expect(screen.getByText(/variant · b/)).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Закрыть сопоставление" }),
+    );
+    fireEvent.change(screen.getByLabelText("Поиск"), {
       target: { value: "query" },
     });
     await waitFor(() =>
@@ -184,8 +191,8 @@ describe("read-only views", () => {
         warehouse="w"
       />,
     );
-    expect(await screen.findByText(/Physical 0/)).toBeTruthy();
-    expect(screen.getByText(/Available Unknown/)).toBeTruthy();
+    expect(await screen.findByText(/На складе 0/)).toBeTruthy();
+    expect(screen.getByText(/Доступно Неизвестно/)).toBeTruthy();
   });
   it("renders diagnostic reasons without inventing a quantity", () => {
     const report: Report = {
@@ -201,7 +208,7 @@ describe("read-only views", () => {
     mount(<Diagnostics report={report} loading={false} error={null} />);
     expect(screen.getByText("SOURCE_BASELINE_NOT_PROVEN")).toBeTruthy();
     expect(screen.getByText("Incomplete evidence.")).toBeTruthy();
-    expect(screen.getByText("unknown")).toBeTruthy();
+    expect(screen.getByText("Недостаточно данных")).toBeTruthy();
   });
 });
 
@@ -236,10 +243,20 @@ it("reviews candidates and requires a durable review before confirmation", async
     });
   });
   mount(<Products scope={scope} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Review" }));
-  expect(await screen.findByText(/variant · v — evidence/)).toBeTruthy();
-  fireEvent.click(await screen.findByRole("button", { name: "variant · v" }));
-  expect(screen.getByText(/DETERMINISTIC_CANDIDATE: article/)).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Confirm mapping" })).toBeNull();
-  expect(await screen.findByText(/No confirmed mapping history/)).toBeTruthy();
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Сопоставить shared" }),
+  );
+  expect(await screen.findByText(/Возможные соответствия/)).toBeTruthy();
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Без названия, вариант" }),
+  );
+  expect(screen.getByText(/Артикул или код совпал/)).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Подтвердить соответствие" }),
+  ).toBeNull();
+  expect(
+    await screen.findByText(
+      /Для этого товара и пары аккаунтов пока нет подтверждений/,
+    ),
+  ).toBeTruthy();
 });

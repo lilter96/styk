@@ -1,9 +1,14 @@
 import { Integrations } from "./Integrations";
 import {
+  CredentialNotice,
+  useCredentialSubmission,
+} from "./CredentialSubmission";
+import { StockSyncNotice, useStockSyncSubmission } from "./StockSyncControls";
+import {
   ImportSubmissionNotice,
   useImportSubmission,
 } from "./ImportSubmission";
-import { ProductReview } from "./ProductReview";
+import { ProductMappingPage } from "./ProductMappingPage";
 import { WarehouseReview } from "./WarehouseReview";
 import {
   ConfirmationNotice,
@@ -25,19 +30,22 @@ import {
   type Account,
   type Batch,
   type Page,
-  type Product,
   type Report,
   type Stock,
   type Warehouse,
 } from "./api";
 
 type Scope = { tenant: string; moy: string; ozon: string };
-const text = (s: string) => s.toLowerCase().replaceAll("_", " ");
+const stateLabels: Record<string, string> = {
+  PASS: "В порядке",
+  WARN: "Нужно проверить",
+  FAIL: "Ошибка",
+  NOT_CHECKED: "Не проверено",
+};
 function State({ status }: { status: string }) {
   return (
-    <span className={"state " + status.toLowerCase()}>
-      <span className="dot" />
-      {text(status)}
+    <span className={"read-state " + status.toLowerCase()}>
+      {stateLabels[status] || "Требуется проверка"}
     </span>
   );
 }
@@ -47,14 +55,14 @@ function Notice({ children }: { children: React.ReactNode }) {
 function Loading() {
   return (
     <div className="notice" role="status">
-      Loading observations…
+      Загружаем данные…
     </div>
   );
 }
 function Failure({ error }: { error: unknown }) {
   return (
     <div className="error" role="alert">
-      {error instanceof Error ? error.message : "The request failed."}
+      {error instanceof Error ? error.message : "Не удалось загрузить данные."}
     </div>
   );
 }
@@ -84,12 +92,12 @@ function Login({ onDone }: { onDone: () => void }) {
       if (!r.ok)
         throw new Error(
           r.status === 401
-            ? "That operator secret was not accepted."
-            : "Unable to sign in. Check the local API.",
+            ? "Ключ входа не принят."
+            : "Не удалось войти. Проверьте доступность STYK.",
         );
       onDone();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unable to sign in.");
+      setError(e instanceof Error ? e.message : "Не удалось войти.");
     } finally {
       setBusy(false);
     }
@@ -100,14 +108,14 @@ function Login({ onDone }: { onDone: () => void }) {
         S<span>TYK</span>
       </div>
       <div className="login-panel">
-        <p className="eyebrow">Local operator console</p>
-        <h1>See the whole connection.</h1>
+        <p className="eyebrow">Рабочее пространство</p>
+        <h1>Войти в STYK</h1>
         <p>
-          Inspect integration evidence and explicitly confirm product mappings.
-          Marketplace data is read-only.
+          Подключайте сервисы, загружайте данные и проверяйте соответствия
+          товаров.
         </p>
         <form onSubmit={submit}>
-          <label htmlFor="secret">Operator secret</label>
+          <label htmlFor="secret">Ключ входа</label>
           <input
             id="secret"
             type="password"
@@ -116,7 +124,7 @@ function Login({ onDone }: { onDone: () => void }) {
             onChange={(e) => setSecret(e.target.value)}
             required
           />
-          <button disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
+          <button disabled={busy}>{busy ? "Входим…" : "Войти"}</button>
           {error && (
             <div className="error" role="alert">
               {error}
@@ -124,7 +132,7 @@ function Login({ onDone }: { onDone: () => void }) {
           )}
         </form>
       </div>
-      <p className="login-footer">STYK · Local workspace</p>
+      <p className="login-footer">STYK · Рабочее пространство</p>
     </main>
   );
 }
@@ -137,60 +145,59 @@ function SourceCard({
   batch?: Batch;
   status: string;
 }) {
+  const future =
+    !!batch?.present &&
+    (batch.age?.startsWith("-") ||
+      (!!batch.observed_at && Date.parse(batch.observed_at) > Date.now()));
+  const stale =
+    !!batch?.present &&
+    !!batch.observed_at &&
+    Date.now() - Date.parse(batch.observed_at) > 3600000;
   return (
-    <article className="source-card">
-      <div className="source-top">
-        <div>
-          <div className="source-symbol">{name === "MoySklad" ? "M" : "O"}</div>
-          <h3>{name}</h3>
-        </div>
+    <article className="read-source-card">
+      <header>
+        <h2>{name}</h2>
         <State status={status} />
-      </div>
-      <p className="source-caption">
+      </header>
+      <p>
         {batch?.present
           ? batch.completed
-            ? "Completed import"
-            : "Incomplete import"
-          : "No import available"}
+            ? "Данные загружены"
+            : "Загрузка не завершена"
+          : "Данных пока нет"}
       </p>
-      <div className="stats">
-        <div>
-          <strong>{batch?.counts?.products ?? "—"}</strong>
-          <span>Products</span>
-        </div>
-        {name === "MoySklad" && (
-          <div>
-            <strong>{batch?.counts?.variants ?? "—"}</strong>
-            <span>Variants</span>
-          </div>
+      {batch?.present && batch.observed_at && (
+        <time dateTime={batch.observed_at}>
+          Загрузка: {new Date(batch.observed_at).toLocaleString("ru-RU")}
+        </time>
+      )}
+      {future && (
+        <p className="read-warning">
+          Время загрузки указано в будущем. Давность данных неизвестна.
+        </p>
+      )}
+      {stale && <p className="read-warning">Данные могут быть устаревшими.</p>}
+      <footer>
+        {batch?.counts?.products !== undefined && (
+          <span>Товаров: {batch.counts.products}</span>
         )}
-        <div>
-          <strong>{batch?.counts?.warehouses ?? "—"}</strong>
-          <span>Warehouses</span>
-        </div>
-        <div>
-          <strong>{batch?.counts?.stock_rows ?? "—"}</strong>
-          <span>Stock rows</span>
-        </div>
-      </div>
-      {batch?.present &&
-        batch.observed_at &&
-        Date.now() - Date.parse(batch.observed_at) > 3600000 && (
-          <p className="source-caption">Stale observation</p>
+        {batch?.counts?.variants !== undefined && (
+          <span>Вариантов: {batch.counts.variants}</span>
         )}
-      <div className="card-foot">
-        {batch?.present
-          ? batch.age?.startsWith("-")
-            ? "Observation timestamp is in the future"
-            : `Observed ${batch.age} ago`
-          : "No observation time"}
-        <span>Live connection not checked</span>
-        {batch?.present && batch.observed_at && (
-          <time dateTime={batch.observed_at}>
-            Imported {new Date(batch.observed_at).toLocaleString()}
-          </time>
+        {batch?.counts?.warehouses !== undefined && (
+          <span>Складов: {batch.counts.warehouses}</span>
         )}
-      </div>
+      </footer>
+      <details className="read-details">
+        <summary>Подробнее о загрузке</summary>
+        <p>Проверка доступа выполняется отдельно на странице интеграций.</p>
+        {batch?.counts?.stock_rows !== undefined && (
+          <p>
+            Записей об остатках: {batch.counts.stock_rows}. Отсутствие записи не
+            означает нулевой остаток.
+          </p>
+        )}
+      </details>
     </article>
   );
 }
@@ -208,49 +215,19 @@ export function Overview({
   if (!report)
     return (
       <Notice>
-        Select both registered accounts to see their observations.
+        Выберите оба зарегистрированных аккаунта, чтобы увидеть загруженные
+        данные.
       </Notice>
     );
   return (
-    <>
-      <div className="heading-row">
-        <div>
-          <p className="eyebrow">Your workspace</p>
-          <h1>Integration overview</h1>
-          <p className="subtitle">
-            A current view of the evidence STYK has collected.
-          </p>
-        </div>
-        <span className="readonly">
-          <i />
-          Marketplace writes disabled
-        </span>
-      </div>
-      <section className="intro">
-        <div>
-          <span className="intro-label">Synchronization readiness</span>
-          <h2>Evidence before action.</h2>
-          <p>
-            Imports show what each system reported. They do not establish that
-            stock can be safely published.
-          </p>
-        </div>
-        <div className="intro-status">
-          <span>Publication</span>
-          <strong>Disabled</strong>
-          <small>Safety checks remain open</small>
-        </div>
-      </section>
-      <div className="section-heading">
-        <div>
-          <h2>Source observations</h2>
-          <p>Latest persisted imports for your selected accounts.</p>
-        </div>
-        <NavLink to="/diagnostics">View diagnostics</NavLink>
-      </div>
-      <div className="sources">
+    <div className="read-page">
+      <header className="read-heading">
+        <h1>Обзор</h1>
+        <p>Последние загруженные данные выбранных аккаунтов.</p>
+      </header>
+      <div className="read-source-grid">
         <SourceCard
-          name="MoySklad"
+          name="МойСклад"
           batch={report.batches.moysklad}
           status={
             report.checks.find((c) => c.code === "MOYSKLAD_IMPORT")?.status ??
@@ -266,31 +243,20 @@ export function Overview({
           }
         />
       </div>
-      <section className="bottom-note" aria-label="Next actions">
-        <div>
-          <strong>Next actions</strong>
-          <p>
-            Review unmatched products and unmapped warehouses; inspect missing
-            stock evidence before considering synchronization.
-          </p>
-          <NavLink to="/products">Review products</NavLink>
-          {" · "}
-          <NavLink to="/warehouses">Review warehouses and stock</NavLink>
-          {" · "}
-          <NavLink to="/diagnostics">Inspect diagnostics</NavLink>
-        </div>
+      <section className="read-next">
+        <h2>Следующий шаг</h2>
+        <p>
+          Проверьте соответствия товаров и складов. Загрузка данных не меняет
+          остатки в сервисах.
+        </p>
+        <nav>
+          <NavLink to="/integrations">Настроить интеграции</NavLink>
+          <NavLink to="/products">Сопоставить товары</NavLink>
+          <NavLink to="/warehouses">Сопоставить склады</NavLink>
+          <NavLink to="/diagnostics">Диагностика</NavLink>
+        </nav>
       </section>
-      <div className="bottom-note">
-        <span className="info-icon">i</span>
-        <div>
-          <strong>Imported is not the same as connected</strong>
-          <p>
-            Availability and full source permissions are not checked by this
-            view.
-          </p>
-        </div>
-      </div>
-    </>
+    </div>
   );
 }
 export function Products({
@@ -300,204 +266,9 @@ export function Products({
   scope: Scope;
   confirmation?: Confirmation;
 }) {
-  const localConfirmation = useConfirmation();
-  const activeConfirmation = confirmation ?? localConfirmation;
-  const [review, setReview] = useState<Product | null>(null);
-  const [search, setSearch] = useState(""),
-    [archived, setArchived] = useState(""),
-    [mapping, setMapping] = useState(""),
-    [offset, setOffset] = useState(0);
-  const q = useQuery({
-    queryKey: ["products", scope, search, archived, mapping, offset],
-    queryFn: ({ signal }) =>
-      api<Page<Product>>(
-        "/api/products?" +
-          params({
-            ...{
-              tenant: scope.tenant,
-              moysklad_account: scope.moy,
-              ozon_account: scope.ozon,
-            },
-            search,
-            archived,
-            mapping,
-            offset,
-          }),
-        signal,
-      ),
-    enabled: !!(scope.tenant && scope.moy && scope.ozon),
-  });
-  return (
-    <>
-      <div className="heading-row">
-        <div>
-          <p className="eyebrow">Identity</p>
-          <h1>Products</h1>
-          <p className="subtitle">
-            Review observations and confirmed relationships.
-          </p>
-        </div>
-        <span className="readonly">
-          <i />
-          Local mapping review
-        </span>
-      </div>
-      {review && (
-        <ProductReview
-          key={review.product_id}
-          product={
-            q.data?.items.find(
-              (item) => item.product_id === review.product_id,
-            ) ?? review
-          }
-          scope={scope}
-          close={() => setReview(null)}
-          confirmation={activeConfirmation}
-        />
-      )}
-      <div className="toolbar">
-        <label>
-          <span>Search</span>
-          <input
-            placeholder="Offer ID, product ID or SKU"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setOffset(0);
-            }}
-          />
-        </label>
-        <label>
-          <span>Availability</span>
-          <select
-            value={archived}
-            onChange={(e) => {
-              setArchived(e.target.value);
-              setOffset(0);
-            }}
-          >
-            <option value="">All products</option>
-            <option value="false">Active</option>
-            <option value="true">Archived</option>
-          </select>
-        </label>
-        <label>
-          <span>Mapping</span>
-          <select
-            value={mapping}
-            onChange={(e) => {
-              setMapping(e.target.value);
-              setOffset(0);
-            }}
-          >
-            <option value="">All mappings</option>
-            <option value="confirmed">Confirmed</option>
-            <option value="unconfirmed">Unconfirmed</option>
-          </select>
-        </label>
-      </div>
-      {!scope.moy || !scope.ozon ? (
-        <Notice>Select both accounts to view products.</Notice>
-      ) : q.isLoading ? (
-        <Loading />
-      ) : q.error ? (
-        <Failure error={q.error} />
-      ) : !q.data?.items.length ? (
-        <Notice>
-          {mapping === "confirmed" && !search && !archived && offset === 0
-            ? "No products are currently mapped between these accounts. Confirmation requires explicit identity evidence."
-            : "No product observations match these filters."}
-        </Notice>
-      ) : (
-        <>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Seller offer</th>
-                  <th>Product ID</th>
-                  <th>SKU</th>
-                  <th>Status</th>
-                  <th>Matching</th>
-                </tr>
-              </thead>
-              <tbody>
-                {q.data.items.map((p) => (
-                  <tr key={p.product_id}>
-                    <td className="primary-cell">
-                      {p.offer_id}
-                      <button
-                        className="link-button"
-                        onClick={() => setReview(p)}
-                      >
-                        Review
-                      </button>
-                    </td>
-                    <td>{p.product_id}</td>
-                    <td>{p.sku ?? "Unknown"}</td>
-                    <td>
-                      {p.archived === null
-                        ? "Unknown"
-                        : p.archived
-                          ? "Archived"
-                          : "Active"}
-                    </td>
-                    <td>
-                      <strong>{text(p.match_status)}</strong>
-                      {p.target_id && (
-                        <small>
-                          Mapped: {p.target_kind} · {p.target_id}
-                        </small>
-                      )}
-                      {p.candidate_count > 0 && (
-                        <details>
-                          <summary>{p.candidate_count} candidates</summary>
-                          {p.candidates.map((c) => (
-                            <div key={c.kind + c.id}>
-                              {c.kind}: {c.id} · {c.evidence.join(", ")}
-                            </div>
-                          ))}
-                        </details>
-                      )}
-                      {p.candidates_truncated && (
-                        <small>
-                          Candidate list or source universe truncated
-                        </small>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="pagination">
-            <button
-              className="secondary"
-              disabled={offset === 0}
-              onClick={() => setOffset(Math.max(0, offset - 50))}
-            >
-              Previous
-            </button>
-            <span>
-              Rows {offset + 1}–{offset + q.data.items.length}
-            </span>
-            <button
-              className="secondary"
-              disabled={!q.data.has_next}
-              onClick={() => setOffset(offset + 50)}
-            >
-              Next
-            </button>
-          </div>
-          <Notice>
-            Suggestions are not confirmed mappings. Confirmation requires
-            explicit identity evidence.
-          </Notice>
-        </>
-      )}
-    </>
-  );
+  return <ProductMappingPage scope={scope} confirmation={confirmation} />;
 }
+
 export function StockRows({
   scope,
   source,
@@ -522,26 +293,26 @@ export function StockRows({
   if (q.isLoading) return <Loading />;
   if (q.error) return <Failure error={q.error} />;
   if (!q.data?.items.length)
-    return <Notice>No stock observation. The quantity is unknown.</Notice>;
-  const value = (x: string | null) => (x === null ? "Unknown" : x);
+    return <Notice>Данных об остатках нет. Количество неизвестно.</Notice>;
+  const value = (x: string | null) => (x === null ? "Неизвестно" : x);
   return (
     <>
       <div className="stock-list">
         {q.data.items.map((s) => (
           <div className="stock-row" key={s.kind + s.item_id}>
             <strong>
-              {s.kind} · {s.item_id}
+              {s.kind === "variant" ? "Вариант" : "Товар"} · {s.item_id}
             </strong>
             <small>
               {source === "moysklad"
-                ? `Physical ${value(s.stock)} · Reserved ${value(s.reserve)} · Incoming ${value(s.incoming)} · Available ${value(s.quantity)}`
-                : `Present ${value(s.present)} · Reserved ${value(s.reserved)} · Free stock ${value(s.free_stock)}`}
+                ? `На складе ${value(s.stock)} · В резерве ${value(s.reserve)} · Ожидается ${value(s.incoming)} · Доступно ${value(s.quantity)}`
+                : `На складе ${value(s.present)} · В резерве ${value(s.reserved)} · Свободно ${value(s.free_stock)}`}
             </small>
             <small>
               {Date.now() - Date.parse(s.observed_at) > 3600000
-                ? "Stale observation"
-                : "Observed"}{" "}
-              · {new Date(s.observed_at).toLocaleString()}
+                ? "Данные могут быть устаревшими"
+                : "Получено"}{" "}
+              · {new Date(s.observed_at).toLocaleString("ru-RU")}
             </small>
           </div>
         ))}
@@ -552,17 +323,17 @@ export function StockRows({
           disabled={offset === 0}
           onClick={() => setOffset(Math.max(0, offset - 50))}
         >
-          Previous
+          Назад
         </button>
         <span>
-          Rows {offset + 1}–{offset + q.data.items.length}
+          Строки {offset + 1}–{offset + q.data.items.length}
         </span>
         <button
           className="secondary"
           disabled={!q.data.has_next}
           onClick={() => setOffset(offset + 50)}
         >
-          Next
+          Далее
         </button>
       </div>
     </>
@@ -574,12 +345,14 @@ function WarehouseList({
   account,
   other,
   selectWarehouse,
+  chosen,
 }: {
   scope: Scope;
   source: string;
   account: string;
   other: string;
   selectWarehouse: (id: string) => void;
+  chosen?: string;
 }) {
   const [offset, setOffset] = useState(0),
     [selected, setSelected] = useState("");
@@ -600,34 +373,43 @@ function WarehouseList({
     enabled: !!scope.tenant && !!account,
   });
   return (
-    <section className="warehouse-panel">
-      <h2>{source === "moysklad" ? "MoySklad" : "Ozon"}</h2>
+    <section className="warehouse-panel read-warehouse-list">
+      <h2>{source === "moysklad" ? "МойСклад" : "Ozon"}</h2>
       {!account ? (
-        <Notice>No account selected.</Notice>
+        <Notice>Аккаунт не выбран.</Notice>
       ) : q.isLoading ? (
         <Loading />
       ) : q.error ? (
         <Failure error={q.error} />
       ) : !q.data?.items.length ? (
-        <Notice>No warehouse observations.</Notice>
+        <Notice>Склады ещё не загружены.</Notice>
       ) : (
         <>
           {q.data.items.map((w) => (
             <div className="warehouse-row" key={w.id}>
               <div>
-                <strong>{w.name || "Unnamed warehouse"}</strong>
-                <small>{w.id}</small>
+                <strong>{w.name || "Склад без названия"}</strong>
+                <details className="read-details">
+                  <summary>Данные склада</summary>
+                  <p>
+                    ID: <code>{w.id}</code>
+                  </p>
+                  <p>Записей об остатках: {w.stock_rows}</p>
+                </details>
                 <button
                   className="link-button"
                   onClick={() => setSelected(selected === w.id ? "" : w.id)}
                 >
-                  {selected === w.id ? "Hide stock" : "View stock"}
+                  {selected === w.id ? "Скрыть остатки" : "Посмотреть остатки"}
                 </button>
                 <button
                   className="link-button"
+                  aria-pressed={chosen === w.id}
                   onClick={() => selectWarehouse(w.id)}
                 >
-                  Select for mapping review
+                  {chosen === w.id
+                    ? "Выбран для сопоставления"
+                    : "Выбрать для сопоставления"}
                 </button>
                 {selected === w.id && (
                   <StockRows
@@ -643,23 +425,23 @@ function WarehouseList({
                 <span>
                   {source === "ozon"
                     ? w.is_rfbs === null
-                      ? "Type unknown"
+                      ? "Тип неизвестен"
                       : w.is_rfbs
                         ? "rFBS"
                         : "FBS"
-                    : "Source warehouse"}
+                    : "Склад МойСклад"}
                 </span>
                 <small>
                   {w.mapped === null
-                    ? "Mapping not checked"
+                    ? "Соответствие не проверено"
                     : w.mapped
-                      ? "Confirmed mapping"
-                      : "Unmapped"}
+                      ? "Соответствие подтверждено"
+                      : "Соответствие не задано"}
                 </small>
                 <small>
                   {w.stock_rows === 0
-                    ? "No stock observations"
-                    : `${w.stock_rows} stock observations`}
+                    ? "Остатки неизвестны"
+                    : "Данные об остатках получены"}
                 </small>
               </div>
             </div>
@@ -673,7 +455,7 @@ function WarehouseList({
                 setSelected("");
               }}
             >
-              Previous
+              Назад
             </button>
             <button
               className="secondary"
@@ -683,7 +465,7 @@ function WarehouseList({
                 setSelected("");
               }}
             >
-              Next
+              Далее
             </button>
           </div>
         </>
@@ -701,19 +483,18 @@ export function Warehouses({
   const [moyWarehouse, setMoyWarehouse] = useState("");
   const [ozonWarehouse, setOzonWarehouse] = useState("");
   return (
-    <>
-      <div className="heading-row">
+    <div className="read-page warehouse-mapping-page">
+      <div className="read-heading">
         <div>
-          <p className="eyebrow">Locations</p>
-          <h1>Warehouses</h1>
+          <h1>Сопоставление складов</h1>
           <p className="subtitle">
-            Source locations stay separate until a mapping is confirmed.
+            Выберите склад МойСклад и соответствующий ему склад Ozon.
           </p>
         </div>
       </div>
       <Notice>
-        Missing stock observations are unknown, not zero. Warehouse names do not
-        establish a mapping.
+        Отсутствие данных об остатках не означает нулевой остаток. Совпадение
+        названий складов само по себе не подтверждает соответствие.
       </Notice>
       <div className="warehouse-grid">
         <WarehouseList
@@ -722,6 +503,7 @@ export function Warehouses({
           account={scope.moy}
           other={scope.ozon}
           selectWarehouse={setMoyWarehouse}
+          chosen={moyWarehouse}
         />
         <WarehouseList
           scope={scope}
@@ -729,12 +511,9 @@ export function Warehouses({
           account={scope.ozon}
           other={scope.moy}
           selectWarehouse={setOzonWarehouse}
+          chosen={ozonWarehouse}
         />
       </div>
-      <p>
-        Selected warehouses: MoySklad {moyWarehouse || "none"}; Ozon{" "}
-        {ozonWarehouse || "none"}.
-      </p>
       {moyWarehouse && ozonWarehouse && (
         <WarehouseReview
           key={`${moyWarehouse}:${ozonWarehouse}`}
@@ -742,10 +521,73 @@ export function Warehouses({
           moy={moyWarehouse}
           ozon={ozonWarehouse}
           confirmation={confirmation}
+          close={() => {
+            setMoyWarehouse("");
+            setOzonWarehouse("");
+          }}
         />
       )}
-    </>
+    </div>
   );
+}
+const checkTitles: Record<string, string> = {
+  ACCOUNT_REGISTRATION: "Аккаунты сервисов",
+  MOYSKLAD_REGISTRATION: "Аккаунт МойСклад",
+  OZON_REGISTRATION: "Аккаунт Ozon",
+  MOYSKLAD_CONNECTION: "Доступ к МойСклад",
+  OZON_CONNECTION: "Доступ к Ozon",
+  MOYSKLAD_IMPORT: "Загрузка МойСклад",
+  OZON_IMPORT: "Загрузка Ozon",
+  POSTING_IMPORT: "Отправления Ozon",
+  CUSTOMER_ORDER_IMPORT: "Заказы МойСклад",
+  MOYSKLAD_STOCK_COVERAGE: "Остатки МойСклад",
+  OZON_STOCK_COVERAGE: "Остатки Ozon",
+  PRODUCT_MAPPINGS: "Соответствия товаров",
+  WAREHOUSE_MAPPINGS: "Соответствия складов",
+  ORDER_CORRELATIONS: "Связи заказов",
+  MATCHING_SUGGESTIONS: "Предложения соответствий",
+  CALCULATION_SCOPE: "Проверка расчёта остатков",
+  EXISTING_EXPOSURE: "Размещённые товары на маркетплейсе",
+  COVERAGE: "Полнота данных",
+  SOURCE_ORDERING: "Порядок изменений",
+  SOURCE_PERMISSIONS: "Разрешения аккаунтов",
+  RESERVATION_ATTRIBUTION: "Учёт резервов",
+};
+function checkSummary(code: string, status: string) {
+  if (status === "PASS") return "Проверка пройдена для выбранных аккаунтов.";
+  if (code.endsWith("_CONNECTION"))
+    return "Проверить доступ можно на странице интеграций.";
+  if (code === "PRODUCT_MAPPINGS")
+    return "Проверьте и подтвердите соответствия товаров.";
+  if (code === "WAREHOUSE_MAPPINGS")
+    return "Проверьте и подтвердите соответствия складов.";
+  if (code.endsWith("_IMPORT"))
+    return status === "FAIL"
+      ? "Данные загрузки неполные. Проверьте историю обновлений."
+      : "Успешная загрузка отсутствует или данные устарели.";
+  if (code.endsWith("_REGISTRATION") || code === "ACCOUNT_REGISTRATION")
+    return "Оба аккаунта должны быть добавлены в выбранное рабочее пространство.";
+  if (code.includes("STOCK_COVERAGE") || code === "COVERAGE")
+    return "Полученные записи не подтверждают полноту остатков. Отсутствующие значения неизвестны.";
+  if (code === "EXISTING_EXPOSURE")
+    return "Товары могут оставаться доступными на маркетплейсе. Диагностика не изменяет их остатки.";
+  if (code === "RESERVATION_ATTRIBUTION")
+    return "Связь заказов с резервами и исходными остатками не подтверждена.";
+  if (code === "SOURCE_ORDERING")
+    return "Порядок изменений в источниках не подтверждён.";
+  if (code === "SOURCE_PERMISSIONS")
+    return "Полнота разрешений и видимость всех данных не проверены.";
+  if (code === "CALCULATION_SCOPE")
+    return status === "NOT_CHECKED"
+      ? "Расчёт для подтверждённой пары товара и склада не выполнялся."
+      : "Проверена только одна пара товара и склада. Другие пары не оценивались.";
+  if (code === "ORDER_CORRELATIONS")
+    return "Предполагаемая связь заказов требует отдельного подтверждения.";
+  if (code === "MATCHING_SUGGESTIONS")
+    return "Предложения помогают выбрать товар и требуют вашего подтверждения.";
+  return status === "NOT_CHECKED"
+    ? "Эта проверка пока не выполнялась."
+    : "Проверьте подробности перед следующим действием.";
 }
 export function Diagnostics({
   report,
@@ -756,56 +598,86 @@ export function Diagnostics({
   loading: boolean;
   error: unknown;
 }) {
+  const [copyStatus, setCopyStatus] = useState("");
   if (loading) return <Loading />;
   if (error) return <Failure error={error} />;
   if (!report)
-    return <Notice>Select both registered accounts to see diagnostics.</Notice>;
+    return (
+      <Notice>
+        Выберите оба зарегистрированных аккаунта, чтобы открыть диагностику.
+      </Notice>
+    );
+  const decisionLabels: Record<string, string> = {
+    NOT_CHECKED: "Проверка не выполнялась",
+    UNKNOWN: "Недостаточно данных",
+    BLOCKED: "Есть ограничения",
+    READY_CONDITIONAL: "Требуется дополнительная проверка",
+  };
   return (
-    <>
-      <div className="heading-row">
-        <div>
-          <p className="eyebrow">Evidence</p>
-          <h1>Diagnostics</h1>
-          <p className="subtitle">
-            What is known, what is missing, and what still needs review.
-          </p>
-        </div>
-        <span className="readonly">
-          <i />
-          Publication disabled
-        </span>
-      </div>
-      <div className="decision">
-        <div>
-          <span>Stock calculation</span>
-          <strong>{text(report.decision_status)}</strong>
-        </div>
+    <div className="read-page diagnostics-page">
+      <header className="read-heading">
+        <h1>Диагностика</h1>
         <p>
-          {report.decision_status === "NOT_CHECKED"
-            ? "No confirmed product and warehouse mapping pair was evaluated."
-            : "Review the reasons below before relying on this result."}
+          Состояние данных выбранных аккаунтов. Ключи доступа в этот отчёт не
+          входят.
         </p>
-      </div>
-      {report.decision_reasons.length > 0 && (
-        <div className="reasons">
-          {report.decision_reasons.map((r) => (
-            <code key={r}>{r}</code>
-          ))}
-        </div>
-      )}
-      <div className="diagnostics">
-        {report.checks.map((c) => (
-          <div className="check" key={c.code}>
+      </header>
+      <section className="read-next">
+        <h2>
+          {decisionLabels[report.decision_status] ||
+            "Проверьте состояние данных"}
+        </h2>
+        <p>Диагностика не запускает синхронизацию и не изменяет остатки.</p>
+        <button
+          className="primary-button"
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(
+                JSON.stringify(report, null, 2),
+              );
+              setCopyStatus("Отчёт скопирован");
+            } catch {
+              setCopyStatus(
+                "Не удалось скопировать отчёт. Откройте технические детали и скопируйте нужные данные вручную.",
+              );
+            }
+          }}
+        >
+          Скопировать для поддержки
+        </button>
+        {copyStatus && <p role="status">{copyStatus}</p>}
+      </section>
+      <section className="read-checks" aria-label="Проверки данных">
+        {report.checks.map((check) => (
+          <article className="read-check" key={check.code}>
             <div>
-              <strong>{text(c.code)}</strong>
-              <p>{c.detail}</p>
-              <code>{c.code}</code>
+              <h2>{checkTitles[check.code] || "Дополнительная проверка"}</h2>
+              <p>{checkSummary(check.code, check.status)}</p>
+              <details className="read-details">
+                <summary>Технические детали</summary>
+                <p>
+                  <code>{check.code}</code>
+                </p>
+                <p>{check.detail}</p>
+              </details>
             </div>
-            <State status={c.status} />
-          </div>
+            <State status={check.status} />
+          </article>
         ))}
-      </div>
-    </>
+      </section>
+      <details className="read-details read-report-details">
+        <summary>Технические данные отчёта</summary>
+        <p>
+          Результат расчёта: <code>{report.decision_status}</code>
+        </p>
+        {report.decision_reasons.map((reason) => (
+          <p key={reason}>
+            <code>{reason}</code>
+          </p>
+        ))}
+        <pre>{JSON.stringify(report, null, 2)}</pre>
+      </details>
+    </div>
   );
 }
 
@@ -826,17 +698,30 @@ export function App() {
   const client = useQueryClient();
   const confirmation = useConfirmation();
   const importSubmission = useImportSubmission();
+  const credentialSubmission = useCredentialSubmission();
+  const stockSyncSubmission = useStockSyncSubmission();
   const navigate = useNavigate();
   const integrationPage = useLocation().pathname === "/integrations";
   useEffect(() => {
-    if (!confirmation.pending && !importSubmission.pending) return;
+    if (
+      !confirmation.pending &&
+      !importSubmission.pending &&
+      !credentialSubmission.pending &&
+      !stockSyncSubmission.pending
+    )
+      return;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [confirmation.pending, importSubmission.pending]);
+  }, [
+    confirmation.pending,
+    importSubmission.pending,
+    credentialSubmission.pending,
+    stockSyncSubmission.pending,
+  ]);
   const session = useQuery({
     queryKey: ["session"],
     queryFn: ({ signal }) => api<null>("/api/session", signal),
@@ -901,9 +786,9 @@ export function App() {
       <>
         {confirmation.sessionLost && (
           <p role="alert">
-            The previous confirmation may have committed. After signing in,
-            inspect mapping history for the original account pair; the new
-            session cannot replay it.
+            Предыдущее подтверждение могло сохраниться. Войдите снова и
+            проверьте историю соответствий исходной пары аккаунтов. В новой
+            сессии эта проверка не повторяется.
           </p>
         )}
         {importSubmission.sessionLost && (
@@ -938,40 +823,29 @@ export function App() {
         }}
       >
         <label>
-          {integrationPage ? "Рабочее пространство" : "Tenant"}
+          Рабочее пространство
           <input
             value={tenant}
             onChange={(e) => setTenant(e.target.value)}
-            placeholder={
-              integrationPage ? "Идентификатор пространства" : "Tenant ID"
-            }
+            placeholder="Идентификатор пространства"
           />
         </label>
-        <button className="secondary">
-          {integrationPage ? "Открыть пространство" : "Open workspace"}
-        </button>
+        <button className="secondary">Открыть пространство</button>
       </form>
-      {accounts.isLoading && (
-        <span>
-          {integrationPage ? "Загружаем аккаунты…" : "Loading accounts…"}
-        </span>
-      )}
+      {accounts.isLoading && <span>Загружаем аккаунты…</span>}
       {accounts.error && <Failure error={accounts.error} />}{" "}
       {accounts.data && (
         <>
           <label>
-            {integrationPage ? "МойСклад" : "MoySklad"}
+            МойСклад
             <select value={moy} onChange={(e) => setMoy(e.target.value)}>
-              <option value="">
-                {integrationPage ? "Выберите аккаунт" : "Select account"}
-              </option>
+              <option value="">Выберите аккаунт</option>
               {accounts.data.accounts
                 .filter((a) => a.source === "moysklad")
                 .map((a, index) => (
                   <option key={a.account} value={a.account}>
-                    {integrationPage
-                      ? `Аккаунт ${index + 1} · ${new Date(a.registered_at).toLocaleDateString("ru-RU")}`
-                      : a.account}
+                    {a.name || `Аккаунт ${index + 1}`} ·{" "}
+                    {new Date(a.registered_at).toLocaleDateString("ru-RU")}
                   </option>
                 ))}
             </select>
@@ -979,32 +853,24 @@ export function App() {
           <label>
             Ozon
             <select value={ozon} onChange={(e) => setOzon(e.target.value)}>
-              <option value="">
-                {integrationPage ? "Выберите аккаунт" : "Select account"}
-              </option>
+              <option value="">Выберите аккаунт</option>
               {accounts.data.accounts
                 .filter((a) => a.source === "ozon")
                 .map((a, index) => (
                   <option key={a.account} value={a.account}>
-                    {integrationPage
-                      ? `Аккаунт ${index + 1} · ${new Date(a.registered_at).toLocaleDateString("ru-RU")}`
-                      : a.account}
+                    {a.name || `Аккаунт ${index + 1}`} ·{" "}
+                    {new Date(a.registered_at).toLocaleDateString("ru-RU")}
                   </option>
                 ))}
             </select>
           </label>
           {accounts.data.accounts.length === 0 && (
-            <span>
-              {integrationPage
-                ? "В этом пространстве пока нет аккаунтов."
-                : "No registered accounts for this tenant."}
-            </span>
+            <span>В этом пространстве пока нет аккаунтов.</span>
           )}
           {accounts.data.truncated && (
             <span>
-              {integrationPage
-                ? "Показана часть аккаунтов. Уточните нужный аккаунт у администратора."
-                : "Account list is truncated."}
+              Показана часть аккаунтов. Уточните нужный аккаунт у
+              администратора.
             </span>
           )}
         </>
@@ -1037,90 +903,47 @@ export function App() {
     />
   );
   return (
-    <div className={integrationPage ? "shell integration-shell" : "shell"}>
-      <aside className="sidebar">
-        <div className="brand">
-          S<span>TYK</span>
-          <small>
-            {integrationPage ? "Сервисы и данные" : "Integration workspace"}
-          </small>
-        </div>
-        <p className="nav-title">
-          {integrationPage ? "Рабочее пространство" : "Workspace"}
-        </p>
-        <nav>
-          <NavLink to="/" end>
-            <span>◫</span>
-            {integrationPage ? "Обзор" : "Overview"}
-          </NavLink>
-          <NavLink to="/integrations">
-            <span>◈</span>
-            {integrationPage ? "Интеграции" : "Integrations"}
-          </NavLink>
-          <NavLink to="/products">
-            <span>◇</span>
-            {integrationPage ? "Товары" : "Products"}
-          </NavLink>
-          <NavLink to="/warehouses">
-            <span>▤</span>
-            {integrationPage ? "Склады" : "Warehouses"}
-          </NavLink>
-          <NavLink to="/diagnostics">
-            <span>◉</span>
-            {integrationPage ? "Диагностика" : "Diagnostics"}
-          </NavLink>
-        </nav>
-        <div className="sidebar-foot">
-          <div className="sidebar-badge">
-            {integrationPage
-              ? "Публикация остатков выключена"
-              : "Marketplace writes disabled"}
+    <div className="shell reference-shell">
+      <header className="app-topbar">
+        <details
+          className="workspace-selector"
+          key={chosen || "empty"}
+          open={!chosen}
+        >
+          <summary>
+            Рабочее пространство <span aria-hidden="true">⌄</span>
+          </summary>
+          <div className="workspace-popover">
+            {workspaceControls}
+            <div className="workspace-footer">
+              <NavLink to="/diagnostics">Диагностика</NavLink>
+              <button
+                className="text-action"
+                disabled={
+                  (!!confirmation.pending && !confirmation.sessionLost) ||
+                  (!!importSubmission.pending &&
+                    !importSubmission.sessionLost) ||
+                  (!!credentialSubmission.pending &&
+                    !credentialSubmission.sessionLost) ||
+                  !!stockSyncSubmission.pending
+                }
+                onClick={() => void logout()}
+              >
+                Выйти
+              </button>
+            </div>
           </div>
-          <p>
-            {integrationPage ? (
-              "Вы управляете загрузкой данных и подтверждаете соответствия."
-            ) : (
-              <>
-                Observe first.
-                <br />
-                No external changes are made.
-              </>
-            )}
-          </p>
-          <button
-            disabled={
-              (!!confirmation.pending && !confirmation.sessionLost) ||
-              (!!importSubmission.pending && !importSubmission.sessionLost)
-            }
-            onClick={() => void logout()}
-          >
-            {integrationPage ? "Выйти" : "Sign out"}
-          </button>
-        </div>
-      </aside>
+        </details>
+        <nav className="app-tabs" aria-label="Разделы">
+          <NavLink to="/" end>
+            Обзор
+          </NavLink>
+          <NavLink to="/products">Товары</NavLink>
+          <NavLink to="/warehouses">Склады</NavLink>
+          <NavLink to="/integrations">Интеграции</NavLink>
+        </nav>
+      </header>
       <main className="main">
-        <header className="topbar">
-          {integrationPage ? (
-            <details
-              className="workspace-selector"
-              key={chosen || "empty"}
-              open={!chosen}
-            >
-              <summary>
-                Рабочее пространство <span aria-hidden="true">⌄</span>
-              </summary>
-              <div className="workspace-popover">{workspaceControls}</div>
-            </details>
-          ) : (
-            <span>
-              Workspace <b>/</b> {chosen || "Choose tenant"}
-            </span>
-          )}
-          <span className="operator">
-            <i />
-            {integrationPage ? "STYK" : "Local operator"}
-          </span>
-        </header>
         <div className="content">
           <ConfirmationNotice
             confirmation={confirmation}
@@ -1132,8 +955,34 @@ export function App() {
               setOzon(original.ozon);
             }}
           />
+          <StockSyncNotice
+            submission={stockSyncSubmission}
+            scope={{
+              tenant: chosen,
+              moysklad_account: moy,
+              ozon_account: ozon,
+            }}
+            onIntegrations={integrationPage}
+            restore={(original) => {
+              setTenant(original.tenant);
+              setChosen(original.tenant);
+              setMoy(original.moysklad_account);
+              setOzon(original.ozon_account);
+              navigate("/integrations");
+            }}
+          />
+          <CredentialNotice
+            submission={credentialSubmission}
+            tenant={chosen}
+            restore={(original) => {
+              setTenant(original.tenant);
+              setChosen(original.tenant);
+              if (original.provider === "moysklad") setMoy(original.account);
+              else setOzon(original.account);
+              navigate("/integrations");
+            }}
+          />
           {!integrationPage && importNotice}
-          {!integrationPage && workspaceControls}
           <Routes>
             <Route
               path="/integrations"
@@ -1149,6 +998,8 @@ export function App() {
                   }}
                   report={report.data}
                   submission={importSubmission}
+                  credentialSubmission={credentialSubmission}
+                  stockSyncSubmission={stockSyncSubmission}
                   notice={importNotice}
                 />
               }

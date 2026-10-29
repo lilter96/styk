@@ -5,8 +5,8 @@ export class ApiError extends Error {
   ) {
     super(
       status === 401
-        ? "Your session has expired. Sign in again."
-        : "The requested data could not be loaded.",
+        ? "Сессия завершилась. Войдите снова."
+        : "Не удалось загрузить данные.",
     );
   }
 }
@@ -150,7 +150,9 @@ export type ImportSubmission = {
 };
 export function createImportIntent(scope: ImportScope): ImportIntent {
   if (!scope.tenant || !scope.account)
-    throw new Error("A registered account and tenant are required.");
+    throw new Error(
+      "Выберите зарегистрированный аккаунт и рабочее пространство.",
+    );
   const frozenScope = Object.freeze({ ...scope });
   return Object.freeze({
     scope: frozenScope,
@@ -178,6 +180,7 @@ export async function sendImportIntent(
   return r.json() as Promise<ImportSubmission>;
 }
 export type Account = {
+  name?: string;
   source: string;
   account: string;
   registered_at: string;

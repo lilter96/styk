@@ -71,11 +71,11 @@ it("retains the exact intent across account switch and uncertain outcome", async
   fireEvent.click(screen.getByText("Switch"));
   expect(mock).toHaveBeenCalledTimes(1);
   rejectRequest(new Error("timeout"));
-  await screen.findByText(/Outcome unknown/);
-  expect(screen.queryByText("Retry same confirmation")).toBeNull();
-  fireEvent.click(screen.getByText("Return to original account scope"));
-  fireEvent.click(screen.getByText("Retry same confirmation"));
-  await screen.findByText(/Existing confirmation recovered/);
+  await screen.findByText(/Результат подтверждения неизвестен/);
+  expect(screen.queryByText("Повторить то же подтверждение")).toBeNull();
+  fireEvent.click(screen.getByText("К исходным аккаунтам"));
+  fireEvent.click(screen.getByText("Повторить то же подтверждение"));
+  await screen.findByText(/Ранее сохранённое подтверждение восстановлено/);
   expect(mock.mock.calls[0][1]?.body).toEqual(mock.mock.calls[1][1]?.body);
 });
 it("session loss directs operator to history and does not retry", async () => {
@@ -87,9 +87,9 @@ it("session loss directs operator to history and does not retry", async () => {
   mount();
   fireEvent.click(screen.getByText("Start"));
   await waitFor(() =>
-    expect(screen.getByText(/new session cannot replay/)).toBeTruthy(),
+    expect(screen.getByText(/в новой сессии эта проверка не повторяется/)).toBeTruthy(),
   );
-  expect(screen.queryByText("Retry same confirmation")).toBeNull();
+  expect(screen.queryByText("Повторить то же подтверждение")).toBeNull();
   expect(mock).toHaveBeenCalledTimes(1);
 });
 it("a rejected retry cannot erase a previously uncertain outcome", async () => {
@@ -102,12 +102,12 @@ it("a rejected retry cannot erase a previously uncertain outcome", async () => {
     );
   mount();
   fireEvent.click(screen.getByText("Start"));
-  await screen.findByText(/Outcome unknown/);
-  fireEvent.click(screen.getByText("Retry same confirmation"));
+  await screen.findByText(/Результат подтверждения неизвестен/);
+  fireEvent.click(screen.getByText("Повторить то же подтверждение"));
   await waitFor(() =>
-    expect(screen.getByText("Retry same confirmation")).toBeTruthy(),
+    expect(screen.getByText("Повторить то же подтверждение")).toBeTruthy(),
   );
-  expect(screen.getByText(/Outcome unknown/)).toBeTruthy();
+  expect(screen.getByText(/Результат подтверждения неизвестен/)).toBeTruthy();
 });
 for (const code of [
   "REVIEW_EXPIRED",
@@ -123,7 +123,7 @@ for (const code of [
     mount();
     fireEvent.click(screen.getByText("Start"));
     await screen.findByText(new RegExp(code));
-    expect(screen.queryByText("Retry same confirmation")).toBeNull();
+    expect(screen.queryByText("Повторить то же подтверждение")).toBeNull();
   });
 }
 it("keeps the intent after persistence failure", async () => {
@@ -134,6 +134,6 @@ it("keeps the intent after persistence failure", async () => {
   );
   mount();
   fireEvent.click(screen.getByText("Start"));
-  await screen.findByText(/Outcome unknown/);
-  expect(screen.getByText("Retry same confirmation")).toBeTruthy();
+  await screen.findByText(/Результат подтверждения неизвестен/);
+  expect(screen.getByText("Повторить то же подтверждение")).toBeTruthy();
 });

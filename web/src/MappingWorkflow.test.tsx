@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
-import { Products } from "./App";
+import { ProductMappingPage as Products } from "./ProductMappingPage";
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -43,12 +43,20 @@ const response = (data: unknown) =>
       headers: { "Content-Type": "application/json" },
     }),
   );
-function setup(status = "CURRENT", conflict = false) {
+function setup(
+  status = "CURRENT",
+  conflict = false,
+  lost = false,
+  counts: Record<string, number> = {},
+) {
   let confirmed = false;
+  let confirmationAttempts = 0;
   const fetchMock = vi
     .spyOn(globalThis, "fetch")
     .mockImplementation((input, init) => {
       const path = String(input);
+      if (path.includes("/api/diagnostics"))
+        return response({ mapping_counts: counts });
       if (path.includes("moysklad-products"))
         return response({
           items: [
@@ -87,13 +95,16 @@ function setup(status = "CURRENT", conflict = false) {
         });
       if (path.endsWith("/confirm")) {
         confirmed = true;
+        confirmationAttempts++;
+        if (lost && confirmationAttempts === 1)
+          return Promise.reject(new Error("synthetic lost response"));
         return response({
           mapping_id: 7,
           mapping_version: 1,
           review_id: review.Review.ID,
           evidence_class: "OPERATOR_ATTESTED",
           confirmed_at: "2026-01-01T00:00:00Z",
-          idempotent_replay: false,
+          idempotent_replay: lost && confirmationAttempts > 1,
         });
       }
       if (path.includes("product-mapping-reviews"))
@@ -119,30 +130,30 @@ function setup(status = "CURRENT", conflict = false) {
   return fetchMock;
 }
 async function createReview() {
-  fireEvent.click(await screen.findByRole("button", { name: "Review" }));
-  fireEvent.change(
-    screen.getByLabelText("Search by name, article, code or identity"),
-    {
-      target: { value: "different" },
-    },
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Сопоставить offer" }),
   );
+  fireEvent.change(screen.getByLabelText("Поиск товара МойСклад"), {
+    target: { value: "different" },
+  });
   fireEvent.click(
     await screen.findByRole("button", {
-      name: "Synthetic variant, variant · v",
+      name: "Synthetic variant, вариант",
     }),
   );
-  expect(screen.getByText("Selected item: Synthetic variant")).toBeTruthy();
-  expect(screen.getAllByText(/parent product: parent/i).length).toBeGreaterThan(
-    0,
+  expect(screen.getAllByText("Synthetic variant").length).toBeGreaterThan(1);
+  fireEvent.click(screen.getByText("Технические данные товаров"));
+  expect(screen.getAllByText("Родительский товар").length).toBeGreaterThan(0);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Проверить соответствие" }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Create review" }));
-  await screen.findByText("Durable review");
+  await screen.findByText("Проверка готова к подтверждению");
 }
 it("creates a manual variant review, requires acknowledgement and refreshes history", async () => {
   const mock = setup();
   await createReview();
   const button = screen.getByRole("button", {
-    name: "Confirm mapping",
+    name: "Подтвердить соответствие",
   }) as HTMLButtonElement;
   expect(button.disabled).toBe(true);
   expect(
@@ -161,10 +172,13 @@ it("creates a manual variant review, requires acknowledgement and refreshes hist
     target_id: "v",
     evidence_class: "OPERATOR_ATTESTED",
   });
-  fireEvent.click(screen.getByLabelText(/I explicitly confirm/));
+  fireEvent.click(
+    screen.getByLabelText(/Подтверждаю, что это один и тот же товар/),
+  );
   fireEvent.click(button);
   fireEvent.click(button);
-  await screen.findByText(/Mapping 7, version 1/);
+  fireEvent.click(screen.getByText("История соответствий"));
+  await screen.findByText(/Соответствие 7, версия 1/);
   expect(
     mock.mock.calls.filter(([p]) => String(p).endsWith("/confirm")),
   ).toHaveLength(1);
@@ -173,11 +187,13 @@ for (const status of ["EXPIRED", "STALE_SOURCE", "STALE_MAPPING"])
   it(`${status} review cannot be confirmed`, async () => {
     setup(status);
     await createReview();
-    fireEvent.click(screen.getByLabelText(/I explicitly confirm/));
+    fireEvent.click(
+      screen.getByLabelText(/Подтверждаю, что это один и тот же товар/),
+    );
     expect(
       (
         screen.getByRole("button", {
-          name: "Confirm mapping",
+          name: "Подтвердить соответствие",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
@@ -185,12 +201,61 @@ for (const status of ["EXPIRED", "STALE_SOURCE", "STALE_MAPPING"])
 it("mapping conflict prevents confirmation", async () => {
   setup("CURRENT", true);
   await createReview();
-  fireEvent.click(screen.getByLabelText(/I explicitly confirm/));
+  fireEvent.click(
+    screen.getByLabelText(/Подтверждаю, что это один и тот же товар/),
+  );
   expect(
     (
       screen.getByRole("button", {
-        name: "Confirm mapping",
+        name: "Подтвердить соответствие",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
+});
+
+it("retries the exact scoped confirmation after a lost response from inside the dialog", async () => {
+  const mock = setup("CURRENT", false, true);
+  await createReview();
+  fireEvent.click(
+    screen.getByLabelText(/Подтверждаю, что это один и тот же товар/),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Подтвердить соответствие" }),
+  );
+  const retry = await screen.findByRole("button", {
+    name: "Повторить тот же запрос",
+  });
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Подтвердить соответствие",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.click(retry);
+  await screen.findByText(
+    "Соответствие сохранено. Это подтверждение не включает публикацию остатков.",
+  );
+  const calls = mock.mock.calls.filter(([path]) =>
+    String(path).endsWith("/confirm"),
+  );
+  expect(calls).toHaveLength(2);
+  expect(calls[1][1]?.body).toBe(calls[0][1]?.body);
+  expect(String(calls[1][0])).toBe(String(calls[0][0]));
+});
+
+it("uses latest-catalog counts for progress instead of historical mappings or the visible page", async () => {
+  setup("CURRENT", false, false, {
+    confirmed_products: 99,
+    unconfirmed_products: 5,
+    catalog_products: 9,
+    catalog_confirmed_products: 4,
+  });
+  await screen.findByText("Сопоставлено 4 из 9");
+  const progress = screen.getByRole("progressbar", {
+    name: "Сопоставление последнего каталога",
+  });
+  expect(progress.getAttribute("aria-valuemax")).toBe("9");
+  expect(progress.getAttribute("aria-valuenow")).toBe("4");
+  expect(screen.queryByText("Подтверждено соответствий: 99")).toBeNull();
 });

@@ -1,50 +1,46 @@
 import { test, expect } from "@playwright/test";
+import { signIn, selectWorkspace, navigate } from "./workspace";
 
 test("local console reads synthetic observations from the real Go API", async ({
   page,
   request,
 }) => {
   const unauthorized = await request.get(
-    "http://127.0.0.1:8080/api/registrations?tenant=doctor-synthetic",
+    (process.env.STYK_E2E_API_ORIGIN || "http://127.0.0.1:8080") +
+      "/api/registrations?tenant=doctor-synthetic",
   );
   expect(unauthorized.status()).toBe(401);
-  await page.goto("http://127.0.0.1:5173/");
-  await page
-    .getByLabel("Operator secret")
-    .fill("synthetic-local-operator-secret-123456789");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.getByLabel("Tenant").fill("doctor-synthetic");
-  await page.getByRole("button", { name: "Open workspace" }).click();
-  await page
-    .getByRole("combobox", { name: "MoySklad" })
-    .selectOption("doctor-moy");
-  await page
-    .getByRole("combobox", { name: "Ozon" })
-    .selectOption("doctor-ozon");
-  await expect(page.getByText("Completed import")).toHaveCount(2);
+  await signIn(
+    page,
+    "synthetic-local-operator-secret-123456789",
+    "http://127.0.0.1:5173/",
+  );
+  await selectWorkspace(page, "doctor-synthetic", "doctor-moy", "doctor-ozon");
+  await expect(page.getByText("Данные загружены")).toHaveCount(2);
   await page.screenshot({ path: "test-results/overview.png", fullPage: true });
-  await page
-    .getByRole("navigation")
-    .getByRole("link", { name: "Products" })
-    .click();
-  await expect(page.getByRole("cell", { name: "offer" })).toBeVisible();
-  await expect(page.getByText("Mapped: product · item")).toBeVisible();
-  await page
-    .getByRole("navigation")
-    .getByRole("link", { name: "Warehouses" })
-    .click();
+  await navigate(page, "Товары");
+  await expect(
+    page.getByRole("cell", { name: "offer", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Подтверждено")).toBeVisible();
+  await navigate(page, "Склады");
   await page
     .locator("section")
-    .filter({ has: page.getByRole("heading", { name: "MoySklad" }) })
-    .getByRole("button", { name: "View stock" })
+    .filter({ has: page.getByRole("heading", { name: "МойСклад" }) })
+    .getByRole("button", { name: "Посмотреть остатки" })
     .click();
-  await expect(page.getByText(/Physical 10.*Reserved 2/)).toBeVisible();
+  await expect(page.getByText(/На складе 10.*В резерве 2/)).toBeVisible();
+  await navigate(page, "Обзор");
   await page
-    .getByRole("navigation")
-    .getByRole("link", { name: "Diagnostics" })
+    .locator(".read-next")
+    .getByRole("link", { name: "Диагностика", exact: true })
     .click();
   await expect(
-    page.getByText("unknown", { exact: true }).first(),
+    page.getByText("Недостаточно данных", { exact: true }).first(),
   ).toBeVisible();
-  await expect(page.getByText("Publication disabled")).toBeVisible();
+  await expect(
+    page.getByText(
+      "Диагностика не запускает синхронизацию и не изменяет остатки.",
+    ),
+  ).toBeVisible();
 });

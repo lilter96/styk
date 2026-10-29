@@ -1,49 +1,53 @@
 import { test, expect } from "@playwright/test";
+import { signIn, selectWorkspace, navigate } from "./workspace";
 import { execFileSync } from "node:child_process";
 test("reviews FBS and rFBS warehouses without creating a mapping", async ({
   page,
 }) => {
-  await page.goto("http://127.0.0.1:15173/");
-  await page
-    .getByLabel("Operator secret")
-    .fill("synthetic-browser-operator-secret-not-real-123");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.getByLabel("Tenant").fill("ui-e2e-tenant");
-  await page.getByRole("button", { name: "Open workspace" }).click();
-  await page
-    .getByRole("combobox", { name: "MoySklad" })
-    .selectOption("ui-e2e-moy");
-  await page
-    .getByRole("combobox", { name: "Ozon" })
-    .selectOption("ui-e2e-ozon");
-  await page
-    .getByRole("navigation")
-    .getByRole("link", { name: "Warehouses" })
-    .click();
+  await signIn(
+    page,
+    "synthetic-browser-operator-secret-not-real-123",
+    "http://127.0.0.1:15173/",
+  );
+  await selectWorkspace(page, "ui-e2e-tenant", "ui-e2e-moy", "ui-e2e-ozon");
+  await navigate(page, "Склады");
   const ms = page.locator("section").filter({
-    has: page.getByRole("heading", { name: "MoySklad", exact: true }),
+    has: page.getByRole("heading", { name: "МойСклад", exact: true }),
   });
-  await ms.getByRole("button", { name: "Select for mapping review" }).click();
+  await ms.getByRole("button", { name: "Выбрать для сопоставления" }).click();
   const oz = page
     .locator(".warehouse-row")
     .filter({ hasText: "Synthetic FBS" });
-  await oz.getByRole("button", { name: "Select for mapping review" }).click();
-  const review = page.getByRole("region", { name: "Warehouse mapping review" });
-  await expect(review.getByText("ELIGIBLE_FOR_REVIEW")).toBeVisible();
-  await expect(review.getByText(/Classification: FBS/)).toBeVisible();
-  await expect(review.getByText(/No mapping history/)).toBeVisible();
+  await oz.getByRole("button", { name: "Выбрать для сопоставления" }).click();
+  const review = page.getByRole("region", {
+    name: "Проверка соответствия складов",
+  });
+  await expect(review.getByText("Можно проверить соответствие")).toBeVisible();
+  await expect(review.getByText(/Тип склада: FBS/)).toBeVisible();
+  await review
+    .getByText("История соответствий складов", { exact: true })
+    .click();
   await expect(
-    review.getByRole("button", { name: "Create warehouse review" }),
+    review.getByText(/Для этих складов доступной истории нет/),
+  ).toBeVisible();
+  await expect(
+    review.getByRole("button", { name: "Проверить пару складов" }),
   ).toBeEnabled();
-  await ms.getByRole("button", { name: "View stock" }).click();
-  await expect(ms.getByText(/Physical 0/)).toBeVisible();
+  await page
+    .getByRole("button", { name: "Закрыть сопоставление складов" })
+    .click();
+  await ms.getByRole("button", { name: "Посмотреть остатки" }).click();
+  await expect(ms.getByText(/На складе 0/)).toBeVisible();
   const rfbs = page
     .locator(".warehouse-row")
     .filter({ hasText: "Synthetic rFBS" });
-  await rfbs.getByRole("button", { name: "Select for mapping review" }).click();
-  await expect(review.getByText("UNSUPPORTED_WAREHOUSE")).toBeVisible();
+  await ms.getByRole("button", { name: "Выбрать для сопоставления" }).click();
+  await rfbs.getByRole("button", { name: "Выбрать для сопоставления" }).click();
   await expect(
-    review.getByRole("button", { name: "Create warehouse review" }),
+    review.getByText("Поддерживаются только склады Ozon FBS"),
+  ).toBeVisible();
+  await expect(
+    review.getByRole("button", { name: "Проверить пару складов" }),
   ).toBeDisabled();
   const sql =
     "SELECT (SELECT count(*) FROM warehouse_mappings WHERE tenant_id='ui-e2e-tenant'),(SELECT count(*) FROM warehouse_mapping_history WHERE tenant_id='ui-e2e-tenant'),(SELECT count(*) FROM outbox_tasks)";

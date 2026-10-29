@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"errors"
 	"github.com/lilter96/styk/internal/application"
 	"github.com/lilter96/styk/internal/config"
+	"github.com/lilter96/styk/internal/credentials"
 	"github.com/lilter96/styk/internal/infrastructure/moysklad"
 	"github.com/lilter96/styk/internal/infrastructure/ozon"
 	"github.com/lilter96/styk/internal/ozonjob"
 	"github.com/lilter96/styk/internal/postgres"
+	"github.com/lilter96/styk/internal/stocksync"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -144,6 +147,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	vault, err := credentials.FromEnvironment()
+	if err != nil {
+		return err
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	db, err := postgres.Open(ctx, c.DatabaseURL, c.QueryTimeout)
@@ -164,5 +171,29 @@ func run() error {
 	if moyClient == nil {
 		moyClaim = ""
 	}
-	return (application.Worker{MoyskladImportAccount: moyClaim, Store: db, Handler: application.MockHandler{}, Imports: ozonjob.Runner{Store: db, Account: account, Client: client, MoyskladAccount: moyAccount, MoyskladClient: moyClient}, ImportAccount: claimAccount, Log: slog.Default(), Poll: c.PollInterval, Lease: c.LeaseDuration, Retry: c.RetryDelay}).Run(ctx)
+	resolver := &credentials.Resolver{Store: db, Vault: vault}
+	imports := ozonjob.Runner{Store: db, Account: account, Client: client, MoyskladAccount: moyAccount, MoyskladClient: moyClient, Resolver: resolver,
+		NewOzon: func(account, key string) (*ozon.Client, error) {
+			client := catalogClient(account, key)
+			if client == nil {
+				return nil, errors.New("provider configuration unavailable")
+			}
+			return client, nil
+		},
+		NewMoysklad: func(account, key string) (*moysklad.Client, error) {
+			client := moyskladCatalogClient(account, key)
+			if client == nil {
+				return nil, errors.New("provider configuration unavailable")
+			}
+			return client, nil
+		},
+	}
+	publications := stocksync.Runner{Store: db, ResolveOzon: func(ctx context.Context, tenant, account string) (*ozon.Client, error) {
+		key, err := resolver.Resolve(ctx, credentials.Scope{Tenant: tenant, Provider: "ozon", Account: account})
+		if err != nil {
+			return nil, err
+		}
+		return ozon.New(ozon.Options{BaseURL: ozon.BaseURL, ClientID: account, APIKey: key, Timeout: 20 * time.Second, Interval: 400 * time.Millisecond, Backoff: time.Second, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 100})
+	}}
+	return (application.Worker{Publications: publications, StoredCredentials: vault != nil, MoyskladImportAccount: moyClaim, Store: db, Handler: application.MockHandler{}, Imports: imports, ImportAccount: claimAccount, Log: slog.Default(), Poll: c.PollInterval, Lease: c.LeaseDuration, Retry: c.RetryDelay}).Run(ctx)
 }

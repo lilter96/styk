@@ -58,9 +58,35 @@ function mount(props: Partial<React.ComponentProps<typeof Integrations>> = {}) {
   );
 }
 function settings(card: HTMLElement) {
-  const summary = within(card).getByText("Настройки");
-  fireEvent.click(summary);
-  expect(summary.closest("details")?.open).toBe(true);
+  fireEvent.click(
+    within(card).getByRole("button", {
+      name: /^(Настройки|Подключить|Выбрать аккаунт|Обновить ключ)$/,
+    }),
+  );
+  const dialog = screen.getByRole("dialog", { name: /Подключение/ });
+  const legacy = dialog.querySelector<HTMLElement>(
+    ".legacy-connection-settings",
+  )!;
+  fireEvent.click(
+    within(legacy).getByText("Проверка доступа и настройки сервера"),
+  );
+  return legacy;
+}
+function ancillaryResponse(path: string) {
+  if (path.includes("/credentials?"))
+    return { storage_available: false, credential: null };
+  if (path.startsWith("/api/stock-sync?"))
+    return {
+      tenant,
+      moysklad_account: selected.moy,
+      ozon_account: selected.ozon,
+      enabled: false,
+      version: 0,
+      last_operation: null,
+    };
+  if (path.startsWith("/api/imports?"))
+    return { items: [], has_next: false, offset: 0 };
+  return null;
 }
 function setup(failure = "") {
   let verified = false,
@@ -69,6 +95,9 @@ function setup(failure = "") {
     .spyOn(globalThis, "fetch")
     .mockImplementation(async (input) => {
       const path = String(input);
+      const ancillary = ancillaryResponse(path);
+      if (ancillary)
+        return new Response(JSON.stringify(ancillary), { status: 200 });
       if (path.endsWith("/probe")) {
         verified = true;
         return new Response("{}", { status: 200 });
@@ -123,32 +152,28 @@ async function verify(card: HTMLElement) {
 it("keeps registration explicit and requires a recent connection check and ownership acknowledgement", async () => {
   const fetcher = setup();
   const card = await moyCard();
-  expect(
-    within(card).getByText("Данные доступа настроены · доступ не проверен"),
-  ).toBeTruthy();
+  expect(within(card).getByText("Не подключено")).toBeTruthy();
   expect(
     fetcher.mock.calls.some(
       ([p, init]) => String(p).endsWith("/probe") || init?.method === "POST",
     ),
   ).toBe(false);
-  expect(within(card).getByText("Настройки").closest("details")?.open).toBe(
-    false,
-  );
-  settings(card);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  const legacy = settings(card);
   const register = within(card).getByRole("button", {
     name: "Добавить аккаунт",
   }) as HTMLButtonElement;
   expect(register.disabled).toBe(true);
-  fireEvent.click(within(card).getByLabelText(/Подтверждаю, что этот аккаунт/));
+  fireEvent.click(
+    within(legacy).getByLabelText(/Подтверждаю, что этот аккаунт/),
+  );
   expect(register.disabled).toBe(true);
-  await verify(card);
+  await verify(legacy);
   expect(
-    within(card).getByText(
-      /Принадлежность аккаунта не подтверждена независимо/,
-    ),
+    within(legacy).getByText(/Проверка доступа не заменяет подтверждение/),
   ).toBeTruthy();
   fireEvent.click(register);
-  await within(card).findByText("Аккаунт добавлен");
+  await screen.findByText(/Аккаунт добавлен\./);
   const calls = fetcher.mock.calls.filter(([p]) =>
     String(p).endsWith("/register"),
   );
@@ -168,13 +193,14 @@ it("keeps registration explicit and requires a recent connection check and owner
       .getByRole("link", { name: "Диагностика" })
       .getAttribute("href"),
   ).toBe("/diagnostics");
+  fireEvent.click(screen.getByRole("button", { name: "Закрыть настройки" }));
   const ozon = screen
     .getByRole("heading", { name: "Ozon" })
     .closest("article")!;
-  settings(ozon);
+  const ozonLegacy = settings(ozon);
   expect(
     (
-      within(ozon).getByRole("button", {
+      within(ozonLegacy).getByRole("button", {
         name: "Проверить подключение",
       }) as HTMLButtonElement
     ).disabled,
@@ -183,9 +209,11 @@ it("keeps registration explicit and requires a recent connection check and owner
 it("reconciles an unknown registration outcome before allowing another attempt", async () => {
   const fetcher = setup("REGISTRATION_OUTCOME_UNKNOWN");
   const card = await moyCard();
-  settings(card);
-  await verify(card);
-  fireEvent.click(within(card).getByLabelText(/Подтверждаю, что этот аккаунт/));
+  const legacy = settings(card);
+  await verify(legacy);
+  fireEvent.click(
+    within(legacy).getByLabelText(/Подтверждаю, что этот аккаунт/),
+  );
   fireEvent.click(
     within(card).getByRole("button", { name: "Добавить аккаунт" }),
   );
@@ -208,9 +236,11 @@ it("reconciles an unknown registration outcome before allowing another attempt",
 it("shows conflicting registration without transferring ownership", async () => {
   const fetcher = setup("OWNERSHIP_CONFLICT");
   const card = await moyCard();
-  settings(card);
-  await verify(card);
-  fireEvent.click(within(card).getByLabelText(/Подтверждаю, что этот аккаунт/));
+  const legacy = settings(card);
+  await verify(legacy);
+  fireEvent.click(
+    within(legacy).getByLabelText(/Подтверждаю, что этот аккаунт/),
+  );
   fireEvent.click(
     within(card).getByRole("button", { name: "Добавить аккаунт" }),
   );
@@ -225,7 +255,7 @@ type ProviderFixture = {
   status: string;
   registration: string;
   import?: typeof batch;
-  check?: { checked_at: string; identity: string };
+  check?: { checked_at: string; identity: string; reason?: string };
 };
 function mockRegistered(
   providers: ProviderFixture[] = [
@@ -253,7 +283,7 @@ function mockRegistered(
           JSON.stringify(
             String(input).startsWith("/api/imports?")
               ? { items: [], has_next: false, offset: 0 }
-              : { providers },
+              : ancillaryResponse(String(input)) || { providers },
           ),
           { status: 200 },
         ),
@@ -262,12 +292,10 @@ function mockRegistered(
 it("offers mapping review only when both selected registered accounts have eligible imports", async () => {
   const fetcher = mockRegistered();
   mount({ accounts, selected, report });
-  const next = await screen.findByRole("region", { name: "Следующий шаг" });
-  expect(
-    within(next).getByRole("heading", {
-      name: "Данные обеих систем загружены",
-    }),
-  ).toBeTruthy();
+  const next = await screen.findByRole("region", {
+    name: "Настройка синхронизации",
+  });
+  expect(within(next).getByText("Данные обеих систем загружены")).toBeTruthy();
   expect(
     within(next)
       .getByRole("link", { name: "Сопоставить товары" })
@@ -278,13 +306,14 @@ it("offers mapping review only when both selected registered accounts have eligi
       .getByRole("link", { name: "Сопоставить склады" })
       .getAttribute("href"),
   ).toBe("/warehouses");
-  expect(within(next).getByText(/Публикация остатков выключена/)).toBeTruthy();
+  expect(
+    within(next).getByText("Нужна проверка перед включением"),
+  ).toBeTruthy();
   expect(fetcher.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
     false,
   );
   const card = await moyCard();
-  expect(within(card).getByText("Аккаунт добавлен")).toBeTruthy();
-  expect(within(card).getByText(/доступ не проверен/)).toBeTruthy();
+  expect(within(card).getByText("Доступ не проверен")).toBeTruthy();
   expect(within(card).queryByText(/^Доступ проверен/)).toBeNull();
 });
 it("does not use configured-account imports to claim selected-account readiness", async () => {
@@ -297,10 +326,10 @@ it("does not use configured-account imports to claim selected-account readiness"
       batches: { moysklad: batch, ozon: { ...batch, completed: false } },
     },
   });
-  const next = await screen.findByRole("region", { name: "Следующий шаг" });
-  expect(
-    within(next).getByRole("heading", { name: "Загрузите первый каталог" }),
-  ).toBeTruthy();
+  const next = await screen.findByRole("region", {
+    name: "Настройка синхронизации",
+  });
+  expect(within(next).getByText("Загрузить данные")).toBeTruthy();
   expect(
     within(next).queryByRole("link", { name: "Сопоставить товары" }),
   ).toBeNull();
@@ -326,16 +355,15 @@ it("keeps identifiers behind technical disclosure and account selection in setti
   expect(
     within(card).queryByRole("button", { name: "Копировать идентификаторы" }),
   ).toBeNull();
-  expect(within(card).getByText("Аккаунт 1 из 2")).toBeTruthy();
   settings(card);
   fireEvent.change(
     within(card).getByRole("combobox", { name: "МойСклад: аккаунт" }),
     { target: { value: "second-moy" } },
   );
   expect(onSelect).toHaveBeenCalledWith("moysklad", "second-moy");
-  const technical = within(card)
-    .getByText("Технические детали")
-    .closest("details")!;
+  const technical = screen
+    .getByRole("dialog")
+    .querySelector<HTMLDetailsElement>(".credential-details")!;
   expect(technical.open).toBe(false);
   fireEvent.click(within(technical).getByText("Технические детали"));
   expect(technical.open).toBe(true);
@@ -378,9 +406,9 @@ it("blocks registration when the successful probe is stale or has a future times
     ]);
     mount();
     const card = await moyCard();
-    settings(card);
+    const legacy = settings(card);
     fireEvent.click(
-      within(card).getByLabelText(/Подтверждаю, что этот аккаунт/),
+      within(legacy).getByLabelText(/Подтверждаю, что этот аккаунт/),
     );
     expect(
       (
@@ -393,27 +421,29 @@ it("blocks registration when the successful probe is stale or has a future times
     vi.restoreAllMocks();
   }
 });
-it("explains missing configuration through the contextual next step", async () => {
-  setup();
-  await moyCard();
-  const next = screen.getByRole("region", { name: "Следующий шаг" });
+it("keeps setup contextual and opens missing-provider settings without a submission", async () => {
+  const fetcher = setup();
+  const card = await moyCard();
+  const setupPanel = screen.getByRole("region", {
+    name: "Настройка синхронизации",
+  });
+  expect(within(setupPanel).getByText("Шаг 1 из 4")).toBeTruthy();
   expect(
-    within(next).getByRole("heading", { name: "Добавьте аккаунт МойСклад" }),
+    within(setupPanel).getByText("Проверено подключений: 0 из 2"),
   ).toBeTruthy();
-  fireEvent.click(
-    within(next).getByRole("button", { name: "Настроить МойСклад" }),
-  );
-  await waitFor(() =>
-    expect(screen.getAllByText("Настройки")[0].closest("details")?.open).toBe(
-      true,
-    ),
-  );
+  settings(card);
+  expect(
+    screen.getByRole("dialog", { name: "Подключение МойСклад" }),
+  ).toBeTruthy();
   expect(screen.queryByRole("link", { name: "Сопоставить товары" })).toBeNull();
+  expect(fetcher.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
+    false,
+  );
 });
 
 for (const [state, heading] of [
-  ["RUNNING", "Дождитесь завершения загрузки"],
-  ["OUTCOME_UNKNOWN", "Дождитесь уточнения результата"],
+  ["RUNNING", "Загружаем…"],
+  ["OUTCOME_UNKNOWN", "Результат уточняется"],
 ] as const)
   it(`shows a contextual wait instead of another setup or load action for ${state}`, async () => {
     const operation = {
@@ -489,12 +519,16 @@ for (const [state, heading] of [
         },
       },
     });
-    const next = await screen.findByRole("region", { name: "Следующий шаг" });
-    await within(next).findByRole("heading", { name: heading });
+    const next = await screen.findByRole("region", {
+      name: "Настройка синхронизации",
+    });
+    await within(
+      await screen.findByRole("article", { name: "Ozon" }),
+    ).findAllByText(heading);
     expect(within(next).queryByRole("button")).toBeNull();
     expect(within(next).queryByRole("link")).toBeNull();
     expect(within(next).queryByText("Загрузите первый каталог")).toBeNull();
-    const ozon = screen.getByRole("article", { name: "Ozon" });
+    const ozon = await screen.findByRole("article", { name: "Ozon" });
     expect(
       (
         within(ozon).getByRole("button", {
@@ -507,7 +541,7 @@ for (const [state, heading] of [
     );
   });
 
-it("takes a configured first-import next step to the selected provider action without submitting", async () => {
+it("shows a direct first-import action that requires explicit confirmation", async () => {
   const fetcher = mockRegistered();
   mount({
     accounts,
@@ -520,17 +554,26 @@ it("takes a configured first-import next step to the selected provider action wi
       },
     },
   });
-  const next = await screen.findByRole("region", { name: "Следующий шаг" });
-  const ozon = screen.getByRole("article", { name: "Ozon" });
+  const next = await screen.findByRole("region", {
+    name: "Настройка синхронизации",
+  });
+  const ozon = await screen.findByRole("article", { name: "Ozon" });
   const action = within(ozon).getByRole("button", {
     name: "Загрузить данные",
   }) as HTMLButtonElement;
   await waitFor(() => expect(action.disabled).toBe(false));
-  fireEvent.click(
-    within(next).getByRole("button", { name: "К загрузке данных" }),
-  );
-  expect(document.activeElement).toBe(action);
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(within(next).getByText("Загрузить данные")).toBeTruthy();
+  fireEvent.click(action);
+  expect(
+    screen.getByRole("dialog", { name: "Загрузить данные Ozon?" }),
+  ).toBeTruthy();
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Подтвердить загрузку",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
   expect(fetcher.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
     false,
   );

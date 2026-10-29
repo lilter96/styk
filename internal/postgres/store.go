@@ -70,18 +70,21 @@ func (s *Store) Submit(ctx context.Context, o domain.Observation, max int) (int6
 	return id, nil
 }
 func (s *Store) Claim(ctx context.Context, lease time.Duration) (*domain.Task, error) {
-	return s.claim(ctx, lease, "", "", true)
+	return s.claim(ctx, lease, "", "", true, false)
 }
 
 // ClaimForWorker dispatches an import only to a worker configured for the
 // same Ozon account; mock tasks remain available to every worker.
 func (s *Store) ClaimForWorker(ctx context.Context, lease time.Duration, account string) (*domain.Task, error) {
-	return s.claim(ctx, lease, account, "", false)
+	return s.claim(ctx, lease, account, "", false, false)
 }
 func (s *Store) ClaimForCatalogWorker(ctx context.Context, lease time.Duration, ozonAccount, moyskladAccount string) (*domain.Task, error) {
-	return s.claim(ctx, lease, ozonAccount, moyskladAccount, false)
+	return s.claim(ctx, lease, ozonAccount, moyskladAccount, false, false)
 }
-func (s *Store) claim(ctx context.Context, lease time.Duration, account, moyskladAccount string, all bool) (*domain.Task, error) {
+func (s *Store) ClaimForCredentialWorker(ctx context.Context, lease time.Duration, ozonAccount, moyskladAccount string) (*domain.Task, error) {
+	return s.claim(ctx, lease, ozonAccount, moyskladAccount, false, true)
+}
+func (s *Store) claim(ctx context.Context, lease time.Duration, account, moyskladAccount string, all, stored bool) (*domain.Task, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
 	var b [16]byte
@@ -97,7 +100,11 @@ func (s *Store) claim(ctx context.Context, lease time.Duration, account, moyskla
 	defer tx.Rollback(context.Background())
 	// An expired read-only import may be traversed again; only its fenced
 	// persistence transaction may publish a batch or a terminal result.
-	err = tx.QueryRow(ctx, `WITH candidate AS (SELECT id FROM outbox_tasks WHERE (state='pending' AND available_at<=clock_timestamp() OR state='running' AND lease_until<=clock_timestamp()) AND attempts<max_attempts AND ($3 OR task_type='mock' OR (task_type='ozon_catalog_import' AND import_account_id=$4) OR (task_type='moysklad_catalog_import' AND import_account_id=$5)) ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE outbox_tasks t SET state='running', attempts=t.attempts+1, claim_token=$1, lease_until=clock_timestamp()+$2::interval, updated_at=clock_timestamp() FROM candidate WHERE t.id=candidate.id RETURNING t.id,t.operation_key,COALESCE(t.observation_id,0),t.attempts,t.max_attempts,t.claim_token,t.task_type,COALESCE(t.import_operation_id,'')`, token, lease.String(), all, account, moyskladAccount).Scan(&t.ID, &t.OperationKey, &t.ObservationID, &t.Attempts, &t.MaxAttempts, &t.ClaimToken, &t.Type, &t.ImportOperationID)
+	storedPredicate := ""
+	if stored {
+		storedPredicate = ` OR (task_type IN ('ozon_catalog_import','moysklad_catalog_import') AND EXISTS(SELECT 1 FROM ozon_import_operations op JOIN connection_credentials cc ON cc.tenant_id=op.tenant_id AND cc.provider=op.provider AND cc.account_id=op.account_id AND cc.enabled WHERE op.id=outbox_tasks.import_operation_id))`
+	}
+	err = tx.QueryRow(ctx, `WITH candidate AS (SELECT id FROM outbox_tasks WHERE (state='pending' AND available_at<=clock_timestamp() OR state='running' AND lease_until<=clock_timestamp()) AND attempts<max_attempts AND ($3 OR task_type='mock' OR (task_type='ozon_catalog_import' AND import_account_id=$4) OR (task_type='moysklad_catalog_import' AND import_account_id=$5)`+storedPredicate+`) ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE outbox_tasks t SET state='running', attempts=t.attempts+1, claim_token=$1, lease_until=clock_timestamp()+$2::interval, updated_at=clock_timestamp() FROM candidate WHERE t.id=candidate.id RETURNING t.id,t.operation_key,COALESCE(t.observation_id,0),t.attempts,t.max_attempts,t.claim_token,t.task_type,COALESCE(t.import_operation_id,'')`, token, lease.String(), all, account, moyskladAccount).Scan(&t.ID, &t.OperationKey, &t.ObservationID, &t.Attempts, &t.MaxAttempts, &t.ClaimToken, &t.Type, &t.ImportOperationID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}

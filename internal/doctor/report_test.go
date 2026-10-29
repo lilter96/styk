@@ -81,3 +81,19 @@ func TestLiveMissingCredentialsAndRedaction(t *testing.T) {
 		t.Fatal("probe error leaked")
 	}
 }
+
+func TestCatalogProgressIsOptionalAndSeparateFromHistoricalMappings(t *testing.T) {
+	now := time.Now()
+	if _, present := Evaluate(Evidence{ProductMappings: 99}, now, time.Hour).MappingCounts["catalog_products"]; present {
+		t.Fatal("unknown catalog total was fabricated")
+	}
+	total, confirmed := int64(9), int64(4)
+	r := Evaluate(Evidence{ProductMappings: 99, UnconfirmedProducts: 5, CatalogProducts: &total, CatalogConfirmedProducts: &confirmed}, now, time.Hour)
+	if r.MappingCounts["catalog_products"] != 9 || r.MappingCounts["catalog_confirmed_products"] != 4 || r.MappingCounts["confirmed_products"] != 99 || r.MappingCounts["unconfirmed_products"] != 5 {
+		t.Fatal("catalog and historical mapping semantics were mixed")
+	}
+	total, confirmed = 0, 0
+	if got, present := Evaluate(Evidence{CatalogProducts: &total, CatalogConfirmedProducts: &confirmed}, now, time.Hour).MappingCounts["catalog_products"]; !present || got != 0 {
+		t.Fatal("known empty catalog was treated as unknown")
+	}
+}

@@ -32,3 +32,22 @@ func TestDoctorProbeBoundedReadAndAccount(t *testing.T) {
 		})
 	}
 }
+
+func TestCredentialIdentityUsesBoundedEmployeeRead(t *testing.T) {
+	const account = "12c0735c-0000-4000-8000-000000000001"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" || r.URL.Path != "/context/employee" || r.URL.RawQuery != "" {
+			t.Error("unexpected identity request")
+		}
+		fmt.Fprintf(w, `{"accountId":%q}`, account)
+	}))
+	defer server.Close()
+	client, err := New(Options{BaseURL: server.URL, Token: "synthetic", Timeout: time.Second, Interval: time.Millisecond, Backoff: time.Millisecond, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := client.Identity(context.Background())
+	if err != nil || identity != account {
+		t.Fatal("identity read failed")
+	}
+}

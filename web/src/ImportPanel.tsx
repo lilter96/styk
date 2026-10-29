@@ -67,6 +67,32 @@ const pollHistory = (query: { state: { data?: History; error: unknown } }) =>
   !query.state.error && query.state.data?.items.some((op) => active(op.state))
     ? 2000
     : false;
+function cardTimestamp(value: string) {
+  const date = new Date(value),
+    now = new Date();
+  const time = date.toLocaleTimeString("ru-RU", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return date.toDateString() === now.toDateString()
+    ? `сегодня в ${time}`
+    : date.toLocaleString("ru-RU", {
+        day: "numeric",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+}
+function plural(value: number, one: string, few: string, many: string) {
+  const n = value % 100;
+  return n >= 11 && n <= 14
+    ? many
+    : value % 10 === 1
+      ? one
+      : value % 10 >= 2 && value % 10 <= 4
+        ? few
+        : many;
+}
 function timestamp(value: string | null) {
   return value
     ? new Date(value).toLocaleString("ru-RU", {
@@ -227,6 +253,12 @@ export function ImportPanel({
   historyTarget,
   accountLabel,
   onStateChange,
+  onSettings,
+  onProbe,
+  connectionProblem,
+  repairCredentials,
+  probeBusy,
+  historyManaged = false,
 }: {
   scope: ImportScope;
   configured: boolean;
@@ -234,6 +266,12 @@ export function ImportPanel({
   latestBatch?: Batch;
   historyTarget?: HTMLElement | null;
   accountLabel?: string;
+  onSettings?: () => void;
+  onProbe?: () => void;
+  connectionProblem?: string;
+  repairCredentials?: boolean;
+  probeBusy?: boolean;
+  historyManaged?: boolean;
   onStateChange?: (
     scope: ImportScope,
     state: ImportOperation["state"] | undefined,
@@ -631,41 +669,26 @@ export function ImportPanel({
       data-provider={scope.provider}
       aria-label={`${name}: импорт данных`}
     >
-      <div className="import-baseline">
-        <span>
-          {completed
-            ? "Последняя успешная загрузка"
-            : "Данные ещё не загружены"}
-        </span>
-        {completed && latestBatch.observed_at && (
-          <time dateTime={latestBatch.observed_at}>
-            {timestamp(latestBatch.observed_at)}
-          </time>
-        )}
-        {completed && latestBatch.counts && (
-          <dl className="catalog-counts">
-            {latestBatch.counts.products !== undefined && (
-              <div>
-                <dt>Товары</dt>
-                <dd>{latestBatch.counts.products.toLocaleString("ru-RU")}</dd>
-              </div>
+      {connectionProblem ? (
+        <p className="provider-summary">{connectionProblem}</p>
+      ) : (
+        !(current && active(current.state)) &&
+        current?.state !== "FAILED" && (
+          <p className="import-baseline">
+            {completed && latestBatch.observed_at ? (
+              <>
+                Данные обновлены{" "}
+                <time dateTime={latestBatch.observed_at}>
+                  {cardTimestamp(latestBatch.observed_at)}
+                </time>
+                .
+              </>
+            ) : (
+              "Каталог ещё не загружен. Загрузите товары, склады и остатки."
             )}
-            {scope.provider === "moysklad" &&
-              latestBatch.counts.variants !== undefined && (
-                <div>
-                  <dt>Варианты</dt>
-                  <dd>{latestBatch.counts.variants.toLocaleString("ru-RU")}</dd>
-                </div>
-              )}
-            {latestBatch.counts.warehouses !== undefined && (
-              <div>
-                <dt>Склады</dt>
-                <dd>{latestBatch.counts.warehouses.toLocaleString("ru-RU")}</dd>
-              </div>
-            )}
-          </dl>
-        )}
-      </div>
+          </p>
+        )
+      )}
       {latest.isLoading && <p role="status">Проверяем состояние загрузки…</p>}
       {!!latest.error && (
         <div className="import-warning" role="alert">
@@ -702,6 +725,13 @@ export function ImportPanel({
               ? `${phaseLabels[current.phase] || descriptions.RUNNING}…`
               : descriptions[current.state]}
           </p>
+          {current.state === "RUNNING" && (
+            <div
+              className="indeterminate-bar"
+              role="progressbar"
+              aria-label={`Загрузка ${name}`}
+            />
+          )}
           {current.state === "RUNNING" && current.counts.products > 0 && (
             <p>
               Обнаружено товаров:{" "}
@@ -740,17 +770,103 @@ export function ImportPanel({
         </p>
       )}
       {submitError && <p role="alert">{submitError}</p>}
-      <button
-        className="import-primary"
-        disabled={!configured || unsafe}
-        onClick={() => {
-          setAck(false);
-          setSubmitError("");
-          setConfirm(true);
-        }}
-      >
-        {completed ? "Обновить данные" : "Загрузить данные"}
-      </button>
+      <div className="provider-actions">
+        {repairCredentials && onSettings ? (
+          <>
+            <button onClick={onSettings}>Обновить ключ</button>
+            {onProbe && (
+              <button
+                className="text-action"
+                disabled={probeBusy}
+                onClick={onProbe}
+              >
+                {probeBusy ? "Проверяем…" : "Проверить снова"}
+              </button>
+            )}
+          </>
+        ) : (
+          <>
+            <button
+              className={`import-primary ${completed ? "" : "first-import"}`}
+              disabled={!configured || unsafe}
+              onClick={() => {
+                setAck(false);
+                setSubmitError("");
+                setConfirm(true);
+              }}
+            >
+              {completed ? "Обновить данные" : "Загрузить данные"}
+            </button>
+            {onSettings && (
+              <button className="text-action" onClick={onSettings}>
+                Настройки
+              </button>
+            )}
+          </>
+        )}
+      </div>
+      <div className="provider-footnote">
+        {connectionProblem && completed && latestBatch.observed_at ? (
+          <>
+            Данные от{" "}
+            <time dateTime={latestBatch.observed_at}>
+              {timestamp(latestBatch.observed_at)}
+            </time>{" "}
+            — могут быть устаревшими
+          </>
+        ) : (
+          <>
+            Мы только читаем данные
+            {scope.provider === "ozon"
+              ? " — загрузка не меняет остатки в Ozon"
+              : ""}
+          </>
+        )}
+        {completed && latestBatch.counts && (
+          <dl className="catalog-counts">
+            {latestBatch.counts.products !== undefined && (
+              <div>
+                <dt>
+                  {plural(
+                    latestBatch.counts.products,
+                    "товар",
+                    "товара",
+                    "товаров",
+                  )}
+                </dt>
+                <dd>{latestBatch.counts.products.toLocaleString("ru-RU")}</dd>
+              </div>
+            )}
+            {scope.provider === "moysklad" &&
+              latestBatch.counts.variants !== undefined && (
+                <div>
+                  <dt>
+                    {plural(
+                      latestBatch.counts.variants,
+                      "вариант",
+                      "варианта",
+                      "вариантов",
+                    )}
+                  </dt>
+                  <dd>{latestBatch.counts.variants.toLocaleString("ru-RU")}</dd>
+                </div>
+              )}
+            {latestBatch.counts.warehouses !== undefined && (
+              <div>
+                <dt>
+                  {plural(
+                    latestBatch.counts.warehouses,
+                    "склад",
+                    "склада",
+                    "складов",
+                  )}
+                </dt>
+                <dd>{latestBatch.counts.warehouses.toLocaleString("ru-RU")}</dd>
+              </div>
+            )}
+          </dl>
+        )}
+      </div>
       {confirm && (
         <Confirm
           title={`Загрузить данные ${name}?`}
@@ -839,7 +955,11 @@ export function ImportPanel({
           </button>
         </Confirm>
       )}
-      {historyTarget ? createPortal(historyView, historyTarget) : historyView}
+      {historyTarget
+        ? createPortal(historyView, historyTarget)
+        : historyManaged
+          ? null
+          : historyView}
     </section>
   );
 }

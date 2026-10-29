@@ -165,3 +165,56 @@ func TestDoctorIndependentAccountScopes(t *testing.T) {
 		})
 	}
 }
+
+func TestDoctorCatalogProgressExcludesHistoricalAndOtherAccountMappings(t *testing.T) {
+	f := newStockFixture(t)
+	ctx := context.Background()
+	scope := postgres.MatchScope{Tenant: f.req.Pool.Tenant, MoyskladAccount: f.req.Pool.MoyskladAccount, OzonAccount: f.req.Target.OzonAccount}
+	assertProgress := func(total, confirmed int64) {
+		t.Helper()
+		r, err := f.store.Doctor(ctx, scope, time.Now(), time.Hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.MappingCounts["catalog_products"] != total || r.MappingCounts["catalog_confirmed_products"] != confirmed {
+			t.Fatalf("unexpected catalog progress: %+v", r.MappingCounts)
+		}
+	}
+	assertProgress(1, 1)
+	_, err := f.store.Pool.Exec(ctx, `INSERT INTO product_mappings(tenant_id,ozon_account,ozon_product_id,ozon_offer_id,moysklad_account,target_kind,target_id,version,provenance) VALUES($1,$2,'removed-product','removed-offer',$3,'variant','item',1,'synthetic historical mapping'),($1,$2,'other-product','other-offer',$4,'variant','item',1,'synthetic other account')`, scope.Tenant, scope.OzonAccount, scope.MoyskladAccount, scope.MoyskladAccount+"-other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertProgress(1, 1)
+	next := f.ozon
+	next.StartedAt, next.FinishedAt = time.Now().UTC(), time.Now().UTC()
+	next.Products = append(next.Products, domain.OzonProduct{ProductID: "other-product", OfferID: "other-offer"})
+	if _, err = f.store.SaveOzonImport(ctx, next, "catalog-progress-next"); err != nil {
+		t.Fatal(err)
+	}
+	assertProgress(2, 1)
+	// A newer source row without a completed Ozon batch is not eligible for
+	// the catalog page and must not replace its progress denominator.
+	if _, err = f.store.Pool.Exec(ctx, `INSERT INTO source_imports(source,account_id,fingerprint,started_at,finished_at,report_scope) VALUES('ozon',$1,'synthetic-incomplete',$2,$2,'synthetic')`, scope.OzonAccount, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	assertProgress(2, 1)
+	// Registration history exclusion also applies to the new aggregate keys.
+	withoutHistory := newStockFixtureWithHistory(t, false)
+	newScope := postgres.MatchScope{Tenant: withoutHistory.req.Pool.Tenant, MoyskladAccount: withoutHistory.req.Pool.MoyskladAccount, OzonAccount: withoutHistory.req.Target.OzonAccount}
+	r, err := withoutHistory.store.Doctor(ctx, newScope, time.Now(), time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, present := r.MappingCounts["catalog_products"]; present {
+		t.Fatal("ineligible pre-registration catalog was counted")
+	}
+	scope.Tenant += "-other"
+	r, err = f.store.Doctor(ctx, scope, time.Now(), time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, present := r.MappingCounts["catalog_products"]; present {
+		t.Fatal("catalog count leaked across tenants")
+	}
+}

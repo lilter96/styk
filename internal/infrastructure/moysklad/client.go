@@ -27,7 +27,7 @@ var orderUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4
 
 func allowedReadPath(path string) bool {
 	switch path {
-	case "entity/product", "entity/variant", "entity/store", "report/stock/all", "report/stock/bystore", "entity/customerorder":
+	case "context/employee", "entity/product", "entity/variant", "entity/store", "report/stock/all", "report/stock/bystore", "entity/customerorder":
 		return true
 	}
 	return orderReadPath.MatchString(path)

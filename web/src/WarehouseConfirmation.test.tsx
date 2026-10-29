@@ -125,29 +125,31 @@ function setup(status = "CURRENT", loseResponse = false, rejection = "") {
 }
 async function create() {
   fireEvent.click(
-    await screen.findByRole("button", { name: "Create warehouse review" }),
+    await screen.findByRole("button", { name: "Проверить пару складов" }),
   );
-  await screen.findByText("Durable warehouse review");
+  await screen.findByText("Проверка складов готова к подтверждению");
 }
 it("requires explicit acknowledgement and retries the exact warehouse request after account switch", async () => {
   const mock = setup("CURRENT", true);
   await create();
   const button = screen.getByRole("button", {
-    name: "Confirm warehouse mapping",
+    name: "Подтвердить соответствие складов",
   }) as HTMLButtonElement;
   expect(button.disabled).toBe(true);
   expect(
     mock.mock.calls.filter(([p]) => String(p).endsWith("/confirm")),
   ).toHaveLength(0);
-  fireEvent.click(screen.getByLabelText(/I explicitly confirm this warehouse/));
+  fireEvent.click(
+    screen.getByLabelText(/Подтверждаю соответствие выбранных складов/),
+  );
   fireEvent.click(button);
   fireEvent.click(button);
-  await screen.findByText(/Outcome unknown/);
+  await screen.findByText(/Результат подтверждения неизвестен/);
   fireEvent.click(screen.getByText("Switch accounts"));
-  expect(screen.queryByText("Retry same confirmation")).toBeNull();
-  fireEvent.click(screen.getByText("Return to original account scope"));
-  fireEvent.click(screen.getByText("Retry same confirmation"));
-  await screen.findByText(/Existing confirmation recovered/);
+  expect(screen.queryByText("Повторить то же подтверждение")).toBeNull();
+  fireEvent.click(screen.getByText("К исходным аккаунтам"));
+  fireEvent.click(screen.getByText("Повторить то же подтверждение"));
+  await screen.findByText(/Ранее сохранённое подтверждение восстановлено/);
   const calls = mock.mock.calls.filter(([p]) => String(p).endsWith("/confirm"));
   expect(calls).toHaveLength(2);
   expect(calls[0][1]?.body).toBe(calls[1][1]?.body);
@@ -156,12 +158,14 @@ it("requires explicit acknowledgement and retries the exact warehouse request af
 it("a session loss directs the operator to history and prevents replay from a new session", async () => {
   const mock = setup("CURRENT", false, "UNAUTHORIZED");
   await create();
-  fireEvent.click(screen.getByLabelText(/I explicitly confirm this warehouse/));
   fireEvent.click(
-    screen.getByRole("button", { name: "Confirm warehouse mapping" }),
+    screen.getByLabelText(/Подтверждаю соответствие выбранных складов/),
   );
-  await screen.findByText(/The session ended/);
-  expect(screen.queryByText("Retry same confirmation")).toBeNull();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Подтвердить соответствие складов" }),
+  );
+  await screen.findAllByText(/Сессия завершилась/);
+  expect(screen.queryByText("Повторить то же подтверждение")).toBeNull();
   expect(
     mock.mock.calls.filter(([p]) => String(p).endsWith("/confirm")),
   ).toHaveLength(1);
@@ -169,12 +173,14 @@ it("a session loss directs the operator to history and prevents replay from a ne
 it("a rejected stale review cannot be confirmed again", async () => {
   setup("CURRENT", false, "REVIEW_STALE");
   await create();
-  fireEvent.click(screen.getByLabelText(/I explicitly confirm this warehouse/));
+  fireEvent.click(
+    screen.getByLabelText(/Подтверждаю соответствие выбранных складов/),
+  );
   const button = screen.getByRole("button", {
-    name: "Confirm warehouse mapping",
+    name: "Подтвердить соответствие складов",
   }) as HTMLButtonElement;
   fireEvent.click(button);
-  await screen.findByText(/REVIEW_STALE/);
+  await screen.findByText(/Подтверждение отклонено/);
   expect(button.disabled).toBe(true);
 });
 for (const status of ["EXPIRED", "STALE_SOURCE", "STALE_MAPPING"])
@@ -182,12 +188,12 @@ for (const status of ["EXPIRED", "STALE_SOURCE", "STALE_MAPPING"])
     setup(status);
     await create();
     fireEvent.click(
-      screen.getByLabelText(/I explicitly confirm this warehouse/),
+      screen.getByLabelText(/Подтверждаю соответствие выбранных складов/),
     );
     expect(
       (
         screen.getByRole("button", {
-          name: "Confirm warehouse mapping",
+          name: "Подтвердить соответствие складов",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
@@ -216,11 +222,11 @@ it("does not trust an eligible status when the FBS classification is missing", a
   expect(
     (
       (await screen.findByRole("button", {
-        name: "Create warehouse review",
+        name: "Проверить пару складов",
       })) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
-  expect(screen.getByText(/Classification:/).textContent).toContain("Unknown");
+  expect(screen.getByText(/Тип склада:/).textContent).toContain("неизвестен");
 });
 
 it("blocks a hidden mapping conflict without revealing restricted history", async () => {
@@ -244,12 +250,12 @@ it("blocks a hidden mapping conflict without revealing restricted history", asyn
     </QueryClientProvider>,
   );
   expect(
-    await screen.findByText(/history is outside the permitted scope/),
+    await screen.findByText(/история за пределами доступных аккаунтов/),
   ).toBeTruthy();
   expect(
     (
       screen.getByRole("button", {
-        name: "Create warehouse review",
+        name: "Проверить пару складов",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);

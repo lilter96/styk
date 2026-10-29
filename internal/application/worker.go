@@ -16,6 +16,12 @@ type TaskStore interface {
 type accountClaimStore interface {
 	ClaimForWorker(context.Context, time.Duration, string) (*domain.Task, error)
 }
+type credentialClaimStore interface {
+	ClaimForCredentialWorker(context.Context, time.Duration, string, string) (*domain.Task, error)
+}
+type PublicationRunner interface {
+	RunNext(context.Context) (bool, error)
+}
 type catalogClaimStore interface {
 	ClaimForCatalogWorker(context.Context, time.Duration, string, string) (*domain.Task, error)
 }
@@ -43,6 +49,8 @@ type Worker struct {
 	Store                 TaskStore
 	Handler               Handler
 	Imports               ImportHandler
+	Publications          PublicationRunner
+	StoredCredentials     bool
 	ImportAccount         string
 	MoyskladImportAccount string
 	Log                   *slog.Logger
@@ -54,6 +62,15 @@ func (w Worker) Run(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return nil
 		}
+		if w.Publications != nil {
+			worked, err := w.Publications.RunNext(ctx)
+			if err != nil && ctx.Err() == nil {
+				w.Log.Error("stock publication did not complete")
+			}
+			if worked && err == nil {
+				continue
+			}
+		}
 		if err := w.Store.ExpireExhausted(ctx); err != nil {
 			if ctx.Err() != nil {
 				return nil
@@ -62,7 +79,9 @@ func (w Worker) Run(ctx context.Context) error {
 		} else {
 			var t *domain.Task
 			var err error
-			if scoped, ok := w.Store.(catalogClaimStore); ok {
+			if scoped, ok := w.Store.(credentialClaimStore); ok && w.StoredCredentials {
+				t, err = scoped.ClaimForCredentialWorker(ctx, w.Lease, w.ImportAccount, w.MoyskladImportAccount)
+			} else if scoped, ok := w.Store.(catalogClaimStore); ok {
 				t, err = scoped.ClaimForCatalogWorker(ctx, w.Lease, w.ImportAccount, w.MoyskladImportAccount)
 			} else if scoped, ok := w.Store.(accountClaimStore); ok {
 				t, err = scoped.ClaimForWorker(ctx, w.Lease, w.ImportAccount)

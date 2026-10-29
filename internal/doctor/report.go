@@ -36,6 +36,7 @@ type Evidence struct {
 	MoyskladRegistered, OzonRegistered         bool
 	Moysklad, Ozon, Postings, Orders           Batch
 	ProductMappings, WarehouseMappings         int64
+	CatalogProducts, CatalogConfirmedProducts  *int64
 	UnconfirmedProducts, AmbiguousCorrelations int64
 	CorrelationsChecked, CorrelationsTruncated bool
 	CorrelationStatuses                        map[string]int64
@@ -67,6 +68,10 @@ type Report struct {
 func Evaluate(e Evidence, now time.Time, maxAge time.Duration) Report {
 	r := Report{Batches: map[string]Batch{"moysklad": e.Moysklad, "ozon": e.Ozon, "postings": e.Postings, "customer_orders": e.Orders}, DecisionStatus: e.DecisionStatus, DecisionReasons: append([]string{}, e.DecisionReasons...), Publication: "DISABLED"}
 	r.MappingCounts = map[string]int64{"confirmed_products": e.ProductMappings, "unconfirmed_products": e.UnconfirmedProducts, "confirmed_warehouses": e.WarehouseMappings}
+	if e.CatalogProducts != nil && e.CatalogConfirmedProducts != nil {
+		r.MappingCounts["catalog_products"] = *e.CatalogProducts
+		r.MappingCounts["catalog_confirmed_products"] = *e.CatalogConfirmedProducts
+	}
 	r.EvaluatedAt = now.UTC()
 	r.CalculationReferences = e.CalculationReferences
 	r.CorrelationStatuses = e.CorrelationStatuses

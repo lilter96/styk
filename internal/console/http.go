@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lilter96/styk/internal/credentials"
 	"github.com/lilter96/styk/internal/postgres"
 )
 
@@ -37,8 +38,13 @@ func handlerWithConnections(db *postgres.Store, secret, origin string, connectio
 	}
 	mux := http.NewServeMux()
 	if connections == nil {
+		if _, err := credentials.FromEnvironment(); err != nil {
+			return nil, err
+		}
 		connections = newConnections(db)
 	}
+	registerCredentialRoutes(mux, a, db, connections)
+	registerStockSyncRoutes(mux, a, db, connections)
 	imports := newImportAPI(db)
 	mux.HandleFunc("POST /api/session", a.login)
 	mux.HandleFunc("DELETE /api/session", a.authorized(a.logout))
@@ -58,7 +64,11 @@ func handlerWithConnections(db *postgres.Store, secret, origin string, connectio
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), db.Timeout)
 		defer cancel()
-		rows, e := db.Pool.Query(ctx, `SELECT source,account_id,registered_at FROM stock_connections WHERE tenant_id=$1 ORDER BY source,account_id LIMIT 101`, tenant)
+		query := `SELECT source,account_id,registered_at FROM stock_connections WHERE tenant_id=$1 ORDER BY source,account_id LIMIT 101`
+		if connections.vault != nil {
+			query = `SELECT c.source,c.account_id,c.registered_at,COALESCE(k.name,'') FROM stock_connections c LEFT JOIN connection_credentials k ON k.tenant_id=c.tenant_id AND k.provider=c.source AND k.account_id=c.account_id WHERE c.tenant_id=$1 ORDER BY c.source,c.account_id LIMIT 101`
+		}
+		rows, e := db.Pool.Query(ctx, query, tenant)
 		if e != nil {
 			writeError(w, http.StatusServiceUnavailable, "DATABASE_UNAVAILABLE")
 			return
@@ -68,11 +78,18 @@ func handlerWithConnections(db *postgres.Store, secret, origin string, connectio
 			Source       string    `json:"source"`
 			Account      string    `json:"account"`
 			RegisteredAt time.Time `json:"registered_at"`
+			Name         string    `json:"name,omitempty"`
 		}
 		list := []account{}
 		for rows.Next() {
 			var v account
-			if rows.Scan(&v.Source, &v.Account, &v.RegisteredAt) != nil {
+			var scanErr error
+			if connections.vault != nil {
+				scanErr = rows.Scan(&v.Source, &v.Account, &v.RegisteredAt, &v.Name)
+			} else {
+				scanErr = rows.Scan(&v.Source, &v.Account, &v.RegisteredAt)
+			}
+			if scanErr != nil {
 				writeError(w, http.StatusServiceUnavailable, "DATABASE_UNAVAILABLE")
 				return
 			}

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lilter96/styk/internal/credentials"
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/postgres"
 )
@@ -20,6 +21,7 @@ type importAPI struct {
 	configured        bool
 	moyAccount        string
 	moyConfigured     bool
+	vault             *credentials.Vault
 }
 
 var importIdempotencyPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
@@ -27,7 +29,8 @@ var importIdempotencyPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
 func newImportAPI(db *postgres.Store) *importAPI {
 	account, key := os.Getenv("OZON_CLIENT_ID"), os.Getenv("OZON_API_KEY")
 	moyAccount, token := os.Getenv("MOYSKLAD_ACCOUNT_ID"), os.Getenv("MOYSKLAD_TOKEN")
-	return &importAPI{db: db, moyAccount: moyAccount, moyConfigured: validConnectionTenant(moyAccount) && strings.TrimSpace(token) != "" && !strings.ContainsAny(moyAccount+token, "\r\n"), configuredAccount: account, configured: validConnectionTenant(account) && strings.TrimSpace(key) != "" && !strings.ContainsAny(account+key, "\r\n")}
+	vault, _ := credentials.FromEnvironment()
+	return &importAPI{db: db, vault: vault, moyAccount: moyAccount, moyConfigured: validConnectionTenant(moyAccount) && strings.TrimSpace(token) != "" && !strings.ContainsAny(moyAccount+token, "\r\n"), configuredAccount: account, configured: validConnectionTenant(account) && strings.TrimSpace(key) != "" && !strings.ContainsAny(account+key, "\r\n")}
 }
 func importError(w http.ResponseWriter, err error) {
 	switch {
@@ -68,12 +71,6 @@ func (a *importAPI) create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "INVALID_REQUEST")
 		return
 	}
-	// Only the locally configured account is eligible; an external ID from the
-	// browser is not ownership evidence and never supplies marketplace credentials.
-	if (provider == "ozon" && (!a.configured || in.Account != a.configuredAccount)) || (provider == "moysklad" && (!a.moyConfigured || in.Account != a.moyAccount)) {
-		writeError(w, 403, "ACCOUNT_NOT_CONFIGURED")
-		return
-	}
 	limits := domain.DefaultOzonImportLimits()
 	if provider == "moysklad" {
 		limits = domain.DefaultMoyskladImportLimits()
@@ -90,6 +87,29 @@ func (a *importAPI) create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 401, "UNAUTHORIZED")
 		return
 	}
+	// An accepted intent remains recoverable after credential rotation/disconnect;
+	// only genuinely new submissions require an available scoped credential.
+	exists, err := a.db.CatalogImportExists(r.Context(), in.Tenant, provider, in.Account, in.Key)
+	if err != nil {
+		importError(w, err)
+		return
+	}
+	if !exists {
+		configured := provider == "ozon" && a.configured && in.Account == a.configuredAccount || provider == "moysklad" && a.moyConfigured && in.Account == a.moyAccount
+		if a.vault != nil || configured {
+			_, resolveErr := (credentials.Resolver{Store: a.db, Vault: a.vault}).Resolve(r.Context(), credentials.Scope{Tenant: in.Tenant, Provider: provider, Account: in.Account})
+			if errors.Is(resolveErr, credentials.ErrOwnership) {
+				importError(w, postgres.ErrImportScope)
+				return
+			}
+			configured = resolveErr == nil
+		}
+		if !configured {
+			writeError(w, 403, "ACCOUNT_NOT_CONFIGURED")
+			return
+		}
+	}
+
 	op, replay, err := a.db.SubmitCatalogImport(r.Context(), in.Tenant, provider, in.Account, in.Key, session, limits)
 	if err != nil {
 		importError(w, err)

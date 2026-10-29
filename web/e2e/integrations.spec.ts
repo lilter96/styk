@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { signIn, navigate } from "./workspace";
 
 test("explicit local registration uses bounded synthetic providers", async ({
   page,
@@ -24,26 +25,25 @@ test("explicit local registration uses bounded synthetic providers", async ({
       })
     ).status(),
   ).toBe(401);
-  await page.goto(origin);
+  await signIn(page, "ssssssssssssssssssssssssssssssss", origin);
   await page
-    .getByLabel("Operator secret")
-    .fill("ssssssssssssssssssssssssssssssss");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.getByLabel("Tenant", { exact: true }).fill("browser-tenant");
-  await page.getByRole("button", { name: "Open workspace" }).click();
-  await page
-    .getByRole("navigation")
-    .getByRole("link", { name: "Integrations" })
-    .click();
+    .getByLabel("Рабочее пространство", { exact: true })
+    .fill("browser-tenant");
+  await page.getByRole("button", { name: "Открыть пространство" }).click();
+  await navigate(page, "Интеграции");
   const moy = page
     .locator("article")
     .filter({ has: page.getByRole("heading", { name: "МойСклад" }) });
+  await expect(moy.getByText("Не подключено", { exact: true })).toBeVisible();
+  await moy
+    .getByRole("button", { name: /^(Подключить|Настройки|Выбрать аккаунт)$/ })
+    .click();
+  const moyDialog = page.getByRole("dialog", { name: "Подключение МойСклад" });
+  await moyDialog
+    .getByText("Проверка доступа и настройки сервера", { exact: true })
+    .click();
   await expect(
-    moy.getByText("Данные доступа настроены · доступ не проверен"),
-  ).toBeVisible();
-  await moy.getByText("Настройки", { exact: true }).click();
-  await expect(
-    moy.getByRole("button", { name: "Добавить аккаунт" }),
+    moyDialog.getByRole("button", { name: "Добавить аккаунт" }),
   ).toBeDisabled();
   const response = await page.request.get(
     `${api}/api/integrations?tenant=browser-tenant`,
@@ -59,10 +59,16 @@ test("explicit local registration uses bounded synthetic providers", async ({
     (p) => p.provider === "moysklad",
   )!.account;
   const configuredOzon = providers.find((p) => p.provider === "ozon")!.account;
-  await moy.getByRole("button", { name: "Проверить подключение" }).click();
-  await expect(moy.getByText(/Доступ проверен/)).toBeVisible();
+  await moyDialog
+    .getByRole("button", { name: "Проверить подключение" })
+    .click();
+  await expect(moyDialog.getByText(/Доступ проверен/)).toBeVisible();
+  await moyDialog
+    .locator(".legacy-connection-settings")
+    .getByText("Технические детали", { exact: true })
+    .click();
   await expect(
-    moy.getByText(/Полученный товар соответствует настроенному аккаунту/),
+    moyDialog.getByText("MATCHED_RETURNED_PRODUCT", { exact: false }),
   ).toBeVisible();
   let attempts = 0;
   await page.route("**/api/integrations/moysklad/register", async (route) => {
@@ -70,71 +76,100 @@ test("explicit local registration uses bounded synthetic providers", async ({
     await route.fetch();
     await route.abort("failed");
   });
-  await moy.getByLabel(/Подтверждаю, что этот аккаунт/).check();
-  await moy.getByRole("button", { name: "Добавить аккаунт" }).click();
+  await moyDialog
+    .locator(".legacy-connection-settings")
+    .getByLabel(/Подтверждаю, что этот аккаунт/)
+    .check();
+  await moyDialog.getByRole("button", { name: "Добавить аккаунт" }).click();
   await expect(page.getByText(/Результат добавления неизвестен/)).toBeVisible();
   await expect(
-    moy.getByRole("button", { name: "Добавить аккаунт" }),
+    moyDialog.getByRole("button", { name: "Добавить аккаунт" }),
   ).toBeDisabled();
-  await moy.getByRole("button", { name: "Закрыть настройки" }).click();
+  await moyDialog.getByRole("button", { name: "Закрыть настройки" }).click();
   await page
     .getByRole("button", { name: "Проверить результат добавления" })
     .click();
-  await expect(
-    moy.getByText("Аккаунт добавлен", { exact: true }),
-  ).toBeVisible();
+  await moy
+    .getByRole("button", { name: "Выбрать аккаунт", exact: true })
+    .click();
+  await moyDialog
+    .getByRole("combobox", { name: "МойСклад: аккаунт" })
+    .selectOption(configuredMoy);
+  await moyDialog.getByRole("button", { name: "Закрыть настройки" }).click();
+  await expect(moy.locator(".connection-state")).toContainText("Работает");
   expect(attempts).toBe(1);
   const ozon = page
     .locator("article")
     .filter({ has: page.getByRole("heading", { name: "Ozon" }) });
-  await ozon.getByText("Настройки", { exact: true }).click();
-  await ozon.getByRole("button", { name: "Проверить подключение" }).click();
-  await expect(ozon.getByText(/Доступ проверен/)).toBeVisible();
+  await ozon
+    .getByRole("button", { name: /^(Подключить|Настройки|Выбрать аккаунт)$/ })
+    .click();
+  const ozonDialog = page.getByRole("dialog", { name: "Подключение Ozon" });
+  await ozonDialog
+    .getByText("Проверка доступа и настройки сервера", { exact: true })
+    .click();
+  await ozonDialog
+    .getByRole("button", { name: "Проверить подключение" })
+    .click();
+  await expect(ozonDialog.getByText(/Доступ проверен/)).toBeVisible();
+  await ozonDialog
+    .locator(".legacy-connection-settings")
+    .getByText("Технические детали", { exact: true })
+    .click();
   await expect(
-    ozon.getByText(/Принадлежность аккаунта не подтверждена независимо/),
+    ozonDialog.getByText("NOT_ESTABLISHED", { exact: false }),
   ).toBeVisible();
-  await ozon.getByLabel(/Подтверждаю, что этот аккаунт/).check();
-  await ozon.getByRole("button", { name: "Добавить аккаунт" }).click();
-  await expect(
-    ozon.getByText("Аккаунт добавлен", { exact: true }),
-  ).toBeVisible();
-  await ozon.getByRole("button", { name: "Закрыть настройки" }).click();
+  await ozonDialog
+    .locator(".legacy-connection-settings")
+    .getByLabel(/Подтверждаю, что этот аккаунт/)
+    .check();
+  await ozonDialog.getByRole("button", { name: "Добавить аккаунт" }).click();
+  await ozonDialog
+    .getByRole("combobox", { name: "Ozon: аккаунт" })
+    .selectOption(configuredOzon);
+  await ozonDialog.getByRole("button", { name: "Закрыть настройки" }).click();
+  await expect(ozon.locator(".connection-state")).toContainText("Работает");
   await page.reload();
-  await expect(
-    moy.getByText("Аккаунт добавлен", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    ozon.getByText("Аккаунт добавлен", { exact: true }),
-  ).toBeVisible();
+  await expect(moy.locator(".connection-state")).toContainText("Работает");
+  await expect(ozon.locator(".connection-state")).toContainText("Работает");
   await moy.getByText("Настройки", { exact: true }).click();
-  const moySelector = moy.getByRole("combobox", { name: "МойСклад: аккаунт" });
-  const ozonSelector = ozon.getByRole("combobox", { name: "Ozon: аккаунт" });
+  const moySelector = moyDialog.getByRole("combobox", {
+    name: "МойСклад: аккаунт",
+  });
+  const ozonSelector = ozonDialog.getByRole("combobox", {
+    name: "Ozon: аккаунт",
+  });
   expect(configuredMoy).toMatch(/^synthetic-moy-browser-/);
   expect(configuredOzon).toMatch(/^synthetic-ozon-browser-/);
   await moySelector.selectOption(configuredMoy);
   await expect(moySelector).toHaveValue(configuredMoy);
-  await moy.getByRole("button", { name: "Закрыть настройки" }).click();
+  await moyDialog.getByRole("button", { name: "Закрыть настройки" }).click();
   await ozon.getByText("Настройки", { exact: true }).click();
   await ozonSelector.selectOption(configuredOzon);
   await expect(ozonSelector).toHaveValue(configuredOzon);
-  await ozon.getByRole("button", { name: "Закрыть настройки" }).click();
+  await ozonDialog.getByRole("button", { name: "Закрыть настройки" }).click();
   await page.locator(".workspace-selector > summary").click();
   await page
     .getByLabel("Рабочее пространство", { exact: true })
     .fill("other-tenant");
   await page.getByRole("button", { name: "Открыть пространство" }).click();
+  await expect(moy.locator(".connection-state")).toContainText(
+    "Нужно действие",
+  );
+  await moy.getByRole("button", { name: "Подключить", exact: true }).click();
+  await expect(moy.getByText(/другому рабочему пространству/)).toBeVisible();
   await expect(
-    moy.getByText("Аккаунт недоступен", { exact: true }),
+    moyDialog.getByRole("button", { name: "Добавить аккаунт", exact: true }),
+  ).toHaveCount(0);
+  await moyDialog.getByRole("button", { name: "Закрыть настройки" }).click();
+  await navigate(page, "Товары");
+  await expect(
+    page.getByRole("heading", { name: "Сопоставление товаров" }),
   ).toBeVisible();
-  await moy.getByText("Настройки", { exact: true }).click();
-  await expect(moy.getByText(/Перенос недоступен/)).toBeVisible();
-  await moy.getByRole("link", { name: "Товары", exact: true }).click();
-  await expect(page.getByRole("heading", { name: /Products/ })).toBeVisible();
-  await page
-    .getByRole("navigation")
-    .getByRole("link", { name: "Warehouses" })
-    .click();
-  await expect(page.getByRole("heading", { name: /Warehouses/ })).toBeVisible();
+  await navigate(page, "Склады");
+  await expect(
+    page.getByRole("heading", { name: "Сопоставление складов" }),
+  ).toBeVisible();
   const observedResponses = (await Promise.all(jsonResponses)).join("\n");
   expect(observedResponses).not.toContain("synthetic-only-key");
   expect(observedResponses).not.toContain("synthetic-only-token");

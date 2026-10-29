@@ -129,6 +129,25 @@ func (s *Store) Doctor(ctx context.Context, scope MatchScope, now time.Time, max
 	if err = tx.QueryRow(ctx, `SELECT count(*) FROM ozon_product_observations p WHERE import_id=$1 AND NOT EXISTS(SELECT 1 FROM product_mappings m WHERE m.tenant_id=$2 AND m.moysklad_account=$3 AND m.ozon_account=$4 AND m.ozon_product_id=p.product_id)`, oi, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount).Scan(&e.UnconfirmedProducts); err != nil {
 		return doctor.Report{}, err
 	}
+	// Catalog progress is a separate, bounded-scope fact. Historical mappings
+	// remain in ProductMappings, but cannot inflate the latest eligible catalog.
+	// Use the same completed-batch eligibility as the product review endpoint.
+	var catalogProducts, catalogConfirmed int64
+	err = tx.QueryRow(ctx, `WITH latest AS (
+		SELECT i.id FROM source_imports i
+		JOIN ozon_import_batches b ON b.import_id=i.id AND b.traversal_status='completed'
+		WHERE i.source='ozon' AND i.account_id=$1 AND ($2 OR i.started_at >= $3)
+		ORDER BY i.id DESC LIMIT 1
+	) SELECT count(p.product_id),count(p.product_id) FILTER (WHERE EXISTS (
+		SELECT 1 FROM product_mappings m WHERE m.tenant_id=$4 AND m.moysklad_account=$5
+		AND m.ozon_account=$1 AND m.ozon_product_id=p.product_id AND m.ozon_offer_id=p.offer_id
+	)) FROM latest l LEFT JOIN ozon_product_observations p ON p.import_id=l.id GROUP BY l.id`, scope.OzonAccount, refs[1].IncludeImportHistory, refs[1].RegisteredAt, scope.Tenant, scope.MoyskladAccount).Scan(&catalogProducts, &catalogConfirmed)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return doctor.Report{}, err
+	}
+	if err == nil {
+		e.CatalogProducts, e.CatalogConfirmedProducts = &catalogProducts, &catalogConfirmed
+	}
 	if pb > 0 && ob > 0 {
 		rows, er := tx.Query(ctx, `SELECT id FROM ozon_posting_observations WHERE batch_id=$1 ORDER BY id LIMIT 11`, pb)
 		if er != nil {

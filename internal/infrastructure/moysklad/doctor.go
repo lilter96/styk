@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/lilter96/styk/internal/domain"
 	"net/url"
 )
 
@@ -31,4 +32,21 @@ func (c *Client) Probe(ctx context.Context, account string) (bool, error) {
 		verified = true
 	}
 	return verified, nil
+}
+
+// Identity reads only the authenticated employee context. accountId is required
+// in the official response, including accounts with an empty product catalog.
+func (c *Client) Identity(ctx context.Context) (string, error) {
+	ctx = context.WithValue(ctx, budgetKey{}, &budget{http: c.http, limits: domain.ImportLimits{Requests: 1, Attempts: 1, ResponseBytes: 64 << 10}})
+	raw, err := c.get(ctx, "context/employee", nil)
+	if err != nil {
+		return "", err
+	}
+	var response struct {
+		AccountID string `json:"accountId"`
+	}
+	if json.Unmarshal(raw, &response) != nil || !orderUUID.MatchString(response.AccountID) {
+		return "", errors.New("invalid account identity")
+	}
+	return response.AccountID, nil
 }
