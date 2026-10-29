@@ -47,7 +47,7 @@ test("automatic test policy imports, publishes, reconciles, avoids a duplicate a
     card.getByText("Последняя отправка сверена с данными Ozon."),
   ).toBeVisible({ timeout: 30000 });
   await expect(card.getByText(/МойСклад: 7 шт/)).toBeVisible();
-  await expect(card.getByText(/Ozon: 7/)).toBeVisible();
+  await expect(card.getByText(/МойСклад: 7 шт/)).toContainText("Ozon: 7");
   await page.screenshot({ path: join(shots, "desktop.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: join(shots, "mobile.png"), fullPage: true });
