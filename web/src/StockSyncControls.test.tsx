@@ -37,6 +37,7 @@ function setup({
   remoteState = "",
   deploymentUnavailable = false,
   omitAvailability = false,
+  testAccount = false,
 }: {
   ready?: boolean;
   lost?: boolean;
@@ -46,6 +47,7 @@ function setup({
   remoteState?: string;
   deploymentUnavailable?: boolean;
   omitAvailability?: boolean;
+  testAccount?: boolean;
 } = {}) {
   let accepted = 0;
   const calls: { path: string; method: string; body: string }[] = [];
@@ -70,6 +72,7 @@ function setup({
   };
   const view = (selected = scope): StockSyncView => ({
     ...selected,
+    ...(testAccount ? { test_account_mode: true } : {}),
     ...(omitAvailability
       ? {}
       : { publication_available: !deploymentUnavailable }),
@@ -222,7 +225,9 @@ async function openEnable() {
   const dialog = await screen.findByRole("dialog", {
     name: "Включить синхронизацию остатков?",
   });
-  await within(dialog).findByRole("checkbox");
+  await within(dialog).findByLabelText(
+    "Подтверждаю изменение остатков в Ozon для выбранных аккаунтов",
+  );
   return dialog;
 }
 it("requires a readiness review and explicit acknowledgement before enabling external writes", async () => {
@@ -372,6 +377,37 @@ it("keeps unspecified quantities and proofs unknown until explicitly provided", 
   });
   expect(sent.attestations[0].proofs).toHaveLength(1);
   expect(sent.attestations[0].proofs[0].code).toBe("SALE_UNIT_UNVERIFIED");
+});
+it("records explicit test assumptions without calling them independent proof", async () => {
+  const { calls } = setup({ ready: false, testAccount: true });
+  const dialog = await openEnable();
+  await within(dialog).findByText(/Полнота заказов/);
+  const button = within(dialog).getByRole("button", {
+    name: "Записать тестовые допущения",
+  });
+  expect((button as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(
+    within(dialog).getByLabelText(/Подтверждаю эти тестовые допущения/),
+  );
+  fireEvent.click(button);
+  await waitFor(() =>
+    expect(calls.filter((call) => call.path.endsWith("/preview"))).toHaveLength(
+      2,
+    ),
+  );
+  const sent = JSON.parse(
+    calls.filter((call) => call.path.endsWith("/preview"))[1].body,
+  );
+  expect(sent.attestations).toHaveLength(1);
+  expect(sent.attestations[0]).toMatchObject({
+    unreflected: "0",
+    unseen_bound: "0",
+    safety_stock: "0",
+  });
+  expect(sent.attestations[0].proofs).toHaveLength(9);
+  expect(sent.attestations[0].proofs[0].reference).toContain(
+    "OPERATOR_ATTESTED",
+  );
 });
 it("rejects expired reviews and unavailable state without creating an enable request", async () => {
   const { calls } = setup({ expired: true });

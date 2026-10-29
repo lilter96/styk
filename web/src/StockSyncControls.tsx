@@ -15,6 +15,9 @@ type Target = {
   source_item_id: string;
   source_warehouse_id: string;
   quantity?: string;
+  source_physical?: string;
+  source_reserve?: string;
+  marketplace_free?: number;
   status: string;
   checks: Check[];
   source_import_id?: number;
@@ -34,6 +37,10 @@ type Publication = SyncScope & {
     quantity: string;
     state: string;
     safe_error?: string;
+    http_status?: number;
+    acknowledged_at?: string;
+    readback_at?: string;
+    readback_quantity?: string;
   }[];
 };
 export type StockSyncView = SyncScope & {
@@ -45,6 +52,7 @@ export type StockSyncView = SyncScope & {
   last_operation?: Publication;
   last_confirmed_at?: string;
   publication_available?: boolean;
+  test_account_mode?: boolean;
 };
 type Review = SyncScope & {
   review_id: string;
@@ -321,6 +329,19 @@ type EvidenceForm = {
   minutes: string;
   proofs: Record<string, boolean>;
 };
+type TestAttestation = {
+  ozon_product_id: string;
+  ozon_warehouse_id: string;
+  unreflected: string;
+  unseen_bound: string;
+  safety_stock: string;
+  proofs: {
+    code: string;
+    reference: string;
+    as_of: string;
+    valid_until: string;
+  }[];
+};
 const freshEvidence = (): EvidenceForm => ({
   unreflected: "",
   unseen_bound: "",
@@ -359,7 +380,9 @@ export function StockSyncControls({
     [message, setMessage] = useState(""),
     [ack, setAck] = useState(false),
     [advanced, setAdvanced] = useState(false),
-    [evidence, setEvidence] = useState<Record<string, EvidenceForm>>({});
+    [evidence, setEvidence] = useState<Record<string, EvidenceForm>>({}),
+    [testAck, setTestAck] = useState(false),
+    [testAttestations, setTestAttestations] = useState<TestAttestation[]>([]);
   const scopeKey = `${tenant}:${moy}:${ozon}`;
   const query = useQuery({
     queryKey: ["stock-sync", tenant, moy, ozon],
@@ -389,6 +412,8 @@ export function StockSyncControls({
     setOpen(null);
     setReview(null);
     setEvidence({});
+    setTestAck(false);
+    setTestAttestations([]);
     setAck(false);
     setMessage("");
   }, [scopeKey]);
@@ -399,51 +424,56 @@ export function StockSyncControls({
       setAck(false);
     }
   }, [commands.completed?.sequence, scopeKey]);
-  async function preview(withEvidence = false) {
+  async function preview(withEvidence = false, testInput?: TestAttestation[]) {
     if (previewBusy) return;
     setPreviewBusy(true);
     setMessage("");
     setAck(false);
     try {
-      const attestations = withEvidence
-        ? (review?.targets || []).map((target) => {
-            const form =
-              evidence[
-                `${target.ozon_product_id}:${target.ozon_warehouse_id}`
-              ] || freshEvidence();
-            if (
-              !form.reference.trim() ||
-              form.reference.trim().length < 16 ||
-              !form.asOf ||
-              ![form.unreflected, form.unseen_bound, form.safety_stock].every(
-                (value) => /^\d+$/.test(value),
-              ) ||
-              !/^\d+$/.test(form.minutes) ||
-              Number(form.minutes) < 1 ||
-              Number(form.minutes) > 15
-            )
-              throw new Error(
-                "Укажите проверенные количества, время и основание проверки каждого товара. Пустые значения не считаются нулём.",
-              );
-            return {
-              ozon_product_id: target.ozon_product_id,
-              ozon_warehouse_id: target.ozon_warehouse_id,
-              unreflected: form.unreflected,
-              unseen_bound: form.unseen_bound,
-              safety_stock: form.safety_stock,
-              proofs: Object.keys(proofLabels)
-                .filter((code) => form.proofs[code])
-                .map((code) => ({
-                  code,
-                  reference: form.reference.trim(),
-                  as_of: new Date(form.asOf).toISOString(),
-                  valid_until: new Date(
-                    Date.now() + Number(form.minutes) * 60000,
-                  ).toISOString(),
-                })),
-            };
-          })
-        : undefined;
+      const attestations =
+        testInput ||
+        (!withEvidence && view?.test_account_mode && testAttestations.length
+          ? testAttestations
+          : undefined) ||
+        (withEvidence
+          ? (review?.targets || []).map((target) => {
+              const form =
+                evidence[
+                  `${target.ozon_product_id}:${target.ozon_warehouse_id}`
+                ] || freshEvidence();
+              if (
+                !form.reference.trim() ||
+                form.reference.trim().length < 16 ||
+                !form.asOf ||
+                ![form.unreflected, form.unseen_bound, form.safety_stock].every(
+                  (value) => /^\d+$/.test(value),
+                ) ||
+                !/^\d+$/.test(form.minutes) ||
+                Number(form.minutes) < 1 ||
+                Number(form.minutes) > 15
+              )
+                throw new Error(
+                  "Укажите проверенные количества, время и основание проверки каждого товара. Пустые значения не считаются нулём.",
+                );
+              return {
+                ozon_product_id: target.ozon_product_id,
+                ozon_warehouse_id: target.ozon_warehouse_id,
+                unreflected: form.unreflected,
+                unseen_bound: form.unseen_bound,
+                safety_stock: form.safety_stock,
+                proofs: Object.keys(proofLabels)
+                  .filter((code) => form.proofs[code])
+                  .map((code) => ({
+                    code,
+                    reference: form.reference.trim(),
+                    as_of: new Date(form.asOf).toISOString(),
+                    valid_until: new Date(
+                      Date.now() + Number(form.minutes) * 60000,
+                    ).toISOString(),
+                  })),
+              };
+            })
+          : undefined);
       const result = await post<Review>(
         "/api/stock-sync/preview",
         { ...scope, ...(attestations ? { attestations } : {}) },
@@ -468,6 +498,32 @@ export function StockSyncControls({
       setPreviewBusy(false);
     }
   }
+  function attestTestConditions() {
+    if (!testAck || !view?.test_account_mode || review?.targets.length !== 1)
+      return;
+    const now = new Date();
+    const until = new Date(now.getTime() + 10 * 60000).toISOString();
+    const target = review.targets[0];
+    const reference =
+      "OPERATOR_ATTESTED: controlled test policy; one item per unit; no unreflected obligations, competing exposure or unseen reductions assumed; order coverage not independently verified";
+    const attestations: TestAttestation[] = [
+      {
+        ozon_product_id: target.ozon_product_id,
+        ozon_warehouse_id: target.ozon_warehouse_id,
+        unreflected: "0",
+        unseen_bound: "0",
+        safety_stock: "0",
+        proofs: Object.keys(proofLabels).map((code) => ({
+          code,
+          reference,
+          as_of: now.toISOString(),
+          valid_until: until,
+        })),
+      },
+    ];
+    setTestAttestations(attestations);
+    void preview(false, attestations);
+  }
   const scopedPending =
     commands.pending && sameScope(commands.pending.scope, scope);
   const active = view?.enabled;
@@ -476,6 +532,7 @@ export function StockSyncControls({
     ["OUTCOME_UNKNOWN", "PARTIAL"].includes(
       view?.last_operation?.state || "",
     ) || state.includes("UNKNOWN");
+  const readbackRequired = state === "READBACK_REQUIRED";
   const settlementRequired = state === "EFFECT_CONFIRMED_REVIEW_REQUIRED";
   const deploymentBlocked = !!view && view.publication_available !== true;
   const blocked = !!active && (!view?.ready || state === "BLOCKED");
@@ -485,23 +542,31 @@ export function StockSyncControls({
       state === "UPDATING" ||
       state === "STOPPING" ||
       view?.last_operation?.state === "RUNNING");
-  const label = uncertainOperation
-    ? "Результат уточняется"
-    : settlementRequired
-      ? "Нужна проверка перед включением"
-      : inFlightDuringHold
-        ? "Останавливается"
-        : deploymentBlocked
-          ? "Недоступна"
-          : blocked
-            ? "Приостановлена"
-            : active
-              ? state === "ACTIVE" || state === "SUCCEEDED"
-                ? "Включена"
-                : "Идёт отправка"
-              : state === "STOPPING"
+  const label = readbackRequired
+    ? "Требуется проверка"
+    : state === "RECONCILING"
+      ? "Проверяем результат"
+      : state === "RECONCILED"
+        ? "Синхронизировано"
+        : state === "QUEUED"
+          ? "Ожидает отправки"
+          : uncertainOperation
+            ? "Результат уточняется"
+            : settlementRequired
+              ? "Нужна проверка перед включением"
+              : inFlightDuringHold
                 ? "Останавливается"
-                : "Выключена";
+                : deploymentBlocked
+                  ? "Недоступна"
+                  : blocked
+                    ? "Приостановлена"
+                    : active
+                      ? state === "ACTIVE" || state === "SUCCEEDED"
+                        ? "Включена"
+                        : "Идёт отправка"
+                      : state === "STOPPING"
+                        ? "Останавливается"
+                        : "Выключена";
   const failedChecks = (review?.checks || []).filter((check) => !check.passed);
   const uniqueFailed = new Map<string, Check>();
   for (const check of [
@@ -518,7 +583,10 @@ export function StockSyncControls({
       [key]: { ...(old[key] || freshEvidence()), ...patch },
     }));
   }
-  if (!eligible && !view?.enabled && !scopedPending) return null;
+  // The controlled test policy selects its single approved mapping; unrelated
+  // catalog items need not all be mapped to review that one target.
+  if (!eligible && !view?.enabled && !view?.test_account_mode && !scopedPending)
+    return null;
   return (
     <>
       <section className="sync-card" aria-label="Синхронизация остатков">
@@ -548,6 +616,22 @@ export function StockSyncControls({
                           ? "Отправка выполняется только для проверенных данных и подтверждённых соответствий."
                           : "Остатки в Ozon изменятся только после явного включения и проверки условий."}
           </p>
+          {view?.last_operation && (
+            <p>
+              Отправлено: {view.last_operation.targets[0]?.quantity ?? "—"} шт.
+              {view.last_operation.targets[0]?.readback_quantity !==
+                undefined && (
+                <>
+                  {" "}
+                  · Проверено в Ozon:{" "}
+                  {view.last_operation.targets[0].readback_quantity} шт. ·{" "}
+                  {new Date(
+                    view.last_operation.targets[0].readback_at!,
+                  ).toLocaleString("ru-RU")}
+                </>
+              )}
+            </p>
+          )}
           {view?.last_operation && (
             <details className="technical-details">
               <summary>Технические детали</summary>
@@ -614,6 +698,24 @@ export function StockSyncControls({
               Проверить условия
             </button>
           )}
+          {active &&
+            view?.test_account_mode &&
+            !blocked &&
+            !uncertainOperation &&
+            !readbackRequired &&
+            state !== "QUEUED" &&
+            state !== "RUNNING" &&
+            state !== "RECONCILING" && (
+              <button
+                disabled={!!commands.pending || commands.busy || !!query.error}
+                onClick={() => {
+                  setOpen("enable");
+                  void preview();
+                }}
+              >
+                Проверить новую отправку
+              </button>
+            )}
           {active ? (
             <button
               className="secondary"
@@ -642,7 +744,7 @@ export function StockSyncControls({
               Включить синхронизацию
             </button>
           )}
-          {view?.last_operation && uncertainOperation && (
+          {view?.last_operation && (uncertainOperation || readbackRequired) && (
             <button
               className="secondary"
               disabled={!!commands.pending || commands.busy}
@@ -695,7 +797,9 @@ export function StockSyncControls({
           <div className="provider-settings-body">
             <p>
               {open === "enable"
-                ? "После включения проверенные остатки из МойСклад будут отправляться в Ozon. Остатки на Ozon изменятся. Данные МойСклад не изменятся."
+                ? view?.test_account_mode
+                  ? "Для выбранного тестового товара выполняется одна отправка после подтверждения. Автоматическая повторная синхронизация не включается; положительный остаток может быть доступен покупателям."
+                  : "После включения проверенные остатки из МойСклад будут отправляться в Ozon. Остатки на Ozon изменятся. Данные МойСклад не изменятся."
                 : "Новые отправки будут остановлены. Уже отправленный запрос может завершиться; его результат останется в истории."}
             </p>
             {previewBusy && (
@@ -768,6 +872,12 @@ export function StockSyncControls({
                           ? ` · к отправке ${target.quantity} шт.`
                           : " · расчёт не подтверждён"}
                       </strong>
+                      <p>
+                        МойСклад: {target.source_physical ?? "неизвестно"} шт. ·
+                        резерв: {target.source_reserve ?? "неизвестно"} шт. ·
+                        Ozon свободно: {target.marketplace_free ?? "неизвестно"}{" "}
+                        шт.
+                      </p>
                       <dl>
                         <div>
                           <dt>Товар Ozon</dt>
@@ -836,6 +946,41 @@ export function StockSyncControls({
                       ? "Скрыть условия"
                       : "Подтвердить условия вручную"}
                   </button>
+                )}
+                {view?.test_account_mode && review.targets.length === 1 && (
+                  <div className="sync-evidence">
+                    <p>
+                      Для этой тестовой пары оператор принимает допущения:
+                      единица продажи — 1 штука; неучтённые обязательства,
+                      неизвестные уменьшения и страховой остаток равны 0; другие
+                      каналы не расходуют этот запас. Полнота заказов и
+                      отсутствие конкурирующих изменений не подтверждены
+                      независимыми данными.
+                    </p>
+                    <label className="integration-ack">
+                      <input
+                        type="checkbox"
+                        checked={testAck}
+                        onChange={(e) => setTestAck(e.target.checked)}
+                      />
+                      Подтверждаю эти тестовые допущения и принимаю возможность
+                      доступа покупателей к положительному остатку.
+                    </label>
+                    <button
+                      className="secondary"
+                      disabled={!testAck || previewBusy}
+                      onClick={attestTestConditions}
+                    >
+                      Записать тестовые допущения
+                    </button>
+                    {testAttestations.length > 0 && (
+                      <p>
+                        Допущения записаны как утверждение оператора. После
+                        этого загрузите данные МойСклад и Ozon заново и
+                        повторите проверку в течение 10 минут.
+                      </p>
+                    )}
+                  </div>
                 )}
                 {advanced &&
                   review.targets.map((target, index) => {
@@ -987,7 +1132,9 @@ export function StockSyncControls({
                 }}
               >
                 {open === "enable"
-                  ? "Включить синхронизацию"
+                  ? view?.test_account_mode
+                    ? "Отправить остаток"
+                    : "Включить синхронизацию"
                   : "Выключить синхронизацию"}
               </button>
               <button className="secondary" onClick={() => setOpen(null)}>
