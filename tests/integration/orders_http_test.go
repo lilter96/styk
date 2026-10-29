@@ -166,7 +166,7 @@ func ordersHTTPIsolation(t *testing.T, a, b *ordersHTTPBrowser, guessedPreview s
 				t.Fatalf("foreign orders %s read: %d", path, status)
 			}
 		}
-		for _, path := range []string{"config", "preview", "approve", "check", "metadata/attributes"} {
+		for _, path := range []string{"config", "preview", "approve", "check", "metadata/attributes", "metadata/reconcile"} {
 			body := ordersHTTPBody(pair.foreign.scope)
 			body["preview_id"], body["acknowledge"], body["idempotency_key"] = guessedPreview, true, "cross-tenant"
 			status, raw := pair.actor.request(t, 1, http.MethodPost, "/api/orders/"+path, body, true)

@@ -44,3 +44,28 @@ func (a *ordersAPI) createMetadata(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, result)
 }
+
+func (a *ordersAPI) reconcileMetadata(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		orderRequestScope
+		UniqueCode  string `json:"unique_code"`
+		Acknowledge bool   `json:"acknowledge"`
+	}
+	if !decodeStockSync(w, r, &body) {
+		return
+	}
+	if !body.Acknowledge {
+		writeError(w, http.StatusBadRequest, "EXPLICIT_CONFIRMATION_REQUIRED")
+		return
+	}
+	if _, err := a.service.Config(r.Context(), body.scope()); err != nil {
+		ordersHTTPError(w, err)
+		return
+	}
+	result, err := a.initializer.ReconcileMetadata(r.Context(), body.scope(), body.UniqueCode, catalogActor(r))
+	if err != nil {
+		ordersHTTPError(w, err)
+		return
+	}
+	writeJSON(w, result)
+}
