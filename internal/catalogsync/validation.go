@@ -121,7 +121,13 @@ func (decision *Decision) block(code string) {
 }
 
 func (enrollment Enrollment) authorizes(decision Decision) bool {
-	if !enrollment.Automatic || !decision.actionable() {
+	if !enrollment.Automatic {
+		return false
+	}
+	if decision.Ready && decision.Plan.Noop && len(decision.Commands) == 0 && len(decision.Validation) == 0 && len(decision.Plan.Conflicts) == 0 {
+		return true
+	}
+	if !decision.actionable() {
 		return false
 	}
 	allowed := make(map[catalog.Field]bool, len(enrollment.AutomaticFields))

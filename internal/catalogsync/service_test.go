@@ -171,3 +171,36 @@ func TestConfigCannotAuthorizeForeignScope(t *testing.T) {
 		t.Fatalf("unallowlisted enabling changed config: %v", err)
 	}
 }
+
+func TestAutomaticNoopRemainsSuccessfulCheckWithoutAnotherApproval(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	f.approve(t)
+	f.run(t)
+	f.run(t)
+	enrollment := &f.store.current.Config.Targets[0]
+	enrollment.Automatic = true
+	enrollment.AutomaticFields = []catalog.Field{catalog.FieldName}
+	f.store.current.Targets[0].Enrollment = clone(*enrollment)
+	f.store.due = true
+	if worked, err := f.service.Tick(f.ctx); err != nil || !worked {
+		t.Fatalf("no-op check: %v %v", worked, err)
+	}
+	var automatic *Preview
+	for _, preview := range f.store.previews {
+		if preview.Automatic {
+			p := preview
+			automatic = &p
+		}
+	}
+	if automatic == nil || len(automatic.Decisions) != 1 {
+		t.Fatal("automatic verification missing")
+	}
+	decision := automatic.Decisions[0]
+	if !decision.Plan.Noop || !decision.Ready || len(decision.Validation) != 0 || len(decision.Commands) != 0 {
+		t.Fatalf("unchanged target incorrectly blocked: %+v", decision)
+	}
+	if len(f.store.approvals) != 1 || f.target.writes != 1 {
+		t.Fatal("no-op generated a second external operation")
+	}
+}
