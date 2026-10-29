@@ -25,7 +25,7 @@ const BaseURL = "https://api-seller.ozon.ru"
 const maxBody = 16 << 20
 const maxRows = 200000
 
-var ErrTransport = errors.New("Ozon transport failure")
+var ErrTransport = errors.New("ozon transport failure")
 
 const productPath = "/v3/product/list"
 const warehousePath = "/v2/warehouse/list"
@@ -117,7 +117,7 @@ func New(o Options) (*Client, error) {
 		}
 	}
 	if strings.TrimSpace(o.ClientID) == "" || strings.TrimSpace(o.APIKey) == "" || strings.ContainsAny(o.ClientID+o.APIKey, "\r\n") {
-		return nil, errors.New("Ozon client ID and API key are required")
+		return nil, errors.New("ozon client ID and API key are required")
 	}
 	if o.Timeout <= 0 || o.Interval <= 0 || o.Backoff <= 0 || o.Backoff > 30*time.Second || o.MaxRetryAfter <= 0 || o.Attempts < 1 || o.Attempts > 10 || o.PageSize < 1 || o.PageSize > 200 {
 		return nil, errors.New("invalid Ozon client settings")
@@ -192,8 +192,8 @@ func retryAfter(v string) (time.Duration, bool) {
 
 // Only these documented read operations can be invoked; POST does not imply a write.
 func (c *Client) post(ctx context.Context, path string, body any, out any) error {
-	if path != productPath && path != productInfoPath && path != warehousePath && path != stockPath && path != "/v4/posting/fbs/list" && path != "/v3/posting/fbs/get" {
-		return errors.New("Ozon operation not allowed")
+	if path != productPath && path != productInfoPath && path != warehousePath && path != stockPath && path != "/v4/posting/fbs/list" && path != "/v3/posting/fbs/get" && !catalogReadPath(path) {
+		return errors.New("ozon operation not allowed")
 	}
 	b, _ := ctx.Value(budgetKey{}).(*budget)
 	if b != nil {
@@ -261,7 +261,7 @@ func (c *Client) post(ctx context.Context, path string, body any, out any) error
 				if b != nil {
 					return &LimitError{Resource: "response_bytes", Counts: b.counts}
 				}
-				return errors.New("Ozon response too large")
+				return errors.New("ozon response too large")
 			} else if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 				if err = json.Unmarshal(data, out); err != nil {
 					return fmt.Errorf("decode Ozon response: %w", err)
@@ -318,7 +318,7 @@ func (c *Client) post(ctx context.Context, path string, body any, out any) error
 			return e
 		}
 	}
-	return errors.New("Ozon retry limit reached")
+	return errors.New("ozon retry limit reached")
 }
 
 // Ozon int64 values may appear as numbers or decimal strings.
