@@ -329,3 +329,102 @@ inventory rules, scheduler/outbox/worker publication, reconciliation and durable
 order checks through deterministic providers. The live read journal and local
 screenshots remain under `.local/dev-run/`; credentials and raw provider payloads
 are excluded from commits. Production publication remains disabled.
+
+## V6 — reviewed bidirectional catalog synchronization (2026-10-29 UTC)
+
+Implemented through the existing merchant API, PostgreSQL outbox and worker:
+canonical field presence/provenance, versioned per-field ownership, frozen diffs,
+approvals, creation markers, exact scoped dispatch, Ozon asynchronous receipts,
+readback baselines, conflicts, no-op detection and explicit automatic field
+allowlists. Stock calculation and stock publication remain separate. Migrations
+43–44 preserve existing imports, credentials, mapping and publication history.
+Eight implementation workstreams used three delegated agents and five isolated
+Codex processes; their accepted commits were integrated into `master`.
+
+**SUCCESS — real creation and updates.** The selected, previously unmapped Ozon
+offer `BillYard1337` / product `2421418922` was active on fresh reads. Operation
+`6855eafa3ee47f021b8f5063000dd3eb` created MoySklad product
+`26c7eb21-d3db-11f1-0a80-1e640007bbe6`: HTTP 200, independent exact-ID readback,
+`RECONCILED`. Its unique sync ID/external code and returned provider ID remain
+separate. Repeating creation preview produced `CREATED_TARGET_REQUIRES_MAPPING`,
+with no second creation. Normal durable imports completed on their first attempts:
+MoySklad operation `97dea3c90d699633b57856b310d3dc4a`, new batch **39**, five
+requests; Ozon operation `c51f67ec8e802b0d90a8d87c724cbdb0`, reused content batch
+**38**, five fresh traversal requests. Normal reviewed mapping **5/v1** was
+confirmed as `OPERATOR_ATTESTED`; existing mappings were retained.
+
+A journaled, acknowledged MoySklad fixture-only PUT changed its name and set an
+explicit STYK test description; no stock/document fields were changed. Through
+the real React console, operation `7922491bd7cbd75f2e631fbfbebf9156` approved two
+independent field directions: Ozon-owned name → MoySklad and MoySklad-owned
+description → Ozon. Ozon accepted exactly one `/v1/product/attributes/update`
+request (HTTP 200), task **5925189312**. Its final task response said `imported`
+with two `warning_attribute_values_empty` diagnostics, severity `warning`, for
+attributes **22232** and **23536**. Initial handling conservatively recorded
+UNKNOWN and fenced the pending sibling; it did not resend.
+
+The observed provider schema uses type **`String`**, not the fixture's lowercase
+`string`; case normalization and a sanitized regression fixture corrected the
+pre-dispatch validation mismatch. Poll receipts now retain actual HTTP status,
+known diagnostic codes, severity and attribute IDs without raw provider messages.
+
+**SUCCESS — audited read-only reconciliation.** The operator explicitly accepted
+the warnings and requested a fresh task/selected-field check in React. Audit
+`31c380b31999b74a3b09ed21c99a3c87` confirmed the exact description and recorded
+`READBACK_MATCHED_WITH_WARNINGS`. The partial receipt and both warnings remain;
+this does not certify unselected attributes or prove causality merely from a
+matching observation. The original UNKNOWN attempt and complete failed outbox
+row are unchanged (same recorded hash), and dispatch count remains **1**. A new
+immutable readback request/result records the resolution. The previously approved
+MoySklad name command then ran once through the normal worker, received HTTP 200
+and reconciled. Both work items finished `RECONCILED`; no new unresolved external
+write remains. The original historical stock UNKNOWN/recovery history is intact.
+
+**SUCCESS — automatic no-op.** React enabled configuration revision **3**, with
+only the mapped name/description allowlist and a 30-second interval. Four durable
+scheduler previews were successful no-ops, with zero validation blockers and no
+additional publication. React disabled automatic participation and catalog
+synchronization in revision **4**. The first capture script needed to reopen the
+collapsed settings after save; a separate normal UI session completed disabling.
+
+Actual attempts within the announced fresh budget (≤200 reads/10 writes each):
+**MoySklad 41 reads / 3 writes**, including five import reads and one direct,
+journaled fixture-seed PUT; **Ozon 63 reads / 1 write**, including five import
+reads and one extra read-only task diagnostic. All 92 instrumented catalog HTTP
+responses and six direct fixture/diagnostic responses were HTTP 200; the ten
+import attempts all completed successfully. There were no automatic write
+retries. The normal stock publication count stayed **22**; no inventory movement
+was created. Both stock and catalog automatic settings are disabled, and the API
+and worker were restarted with publication flags off. The encryption-key digest
+was unchanged; pre-migration database backups and local secret-free fixture
+journals are retained under `.local/v6/`.
+
+**Verification.** Real React/Go/PostgreSQL/worker tests cover mixed directions,
+asynchronous reconciliation, explicit creation, duplicate prevention, tenant
+attacks, no-op behavior and truthful pending-mapping states. The real merchant
+screens were reviewed on desktop and mobile, including the warning resolution.
+Manual readback PostgreSQL race tests preserve original commands, receipts,
+UNKNOWN attempts and failed tasks, test concurrent claims/expiry/replay and reject
+unsafe diagnostics and scope substitutions. Full Go lint is **0 uncapped** under
+v2.15.0; `make lint`/CI now enforce that count. Final release commands and results
+are recorded by the session's verification artifacts and delivery report.
+
+A repeated local PostgreSQL selection benchmark (100 iterations, 50 returned
+products, i5-13600KF) measured **0.855 ms / 0.652 ms / 0.959 ms** with
+100 / 1,000 / 10,000 total products, approximately **83.3 KB** and **1,290**
+allocations per page. This is a bounded local query measurement, not a claimed
+before/after speedup or provider synchronization latency.
+
+**Retained data / limitations.** The dedicated MoySklad product, confirmed mapping
+and clearly identified test description are retained; physical inventory was
+not changed. Ordinary catalog updates currently cover names/descriptions;
+provider-specific creation DTOs support more factual fields, while unsupported
+updates are explicitly blocked. Live creation of a new Ozon card is **NOT_TESTED**
+because its mandatory factual declarations were not supplied or invented.
+Variants, conflicts, partial failures and broader creation contracts have
+deterministic coverage; this run does not claim live coverage for every category
+or variant. Catalog enrollments are bounded to 100 per configuration. Large
+provider traversals and distributed account-wide rate-limit coordination need
+further scaling work. New merchants remain read-only until separately eligible;
+this experiment establishes neither unrestricted publication nor production
+readiness.

@@ -1,6 +1,6 @@
 # STYK
 
-STYK is a B2B integration platform intended to connect marketplaces and ERP systems, initially MoySklad and Ozon FBS. It includes read-only source importers, a read-only stock commitment calculator, and a PostgreSQL-backed mock demonstration. The application has a local, authenticated web console with explicit product mapping confirmations; it has no external write integrations, production tenant authentication, or inventory synchronization rules. An isolated, explicitly gated development tool can create synthetic fixtures in an authorized MoySklad test account; it is not part of the API or worker.
+STYK is a merchant inventory and catalog integration built with Go, PostgreSQL and React. One verified user owns one isolated merchant account with encrypted provider connections. MoySklad → Ozon stock synchronization uses reviewed mappings, the authoritative commitment calculator, the durable scheduler/outbox/worker and readback reconciliation. Catalog synchronization supports reviewed name/description updates in either direction, explicit product creation with provider validation, and narrowly authorized automatic updates. Real writes remain restricted to the separately enabled owner-controlled test accounts; new merchants do not acquire production publication permission automatically.
 
 Go 1.27.3, net/http, pgx, slog, PostgreSQL 17 and goose are used in one modular monolith. The API provides liveness and database readiness; a separate single-concurrency worker polls a transactional outbox. An observation and its task commit atomically; a lease and claim token permit recovery and fence stale completions. The mock handler is deterministic and performs no external writes. The lease does not prevent overlapping executions after expiration, and none of this guarantees exactly-once external calls.
 
@@ -22,13 +22,25 @@ docker compose exec postgres psql -U styk -d styk -c "SELECT o.operation_key,o.s
 
 Running the demo again reuses the same operation key and does not create another task. `make down` stops services without deleting their persistent volume. Migrations are applied explicitly with goose; never run them against production without review.
 
+## Merchant catalog synchronization
+
+Open `/catalog-sync` after connecting both providers and importing their catalogs. Existing confirmed product mappings are reused. Choose the source for each supported field, select products with server-side search, review the diff and explicitly confirm the changes. Unsupported updates remain visible as limitations rather than erasing destination data.
+
+Apply all migrations (currently 44) and upgrade both API and worker together. `STYK_TEST_ACCOUNT_CATALOG=true` enables catalog writes **only** for the fixed, registered owner-controlled account pair. It is independent of the stock publication flag and cannot activate arbitrary merchant accounts. Keep it disabled outside an authorized test. `STYK_CATALOG_REQUEST_AUDIT=true` records bounded, secret-free HTTP attempt metadata for diagnostics.
+
+Product creation is separately approved. MoySklad creation uses a durable unique marker and returns the actual provider ID; import the created product and confirm its correspondence before enrolling it for ordinary updates. Ozon creation requires actual category/type, mandatory attributes, VAT, dimensions and other factual declarations; STYK does not invent them. An Ozon task ID means acceptance, not completion.
+
+Automatic updates require an explicit product/field allowlist and operator consent. Unchanged fields create no publication. An uncertain outcome fences the target. The history offers an explicitly authorized **read-only** check of a known task: accepted warnings remain recorded, selected fields must match fresh reads, and original UNKNOWN attempts and failed outbox records stay immutable. This action never resends the catalog write.
+
+Current live coverage and concrete limits are recorded in the [integration report](docs/controlled-live-integration-lab-2026-10.md). The older administrative command guides below retain their original scope; they are not a merchant authentication bypass.
+
 ## Configuration
 
 `DATABASE_URL` is required; `.env.example` contains local-only credentials. `HTTP_ADDR` defaults to `127.0.0.1:8080`. `QUERY_TIMEOUT` (5s), `SHUTDOWN_TIMEOUT` (10s), `WORKER_POLL_INTERVAL` (1s), `WORKER_LEASE_DURATION` (30s), and `WORKER_RETRY_DELAY` (2s) are positive Go durations. `WORKER_MAX_ATTEMPTS` defaults to 3 (range 1–100). Lease duration must exceed query timeout. The worker stops on cancellation and unfinished work is recovered after lease expiry; the mock handler does not make network requests. Settings in `.env` are loaded by Make, not automatically by the binaries. Do not commit credentials.
 
 ## Verification
 
-`make test`, `make lint`, and `make build` do not require a database. For integration tests, use a dedicated disposable PostgreSQL database, apply migrations, and set `TEST_DATABASE_URL` to that database. For the local Compose instance, create and migrate a separate test database (once), then run the tests:
+`make test`, `make lint`, and `make build` do not require a database. `make lint` runs formatting, vet and pinned golangci-lint v2.15.0 with uncapped findings; the required count is zero. For integration tests, use a dedicated disposable PostgreSQL database, apply migrations, and set `TEST_DATABASE_URL` to that database. For the local Compose instance, create and migrate a separate test database (once), then run the tests:
 
 ```sh
 docker compose exec postgres createdb -U styk styk_test
@@ -104,7 +116,7 @@ Confirmation re-reads the latest completed imports and revalidates the selected 
 
 ## Local connection management
 
-The Integrations page can explicitly test locally configured MoySklad and Ozon credentials and register the configured account to a selected tenant after operator acknowledgement. Checks are bounded read-only probes; registration is a trusted local attestation, not production tenant authorization. The local console displays external account identifiers, including the Ozon client ID, to the authenticated operator; these identifiers do not authorize marketplace access. Tokens and API keys remain server-side and are not stored in PostgreSQL. Historical imports are excluded by default. See [connection management](docs/connection-management-v1.md).
+The Integrations page can explicitly test locally configured MoySklad and Ozon credentials and register the configured account to a selected tenant after operator acknowledgement. Checks are bounded read-only probes; registration is a trusted local attestation, not production tenant authorization. The local console displays external account identifiers, including the Ozon client ID, to the authenticated operator; these identifiers do not authorize marketplace access. Tokens and API keys remain server-side; merchant credentials are stored in PostgreSQL using authenticated encryption. Ordinary account-read responses never return plaintext credentials. Historical imports are excluded by default. See [connection management](docs/connection-management-v1.md).
 
 ## Warehouse mapping V1
 
@@ -180,7 +192,7 @@ Run `go run ./cmd/doctor -tenant TENANT -moysklad-account MS_ACCOUNT -ozon-accou
 
 ### Local operator web console
 
-Merchant authentication is the default API mode. It requires a credential encryption key, a configured origin and SMTP verification delivery; see the [identity and migration guide](docs/saas-identity-plan.md). New merchant workspaces can configure read-only synchronization drafts, but do not receive production publication permission automatically.
+Merchant authentication is the default API mode. It requires a credential encryption key, a configured origin and SMTP verification delivery; see the [identity and migration guide](docs/saas-identity-plan.md). New merchant accounts can configure read-only synchronization drafts, but do not receive production publication permission automatically.
 
 For the legacy local operator console, start PostgreSQL and apply migrations with `make up` and `make migrate`; export `DATABASE_URL`, `HTTP_ADDR=127.0.0.1:8080`, `STYK_AUTH_MODE=local`, `STYK_CONSOLE_ORIGIN=http://127.0.0.1:5173`, and a random `STYK_OPERATOR_SECRET` of at least 32 characters in the API environment, then run `go run ./cmd/api`. In another terminal run `cd web && npm ci && npm run dev`, and open `http://127.0.0.1:5173`. Enter the operator secret, tenant ID and registered accounts. Do not commit secrets.
 
