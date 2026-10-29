@@ -32,15 +32,106 @@ async function apiError(r: Response): Promise<ApiError> {
   }
   return new ApiError(r.status, code);
 }
-export async function post<T>(path: string, body: unknown): Promise<T> {
+export async function post<T>(
+  path: string,
+  body: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
   const r = await fetch(path, {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal,
   });
   if (!r.ok) throw await apiError(r);
+  if (r.status === 204) return null as T;
   return r.json() as Promise<T>;
+}
+
+export type ImportScope = Readonly<{ tenant: string; account: string }>;
+export type ImportOperation = {
+  id: string;
+  tenant: string;
+  provider: string;
+  account: string;
+  operation_type: string;
+  state:
+    | "QUEUED"
+    | "RUNNING"
+    | "SUCCEEDED"
+    | "FAILED"
+    | "CANCELLED"
+    | "OUTCOME_UNKNOWN";
+  phase: string;
+  outcome: string | null;
+  limiting_resource: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  attempt_started_at: string | null;
+  progress_at: string | null;
+  lease_expires_at: string | null;
+  attempt: number;
+  max_attempts: number;
+  elapsed_ms: number;
+  batch_id: number | null;
+  batch_created: boolean | null;
+  counts: {
+    requests: number;
+    attempts: number;
+    pages: number;
+    completed_requests: number;
+    completed_pages: number;
+    products: number;
+    warehouses: number;
+    observations: number;
+  };
+  limits: {
+    requests: number;
+    attempts: number;
+    pages: number;
+    products: number;
+    warehouses: number;
+    observations: number;
+    response_bytes: number;
+    duration_ns: number;
+    database_timeout_ns: number;
+  };
+};
+export type ImportIntent = Readonly<{ scope: ImportScope; body: string }>;
+export type ImportSubmission = {
+  operation: ImportOperation;
+  idempotent_replay: boolean;
+};
+export function createImportIntent(scope: ImportScope): ImportIntent {
+  if (!scope.tenant || !scope.account)
+    throw new Error("A registered account and tenant are required.");
+  const frozenScope = Object.freeze({ ...scope });
+  return Object.freeze({
+    scope: frozenScope,
+    body: JSON.stringify({
+      tenant: frozenScope.tenant,
+      ozon_account: frozenScope.account,
+      operation_type: "OZON_CATALOG_IMPORT",
+      idempotency_key: crypto.randomUUID(),
+      acknowledge: true,
+    }),
+  });
+}
+export async function sendImportIntent(
+  intent: ImportIntent,
+  signal?: AbortSignal,
+): Promise<ImportSubmission> {
+  const r = await fetch("/api/imports", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: intent.body,
+    signal,
+  });
+  if (!r.ok) throw await apiError(r);
+  return r.json() as Promise<ImportSubmission>;
 }
 export type Account = {
   source: string;

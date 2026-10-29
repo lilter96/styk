@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import { ImportPanel } from "./ImportPanel";
+import {
+  useImportSubmission,
+  type ImportSubmissionState,
+} from "./ImportSubmission";
 import {
   api,
   post,
@@ -29,12 +34,16 @@ export function Integrations({
   accounts,
   selected,
   report,
+  submission,
 }: {
   tenant: string;
   accounts: Account[];
   selected?: { moy: string; ozon: string };
   report?: Report;
+  submission?: ImportSubmissionState;
 }) {
+  const localSubmission = useImportSubmission();
+  const imports = submission ?? localSubmission;
   const client = useQueryClient();
   const [busy, setBusy] = useState("");
   const [acks, setAcks] = useState<Record<string, boolean>>({});
@@ -339,6 +348,25 @@ export function Integrations({
           );
         })}
       </div>
+      {selected?.ozon &&
+        accounts.some(
+          (account) =>
+            account.source === "ozon" && account.account === selected.ozon,
+        ) && (
+          <ImportPanel
+            key={`${tenant}:${selected.ozon}`}
+            scope={{ tenant, account: selected.ozon }}
+            submission={imports}
+            configured={
+              !!query.data?.providers.some(
+                (provider) =>
+                  provider.provider === "ozon" &&
+                  provider.account === selected.ozon &&
+                  provider.status !== "NOT_CONFIGURED",
+              )
+            }
+          />
+        )}
     </>
   );
 }

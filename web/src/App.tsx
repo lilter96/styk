@@ -1,4 +1,8 @@
 import { Integrations } from "./Integrations";
+import {
+  ImportSubmissionNotice,
+  useImportSubmission,
+} from "./ImportSubmission";
 import { ProductReview } from "./ProductReview";
 import { WarehouseReview } from "./WarehouseReview";
 import {
@@ -8,7 +12,7 @@ import {
 } from "./Confirmation";
 import { useEffect, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { NavLink, Route, Routes } from "react-router-dom";
+import { NavLink, Route, Routes, useNavigate } from "react-router-dom";
 import {
   api,
   params,
@@ -802,15 +806,17 @@ export function Diagnostics({
 export function App() {
   const client = useQueryClient();
   const confirmation = useConfirmation();
+  const importSubmission = useImportSubmission();
+  const navigate = useNavigate();
   useEffect(() => {
-    if (!confirmation.pending) return;
+    if (!confirmation.pending && !importSubmission.pending) return;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [confirmation.pending]);
+  }, [confirmation.pending, importSubmission.pending]);
   const session = useQuery({
     queryKey: ["session"],
     queryFn: ({ signal }) => api<null>("/api/session", signal),
@@ -850,6 +856,12 @@ export function App() {
             The previous confirmation may have committed. After signing in,
             inspect mapping history for the original account pair; the new
             session cannot replay it.
+          </p>
+        )}
+        {importSubmission.sessionLost && (
+          <p role="alert">
+            The previous import request may have been queued. Sign in and
+            inspect the original account's import history.
           </p>
         )}
         <Login
@@ -900,7 +912,10 @@ export function App() {
             No external changes are made.
           </p>
           <button
-            disabled={!!confirmation.pending && !confirmation.sessionLost}
+            disabled={
+              (!!confirmation.pending && !confirmation.sessionLost) ||
+              (!!importSubmission.pending && !importSubmission.sessionLost)
+            }
             onClick={() => void logout()}
           >
             Sign out
@@ -925,6 +940,17 @@ export function App() {
               setChosen(original.tenant);
               setMoy(original.moy);
               setOzon(original.ozon);
+            }}
+          />
+          <ImportSubmissionNotice
+            submission={importSubmission}
+            scope={{ tenant: chosen, account: ozon }}
+            restore={(original) => {
+              setTenant(original.tenant);
+              setChosen(original.tenant);
+              setMoy("");
+              setOzon(original.account);
+              navigate("/integrations");
             }}
           />
           <div className="scope-panel">
@@ -998,6 +1024,7 @@ export function App() {
                   accounts={accounts.data?.accounts ?? []}
                   selected={{ moy, ozon }}
                   report={report.data}
+                  submission={importSubmission}
                 />
               }
             />

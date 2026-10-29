@@ -1,6 +1,6 @@
 # Durable Ozon catalog import operations V1
 
-This is a local, authenticated operator API and a read-only worker operation. It does not provide production tenant authorization, scheduling, a frontend import screen, order synchronization or marketplace writes. `OZON_CATALOG_IMPORT` uses the existing bounded catalog traversal: product lists for `ALL` and `ARCHIVED`, warehouse listing and FBS stock observations. A completed traversal is not exhaustive account visibility or a point-in-time source snapshot; missing rows are unknown.
+This is a local, authenticated operator API and a read-only worker operation, also available through the [local import screen](import-management-ui-v1.md). It does not provide production tenant authorization, scheduling, order synchronization or marketplace writes. `OZON_CATALOG_IMPORT` uses the existing bounded catalog traversal: product lists for `ALL` and `ARCHIVED`, warehouse listing and FBS stock observations. A completed traversal is not exhaustive account visibility or a point-in-time source snapshot; missing rows are unknown.
 
 ## API and ownership
 
