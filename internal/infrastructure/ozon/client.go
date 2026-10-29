@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lilter96/styk/internal/catalog"
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/testpublication"
 )
@@ -232,6 +233,7 @@ func (c *Client) post(ctx context.Context, path string, body any, out any) error
 			}
 		}
 		resp, e := c.http.Do(req)
+		observeCatalogRequest(ctx, path, resp, e)
 		if e == nil && resp.StatusCode == http.StatusTooManyRequests && b != nil {
 			b.counts.RateLimitResponses++
 		}
@@ -319,6 +321,14 @@ func (c *Client) post(ctx context.Context, path string, body any, out any) error
 		}
 	}
 	return errors.New("ozon retry limit reached")
+}
+
+func observeCatalogRequest(ctx context.Context, path string, response *http.Response, err error) {
+	status := 0
+	if response != nil {
+		status = response.StatusCode
+	}
+	catalog.ObserveRequest(ctx, catalog.RequestEvent{Provider: catalog.ProviderOzon, Method: http.MethodPost, Operation: path, Status: status, Interrupted: err != nil || ctx.Err() != nil})
 }
 
 // Ozon int64 values may appear as numbers or decimal strings.

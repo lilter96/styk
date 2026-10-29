@@ -192,6 +192,7 @@ func (c *CatalogClient) catalogMutation(ctx context.Context, command catalog.Com
 		return nil, 0, err
 	}
 	response, err := c.read.http.Do(request)
+	observeCatalogRequest(ctx, path, response, err)
 	if err != nil {
 		return nil, 0, &CatalogWriteError{}
 	}
