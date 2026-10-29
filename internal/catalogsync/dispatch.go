@@ -171,7 +171,15 @@ func safeFieldErrors(fields []catalog.FieldError) []catalog.FieldError {
 		if !validCode(code) {
 			code = "PROVIDER_FIELD_ERROR"
 		}
-		result = append(result, catalog.FieldError{Field: field.Field, Code: code})
+		severity := field.Severity
+		if severity != "warning" && severity != "error" {
+			severity = "unknown"
+		}
+		attribute := field.AttributeID
+		if attribute < 0 {
+			attribute = 0
+		}
+		result = append(result, catalog.FieldError{Field: field.Field, Code: code, Severity: severity, AttributeID: attribute})
 	}
 	return result
 }

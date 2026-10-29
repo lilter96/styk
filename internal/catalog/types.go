@@ -167,9 +167,11 @@ const (
 )
 
 type FieldError struct {
-	Field   Field  `json:"field,omitempty"`
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Severity    string `json:"severity,omitempty"`
+	AttributeID int64  `json:"attribute_id,omitempty"`
+	Field       Field  `json:"field,omitempty"`
+	Code        string `json:"code"`
+	Message     string `json:"message"`
 }
 
 type ProductReceipt struct {

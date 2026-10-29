@@ -18,6 +18,9 @@ type categoryOption struct {
 	Name string `json:"name"`
 }
 type categoryAttribute struct {
+	ProviderType      string           `json:"provider_type"`
+	Collection        bool             `json:"collection"`
+	ComplexID         int64            `json:"complex_id"`
 	ID                string           `json:"id"`
 	Name              string           `json:"name"`
 	Required          bool             `json:"required"`
@@ -178,7 +181,7 @@ func describeCatalogCategory(id string, schema []ozon.CategoryAttribute) merchan
 		if dictionary {
 			kind = "select"
 		}
-		attrs = append(attrs, categoryAttribute{ID: strconv.FormatInt(s.ID, 10), Name: s.Name, Required: s.Required, Type: kind, Dictionary: dictionary, OptionsIncomplete: dictionary})
+		attrs = append(attrs, categoryAttribute{ID: strconv.FormatInt(s.ID, 10), ProviderType: s.Type, Collection: s.Collection, ComplexID: s.ComplexID, Name: s.Name, Required: s.Required, Type: kind, Dictionary: dictionary, OptionsIncomplete: dictionary})
 	}
 	return merchantCategory{ID: id, Name: id, Attributes: attrs, AttributesLoaded: true}
 }
