@@ -14,6 +14,7 @@ var (
 	ErrCredentialsRejected = errors.New("provider credential revision rejected")
 	ErrLeaseLost           = errors.New("provider call permit expired")
 	ErrAlreadyStarted      = errors.New("provider call permit already started")
+	ErrCooldownUnbounded   = errors.New("provider retry delay requires operator review")
 )
 
 // Scope is bound by the credential factory after tenant authorization. PendingID
@@ -69,10 +70,11 @@ type Admission struct {
 // Result encodes delays relative to the database clock. A future HTTP date is
 // carried separately so application clock skew cannot admit an early retry.
 type Result struct {
-	Status         int
-	Cooldown       time.Duration
-	CooldownUntil  time.Time
-	MethodCooldown time.Duration
+	Status             int
+	Cooldown           time.Duration
+	CooldownUntil      time.Time
+	MethodCooldown     time.Duration
+	IndefiniteCooldown bool
 }
 
 type Store interface {

@@ -26,6 +26,9 @@ func New(store Store, options Options) (*Coordinator, error) {
 	if store == nil || options.SyntheticInterval < 0 || options.SyntheticInterval > time.Second || options.MaxInflight < 0 || options.MaxInflight > 20 || options.MethodForbiddenCooldown < 0 {
 		return nil, ErrInvalid
 	}
+	if options.SyntheticInterval > 0 && options.SyntheticInterval < 20*time.Millisecond {
+		return nil, ErrInvalid
+	}
 	if options.MaxInflight == 0 {
 		options.MaxInflight = 1
 	}

@@ -22,19 +22,36 @@ func responseResult(status int, headers http.Header, forbidden time.Duration) Re
 	value := strings.TrimSpace(headers.Get("Retry-After"))
 	if seconds, err := strconv.ParseUint(value, 10, 64); err == nil {
 		if seconds > uint64(maxCooldown/time.Second) {
-			r.Cooldown = maxCooldown
+			r.IndefiniteCooldown = true
 		} else {
 			r.Cooldown = max(r.Cooldown, time.Duration(seconds)*time.Second)
 		}
 	} else if until, parseErr := http.ParseTime(value); parseErr == nil {
 		r.CooldownUntil = until
+	} else if numeric(value) {
+		r.IndefiniteCooldown = true
 	}
-	if millis, err := strconv.ParseUint(strings.TrimSpace(headers.Get("X-Lognex-Retry-After")), 10, 64); err == nil {
+	value = strings.TrimSpace(headers.Get("X-Lognex-Retry-After"))
+	if millis, err := strconv.ParseUint(value, 10, 64); err == nil {
 		if millis > uint64(maxCooldown/time.Millisecond) {
-			r.Cooldown = maxCooldown
+			r.IndefiniteCooldown = true
 		} else {
 			r.Cooldown = max(r.Cooldown, time.Duration(millis)*time.Millisecond)
 		}
+	} else if numeric(value) {
+		r.IndefiniteCooldown = true
 	}
 	return r
+}
+
+func numeric(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, char := range value {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	return true
 }
