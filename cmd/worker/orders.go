@@ -45,11 +45,17 @@ func (c orderCollector) Collect(ctx context.Context, scope orders.Scope) error {
 
 type ordersWork struct {
 	runner    *orderflow.Runner
+	retention *ordersRetentionWork
 	mode      string
 	nextCheck time.Time
 }
 
 func (w *ordersWork) RunNext(ctx context.Context) (bool, error) {
+	if w.retention != nil {
+		if _, err := w.retention.RunNext(ctx); err != nil {
+			return false, err
+		}
+	}
 	if w.mode != "schedule" {
 		worked, err := w.runner.RunNext(ctx)
 		if worked || err != nil {
@@ -67,8 +73,9 @@ func orderAllowed(scope orders.Scope) bool {
 	return os.Getenv("STYK_TEST_ACCOUNT_ORDERS") == "true" && scope.Tenant == expected.Tenant && scope.MoyskladAccount == expected.MoyskladAccount && scope.OzonAccount == expected.OzonAccount
 }
 func newOrdersWork(db *postgres.Store, resolver *credentials.Resolver) (application.PublicationRunner, error) {
+	retention := &ordersRetentionWork{store: db, now: time.Now, mode: os.Getenv("STYK_WORKER_MODE")}
 	if os.Getenv("STYK_TEST_ACCOUNT_ORDERS") != "true" {
-		return nil, nil
+		return retention, nil
 	}
 	var token [16]byte
 	if _, err := rand.Read(token[:]); err != nil {
@@ -89,7 +96,7 @@ func newOrdersWork(db *postgres.Store, resolver *credentials.Resolver) (applicat
 	if err != nil {
 		return nil, err
 	}
-	return &ordersWork{runner: runner, mode: os.Getenv("STYK_WORKER_MODE")}, nil
+	return &ordersWork{runner: runner, retention: retention, mode: os.Getenv("STYK_WORKER_MODE")}, nil
 }
 func runSchedule(ctx context.Context, runners ...application.PublicationRunner) error {
 	tick := time.NewTicker(time.Second)
