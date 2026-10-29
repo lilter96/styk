@@ -36,6 +36,9 @@ func run() error {
 		return err
 	}
 	defer db.Pool.Close()
+	if err = db.RequireCurrentSchema(ctx); err != nil {
+		return err
+	}
 	handler, err := configuredHandler(db, c.HTTPAddr)
 	if err != nil {
 		return err

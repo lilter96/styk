@@ -162,6 +162,9 @@ func run() error {
 		return err
 	}
 	defer db.Pool.Close()
+	if err = db.RequireCurrentSchema(ctx); err != nil {
+		return err
+	}
 	account := os.Getenv("OZON_CLIENT_ID")
 	key := os.Getenv("OZON_API_KEY")
 	client := catalogClient(account, key)
