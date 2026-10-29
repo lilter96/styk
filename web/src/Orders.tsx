@@ -270,6 +270,7 @@ function OrdersAccount({
           <OrdersConfig
             key={config.data.revision}
             scope={scope}
+            moyLabel={moyLabel}
             config={config.data}
             onSaved={saved}
             onDirty={(value) => {

@@ -154,6 +154,8 @@ async function openOrders(page: Page, lostApproval = false) {
     const url = new URL(request.url());
     if (url.pathname.endsWith("/config")) return fulfill(route, config);
     if (url.pathname.endsWith("/metadata")) return fulfill(route, metadata);
+    if (url.pathname.endsWith("/metadata/registry"))
+      return fulfill(route, { scope, revision: 0, attributes: [] });
     if (url.pathname.endsWith("/postings"))
       return fulfill(
         route,

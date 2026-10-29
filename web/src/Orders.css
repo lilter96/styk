@@ -313,6 +313,23 @@
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+.orders-service-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.orders-service-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.orders-service-list li p {
+  flex-basis: 100%;
+}
 @media (max-width: 720px) {
   .orders-console {
     gap: 20px;

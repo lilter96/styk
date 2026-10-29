@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, post } from "./api";
+import { OrdersMetadataSetup } from "./OrdersMetadataSetup";
 import {
   ordersURL,
   orderScopeBody,
@@ -59,11 +60,13 @@ export function OrdersConfig({
   config,
   onSaved,
   onDirty,
+  moyLabel = "Подключённый аккаунт",
 }: {
   scope: OrderScope;
   config: OrdersConfigData;
   onSaved: (config: OrdersConfigData) => void;
   onDirty: (dirty: boolean) => void;
+  moyLabel?: string;
 }) {
   const [draft, setDraft] = useState(config);
   const [dirty, setDirty] = useState(false);
@@ -82,6 +85,7 @@ export function OrdersConfig({
   );
   const [hours, setHours] = useState(1);
   const [busy, setBusy] = useState(false);
+  const [setupBusy, setSetupBusy] = useState(false);
   const [error, setError] = useState("");
   const lock = useRef(false);
   const metadata = useQuery({
@@ -167,6 +171,7 @@ export function OrdersConfig({
   ];
   const saveDisabled =
     busy ||
+    setupBusy ||
     !dirty ||
     (enabledNeedsConsent && !consent) ||
     (draft.enabled && (!referencesValid || !draft.field_mappings.length)) ||
@@ -335,6 +340,16 @@ export function OrdersConfig({
             </label>
           ))}
         </fieldset>
+        <OrdersMetadataSetup
+          key={JSON.stringify(scope)}
+          scope={scope}
+          available={config.publication_available === true}
+          targetLabel={moyLabel}
+          mappings={draft.field_mappings}
+          disabled={busy}
+          onBusy={setSetupBusy}
+          onMappings={(field_mappings) => change({ ...draft, field_mappings })}
+        />
         <details>
           <summary>Дополнительные поля и состояния</summary>
           <div className="orders-detail-body">

@@ -147,6 +147,12 @@ function mockAPI(
     if (custom) return custom;
     if (url.pathname.endsWith("/config")) return json(configuration());
     if (url.pathname.endsWith("/metadata")) return json(metadata);
+    if (url.pathname.endsWith("/metadata/registry"))
+      return json({
+        scope: orderScopeBody(scope),
+        revision: 0,
+        attributes: [],
+      });
     if (url.pathname.endsWith("/postings"))
       return json({ postings: [posting()] });
     if (url.pathname.endsWith("/operations")) return json({ operations: [] });
@@ -178,6 +184,7 @@ function mount(component = <Orders accountScope={scope} />) {
   };
 }
 afterEach(() => {
+  sessionStorage.clear();
   cleanup();
   vi.unstubAllGlobals();
 });
