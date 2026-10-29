@@ -428,3 +428,87 @@ provider traversals and distributed account-wide rate-limit coordination need
 further scaling work. New merchants remain read-only until separately eligible;
 this experiment establishes neither unrestricted publication nor production
 readiness.
+
+## Order workflow and multi-instance validation (2026-10-30)
+
+**SUCCESS:** two genuine historical cancelled FBS postings became two native
+MoySklad customerorders through the authenticated application, durable scheduler,
+PostgreSQL outbox and normal worker. Each create and subsequent attribute-only
+update had one dispatch and reached RECONCILED; native IDs, positions, exact
+prices/currency, accounting references and zero draft reserves were preserved.
+Three account-specific string attributes store commercial order ID, original
+status and substatus. A final two-order preview proposed no commands. Detailed
+operation IDs, bounded live request counts and provider outcomes are in the
+[live evidence](orders-live-evidence.md). No shipment, payment, refund or demand
+was created. Existing foreign reserve remained 3 against physical stock 10 in
+the before/after-create source imports; this is not an active-posting reserve test.
+
+The first attribute acknowledgement could not be interpreted and was recorded
+UNKNOWN. Exact-marker, type, account and UUID readback resolved it without another
+native POST. The original UNKNOWN result remains in the append-only history.
+The merchant UI now offers that read-only recovery explicitly, including after a
+new authenticated session. Attribute updates merge a complete fresh observation
+of owned STYK fields; unsupported or unowned native attributes block that update.
+Encrypted customer-detail retention is bounded and purged by scheduler workers
+even while publication is disabled. PII projection was off throughout this run.
+
+Migrations 45–48 were checked clean and on upgrade; live credentials, their key,
+existing mappings and historical stock UNKNOWN/audit were retained. Startup now
+rejects a recorded migration version whose required physical schema is missing.
+Account-wide provider pacing, in-flight limits, 429 cooldowns and stock-target
+spacing are coordinated in PostgreSQL across API and worker processes. A method
+403 remains local to that operation; denied delivery-method discovery retains
+verified warehouse facts and blocks method-dependent actions. Direct/session
+pooling is required for pinned session locks; transaction pooling is unsupported.
+Database fencing does not cancel an HTTP request already sent to a provider.
+
+The deterministic process gate used **3 API, 2 scheduler and 4 worker OS
+processes**, one PostgreSQL and two isolated authenticated merchants. It checked
+cross-node sessions/CSRF/revocation, concurrent approvals, UNKNOWN isolation,
+credential rotation, stale claims and kill/restart at four dispatch/readback
+boundaries. The race-enabled repeat passed in 98.89 seconds with 740 actual
+loopback provider attempts, minimum measured account gap 42.898015 ms against the
+synthetic 20 ms policy, and maximum in-flight 1. These are local-test measurements.
+Desktop/mobile Orders screens, both merchant browser modes, catalog synchronization,
+automatic stock/recovery and Shadow Mode browser regressions were inspected.
+
+Verification includes make test/lint/build, full Go race tests, default and
+integration-tag lint at **0 findings**, PostgreSQL integration/migration tests (**1,971 passing test/subtest events**),
+frontend typecheck/lint, **218 frontend tests**, build and browser E2E. The
+frontend build retains Vite's warning about the 610.85 kB minified main chunk.
+The [skip ledger](orders-test-skips.json) preserves each primary SKIP and its reason;
+64 were independently rerun successfully, three are parent-invoked subprocess
+entrypoints, and three optional legacy browser cases were not run individually.
+Initial fixture/schema/rollback-assertion failures were retained and corrected;
+no historical business result was rewritten to make a test pass.
+
+On ANALYZE'd disposable data, median-of-three review-context measurements
+(three operations per repeat) changed as follows. Both paths return at most 100
+selected postings; the older path materialized the full source set first.
+
+| Stored postings | Previous / bounded time | Previous / bounded allocation |
+|---:|---:|---:|
+| 100 | 10.83 / 9.00 ms | 6.66 / 5.56 MB |
+| 1,000 | 24.89 / 8.91 ms | 11.86 / 5.47 MB |
+| 10,000 | 177.94 / 9.23 ms | 132.14 / 5.47 MB |
+
+This measures local selection, not complete synchronization throughput or the
+unavailable provider-side change-to-read latency. Fair durable selection prevents
+the first 100 blocked/no-op postings from starving later targets.
+
+**PARTIAL / BLOCKED:** the [contract manifest](order-contract-manifest.json) and
+executable field/capability matrices distinguish implemented, verified, fixture,
+integration and live evidence. The 954 field rows are not 954 implemented
+projections. Full official Ozon fulfillment schemas remained inaccessible;
+ship/split/tracking/cancel/delivery/label mutation plans stay non-dispatchable.
+No actionable live FBS/rFBS/Express posting was available. rFBS stock writes,
+native position-collection replacement, protected buyer/address projection,
+automatic shipment/return documents and webhook ingestion are not delivered by
+this slice. Unsupported fields and actions remain explicit blockers. FBO is
+excluded. The supported native mirror is working; all seller-fulfilled profiles
+are not declared production-ready.
+
+The separate normal stock regression reconciled **0 → 1 → 0**. Final source and
+Ozon stock are zero, order configuration revision 8 is disabled, all temporary
+stock/catalog automation is off and no new external outcome is unresolved.
+Unapproved production accounts remain unable to publish.

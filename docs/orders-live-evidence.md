@@ -159,10 +159,11 @@ outbox task remains. Temporary publication flags and schedulers were removed.
 Latest normal APIs remain on loopback 8080/8082 with one combined worker for user
 testing; port 8081's unrelated process was preserved. No provider secrets are in
 their environment; the scoped Orders flag remains enabled with configuration off.
-The final API/worker binaries embed runtime commit `c8645a8`, including the reviewed
+The live-phase API/worker binaries embed runtime commit `c8645a8`, including the reviewed
 privacy-retention wiring; the dirty build marker reflects concurrent root-owned
-browser-test edits. Targeted API/worker builds passed. Full release checks remain
-the root agent's separate responsibility.
+browser-test edits. Targeted API/worker builds passed. The final clean release
+build and exact source revision are recorded separately in the private runtime
+manifest and final delivery; these live-phase observations are not rewritten.
 
 The initial [executable manifest](order-contract-manifest.json) byte SHA-256 was
 `10a3380688dd9f639ef0c3a4883ec3c481c102a29e5f1fe43446ff70c499a572`;
