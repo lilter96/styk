@@ -5,6 +5,12 @@ import { api, params, type Page, type Product, type Report } from "./api";
 import { useConfirmation, type Confirmation, type Scope } from "./Confirmation";
 import { ProductReview, type MappingTarget } from "./ProductReview";
 
+const eligibleForQueue = (product: Product) =>
+  product.archived === false &&
+  product.target_id === null &&
+  product.candidates.length > 0 &&
+  !product.candidates_truncated;
+
 const statuses: Record<string, { label: string; tone: string }> = {
   CONFIRMED: { label: "Подтверждено", tone: "ok" },
   ONE_CANDIDATE: { label: "Проверьте и подтвердите", tone: "blue" },
@@ -29,6 +35,7 @@ export function ProductMappingPage({
   const [mapping, setMapping] = useState("");
   const [offset, setOffset] = useState(0);
   const [selectedProducts, setSelectedProducts] = useState<Product[]>([]);
+  const [completed, setCompleted] = useState<string[]>([]);
   const ready = !!(scope.tenant && scope.moy && scope.ozon);
   const base = {
     tenant: scope.tenant,
@@ -80,6 +87,7 @@ export function ProductMappingPage({
   const reset = () => setOffset(0);
   useEffect(() => {
     setSelectedProducts([]);
+    setCompleted([]);
     setReview(null);
     setOffset(0);
   }, [scope.tenant, scope.moy, scope.ozon]);
@@ -193,34 +201,50 @@ export function ProductMappingPage({
             Проверьте каждую пару. Совпадение артикула не подтверждает, что это
             один товар; автоматического подтверждения нет.
           </p>
+          <p role="status">
+            Подтверждено: {completed.length} · Осталось проверить:{" "}
+            {selectedProducts.length - completed.length}
+          </p>
           <ul>
             {selectedProducts.map((product) => (
               <li key={product.product_id}>
+                {completed.includes(product.product_id) ? (
+                  <strong>
+                    Подтверждено: {product.offer_id || product.product_id}
+                  </strong>
+                ) : (
+                  <button
+                    className="text-action"
+                    disabled={!!activeConfirmation.pending}
+                    onClick={() => setReview(product)}
+                  >
+                    Проверить {product.offer_id || product.product_id}
+                  </button>
+                )}{" "}
+                {!completed.includes(product.product_id) && (
+                  <span>
+                    Предложения:{" "}
+                    {product.candidates
+                      .map(
+                        (c) =>
+                          `${c.name || c.id}${c.kind === "variant" ? " (вариант)" : ""}`,
+                      )
+                      .join(", ")}
+                  </span>
+                )}{" "}
                 <button
                   className="text-action"
-                  disabled={!!activeConfirmation.pending}
-                  onClick={() => setReview(product)}
-                >
-                  Проверить {product.offer_id || product.product_id}
-                </button>{" "}
-                <span>
-                  →{" "}
-                  {product.candidates
-                    .map(
-                      (c) =>
-                        `${c.name || c.id}${c.kind === "variant" ? " (вариант)" : ""}`,
-                    )
-                    .join(", ")}
-                </span>{" "}
-                <button
-                  className="text-action"
-                  onClick={() =>
+                  aria-label={`Убрать ${product.offer_id || product.product_id} из очереди`}
+                  onClick={() => {
                     setSelectedProducts((items) =>
                       items.filter(
                         (item) => item.product_id !== product.product_id,
                       ),
-                    )
-                  }
+                    );
+                    setCompleted((items) =>
+                      items.filter((id) => id !== product.product_id),
+                    );
+                  }}
                 >
                   Убрать
                 </button>
@@ -231,8 +255,7 @@ export function ProductMappingPage({
       )}
       {!ready ? (
         <div className="mapping-empty">
-          Выберите оба подключённых аккаунта, чтобы сопоставить
-          товары.
+          Выберите оба подключённых аккаунта, чтобы сопоставить товары.
         </div>
       ) : products.isLoading ? (
         <div className="mapping-empty" role="status">
@@ -248,12 +271,48 @@ export function ProductMappingPage({
           {mapping === "confirmed" && !search && !archived && offset === 0
             ? "Для этих аккаунтов пока нет подтверждённых соответствий. Выберите товар и проверьте его перед подтверждением."
             : "По этим условиям товары не найдены."}
+          {offset > 0 && (
+            <p>
+              <button onClick={() => setOffset(Math.max(0, offset - 50))}>
+                Назад к предыдущим товарам
+              </button>
+            </p>
+          )}
         </div>
       ) : (
         <section
           className="mapping-table-card"
           aria-label="Товары для сопоставления"
         >
+          <div className="mapping-queue-actions">
+            <button
+              disabled={
+                selectedProducts.length >= 100 ||
+                !products.data.items.some(
+                  (product) =>
+                    eligibleForQueue(product) &&
+                    !selectedProducts.some(
+                      (item) => item.product_id === product.product_id,
+                    ),
+                )
+              }
+              onClick={() =>
+                setSelectedProducts((items) => {
+                  const additions = products.data.items.filter(
+                    (product) =>
+                      eligibleForQueue(product) &&
+                      !items.some(
+                        (item) => item.product_id === product.product_id,
+                      ),
+                  );
+                  return [...items, ...additions.slice(0, 100 - items.length)];
+                })
+              }
+            >
+              Выбрать предложения на странице
+            </button>
+            <span>До 100 товаров в очереди</span>
+          </div>
           <div
             className="mapping-table-scroll"
             tabIndex={0}
@@ -283,10 +342,7 @@ export function ProductMappingPage({
                   return (
                     <tr key={product.product_id}>
                       <td data-label="Проверить">
-                        {product.archived === false &&
-                        product.target_id === null &&
-                        product.candidates.length > 0 &&
-                        !product.candidates_truncated ? (
+                        {eligibleForQueue(product) ? (
                           <input
                             type="checkbox"
                             aria-label={`Выбрать ${product.offer_id || product.product_id} для проверки`}
@@ -300,7 +356,7 @@ export function ProductMappingPage({
                                   item.product_id === product.product_id,
                               )
                             }
-                            onChange={(e) =>
+                            onChange={(e) => {
                               setSelectedProducts((items) =>
                                 e.target.checked
                                   ? [...items, product]
@@ -308,8 +364,15 @@ export function ProductMappingPage({
                                       (item) =>
                                         item.product_id !== product.product_id,
                                     ),
-                              )
-                            }
+                              );
+                              if (!e.target.checked) {
+                                setCompleted((items) =>
+                                  items.filter(
+                                    (id) => id !== product.product_id,
+                                  ),
+                                );
+                              }
+                            }}
                           />
                         ) : (
                           <span aria-label="Нет предложений для групповой проверки">
@@ -326,7 +389,7 @@ export function ProductMappingPage({
                           <span>
                             {target?.name ||
                               (product.target_id
-                                ? "Товар МойСклад выбран"
+                                ? `Товар МойСклад: ${product.target_id}`
                                 : "Выберите товар МойСклад")}
                           </span>
                           <span aria-hidden="true">⌄</span>
@@ -340,8 +403,15 @@ export function ProductMappingPage({
                       </td>
                       <td data-label="Товар в Ozon">
                         <strong>
-                          {product.offer_id || `Товар ${product.product_id}`}
+                          {(product as Product & { name?: string }).name ||
+                            product.offer_id ||
+                            `Товар ${product.product_id}`}
                         </strong>
+                        {(product as Product & { name?: string }).name &&
+                          product.offer_id && (
+                            <small>Offer ID: {product.offer_id}</small>
+                          )}
+                        <small>ID товара: {product.product_id}</small>
                         {product.sku && <small>SKU: {product.sku}</small>}
                         {product.archived === true && <small>В архиве</small>}
                       </td>
@@ -392,11 +462,23 @@ export function ProductMappingPage({
           close={() => {
             if (
               activeConfirmation.result &&
-              activeConfirmation.resultContext?.product === review.product_id
+              activeConfirmation.resultContext?.intent.kind === "product" &&
+              activeConfirmation.resultContext.scope.tenant === scope.tenant &&
+              activeConfirmation.resultContext.scope.moy === scope.moy &&
+              activeConfirmation.resultContext.scope.ozon === scope.ozon &&
+              activeConfirmation.resultContext.product === review.product_id
             ) {
-              setSelectedProducts((items) =>
-                items.filter((item) => item.product_id !== review.product_id),
-              );
+              if (
+                selectedProducts.some(
+                  (item) => item.product_id === review.product_id,
+                )
+              ) {
+                setCompleted((items) =>
+                  items.includes(review.product_id)
+                    ? items
+                    : [...items, review.product_id],
+                );
+              }
             }
             setReview(null);
           }}

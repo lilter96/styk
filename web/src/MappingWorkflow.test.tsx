@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { ProductMappingPage as Products } from "./ProductMappingPage";
+import type { Product } from "./api";
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -48,6 +49,7 @@ function setup(
   conflict = false,
   lost = false,
   counts: Record<string, number> = {},
+  products: Product[] = [product],
 ) {
   let confirmed = false;
   let confirmationAttempts = 0;
@@ -114,7 +116,7 @@ function setup(
           MappingConflict: conflict,
         });
       if (init?.method === "POST") throw new Error("unexpected post");
-      return response({ items: [product], offset: 0, has_next: false });
+      return response({ items: products, offset: 0, has_next: false });
     });
   render(
     <QueryClientProvider
@@ -325,4 +327,58 @@ it("queues several suggestions for individual review without confirming them", a
     false,
   );
   client.clear();
+});
+
+it("keeps successful and remaining items visible after an individual confirmation", async () => {
+  const candidates = [
+    {
+      kind: "variant",
+      id: "v",
+      name: "Synthetic variant",
+      evidence: ["article"],
+    },
+  ];
+  const mock = setup("CURRENT", false, false, {}, [
+    {
+      ...product,
+      candidates,
+      candidate_count: 1,
+      match_status: "ONE_CANDIDATE",
+    },
+    {
+      ...product,
+      product_id: "p2",
+      offer_id: "second",
+      candidates,
+      candidate_count: 1,
+      match_status: "ONE_CANDIDATE",
+    },
+  ]);
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Выбрать предложения на странице",
+    }),
+  );
+  fireEvent.click(screen.getByText("Выбрано для проверки: 2"));
+  await createReview();
+  fireEvent.click(
+    screen.getByLabelText(/Подтверждаю, что это один и тот же товар/),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Подтвердить соответствие" }),
+  );
+  await screen.findByText(
+    "Соответствие сохранено. Это подтверждение не включает публикацию остатков.",
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Закрыть сопоставление" }),
+  );
+  expect(
+    screen.getByText("Подтверждено: 1 · Осталось проверить: 1"),
+  ).toBeTruthy();
+  expect(screen.getByText("Подтверждено: offer")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Проверить second" })).toBeTruthy();
+  expect(
+    mock.mock.calls.filter(([path]) => String(path).endsWith("/confirm")),
+  ).toHaveLength(1);
 });
