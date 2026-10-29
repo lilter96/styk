@@ -578,3 +578,86 @@ it("shows a direct first-import action that requires explicit confirmation", asy
     false,
   );
 });
+
+it("does not mark setup complete when connection verification is missing", async () => {
+  const now = new Date(),
+    future = new Date(now.getTime() + 3600000).toISOString();
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    const path = String(input);
+    let data: unknown;
+    if (path.includes("/api/stock-sync/automatic?"))
+      data = {
+        available: true,
+        policy: {
+          revision: 1,
+          enabled: true,
+          valid_until: future,
+          interval_seconds: 60,
+          targets: [],
+        },
+        last_cycle: {
+          id: "cycle",
+          config_revision: 1,
+          state: "COMPLETE",
+          outcome: "NO_CHANGE",
+          metrics: { blocked_targets: 0 },
+        },
+      };
+    else if (path.includes("/api/stock-sync?"))
+      data = {
+        tenant,
+        moysklad_account: selected.moy,
+        ozon_account: selected.ozon,
+        enabled: true,
+        ready: true,
+        state: "RECONCILED",
+        publication_available: true,
+        test_account_mode: true,
+        targets: [],
+        checks: [],
+      };
+    else if (path.includes("/api/imports?"))
+      data = { items: [], has_next: false, offset: 0 };
+    else if (path.includes("/credentials?"))
+      data = { storage_available: false };
+    else
+      data = {
+        providers: [
+          {
+            provider: "moysklad",
+            account: selected.moy,
+            status: "CONFIGURED_NOT_VERIFIED",
+            registration: "REGISTERED",
+            import: batch,
+          },
+          {
+            provider: "ozon",
+            account: selected.ozon,
+            status: "CONFIGURED_NOT_VERIFIED",
+            registration: "REGISTERED",
+            import: batch,
+          },
+        ],
+      };
+    return new Response(JSON.stringify(data), { status: 200 });
+  });
+  mount({
+    accounts,
+    selected,
+    report: {
+      ...report,
+      mapping_counts: {
+        catalog_confirmed_products: 1,
+        catalog_products: 2,
+        confirmed_warehouses: 1,
+      },
+    },
+  });
+  const panel = await screen.findByRole("region", {
+    name: "Настройка синхронизации",
+  });
+  await waitFor(() =>
+    expect(within(panel).getByText("Шаг 1 из 5")).toBeTruthy(),
+  );
+  expect(within(panel).queryByText("Все шаги выполнены")).toBeNull();
+});

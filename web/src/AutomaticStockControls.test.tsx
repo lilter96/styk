@@ -364,3 +364,49 @@ it("requires separate consent when Ozon has no stock observation", async () => {
     }),
   ]);
 });
+
+it("shows a reconciled initial write even before the catalog snapshot refreshes", async () => {
+  const first = {
+    ...target,
+    offer_id: "new-offer",
+    eligible: false,
+    initial_eligible: false,
+    marketplace_free: undefined,
+    last_state: "RECONCILED",
+    readback_quantity: "1",
+    readback_at: "2026-10-29T13:00:01Z",
+  };
+  setup({
+    available: true,
+    candidates: [first],
+    policy: {
+      revision: 2,
+      enabled: true,
+      interval_seconds: 60,
+      valid_until: new Date(Date.now() + 3600000).toISOString(),
+      targets: [first],
+    },
+    last_cycle: {
+      id: "initial",
+      config_revision: 2,
+      state: "COMPLETE",
+      outcome: "RECONCILED",
+      started_at: "2026-10-29T13:00:00Z",
+      metrics: {
+        blocked_targets: 0,
+        target_results: {
+          "101:201": {
+            outcome: "RECONCILED",
+            candidate: "1",
+            readback_quantity: "1",
+            marketplace_free: null,
+          },
+        },
+      },
+    },
+  });
+  expect(await screen.findByText("Сверены выбранные товары")).toBeTruthy();
+  fireEvent.click(screen.getByText(/Товаров в настройке: 1/));
+  expect(screen.getByText(/new-offer.*Сверено/)).toBeTruthy();
+  expect(screen.getByText(/сверена отдельным чтением Ozon/)).toBeTruthy();
+});

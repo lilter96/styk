@@ -44,7 +44,7 @@ test("automatic test policy imports, publishes, reconciles, avoids a duplicate a
     .getByRole("button", { name: "Включить автоматическую проверку" })
     .click();
   await expect(
-    card.getByText("Ozon подтвердил актуальный остаток."),
+    card.getByText("Последняя отправка сверена с данными Ozon."),
   ).toBeVisible({ timeout: 30000 });
   await expect(card.getByText(/МойСклад: 7 шт/)).toBeVisible();
   await expect(card.getByText(/Ozon: 7/)).toBeVisible();

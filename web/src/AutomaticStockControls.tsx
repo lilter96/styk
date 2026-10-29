@@ -64,7 +64,7 @@ type AutoView = {
 
 const outcomes: Record<string, string> = {
   NO_CHANGE: "Остатки совпадают — отправка не потребовалась.",
-  RECONCILED: "Ozon подтвердил актуальный остаток.",
+  RECONCILED: "Последняя отправка сверена с данными Ozon.",
   PUBLICATION_UNKNOWN:
     "Ответ Ozon не подтверждён. Уточните результат предыдущей отправки.",
   PUBLICATION_REJECTED:

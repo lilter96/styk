@@ -388,7 +388,11 @@ export function Integrations({
         <div className="setup-heading">
           <h2>Настройка синхронизации</h2>
           <span>
-            {firstCheckCompleted && productsMapped && warehousesMapped
+            {connected.length === 2 &&
+            bothReady &&
+            firstCheckCompleted &&
+            productsMapped &&
+            warehousesMapped
               ? "Все шаги выполнены"
               : `Шаг ${setupStep} из 5`}
           </span>
