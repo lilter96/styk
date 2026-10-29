@@ -75,8 +75,12 @@ test("two merchants register, use independent accounts and stay isolated", async
     b.getByText(/Публикация остатков ожидает отдельной активации/),
   ).toBeVisible();
   await b.getByRole("link", { name: "Товары", exact: true }).click();
-  await expect(b.getByText("Товар Ozon для проверки", { exact: true })).toBeVisible();
-  await expect(b.getByText("Offer ID: B-TEST-OFFER", { exact: true })).toBeVisible();
+  await expect(
+    b.getByText("Товар Ozon для проверки", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    b.getByText("Offer ID: B-TEST-OFFER", { exact: true }),
+  ).toBeVisible();
   await expect(b.getByText("ATEST-897677", { exact: true })).toHaveCount(0);
   await b.getByRole("button", { name: /^Сопоставить / }).click();
   await b.getByLabel("Поиск товара МойСклад").fill("Тестовый товар");
@@ -195,6 +199,7 @@ test("two merchants register, use independent accounts and stay isolated", async
     );
     expect(unauthorizedEnable.status()).toBeGreaterThanOrEqual(400);
   }
+  await checkOrderEvidence(b, bTenant);
   const shots =
     process.env.STYK_MERCHANT_SCREENSHOTS_DIR ||
     "/tmp/styk-merchant-workspaces";
@@ -241,6 +246,71 @@ test("two merchants register, use independent accounts and stay isolated", async
   await aContext.close();
   await bContext.close();
 });
+
+async function checkOrderEvidence(page: Page, tenant: string) {
+  const query = new URLSearchParams({
+    tenant,
+    moysklad_account: bMoy,
+    ozon_account: bOzon,
+    product: "202",
+    warehouse: "1020001323428000",
+  });
+  const evidenceURL = `${origin}/api/stock-sync/order-evidence?${query}`;
+  const openEvidence = async () => {
+    await page.getByRole("button", { name: "Проверить остатки" }).click();
+    const dialog = page.getByRole("dialog", { name: "Проверка остатков" });
+    const target = dialog
+      .locator(".shadow-target")
+      .filter({ hasText: "Тестовый товар" });
+    await expect(target).toBeVisible();
+    await target.getByText("Заказы и резервы", { exact: true }).click();
+    await expect(
+      target.getByText(/не доказывает отсутствие обязательств/),
+    ).toBeVisible();
+    return target;
+  };
+  let target = await openEvidence();
+  await target.getByLabel("Период проверки").selectOption("1");
+  await target.getByRole("button", { name: "Проверить заказы" }).click();
+  await expect(
+    target.getByText("Проверка обоих сервисов за выбранный период завершена."),
+  ).toBeVisible({ timeout: 60_000 });
+  const firstResponse = await page.request.get(evidenceURL);
+  expect(firstResponse.ok()).toBe(true);
+  const first = await firstResponse.json();
+  expect(first.source_batch_id).toBeGreaterThan(0);
+  expect(first.posting_batch_id).toBeGreaterThan(0);
+  expect(first.progress).toMatchObject({
+    window_hours: 1,
+    source_status: "COMPLETED",
+    posting_status: "COMPLETED",
+  });
+  await page.reload();
+  await selectAccounts(page, bMoy, bOzon);
+  await page.getByRole("link", { name: "Интеграции", exact: true }).click();
+  target = await openEvidence();
+  await expect(target.getByText(/проверка завершена/)).toBeVisible();
+  await expect(
+    target.getByText(/не являются снимком состояния на один момент/),
+  ).toBeVisible();
+  await expect(
+    target.getByText(/МойСклад: период проверен полностью/),
+  ).toBeVisible();
+  await expect(
+    target.getByText(/Ozon: период проверен полностью/),
+  ).toBeVisible();
+  const afterResponse = await page.request.get(evidenceURL);
+  expect(afterResponse.ok()).toBe(true);
+  const after = await afterResponse.json();
+  expect(after.source_batch_id).toBe(first.source_batch_id);
+  expect(after.posting_batch_id).toBe(first.posting_batch_id);
+  expect(after.progress.from).toBe(first.progress.from);
+  expect(after.progress.to).toBe(first.progress.to);
+  await page
+    .getByRole("dialog", { name: "Проверка остатков" })
+    .getByRole("button", { name: "Закрыть" })
+    .click();
+}
 
 async function register(page: Page, email: string, slow = false) {
   await page.goto(origin + "/");
@@ -351,7 +421,9 @@ async function login(page: Page, email: string) {
   await page.getByLabel("Электронная почта").fill(email);
   await page.getByLabel("Пароль").fill(password);
   await page.getByRole("button", { name: "Войти", exact: true }).click();
-  await expect(page.getByRole("link", { name: "Интеграции", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Интеграции", exact: true }),
+  ).toBeVisible();
 }
 
 async function selectAccounts(page: Page, moy: string, ozon: string) {
