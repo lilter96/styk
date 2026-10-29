@@ -147,7 +147,7 @@ func (s *Store) CreateWarehouseReview(ctx context.Context, in domain.WarehouseRe
 	if snap.Conflict {
 		return domain.WarehouseReviewResult{}, ErrReviewConflict
 	}
-	if snap.IsRFBS == nil || *snap.IsRFBS {
+	if !warehouseReviewStockSupported(domain.StockSyncScope{Tenant: in.Tenant, MoyskladAccount: in.MoyskladAccount, OzonAccount: in.OzonAccount}, snap) {
 		return domain.WarehouseReviewResult{}, ErrReviewEvidence
 	}
 	var b [16]byte
@@ -224,7 +224,7 @@ func evaluateWarehouseReview(ctx context.Context, tx pgx.Tx, stored storedWareho
 		status = "STALE_SOURCE"
 	} else if err != nil {
 		return "", snap, err
-	} else if snap.MoyID != r.MoyskladImportID || snap.OzonID != r.OzonImportID || snap.MoyFingerprint != stored.moyFingerprint || snap.OzonFingerprint != stored.ozonFingerprint || warehouseObservationHash(snap) != stored.observationHash || snap.IsRFBS == nil || *snap.IsRFBS {
+	} else if snap.MoyID != r.MoyskladImportID || snap.OzonID != r.OzonImportID || snap.MoyFingerprint != stored.moyFingerprint || snap.OzonFingerprint != stored.ozonFingerprint || warehouseObservationHash(snap) != stored.observationHash || !warehouseReviewStockSupported(domain.StockSyncScope{Tenant: r.Tenant, MoyskladAccount: r.MoyskladAccount, OzonAccount: r.OzonAccount}, snap) {
 		status = "STALE_SOURCE"
 	} else if snap.Conflict || warehouseMappingHash(snap) != stored.mappingHash || pointerInt64Changed(r.ExistingMappingID, snap.MappingID) || pointerIntChanged(r.ExistingMappingVersion, snap.MappingVersion) {
 		status = "STALE_MAPPING"

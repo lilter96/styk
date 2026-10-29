@@ -228,6 +228,7 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 		if err = loadStockObservations(ctx, tx, r, &e); err != nil {
 			return review, err
 		}
+		recordStockContractEvidence(&e)
 		// An explicitly enrolled first publication is a takeover with unknown
 		// marketplace balance and reserve, never an inferred zero. It requires a
 		// successful scoped traversal; its one-shot entitlement is consumed
@@ -288,9 +289,13 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 				JOIN product_mapping_history h ON h.mapping_id=$5 AND h.version=$6
 				JOIN ozon_product_observations original ON original.import_id=h.ozon_import_id AND original.product_id=h.ozon_product_id AND original.offer_id=h.ozon_offer_id AND original.sku=p.sku
 				WHERE p.import_id=$1 AND p.product_id=$2 AND p.offer_id=$3 AND p.archived=false AND p.sku IS NOT NULL
-				AND ($11::boolean OR EXISTS(SELECT 1 FROM ozon_fbs_stock_observations s WHERE s.import_id=p.import_id AND s.product_id=p.product_id AND s.offer_id=p.offer_id AND s.sku=p.sku AND s.warehouse_id=$4))
+				AND ($10::boolean OR EXISTS(SELECT 1 FROM ozon_fbs_stock_observations s WHERE s.import_id=p.import_id AND s.product_id=p.product_id AND s.offer_id=p.offer_id AND s.sku=p.sku AND s.warehouse_id=$4))
 				AND (NOT $7::boolean OR (p.offer_id=$8 AND p.sku=$9))
-			), EXISTS(SELECT 1 FROM ozon_warehouse_observations WHERE import_id=$1 AND warehouse_id=$4 AND is_rfbs=false AND (NOT $10::boolean OR status='created'))`, *e.Marketplace.ImportID, t.pid, e.ProductMapping.OfferID, t.wid, e.ProductMapping.ID, e.ProductMapping.Version, legacyManualTest, testpublication.OzonOffer, testpublication.OzonSKU, testpublication.Enabled(scope), initial).Scan(&productIdentity, &warehouseIdentity)
+			)`, *e.Marketplace.ImportID, t.pid, e.ProductMapping.OfferID, t.wid, e.ProductMapping.ID, e.ProductMapping.Version, legacyManualTest, testpublication.OzonOffer, testpublication.OzonSKU, initial).Scan(&productIdentity)
+			if err != nil {
+				return review, err
+			}
+			warehouseIdentity, err = readStockWarehouseSupported(ctx, tx, scope, *e.Marketplace.ImportID, t.wid, automaticTarget != nil && automaticValid, testpublication.Enabled(scope))
 			if err != nil {
 				return review, err
 			}
@@ -298,7 +303,7 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 		checks = append(checks,
 			domain.StockSyncCheck{Code: "SOURCE_IDENTITY_UNCONFIRMED", Passed: sourceIdentity, Message: "Товар и склад присутствуют в актуальной загрузке МойСклад."},
 			domain.StockSyncCheck{Code: "CATALOG_IDENTITY_CHANGED", Passed: productIdentity, Message: "Товар, предложение и SKU совпадают с подтверждённым соответствием."},
-			domain.StockSyncCheck{Code: "WAREHOUSE_SCHEMA_UNCONFIRMED", Passed: warehouseIdentity, Message: "Актуальная загрузка подтверждает склад FBS."},
+			domain.StockSyncCheck{Code: "WAREHOUSE_SCHEMA_UNCONFIRMED", Passed: warehouseIdentity, Message: "Актуальная загрузка и выбранная политика подтверждают склад для работы с остатками."},
 		)
 		// Batch finish timestamps are not per-row observation times. An
 		// operator assertion after a traversal started cannot prove what was

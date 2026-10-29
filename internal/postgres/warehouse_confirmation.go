@@ -80,7 +80,7 @@ func (s *Store) ConfirmWarehouseReview(ctx context.Context, req domain.MappingCo
 	if snapshot.Conflict || snapshot.MappingID != nil {
 		return domain.MappingConfirmationResult{}, ErrMappingConflict
 	}
-	if snapshot.IsRFBS == nil || *snapshot.IsRFBS {
+	if !warehouseReviewStockSupported(domain.StockSyncScope{Tenant: r.Tenant, MoyskladAccount: r.MoyskladAccount, OzonAccount: r.OzonAccount}, snapshot) {
 		return domain.MappingConfirmationResult{}, ErrReviewStale
 	}
 	if !time.Now().Before(r.ExpiresAt) {

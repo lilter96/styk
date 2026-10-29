@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jackc/pgx/v5"
+	"github.com/lilter96/styk/internal/domain"
 	"strings"
 )
 
@@ -47,12 +48,19 @@ func (s *Store) ConfirmWarehouseMapping(ctx context.Context, scope MatchScope, m
 		return false, err
 	}
 	var valid bool
-	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM source_entities WHERE import_id=$1 AND kind='store' AND external_id=$2) AND EXISTS(SELECT 1 FROM ozon_warehouse_observations WHERE import_id=$3 AND warehouse_id=$4 AND is_rfbs=false)`, mi, moyID, oi, ozonID).Scan(&valid)
+	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM source_entities WHERE import_id=$1 AND kind='store' AND external_id=$2)`, mi, moyID).Scan(&valid)
 	if err != nil {
 		return false, err
 	}
 	if !valid {
-		return false, errors.New("warehouse missing from latest import or Ozon warehouse not confirmed FBS")
+		return false, errors.New("source warehouse missing from latest import")
+	}
+	valid, err = readStockWarehouseSupported(ctx, tx, domain.StockSyncScope{Tenant: scope.Tenant, MoyskladAccount: scope.MoyskladAccount, OzonAccount: scope.OzonAccount}, oi, ozonID, true, false)
+	if err != nil {
+		return false, err
+	}
+	if !valid {
+		return false, errors.New("warehouse stock capability is unconfirmed")
 	}
 	var id int64
 	err = tx.QueryRow(ctx, `INSERT INTO warehouse_mappings(tenant_id,moysklad_account,ozon_account,moysklad_warehouse_id,ozon_warehouse_id,status,version,provenance) VALUES($1,$2,$3,$4,$5,'active',1,$6) RETURNING id`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, moyID, ozonID, provenance).Scan(&id)

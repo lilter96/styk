@@ -183,6 +183,9 @@ func (s *Store) ConfigureAutomaticStock(ctx context.Context, req domain.Automati
 			if kind != "product" && kind != "variant" {
 				return domain.AutomaticStockView{}, domain.ErrStockSyncBlocked
 			}
+			if err = requireAutomaticWarehouseCapability(ctx, tx, scope, t.WarehouseID); err != nil {
+				return domain.AutomaticStockView{}, err
+			}
 			var fenced bool
 			if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_publication_target_fences WHERE ozon_account=$1 AND product_id=$2 AND warehouse_id=$3)`, scope.OzonAccount, t.ProductID, t.WarehouseID).Scan(&fenced); err != nil {
 				return domain.AutomaticStockView{}, err
@@ -253,11 +256,11 @@ func (s *Store) AutomaticStockStatus(ctx context.Context, scope domain.StockSync
 	rows, err := s.Pool.Query(ctx, `SELECT pm.ozon_product_id,wm.ozon_warehouse_id,pm.ozon_offer_id,pm.target_id,(p.product_id IS NOT NULL AND stock.product_id IS NOT NULL AND wh.warehouse_id IS NOT NULL),
 		(p.product_id IS NOT NULL AND wh.warehouse_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM ozon_fbs_stock_observations x WHERE x.import_id=p.import_id AND x.product_id=p.product_id AND x.warehouse_id=wm.ozon_warehouse_id)
 		 AND NOT EXISTS(SELECT 1 FROM stock_publication_target_fences f WHERE f.ozon_account=pm.ozon_account AND f.product_id=pm.ozon_product_id AND f.warehouse_id=wm.ozon_warehouse_id)
-		 AND NOT EXISTS(SELECT 1 FROM stock_publication_targets t WHERE t.ozon_account=pm.ozon_account AND t.product_id=pm.ozon_product_id AND t.warehouse_id=wm.ozon_warehouse_id AND t.dispatched_at IS NOT NULL)),src.stock::text,src.reserve::text,stock.free_stock,last.operation_id,last.state,last.quantity,last.readback_quantity,last.readback_at
+		 AND NOT EXISTS(SELECT 1 FROM stock_publication_targets t WHERE t.ozon_account=pm.ozon_account AND t.product_id=pm.ozon_product_id AND t.warehouse_id=wm.ozon_warehouse_id AND t.dispatched_at IS NOT NULL)),src.stock::text,src.reserve::text,stock.free_stock,last.operation_id,last.state,last.quantity,last.readback_quantity,last.readback_at,COALESCE(wh.warehouse_type,''),COALESCE(wh.status,''),wh.is_rfbs
 		FROM product_mappings pm JOIN warehouse_mappings wm ON wm.tenant_id=pm.tenant_id AND wm.moysklad_account=pm.moysklad_account AND wm.ozon_account=pm.ozon_account AND wm.status='active'
 		LEFT JOIN ozon_product_observations p ON p.import_id=(SELECT max(id) FROM source_imports WHERE source='ozon' AND account_id=$3) AND p.product_id=pm.ozon_product_id AND p.offer_id=pm.ozon_offer_id AND p.archived=false AND p.sku IS NOT NULL
 		LEFT JOIN ozon_fbs_stock_observations stock ON stock.import_id=p.import_id AND stock.product_id=p.product_id AND stock.offer_id=p.offer_id AND stock.sku=p.sku AND stock.warehouse_id=wm.ozon_warehouse_id
-		LEFT JOIN ozon_warehouse_observations wh ON wh.import_id=p.import_id AND wh.warehouse_id=wm.ozon_warehouse_id AND wh.is_rfbs=false AND wh.status='created'
+		LEFT JOIN ozon_warehouse_observations wh ON wh.import_id=p.import_id AND wh.warehouse_id=wm.ozon_warehouse_id
 		LEFT JOIN source_warehouse_stock_observations src ON src.import_id=(SELECT max(id) FROM source_imports WHERE source='moysklad' AND account_id=$2) AND src.kind=pm.target_kind AND src.external_id=pm.target_id AND src.warehouse_id=wm.moysklad_warehouse_id
 		LEFT JOIN LATERAL (SELECT t.operation_id,t.state,t.quantity,t.readback_quantity,t.readback_at FROM stock_publications pub JOIN stock_publication_targets t ON t.operation_id=pub.id WHERE pub.tenant_id=$1 AND pub.moysklad_account=$2 AND pub.ozon_account=$3 AND t.product_id=pm.ozon_product_id AND t.warehouse_id=wm.ozon_warehouse_id ORDER BY pub.created_at DESC,t.id DESC LIMIT 1) last ON true
 		WHERE pm.tenant_id=$1 AND pm.moysklad_account=$2 AND pm.ozon_account=$3 ORDER BY pm.ozon_product_id,wm.ozon_warehouse_id LIMIT 100`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount)
@@ -266,10 +269,13 @@ func (s *Store) AutomaticStockStatus(ctx context.Context, scope domain.StockSync
 	}
 	for rows.Next() {
 		var c domain.AutomaticStockCandidate
-		if err = rows.Scan(&c.ProductID, &c.WarehouseID, &c.OfferID, &c.SourceItemID, &c.Eligible, &c.InitialEligible, &c.SourcePhysical, &c.SourceReserve, &c.MarketplaceFree, &c.LastOperationID, &c.LastState, &c.LastQuantity, &c.ReadbackQuantity, &c.ReadbackAt); err != nil {
+		var facts stockWarehouseFacts
+		if err = rows.Scan(&c.ProductID, &c.WarehouseID, &c.OfferID, &c.SourceItemID, &c.Eligible, &c.InitialEligible, &c.SourcePhysical, &c.SourceReserve, &c.MarketplaceFree, &c.LastOperationID, &c.LastState, &c.LastQuantity, &c.ReadbackQuantity, &c.ReadbackAt, &facts.kind, &facts.status, &facts.rfbs); err != nil {
 			rows.Close()
 			return view, err
 		}
+		supported := facts.policySupported(scope, true, true)
+		c.Eligible, c.InitialEligible = c.Eligible && supported, c.InitialEligible && supported
 		view.Candidates = append(view.Candidates, c)
 	}
 	err = rows.Err()
