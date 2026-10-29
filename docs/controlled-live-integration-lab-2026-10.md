@@ -235,3 +235,35 @@ The bounded order-evidence workflow persisted a one-hour MoySklad traversal as b
 This continuation used **50 MoySklad reads and 2 writes**, and **26 Ozon reads and 4 writes**, including provider requests made by the worker and both order checks. All four automatic cycles recorded zero rate-limit responses. No additional provider requests were made after the read budget was exhausted. The ordinary product's existing mapping was recognized without recreation. Missing-row and UNKNOWN isolation were also exercised with deterministic multi-target fixtures; a live blocked target was not deliberately induced. Desktop and mobile browser views were inspected against the actual account data; deterministic browser tests used the real application, PostgreSQL, scheduler and worker with local provider transports.
 
 The guided status is derived from existing registrations, imports, mapping records and the current policy/cycle rather than a second onboarding database. Suggestions are bounded per page and still require individual reviewed confirmation; selecting a group does not silently confirm it. Ozon product names are not part of the existing catalog import, so name-based lookup covers mapped or identifier-suggested MoySklad names rather than arbitrary Ozon names. Order checks are bounded and operator-initiated; they do not provide complete, continuously refreshed order coverage. The application remains a local-operator test integration with an exact-account publication exception, not an unrestricted merchant rollout.
+
+## Single-owner merchant account verification (2026-10-29)
+
+Migration 39 preserved the `cross-e2e` tenant identifier, its two encrypted
+provider credentials, four product mappings and 20 existing publications. The
+verified historical owner was explicitly bound to that account with the local
+migration command. Its other, empty registration-created tenant and all audit
+history remain intact; the existing encryption key was unchanged. A protected
+local PostgreSQL backup was made before migration.
+
+The owner signed in through the merchant UI without selecting an account.
+Merchant-authenticated imports completed through the normal worker: MoySklad
+operation `34916a78bc1ad3bbf362903484e03536` (batch 30, 5 attempts) and Ozon
+operation `10ccc2caec2897dc487b4337c32193f8` (batch 34, 4 attempts). The
+existing ordinary target began at source physical/reserve 0/0 and Ozon free 0.
+The owner enabled an operator-attested policy for that single target via React
+(revision 16, maximum 1); the first scheduled cycle was a write-free no-op.
+
+| Source change | Automatic publication | Ozon result | Reconciliation |
+|---|---|---|---|
+| 0 → 1, MoySklad entry `9df967a1-d3c8-11f1-0a80-16cf00027307` | `d139ee8d31186e45b9ac06394eed86e7` | HTTP 200, `updated=true`, no errors | free 1, `RECONCILED` |
+| 1 → 0, MoySklad loss `b26e4938-d3c8-11f1-0a80-1d6800025bb6` | `c9258b6efc24815b907dbaded0b98dfb` | HTTP 200, `updated=true`, no errors | free 0, `RECONCILED` |
+
+Each publication had one outbox attempt. The merchant session is recorded in
+the policy audit. Before each source document, an exact-target Ozon read
+observed reserve 0 and the expected free stock. The bounded run used 28
+MoySklad reads and two document writes, and 20 Ozon reads and two stock writes;
+no rate-limit response was recorded. The automatic policy was disabled via
+React at revision 17 after the final reconciliation. The prior superseded
+UNKNOWN remains historical; no new publication outcome is unresolved. The
+fixed-scope test mode is separate from the default-off production publication
+policy, and these test observations do not establish production readiness.
