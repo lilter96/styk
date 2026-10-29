@@ -40,6 +40,9 @@ test("explicit manual variant confirmation survives a lost response and persists
   await expect(page.getByText(/Parent product: parent/)).toBeVisible();
   await page.getByRole("button", { name: "Create review" }).click();
   await expect(page.getByText("Durable review")).toBeVisible();
+  await expect(page.locator(".review-confirmation time[datetime]")).toHaveCount(
+    2,
+  );
   await expect(
     page.getByRole("button", { name: "Confirm mapping" }),
   ).toBeDisabled();
@@ -58,7 +61,7 @@ test("explicit manual variant confirmation survives a lost response and persists
       "docker",
       [
         "exec",
-        "styk-live-fixture-test",
+        process.env.STYK_E2E_PG_CONTAINER || "styk-live-fixture-test",
         "psql",
         "-U",
         "postgres",

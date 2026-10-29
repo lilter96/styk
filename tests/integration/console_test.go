@@ -247,3 +247,144 @@ func TestConsoleHistoryRespectsImportHistoryRegistration(t *testing.T) {
 		t.Fatal("pre-registration mapping history was exposed")
 	}
 }
+
+func TestWarehouseReviewScopesEvidenceAndIsReadOnly(t *testing.T) {
+	f := newStockFixture(t)
+	ctx := context.Background()
+	ms := f.source
+	ms.Entities = append(ms.Entities, domain.ExternalEntity{Kind: "store", ID: "new-source", Name: "Synthetic source"})
+	ms.StartedAt, ms.FinishedAt = time.Now(), time.Now()
+	oz := f.ozon
+	fbs := false
+	oz.Warehouses = append(oz.Warehouses, domain.OzonWarehouse{ID: "new-target", Name: "Synthetic FBS", IsRFBS: &fbs})
+	oz.StartedAt, oz.FinishedAt = time.Now(), time.Now()
+	if _, err := f.store.SaveInventoryImport(ctx, ms, "warehouse-review-new-source"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.store.SaveOzonImport(ctx, oz, "warehouse-review-new-target"); err != nil {
+		t.Fatal(err)
+	}
+	var initialTasks int
+	if err := f.store.Pool.QueryRow(ctx, `SELECT count(*) FROM outbox_tasks`).Scan(&initialTasks); err != nil {
+		t.Fatal(err)
+	}
+	secret := strings.Repeat("w", 32)
+	h, err := console.Handler(f.store, secret, "http://127.0.0.1:5173")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := func(method, path, body string, cookie *http.Cookie) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, "http://127.0.0.1:8080"+path, strings.NewReader(body))
+		r.RemoteAddr = "127.0.0.1:1234"
+		if method == "POST" {
+			r.Header.Set("Origin", "http://127.0.0.1:5173")
+			r.Header.Set("Content-Type", "application/json")
+		}
+		if cookie != nil {
+			r.AddCookie(cookie)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	login := request("POST", "/api/session", fmt.Sprintf(`{"secret":%q}`, secret), nil)
+	if login.Code != 204 {
+		t.Fatal("login")
+	}
+	cookie := login.Result().Cookies()[0]
+	q := url.Values{"tenant": {f.req.Pool.Tenant}, "moysklad_account": {f.req.Pool.MoyskladAccount}, "ozon_account": {f.req.Target.OzonAccount}, "moysklad_warehouse": {f.req.Pool.WarehouseID}, "ozon_warehouse": {f.req.Target.WarehouseID}}
+	path := func() string { return "/api/warehouse-mapping-review?" + q.Encode() }
+	q.Set("moysklad_warehouse", "new-source")
+	q.Set("ozon_warehouse", "new-target")
+	if w := request("GET", path(), "", cookie); w.Code != 200 || !strings.Contains(w.Body.String(), `"status":"ELIGIBLE_FOR_REVIEW"`) || !strings.Contains(w.Body.String(), `"stock_rows":0`) {
+		t.Fatal("unmapped FBS pair or missing stock evidence incorrect")
+	}
+	q.Set("moysklad_warehouse", f.req.Pool.WarehouseID)
+	q.Set("ozon_warehouse", f.req.Target.WarehouseID)
+	if w := request("GET", path(), "", nil); w.Code != 401 {
+		t.Fatal("unauthenticated review")
+	}
+	w := request("GET", path(), "", cookie)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"status":"ALREADY_MAPPED"`) || !strings.Contains(w.Body.String(), `"history":[{`) || !strings.Contains(w.Body.String(), `"stock_rows":1`) {
+		t.Fatalf("mapping review: %d %s", w.Code, w.Body.String())
+	}
+	q.Set("tenant", f.req.Pool.Tenant+"-other")
+	if w = request("GET", path(), "", cookie); w.Code != 404 {
+		t.Fatal("cross-tenant access")
+	}
+	q.Set("tenant", f.req.Pool.Tenant)
+	q.Set("ozon_account", f.req.Target.OzonAccount+"-other")
+	if w = request("GET", path(), "", cookie); w.Code != 404 {
+		t.Fatal("cross-account access")
+	}
+	emptyAccount := f.req.Target.OzonAccount + "-empty"
+	if err = f.store.RegisterStockConnection(ctx, f.req.Pool.Tenant, "ozon", emptyAccount, "synthetic no import", true); err != nil {
+		t.Fatal(err)
+	}
+	q.Set("ozon_account", emptyAccount)
+	if w = request("GET", path(), "", cookie); w.Code != 200 || !strings.Contains(w.Body.String(), `"status":"MISSING_SOURCE_EVIDENCE"`) || !strings.Contains(w.Body.String(), `"ozon":null`) {
+		t.Fatal("missing completed import not reported")
+	}
+	q.Set("ozon_account", f.req.Target.OzonAccount)
+	q.Set("moysklad_warehouse", "missing")
+	q.Set("ozon_warehouse", "missing")
+	if w = request("GET", path(), "", cookie); w.Code != 200 || !strings.Contains(w.Body.String(), `"status":"MISSING_SOURCE_EVIDENCE"`) {
+		t.Fatal("missing evidence not reported")
+	}
+	q.Set("ozon_warehouse", f.req.Target.WarehouseID)
+	if w = request("GET", path(), "", cookie); w.Code != 200 || !strings.Contains(w.Body.String(), `"status":"MAPPING_CONFLICT"`) {
+		t.Fatal("target conflict not reported")
+	}
+	q.Set("moysklad_warehouse", f.req.Pool.WarehouseID)
+	if _, err = f.store.Pool.Exec(ctx, `UPDATE ozon_warehouse_observations SET is_rfbs=true WHERE warehouse_id=$1 AND import_id=(SELECT id FROM source_imports WHERE source='ozon' AND account_id=$2 ORDER BY id DESC LIMIT 1)`, f.req.Target.WarehouseID, f.req.Target.OzonAccount); err != nil {
+		t.Fatal(err)
+	}
+	if w = request("GET", path(), "", cookie); w.Code != 200 || !strings.Contains(w.Body.String(), `"status":"UNSUPPORTED_WAREHOUSE"`) {
+		t.Fatal("rFBS not rejected")
+	}
+	var n, history int
+	if err = f.store.Pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM warehouse_mappings WHERE tenant_id=$1),(SELECT count(*) FROM warehouse_mapping_history WHERE tenant_id=$1)`, f.req.Pool.Tenant).Scan(&n, &history); err != nil || n != 1 || history != 1 {
+		t.Fatalf("review changed persisted mappings: %d %d", n, history)
+	}
+	var finalTasks int
+	if err = f.store.Pool.QueryRow(ctx, `SELECT count(*) FROM outbox_tasks`).Scan(&finalTasks); err != nil || finalTasks != initialTasks {
+		t.Fatal("review scheduled work")
+	}
+	ms.Entities = f.source.Entities
+	ms.StartedAt, ms.FinishedAt = time.Now(), time.Now()
+	if _, err := f.store.SaveInventoryImport(ctx, ms, "warehouse-review-source-removed"); err != nil {
+		t.Fatal(err)
+	}
+	q.Set("moysklad_warehouse", "new-source")
+	q.Set("ozon_warehouse", "new-target")
+	if w = request("GET", path(), "", cookie); w.Code != 200 || !strings.Contains(w.Body.String(), `"status":"MISSING_SOURCE_EVIDENCE"`) {
+		t.Fatal("review used a warehouse from an older import")
+	}
+}
+
+func TestWarehouseReviewDoesNotExposePreRegistrationHistory(t *testing.T) {
+	f := newStockFixtureWithHistory(t, false)
+	secret := strings.Repeat("q", 32)
+	h, err := console.Handler(f.store, secret, "http://127.0.0.1:5173")
+	if err != nil {
+		t.Fatal(err)
+	}
+	login := httptest.NewRequest("POST", "http://127.0.0.1:8080/api/session", strings.NewReader(fmt.Sprintf(`{"secret":%q}`, secret)))
+	login.RemoteAddr = "127.0.0.1:1234"
+	login.Header.Set("Origin", "http://127.0.0.1:5173")
+	login.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, login)
+	if w.Code != 204 {
+		t.Fatal("login")
+	}
+	q := url.Values{"tenant": {f.req.Pool.Tenant}, "moysklad_account": {f.req.Pool.MoyskladAccount}, "ozon_account": {f.req.Target.OzonAccount}, "moysklad_warehouse": {f.req.Pool.WarehouseID}, "ozon_warehouse": {f.req.Target.WarehouseID}}
+	r := httptest.NewRequest("GET", "http://127.0.0.1:8080/api/warehouse-mapping-review?"+q.Encode(), nil)
+	r.RemoteAddr = "127.0.0.1:1234"
+	r.AddCookie(w.Result().Cookies()[0])
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != 200 || strings.Contains(w.Body.String(), "fixture warehouse confirmation") || !strings.Contains(w.Body.String(), `"history":[]`) || !strings.Contains(w.Body.String(), `"moysklad":null`) || !strings.Contains(w.Body.String(), `"status":"MAPPING_CONFLICT"`) {
+		t.Fatal("pre-registration evidence leaked or hidden mapping was treated as eligible")
+	}
+}

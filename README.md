@@ -97,6 +97,8 @@ Confirmation re-reads the latest completed imports and revalidates the selected 
 
 ## Warehouse mapping V1
 
+The local console offers a read-only warehouse pair review with FBS eligibility, conflict checks and scoped history. It does not confirm mappings; see [warehouse mapping review](docs/warehouse-mapping-review-v1.md).
+
 A trusted administrator can explicitly confirm a one-to-one mapping using `go run ./cmd/warehouse-mapping -tenant TENANT -moysklad-account ACCOUNT -ozon-account ACCOUNT -moysklad-warehouse ID -ozon-warehouse ID -provenance 'operator: reason'`. Inspect identities and names in `source_entities` and `ozon_warehouse_observations` from the latest completed imports first; names never activate mappings. Ozon warehouses must have `is_rfbs=false`. Confirmation and audit history commit atomically, and existing mappings cannot be replaced or revoked in V1. Repeated confirmation is idempotent. Scope is the tenant and account pair; this legacy CLI trusts operators to supply authorized scopes and does not enforce the registration registry or individual authentication. Import absence does not delete a mapping. No allocation or synchronization is performed.
 
 For a future bounded read-only MoySklad contract check, create the following **manually in a test account**: two warehouses; products with distinct articles; at least one product variant; two items sharing an article; and products with nonzero stock, zero stock, and a reservation. Use synthetic names and identifiers. Populate enough records for at least two pages when checking pagination. Do not infer missing stock rows as zero or treat the traversal as a point-in-time snapshot.

@@ -30,11 +30,13 @@ func run() error {
 	}
 	now := time.Now().UTC()
 	start := now.Add(-time.Minute)
-	_, err = db.SaveInventoryImport(ctx, domain.InventoryImport{Account: "ui-e2e-moy", StartedAt: start, FinishedAt: now, Entities: []domain.ExternalEntity{{Kind: "product", ID: "parent", Article: "other"}, {Kind: "variant", ID: "variant", ParentID: "parent", Article: "different", Code: "synthetic-code"}}}, "ui-e2e-moy-fingerprint")
+	zero := "0"
+	_, err = db.SaveInventoryImport(ctx, domain.InventoryImport{Account: "ui-e2e-moy", StartedAt: start, FinishedAt: now, Entities: []domain.ExternalEntity{{Kind: "product", ID: "parent", Article: "other"}, {Kind: "variant", ID: "variant", ParentID: "parent", Article: "different", Code: "synthetic-code"}, {Kind: "store", ID: "moy-warehouse", Name: "Synthetic source warehouse"}}, WarehouseStock: []domain.WarehouseStockObservation{{Kind: "variant", ExternalID: "variant", WarehouseID: "moy-warehouse", Stock: &zero, Reserve: &zero, InTransit: &zero}}}, "ui-e2e-moy-warehouse-v1")
 	if err != nil {
 		return err
 	}
-	_, err = db.SaveOzonImport(ctx, domain.OzonImport{Account: "ui-e2e-ozon", StartedAt: start, FinishedAt: now, Products: []domain.OzonProduct{{ProductID: "ozon-product", OfferID: "offer-synthetic"}}}, "ui-e2e-ozon-fingerprint")
+	fbs, rfbs := false, true
+	_, err = db.SaveOzonImport(ctx, domain.OzonImport{Account: "ui-e2e-ozon", StartedAt: start, FinishedAt: now, Products: []domain.OzonProduct{{ProductID: "ozon-product", OfferID: "offer-synthetic"}}, Warehouses: []domain.OzonWarehouse{{ID: "ozon-warehouse", Name: "Synthetic FBS", IsRFBS: &fbs}, {ID: "ozon-rfbs", Name: "Synthetic rFBS", IsRFBS: &rfbs}}, Stocks: []domain.OzonStock{{ProductID: "ozon-product", OfferID: "offer-synthetic", WarehouseID: "ozon-warehouse", Present: 0, Reserved: 0, FreeStock: 0}}}, "ui-e2e-ozon-warehouse-v1")
 	return err
 }
 func main() {

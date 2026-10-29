@@ -1,4 +1,5 @@
 import { ProductReview } from "./ProductReview";
+import { WarehouseReview } from "./WarehouseReview";
 import {
   ConfirmationNotice,
   useConfirmation,
@@ -561,11 +562,13 @@ function WarehouseList({
   source,
   account,
   other,
+  selectWarehouse,
 }: {
   scope: Scope;
   source: string;
   account: string;
   other: string;
+  selectWarehouse: (id: string) => void;
 }) {
   const [offset, setOffset] = useState(0),
     [selected, setSelected] = useState("");
@@ -608,6 +611,12 @@ function WarehouseList({
                   onClick={() => setSelected(selected === w.id ? "" : w.id)}
                 >
                   {selected === w.id ? "Hide stock" : "View stock"}
+                </button>
+                <button
+                  className="link-button"
+                  onClick={() => selectWarehouse(w.id)}
+                >
+                  Select for mapping review
                 </button>
                 {selected === w.id && (
                   <StockRows
@@ -671,7 +680,9 @@ function WarehouseList({
     </section>
   );
 }
-function Warehouses({ scope }: { scope: Scope }) {
+export function Warehouses({ scope }: { scope: Scope }) {
+  const [moyWarehouse, setMoyWarehouse] = useState("");
+  const [ozonWarehouse, setOzonWarehouse] = useState("");
   return (
     <>
       <div className="heading-row">
@@ -693,14 +704,28 @@ function Warehouses({ scope }: { scope: Scope }) {
           source="moysklad"
           account={scope.moy}
           other={scope.ozon}
+          selectWarehouse={setMoyWarehouse}
         />
         <WarehouseList
           scope={scope}
           source="ozon"
           account={scope.ozon}
           other={scope.moy}
+          selectWarehouse={setOzonWarehouse}
         />
       </div>
+      <p>
+        Selected warehouses: MoySklad {moyWarehouse || "none"}; Ozon{" "}
+        {ozonWarehouse || "none"}.
+      </p>
+      {moyWarehouse && ozonWarehouse && (
+        <WarehouseReview
+          key={`${moyWarehouse}:${ozonWarehouse}`}
+          scope={scope}
+          moy={moyWarehouse}
+          ozon={ozonWarehouse}
+        />
+      )}
     </>
   );
 }

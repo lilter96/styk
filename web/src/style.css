@@ -883,3 +883,21 @@ td {
     max-height: 260px;
   }
 }
+.warehouse-review {
+  margin-top: 20px;
+}
+.warehouse-review-evidence {
+  padding: 14px 18px;
+  background: #f6faf9;
+  border: 1px solid #dfece8;
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+}
+.warehouse-review-evidence h3 {
+  margin-top: 0;
+}
+.warehouse-review p,
+.warehouse-review li {
+  font-size: 13px;
+  line-height: 1.6;
+}
