@@ -109,9 +109,42 @@ func (service Service) decide(ctx context.Context, current ReviewContext, target
 		return decision
 	}
 	if target.Enrollment.Create != nil {
-		return creationDecision(current.Config, target.Enrollment, decision)
+		decision = creationDecision(current.Config, target.Enrollment, decision)
+	} else {
+		decision = updateDecision(current.Config, decision, manual)
 	}
-	return updateDecision(current.Config, decision, manual)
+	return service.validateDecision(ctx, current, decision)
+}
+
+func (service Service) validateDecision(ctx context.Context, current ReviewContext, decision Decision) Decision {
+	for _, command := range decision.Commands {
+		client, err := resolveProvider(ctx, service.Resolver, current.Config.Scope, command.Target.Account, current.Credentials)
+		if err != nil {
+			decision.block("VALIDATION_CREDENTIALS_UNAVAILABLE")
+			return decision
+		}
+		validator, ok := client.(Validator)
+		if !ok && command.Action == catalog.ActionCreate {
+			decision.block("CREATION_VALIDATION_UNAVAILABLE")
+			return decision
+		}
+		if !ok {
+			continue
+		}
+		read, cancel := context.WithTimeout(ctx, providerTimeout)
+		validation, err := validator.ValidateCatalog(read, command)
+		cancel()
+		if err != nil || len(validation) > 100 {
+			decision.block("PROVIDER_VALIDATION_UNAVAILABLE")
+			return decision
+		}
+		if len(validation) != 0 {
+			decision.Validation = append(decision.Validation, safeFieldErrors(validation)...)
+			decision.Ready, decision.Commands = false, nil
+			return decision
+		}
+	}
+	return decision
 }
 
 func mappingMatches(target TargetContext) bool {

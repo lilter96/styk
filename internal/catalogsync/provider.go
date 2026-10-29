@@ -60,7 +60,7 @@ func readSnapshot(ctx context.Context, reader catalog.Reader, request catalog.Re
 
 // Creation lookup is exact and bounded; a sync ID is never a provider entity ID.
 func readCreationTarget(ctx context.Context, reader catalog.Reader, scope catalog.Scope, enrollment Enrollment) (catalog.Snapshot, error) {
-	if finder, ok := reader.(CreationReader); ok {
+	if finder, ok := reader.(CreationFinder); ok {
 		return readCreationSnapshot(ctx, finder, scope, enrollment)
 	}
 	if enrollment.Target.Account.Provider != catalog.ProviderOzon || enrollment.Target.OfferID == "" {
@@ -71,14 +71,14 @@ func readCreationTarget(ctx context.Context, reader catalog.Reader, scope catalo
 		Identities: []catalog.Identity{identity}, Limit: 2})
 }
 
-func readCreationSnapshot(ctx context.Context, finder CreationReader, scope catalog.Scope, enrollment Enrollment) (catalog.Snapshot, error) {
+func readCreationSnapshot(ctx context.Context, finder CreationFinder, scope catalog.Scope, enrollment Enrollment) (catalog.Snapshot, error) {
 	create := enrollment.Create
 	command := catalog.Command{ID: "creation-lookup", Scope: scope, Source: enrollment.Source, Target: enrollment.Target,
 		Action: catalog.ActionCreate, Values: create.Values, Extensions: create.Extensions, Parent: create.Parent,
 		CreateID: create.ID, CreateExternalCode: create.ExternalCode, IdempotencyKey: "creation-lookup"}
 	read, cancel := context.WithTimeout(ctx, providerTimeout)
 	defer cancel()
-	snapshot, err := finder.ReadCatalogCreation(read, command)
+	snapshot, err := finder.LookupCatalogCreate(read, command)
 	if err != nil {
 		return catalog.Snapshot{}, fmt.Errorf("lookup exact catalog creation marker: %w", err)
 	}

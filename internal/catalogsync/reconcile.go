@@ -121,11 +121,12 @@ func RebaseDecision(decision Decision, applied catalog.Command, source, target c
 		return Decision{}, ErrStale
 	}
 	expectedSource, expectedTarget := decision.Source, decision.Target
-	if applied.Target.Account == expectedSource.Identity.Account {
+	switch applied.Target.Account {
+	case expectedSource.Identity.Account:
 		expectedSource = withObservedFields(expectedSource, source, applied)
-	} else if applied.Target.Account == expectedTarget.Identity.Account {
+	case expectedTarget.Identity.Account:
 		expectedTarget = withObservedFields(expectedTarget, target, applied)
-	} else {
+	default:
 		return Decision{}, ErrStale
 	}
 	if !sameFacts(expectedSource, source, false) || !sameFacts(expectedTarget, target, false) {
@@ -192,6 +193,9 @@ func withObservedFields(expected, observed catalog.Product, command catalog.Comm
 	}
 	for key := range command.Extensions {
 		extensions[key] = observed.Extensions[key]
+	}
+	if expected.Extensions == nil && len(command.Extensions) == 0 {
+		extensions = nil
 	}
 	expected.Fields, expected.Extensions = fields, extensions
 	return expected

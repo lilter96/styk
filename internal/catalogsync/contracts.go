@@ -283,11 +283,17 @@ type Poller interface {
 	PollCatalog(context.Context, catalog.Command, catalog.Receipt) (catalog.Receipt, error)
 }
 
-// CreationReader proves absence or resolves one existing target by the command's
+// CreationFinder proves absence or resolves one existing target by the command's
 // exact durable marker. CreateID can be a sync ID, never assumed a provider ID.
 // MoySklad creation requires this port; ordinary search cannot prove absence.
-type CreationReader interface {
-	ReadCatalogCreation(context.Context, catalog.Command) (catalog.Snapshot, error)
+type CreationFinder interface {
+	LookupCatalogCreate(context.Context, catalog.Command) (catalog.Snapshot, error)
+}
+
+// Validator performs bounded read-only capability and required-field checks.
+// Explicit creation requires this port before its preview can become ready.
+type Validator interface {
+	ValidateCatalog(context.Context, catalog.Command) ([]catalog.FieldError, error)
 }
 
 // Binding asserts exact tenant/account and credential revision checked by the

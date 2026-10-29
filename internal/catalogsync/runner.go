@@ -89,7 +89,11 @@ func (runner Runner) write(ctx context.Context, writer catalog.Writer, work Work
 	receipt, err := writer.WriteCatalog(send, work.Command)
 	cancel()
 	if err != nil {
-		return runner.complete(ctx, work, Completion{State: StateUnknown, Code: "WRITE_OUTCOME_UNKNOWN", NextRunAt: runner.now().Add(30 * time.Second)})
+		if validReceiptFor(work.Command, receipt) {
+			return runner.recordReceipt(ctx, work, receipt)
+		}
+		unknown := catalog.Receipt{CommandID: work.Command.ID, State: catalog.ReceiptUnknown, HTTPStatus: receipt.HTTPStatus}
+		return runner.complete(ctx, work, Completion{State: StateUnknown, Code: "WRITE_OUTCOME_UNKNOWN", Receipt: unknown, NextRunAt: runner.now().Add(30 * time.Second)})
 	}
 	return runner.recordReceipt(ctx, work, receipt)
 }
