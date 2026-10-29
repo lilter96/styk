@@ -10,6 +10,7 @@ import {
 } from "./ImportSubmission";
 import { ProductMappingPage } from "./ProductMappingPage";
 import { CatalogSync } from "./CatalogSync";
+import { Orders } from "./Orders";
 import { WarehouseReview } from "./WarehouseReview";
 import { hasAuthLink, MerchantAuth } from "./MerchantAuth";
 import {
@@ -776,7 +777,8 @@ export function App() {
     [loadedIdentity, setLoadedIdentity] = useState(""),
     [logoutError, setLogoutError] = useState("");
   const autoSelected = useRef({ moy: false, ozon: false });
-  const chosen = session.data?.account_id ||
+  const chosen =
+    session.data?.account_id ||
     (session.isSuccess && session.data === null ? initialAccounts.tenant : "");
   const identityKey = session.data
     ? `${session.data.user.id}:${session.data.account_id}`
@@ -799,7 +801,14 @@ export function App() {
     setMoy(initialAccounts.tenant === chosen ? initialAccounts.moy : "");
     setOzon(initialAccounts.tenant === chosen ? initialAccounts.ozon : "");
     setLoadedIdentity(identityKey);
-  }, [session.data, identityReady, loadedIdentity, initialAccounts, chosen, identityKey]);
+  }, [
+    session.data,
+    identityReady,
+    loadedIdentity,
+    initialAccounts,
+    chosen,
+    identityKey,
+  ]);
   useEffect(() => {
     const expired = () => {
       setCSRF("");
@@ -844,8 +853,12 @@ export function App() {
   const scope = { tenant: chosen, moy, ozon };
   useEffect(() => {
     if (!accounts.data) return;
-    const moyAccounts = accounts.data.accounts.filter((a) => a.source === "moysklad");
-    const ozonAccounts = accounts.data.accounts.filter((a) => a.source === "ozon");
+    const moyAccounts = accounts.data.accounts.filter(
+      (a) => a.source === "moysklad",
+    );
+    const ozonAccounts = accounts.data.accounts.filter(
+      (a) => a.source === "ozon",
+    );
     if (
       moy &&
       !accounts.data.accounts.some(
@@ -1040,8 +1053,7 @@ export function App() {
           onToggle={(event) => setAccountsOpen(event.currentTarget.open)}
         >
           <summary>
-            Подключения{" "}
-            <span aria-hidden="true">⌄</span>
+            Подключения <span aria-hidden="true">⌄</span>
           </summary>
           <div className="workspace-popover">
             {accountControls}
@@ -1071,6 +1083,7 @@ export function App() {
           </NavLink>
           <NavLink to="/products">Товары</NavLink>
           <NavLink to="/catalog-sync">Каталог</NavLink>
+          <NavLink to="/orders">Заказы</NavLink>
           <NavLink to="/warehouses">Склады</NavLink>
           <NavLink to="/integrations">Интеграции</NavLink>
         </nav>
@@ -1114,8 +1127,14 @@ export function App() {
           {!integrationPage && importNotice}
           <Routes>
             <Route
+              path="/orders"
+              element={<Orders key={JSON.stringify(scope)} scope={scope} />}
+            />
+            <Route
               path="/catalog-sync"
-              element={<CatalogSync key={JSON.stringify(scope)} scope={scope} />}
+              element={
+                <CatalogSync key={JSON.stringify(scope)} scope={scope} />
+              }
             />
             <Route
               path="/integrations"

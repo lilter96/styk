@@ -19,6 +19,7 @@ type ReviewContext struct {
 	ProductMappings   []ProductMappingRef   `json:"product_mappings"`
 	WarehouseMappings []WarehouseMappingRef `json:"warehouse_mappings"`
 	Correlations      []Correlation         `json:"correlations"`
+	ActivePostings    map[string]State      `json:"active_postings,omitempty"`
 	Metadata          MetadataRegistry      `json:"metadata"`
 }
 

@@ -54,6 +54,9 @@ type AnalyticsFacts struct {
 }
 type DeliveryFacts struct {
 	Presence        Presence         `json:"presence"`
+	IntegrationType Field[string]    `json:"integration_type"`
+	Express         Field[bool]      `json:"express"`
+	TPLProviderID   Field[string]    `json:"tpl_provider_id"`
 	ProviderID      Field[string]    `json:"provider_id"`
 	ProviderName    Field[string]    `json:"provider_name"`
 	TrackingNumber  Field[string]    `json:"tracking_number"`
@@ -78,14 +81,15 @@ type TargetPosition struct {
 // TargetObservation contains sanitized native facts, not raw customerorder JSON.
 // Complete requires every position page, not a truncated embedded collection.
 type TargetObservation struct {
-	Scope       Scope              `json:"scope"`
-	Correlation Correlation        `json:"correlation"`
-	Revision    string             `json:"revision"`
-	Fields      CustomerOrderWrite `json:"fields"`
-	Positions   []TargetPosition   `json:"positions"`
-	Sum         Field[Money]       `json:"sum"`
-	ObservedAt  time.Time          `json:"observed_at"`
-	Complete    bool               `json:"complete"`
+	RedactedFields []string           `json:"redacted_fields,omitempty"`
+	Scope          Scope              `json:"scope"`
+	Correlation    Correlation        `json:"correlation"`
+	Revision       string             `json:"revision"`
+	Fields         CustomerOrderWrite `json:"fields"`
+	Positions      []TargetPosition   `json:"positions"`
+	Sum            Field[Money]       `json:"sum"`
+	ObservedAt     time.Time          `json:"observed_at"`
+	Complete       bool               `json:"complete"`
 }
 type TargetReader interface {
 	ReadCustomerOrder(context.Context, Correlation) (TargetObservation, error)

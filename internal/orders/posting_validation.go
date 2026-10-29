@@ -7,6 +7,9 @@ import (
 )
 
 func (posting Posting) Validate() error {
+	if posting.Scheme.Validate() != nil {
+		return ErrInvalid
+	}
 	if posting.Scope.Validate() != nil || !validID(posting.CommercialOrderID) || !validID(posting.PostingNumber) {
 		return ErrInvalid
 	}

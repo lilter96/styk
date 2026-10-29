@@ -58,6 +58,10 @@ func readOrderReviewContext(ctx context.Context, q ordersQuerier, scope orders.S
 		return result, err
 	}
 	result.Metadata, err = readOrderMetadata(ctx, q, scope)
+	if err != nil {
+		return result, err
+	}
+	result.ActivePostings, err = readOrderActivePostings(ctx, q, scope)
 	return result, err
 }
 
@@ -96,7 +100,11 @@ func readOrderWarehouseMappings(ctx context.Context, q ordersQuerier, scope orde
 		mapping.ID = strconv.FormatInt(id, 10)
 		mappings = append(mappings, mapping)
 	}
-	return mappings, ordersRowsError("read order warehouse mappings", rows.Err())
+	if err = rows.Err(); err != nil {
+		return nil, ordersRowsError("read order warehouse mappings", err)
+	}
+	rows.Close()
+	return enrichOrderWarehouseMappings(ctx, q, scope, mappings)
 }
 
 func readOrderCorrelations(ctx context.Context, q ordersQuerier, scope orders.Scope) ([]orders.Correlation, error) {
@@ -231,4 +239,25 @@ func validateOrderPreview(preview orders.Preview, current orders.ReviewContext, 
 		}
 	}
 	return nil
+}
+
+func readOrderActivePostings(ctx context.Context, q ordersQuerier, scope orders.Scope) (map[string]orders.State, error) {
+	rows, err := q.Query(ctx, `SELECT posting_number,state FROM orders_work WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND state IN ('QUEUED','CLAIMED','DISPATCHING','ACKNOWLEDGED','POLLING','UNKNOWN') LIMIT 10001`, ordersScopeArgs(scope)...)
+	if err != nil {
+		return nil, ordersError("read order target fences", err)
+	}
+	defer rows.Close()
+	result := make(map[string]orders.State)
+	for rows.Next() {
+		var number string
+		var state orders.State
+		if err = rows.Scan(&number, &state); err != nil {
+			return nil, ordersError("scan order target fence", err)
+		}
+		result[number] = state
+	}
+	if len(result) > 10000 {
+		return nil, orders.ErrBlocked
+	}
+	return result, ordersRowsError("read order target fences", rows.Err())
 }

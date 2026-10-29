@@ -159,3 +159,17 @@ func TestUncertainWorkCannotDispatchAgain(t *testing.T) {
 		}
 	}
 }
+
+func TestTargetSerializationMasksNativeFreeTextWithoutMutatingFacts(t *testing.T) {
+	target := TargetObservation{Fields: CustomerOrderWrite{Name: Present("Synthetic private native name"), Description: Present("Synthetic private native description"), Attributes: []AttributeWrite{{AttributeID: "private", Value: Present("Synthetic private attribute")}}}, Revision: "native-fingerprint"}
+	data, err := json.Marshal(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "Synthetic private") {
+		t.Fatal("unmanaged free text leaked into durable target")
+	}
+	if !strings.Contains(string(data), "redacted_fields") || target.Fields.Description.Value == nil || *target.Fields.Description.Value != "Synthetic private native description" {
+		t.Fatal("privacy masking changed observed facts")
+	}
+}

@@ -24,12 +24,17 @@ type catalogWork struct {
 	publisher catalogsync.Runner
 	service   catalogsync.Service
 	nextCheck time.Time
+	mode      string
 }
 
 func (w *catalogWork) RunNext(ctx context.Context) (bool, error) {
 	ctx = catalogprovider.AuditRequests(ctx)
-	worked, err := w.publisher.RunNext(ctx)
-	if err != nil || worked || time.Now().Before(w.nextCheck) {
+	worked := false
+	var err error
+	if w.mode != "schedule" {
+		worked, err = w.publisher.RunNext(ctx)
+	}
+	if err != nil || worked || w.mode == "dispatch" || time.Now().Before(w.nextCheck) {
 		return worked, err
 	}
 	w.nextCheck = time.Now().Add(5 * time.Second)
@@ -58,6 +63,7 @@ func newCatalogWork(db *postgres.Store, resolver *credentials.Resolver) (applica
 	}
 	factory := catalogprovider.Factory{Credentials: resolver, Gate: gate}
 	return &catalogWork{
+		mode:      os.Getenv("STYK_WORKER_MODE"),
 		publisher: catalogsync.Runner{Enabled: true, WorkerID: hex.EncodeToString(instance[:]), Store: db, Resolver: factory, AllowScope: catalogAllowed},
 		service:   catalogsync.Service{Store: db, Resolver: factory, AllowScope: catalogAllowed},
 	}, nil

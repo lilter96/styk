@@ -146,6 +146,12 @@ func PostingFingerprint(posting Posting) (string, error) {
 		return "", fmt.Errorf("validate posting fingerprint: %w", err)
 	}
 	posting.Evidence.Revision = ""
+	if posting.DeliveryProfile != nil {
+		profile := *posting.DeliveryProfile
+		profile.ObservedAt = time.Time{}
+		profile.ValidUntil = time.Time{}
+		posting.DeliveryProfile = &profile
+	}
 	posting.Evidence.ObservedAt = time.Time{}
 	posting.Evidence.CheckedAt = time.Time{}
 	posting.Evidence.CollectionID = ""

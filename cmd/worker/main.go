@@ -242,5 +242,19 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	return (application.Worker{Catalog: catalogWorker, Publications: publications, Automatic: automatic, StoredCredentials: vault != nil, MoyskladImportAccount: moyClaim, Store: db, Handler: application.MockHandler{}, Imports: imports, ImportAccount: claimAccount, Log: slog.Default(), Poll: c.PollInterval, Lease: c.LeaseDuration, Retry: c.RetryDelay}).Run(ctx)
+	ordersWorker, err := newOrdersWork(db, resolver)
+	if err != nil {
+		return err
+	}
+	mode := os.Getenv("STYK_WORKER_MODE")
+	if mode != "" && mode != "all" && mode != "dispatch" && mode != "schedule" {
+		return errors.New("STYK_WORKER_MODE must be all, dispatch or schedule")
+	}
+	if mode == "schedule" {
+		return runSchedule(ctx, automatic, catalogWorker, ordersWorker)
+	}
+	if mode == "dispatch" {
+		automatic = nil
+	}
+	return (application.Worker{Orders: ordersWorker, Catalog: catalogWorker, Publications: publications, Automatic: automatic, StoredCredentials: vault != nil, MoyskladImportAccount: moyClaim, Store: db, Handler: application.MockHandler{}, Imports: imports, ImportAccount: claimAccount, Log: slog.Default(), Poll: c.PollInterval, Lease: c.LeaseDuration, Retry: c.RetryDelay}).Run(ctx)
 }

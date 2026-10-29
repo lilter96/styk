@@ -33,7 +33,7 @@ func normalize(r Request, o Options) (Attempt, error) {
 	if r.Timeout > 15*time.Minute {
 		return Attempt{}, ErrInvalid
 	}
-	a := Attempt{Scope: s, Method: digest(r.Method), Operation: digest(r.Operation), IsWrite: r.IsWrite, Interval: interval, MaxInflight: o.MaxInflight, LeaseDuration: r.Timeout + 5*time.Second}
+	a := Attempt{Scope: s, Method: digest(r.Method + "\x00" + r.Operation), Operation: digest(r.Operation), IsWrite: r.IsWrite, Interval: interval, MaxInflight: o.MaxInflight, LeaseDuration: r.Timeout + 5*time.Second}
 	if r.TargetKey != "" {
 		if !validText(r.TargetKey, 1024) {
 			return Attempt{}, ErrInvalid

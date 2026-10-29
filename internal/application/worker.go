@@ -52,6 +52,7 @@ type Worker struct {
 	Publications          PublicationRunner
 	Automatic             PublicationRunner
 	Catalog               PublicationRunner
+	Orders                PublicationRunner
 	StoredCredentials     bool
 	ImportAccount         string
 	MoyskladImportAccount string
@@ -64,27 +65,25 @@ func (w Worker) Run(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return nil
 		}
+		publicationWorked, automaticWorked := false, false
 		if w.Publications != nil {
 			worked, err := w.Publications.RunNext(ctx)
 			if err != nil && ctx.Err() == nil {
 				w.Log.Error("stock publication did not complete")
 			}
-			if worked && err == nil {
-				continue
-			}
+			publicationWorked = worked && err == nil
 		}
 		if w.Automatic != nil {
 			worked, err := w.Automatic.RunNext(ctx)
 			if err != nil && ctx.Err() == nil {
 				w.Log.Error("automatic stock cycle did not advance")
 			}
-			if worked && err == nil {
-				continue
-			}
+			automaticWorked = worked && err == nil
 		}
 		// Catalog operations use the same worker lifecycle and durable outbox.
 		// Give imports a turn even when the catalog queue has ready work.
 		catalogWorked := w.advanceCatalog(ctx)
+		orderWorked := w.advanceOrders(ctx)
 		if err := w.Store.ExpireExhausted(ctx); err != nil {
 			if ctx.Err() != nil {
 				return nil
@@ -132,7 +131,7 @@ func (w Worker) Run(ctx context.Context) error {
 				continue
 			}
 		}
-		if catalogWorked {
+		if catalogWorked || orderWorked || publicationWorked || automaticWorked {
 			continue
 		}
 		timer := time.NewTimer(w.Poll)
@@ -154,6 +153,17 @@ func (w Worker) advanceCatalog(ctx context.Context) bool {
 	worked, err := w.Catalog.RunNext(ctx)
 	if err != nil && ctx.Err() == nil {
 		w.Log.Error("catalog synchronization did not advance")
+	}
+	return worked && err == nil
+}
+
+func (w Worker) advanceOrders(ctx context.Context) bool {
+	if w.Orders == nil {
+		return false
+	}
+	worked, err := w.Orders.RunNext(ctx)
+	if err != nil && ctx.Err() == nil {
+		w.Log.Error("order processing requires attention")
 	}
 	return worked && err == nil
 }

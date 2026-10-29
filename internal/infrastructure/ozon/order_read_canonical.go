@@ -102,7 +102,7 @@ func orderLines(f orderFields, posting *orders.Posting) []orders.PostingLine {
 func decodeOrderDelivery(f orderFields, posting *orders.Posting) {
 	method := f.object("delivery_method")
 	posting.WarehouseID, posting.DeliveryMethodID = method.id("warehouse_id"), method.id("id")
-	posting.Delivery = orders.DeliveryFacts{Presence: f.objectPresence("delivery_method"), ProviderID: method.id("tpl_provider_id"), ProviderName: method.text("tpl_provider"), TrackingNumber: f.text("tracking_number")}
+	posting.Delivery = orders.DeliveryFacts{Presence: f.objectPresence("delivery_method"), ProviderID: method.id("provider_id"), TPLProviderID: method.id("tpl_provider_id"), IntegrationType: f.text("tpl_integration_type"), Express: f.boolean("is_express"), ProviderName: method.text("tpl_provider"), TrackingNumber: f.text("tracking_number")}
 }
 
 func decodeOrderAnalytics(f orderFields, posting *orders.Posting) {

@@ -103,6 +103,12 @@ func approvedOrderDecisions(approval orders.Approval, preview orders.Preview, cu
 			continue
 		}
 		delete(selected, decision.Posting.PostingNumber)
+		if _, fenced := current.ActivePostings[decision.Posting.PostingNumber]; fenced {
+			if len(approval.PostingNumbers) > 0 && !approval.Automatic {
+				return nil, orders.ErrBlocked
+			}
+			continue
+		}
 		if !decision.Ready || len(decision.Validation) > 0 || ordersQuarantined(decision.Posting) || len(decision.Commands) != 1 {
 			return nil, orders.ErrBlocked
 		}

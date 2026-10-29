@@ -91,3 +91,22 @@ func TestRetryAfterDoesNotPermitEarlyRetry(t *testing.T) {
 		t.Fatal("unavailable response discarded Retry-After")
 	}
 }
+
+func TestForbiddenMethodScopeIncludesOperation(t *testing.T) {
+	request := Request{Scope: Scope{Tenant: "merchant", Provider: "ozon", Account: "account", CredentialRevision: 1}, Method: "POST", Operation: "v3/posting/fbs/get", Timeout: time.Second}
+	first, err := normalize(request, Options{MaxInflight: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Operation = "v2/products/stocks"
+	second, err := normalize(request, Options{MaxInflight: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Method == second.Method {
+		t.Fatal("403 on one POST endpoint fenced an unrelated POST operation")
+	}
+	if first.Scope.Account != second.Scope.Account {
+		t.Fatal("operations must still share account budget")
+	}
+}
