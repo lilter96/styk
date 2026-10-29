@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -31,6 +32,11 @@ func TestAutomaticInitialStockRequiresExplicitSingleTakeover(t *testing.T) {
 	defer cancel()
 	var row atomic.Bool
 	var writes atomic.Int32
+	reply := func(w http.ResponseWriter, format string, args ...any) {
+		if _, err := fmt.Fprintf(w, format, args...); err != nil {
+			t.Errorf("write synthetic provider response: %v", err)
+		}
+	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v3/product/list":
@@ -41,17 +47,17 @@ func TestAutomaticInitialStockRequiresExplicitSingleTakeover(t *testing.T) {
 			}
 			_ = json.NewDecoder(r.Body).Decode(&in)
 			if in.Filter.Visibility == "ARCHIVED" {
-				fmt.Fprint(w, `{"result":{"items":[],"total_items":0,"last_id":""}}`)
+				reply(w, `{"result":{"items":[],"total_items":0,"last_id":""}}`)
 				return
 			}
-			fmt.Fprint(w, `{"result":{"items":[{"product_id":2764544165,"offer_id":"ATEST-897677","sku":2889277907,"archived":false}],"total_items":1,"last_id":""}}`)
+			reply(w, `{"result":{"items":[{"product_id":2764544165,"offer_id":"ATEST-897677","sku":2889277907,"archived":false}],"total_items":1,"last_id":""}}`)
 		case "/v2/warehouse/list":
-			fmt.Fprint(w, `{"warehouses":[{"warehouse_id":1020001323428000,"name":"FBS","status":"created","is_rfbs":false}],"has_next":false,"cursor":""}`)
+			reply(w, `{"warehouses":[{"warehouse_id":1020001323428000,"name":"FBS","status":"created","is_rfbs":false}],"has_next":false,"cursor":""}`)
 		case "/v2/product/info/stocks-by-warehouse/fbs":
 			if row.Load() {
-				fmt.Fprint(w, `{"products":[{"product_id":2764544165,"offer_id":"ATEST-897677","sku":2889277907,"warehouse_id":1020001323428000,"present":7,"reserved":0,"free_stock":7}],"has_next":false,"cursor":""}`)
+				reply(w, `{"products":[{"product_id":2764544165,"offer_id":"ATEST-897677","sku":2889277907,"warehouse_id":1020001323428000,"present":7,"reserved":0,"free_stock":7}],"has_next":false,"cursor":""}`)
 			} else {
-				fmt.Fprint(w, `{"products":[],"has_next":false,"cursor":""}`)
+				reply(w, `{"products":[],"has_next":false,"cursor":""}`)
 			}
 		case "/v2/products/stocks":
 			var in struct {
@@ -68,17 +74,17 @@ func TestAutomaticInitialStockRequiresExplicitSingleTakeover(t *testing.T) {
 			}
 			writes.Add(1)
 			row.Store(true)
-			fmt.Fprint(w, `{"result":[{"product_id":2764544165,"warehouse_id":1020001323428000,"updated":true,"errors":[]}]}`)
+			reply(w, `{"result":[{"product_id":2764544165,"warehouse_id":1020001323428000,"updated":true,"errors":[]}]}`)
 		case "/entity/product":
-			fmt.Fprintf(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Test","article":"synthetic"}]}`, testpublication.SourceProduct)
+			reply(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Test","article":"synthetic"}]}`, testpublication.SourceProduct)
 		case "/entity/variant":
-			fmt.Fprint(w, `{"meta":{"size":0,"limit":100,"offset":0},"rows":[]}`)
+			reply(w, `{"meta":{"size":0,"limit":100,"offset":0},"rows":[]}`)
 		case "/entity/store":
-			fmt.Fprintf(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Test"}]}`, testpublication.SourceWarehouse)
+			reply(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Test"}]}`, testpublication.SourceWarehouse)
 		case "/report/stock/all":
-			fmt.Fprintf(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stock":7,"reserve":0,"inTransit":0,"quantity":7}]}`, testpublication.SourceProduct)
+			reply(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stock":7,"reserve":0,"inTransit":0,"quantity":7}]}`, testpublication.SourceProduct)
 		case "/report/stock/bystore":
-			fmt.Fprintf(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stockByStore":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/store/%s","type":"store"},"stock":7,"reserve":0,"inTransit":0}]}]}`, testpublication.SourceProduct, testpublication.SourceWarehouse)
+			reply(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stockByStore":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/store/%s","type":"store"},"stock":7,"reserve":0,"inTransit":0}]}]}`, testpublication.SourceProduct, testpublication.SourceWarehouse)
 		default:
 			t.Errorf("unexpected path %s", r.URL.Path)
 			http.Error(w, "unexpected", 500)
@@ -98,7 +104,12 @@ func TestAutomaticInitialStockRequiresExplicitSingleTakeover(t *testing.T) {
 	worker := application.Worker{Store: db, Handler: application.MockHandler{}, Imports: imports, Publications: pub, Automatic: stocksync.AutomaticRunner{Store: db, Publisher: pub}, ImportAccount: scope.OzonAccount, MoyskladImportAccount: scope.MoyskladAccount, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Poll: 50 * time.Millisecond, Lease: time.Minute, Retry: time.Second}
 	done := make(chan error, 1)
 	go func() { done <- worker.Run(ctx) }()
-	defer func() { cancel(); <-done }()
+	defer func() {
+		cancel()
+		if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+			t.Errorf("worker exit: %v", err)
+		}
+	}()
 	req := domain.AutomaticStockRequest{StockSyncScope: scope, Enabled: true, IntervalSeconds: 30, ValidMinutes: 60, Targets: []domain.AutomaticStockTargetRequest{{ProductID: testpublication.OzonProduct, WarehouseID: testpublication.OzonWarehouse, SafetyStock: "0", Unreflected: "0", UnseenBound: "0", Maximum: 7}}, Acknowledge: true, SessionID: "synthetic", IdempotencyKey: "initial-policy-without-authorization"}
 	if _, err = db.ConfigureAutomaticStock(ctx, req, time.Now()); err != nil {
 		t.Fatal(err)
