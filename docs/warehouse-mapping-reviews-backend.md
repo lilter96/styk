@@ -1,4 +1,4 @@
-# Durable warehouse mapping reviews
+# Durable warehouse mapping reviews and confirmation
 
 `POST /api/warehouse-mapping-reviews` accepts JSON `tenant`, `moysklad_account`, `ozon_account`, `moysklad_warehouse_id` and `ozon_warehouse_id`. It requires the configured local Origin and authenticated operator session. The server selects eligible completed imports, requires exact warehouse identities and explicitly reported FBS, rejects conflicting active mappings (including hidden history) as `WAREHOUSE_ALREADY_ASSIGNED`, and stores a review. It does not accept revision or principal fields from the browser. `GET /api/warehouse-mapping-reviews/{id}` requires the creating session.
 
@@ -8,4 +8,22 @@ Inspection reports `CURRENT`, `EXPIRED`, `STALE_SOURCE` or `STALE_MAPPING`. A ne
 
 Creation and inspection acquire transaction-scoped advisory locks in the order `ozon:<account>`, `moysklad:<account>`, `matching:<tenant>`, `warehouse-mapping:<tenant>`, compatible with the existing importers and warehouse CLI. Selected records are read with row locks. This coordinates cooperating processes; privileged actors bypassing the lock protocol are outside this guarantee. The local shared operator session does not identify an individual or implement production tenant authorization. `CURRENT` is not proof of physical identity, exclusive ownership or safe stock publication.
 
-The existing React warehouse review remains read-only and does not create durable reviews. Future confirmation needs a transaction that repeats all validation and checks expiration under locks, durable idempotency and immutable mapping audit. No confirmation endpoint exists in this milestone.
+## Confirmation
+
+`POST /api/warehouse-mapping-reviews/{id}/confirm` requires the creating local operator session, the configured loopback Origin and `application/json`. The body is limited to 4 KiB and has this form:
+
+```json
+{"idempotency_key":"client-generated-key-1","acknowledge":true,"explanation":"Reviewed warehouse correspondence"}
+```
+
+The key is 1–128 ASCII letters, digits or `._:-`. The explanation is optional and limited to 1,000 UTF-8 bytes; do not include credentials or customer data. Unknown fields, including caller-supplied scope, import revisions, evidence class or principal, are rejected. The server loads the immutable review and session audit identity. Supported evidence is `OPERATOR_ATTESTED`: it records a local operator's assertion, not independently verified physical identity.
+
+Under the same advisory locks, a new confirmation checks registration, latest eligible completed imports and fingerprints, selected warehouse fields and identities, explicit FBS classification, expiration and mapping state. A changed import or classification requires a new review; missing `is_rfbs` is not FBS. One MoySklad warehouse and one Ozon warehouse may be paired within each registered account pair. Existing or hidden conflicts do not disclose restricted history; existing mappings are never replaced. Mapping, review-bound legacy history, confirmation audit and idempotency outcome commit in one transaction. The database checks review expiry again at commit and ties audit and outcome to the exact review, scope, import IDs, mapping, version and session. Use synchronized application and PostgreSQL clocks; confirmation timestamps are database insertion times, not source-event or exact commit times.
+
+The key is scoped to the creating session and review and bound to a canonical fingerprint of the acknowledgement and exact explanation. Repeating the same request returns the stored result with `idempotent_replay=true`, even after the review expires or imports change. Reusing a key with different content returns `IDEMPOTENCY_CONFLICT`. A new key cannot confirm an expired review. A lost response or `PERSISTENCE_FAILURE` may have an unknown commit outcome: retry the identical request with the same key and session. After logout or restart a new session cannot replay the original review; inspect scoped warehouse mapping history instead. This is local database idempotency, not exactly-once external execution.
+
+Errors include `UNAUTHORIZED`, `FORBIDDEN`, `INVALID_REQUEST`, `REVIEW_NOT_FOUND`, `REVIEW_EXPIRED`, `REVIEW_STALE`, `MAPPING_CONFLICT`, `IDEMPOTENCY_CONFLICT` and `PERSISTENCE_FAILURE`; raw database errors are not exposed. Review-bound mappings, history, audits and outcomes reject mutation and deletion. The audit records source and target identities, import references, mapping version, review ID, `LOCAL_OPERATOR_SESSION`, session audit ID, operator explanation and confirmation time; it contains neither session credentials nor marketplace tokens. The principal is a shared local session, not an identified person.
+
+Migration 20 adds unique constraints and foreign keys to existing review and history tables, which can scan data and acquire locks. Plan it before any production migration; its down path refuses to erase review-bound confirmation evidence. The existing `warehouse-mapping` CLI remains a trusted administrative path with its original checks, not the review API's session, revision, ownership or idempotency guarantees. Legacy history is preserved. The React warehouse review remains read-only and does not confirm mappings.
+
+A confirmed mapping does not establish physical ownership, exclusive stock-pool control, unit equivalence, reservation attribution, source baseline completeness or competing exposure. Confirmation creates no stock pool, stock decision or publication task; PostgreSQL still rejects persisted `READY_CONDITIONAL` decisions. No external writes or stock publication are implemented.

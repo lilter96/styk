@@ -59,7 +59,7 @@ func (s *Store) ConfirmWarehouseMapping(ctx context.Context, scope MatchScope, m
 	if err != nil {
 		return false, fmt.Errorf("create warehouse mapping: %w", err)
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO warehouse_mapping_history SELECT id,version,tenant_id,moysklad_account,ozon_account,moysklad_warehouse_id,ozon_warehouse_id,status,provenance,confirmed_at,$2,$3 FROM warehouse_mappings WHERE id=$1`, id, mi, oi)
+	_, err = tx.Exec(ctx, `INSERT INTO warehouse_mapping_history(mapping_id,version,tenant_id,moysklad_account,ozon_account,moysklad_warehouse_id,ozon_warehouse_id,status,provenance,confirmed_at,moysklad_import_id,ozon_import_id) SELECT id,version,tenant_id,moysklad_account,ozon_account,moysklad_warehouse_id,ozon_warehouse_id,status,provenance,confirmed_at,$2,$3 FROM warehouse_mappings WHERE id=$1`, id, mi, oi)
 	if err != nil {
 		return false, fmt.Errorf("record warehouse mapping history: %w", err)
 	}

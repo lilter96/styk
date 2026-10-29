@@ -177,36 +177,60 @@ func (s *Store) InspectWarehouseReview(ctx context.Context, id, sessionID string
 		return domain.WarehouseReviewResult{}, err
 	}
 	defer tx.Rollback(context.Background())
-	var r domain.WarehouseReview
-	var mf, of, oh, mh string
-	err = tx.QueryRow(ctx, `SELECT id,tenant_id,moysklad_account,ozon_account,moysklad_warehouse_id,ozon_warehouse_id,moysklad_import_id,ozon_import_id,moysklad_import_fingerprint,ozon_import_fingerprint,observation_hash,mapping_hash,existing_mapping_id,existing_mapping_version,created_at,expires_at FROM warehouse_mapping_reviews WHERE id=$1 AND session_audit_id=$2`, id, sessionID).Scan(&r.ID, &r.Tenant, &r.MoyskladAccount, &r.OzonAccount, &r.MoyskladWarehouseID, &r.OzonWarehouseID, &r.MoyskladImportID, &r.OzonImportID, &mf, &of, &oh, &mh, &r.ExistingMappingID, &r.ExistingMappingVersion, &r.CreatedAt, &r.ExpiresAt)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return domain.WarehouseReviewResult{}, ErrReviewMissing
-	}
+	stored, err := loadWarehouseReview(ctx, tx, id, sessionID)
 	if err != nil {
 		return domain.WarehouseReviewResult{}, err
 	}
-	scope := MatchScope{Tenant: r.Tenant, MoyskladAccount: r.MoyskladAccount, OzonAccount: r.OzonAccount}
-	if err = lockWarehouseReview(ctx, tx, scope); err != nil {
+	if err = lockWarehouseReview(ctx, tx, stored.scope()); err != nil {
 		return domain.WarehouseReviewResult{}, err
 	}
+	status, _, err := evaluateWarehouseReview(ctx, tx, stored)
+	if err != nil {
+		return domain.WarehouseReviewResult{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return domain.WarehouseReviewResult{}, err
+	}
+	return domain.WarehouseReviewResult{Review: stored.review, Status: status, PrincipalType: "LOCAL_OPERATOR_SESSION"}, nil
+}
+
+type storedWarehouseReview struct {
+	review                                                        domain.WarehouseReview
+	moyFingerprint, ozonFingerprint, observationHash, mappingHash string
+}
+
+func (s storedWarehouseReview) scope() MatchScope {
+	return MatchScope{Tenant: s.review.Tenant, MoyskladAccount: s.review.MoyskladAccount, OzonAccount: s.review.OzonAccount}
+}
+
+// Load only records owned by the authenticating session, before disclosing scope.
+func loadWarehouseReview(ctx context.Context, tx pgx.Tx, id, sessionID string) (storedWarehouseReview, error) {
+	var s storedWarehouseReview
+	r := &s.review
+	err := tx.QueryRow(ctx, `SELECT id,tenant_id,moysklad_account,ozon_account,moysklad_warehouse_id,ozon_warehouse_id,moysklad_import_id,ozon_import_id,moysklad_import_fingerprint,ozon_import_fingerprint,observation_hash,mapping_hash,existing_mapping_id,existing_mapping_version,created_at,expires_at FROM warehouse_mapping_reviews WHERE id=$1 AND session_audit_id=$2`, id, sessionID).Scan(&r.ID, &r.Tenant, &r.MoyskladAccount, &r.OzonAccount, &r.MoyskladWarehouseID, &r.OzonWarehouseID, &r.MoyskladImportID, &r.OzonImportID, &s.moyFingerprint, &s.ozonFingerprint, &s.observationHash, &s.mappingHash, &r.ExistingMappingID, &r.ExistingMappingVersion, &r.CreatedAt, &r.ExpiresAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return s, ErrReviewMissing
+	}
+	return s, err
+}
+
+// Called under the same importer and warehouse-mapping locks for inspection and confirmation.
+func evaluateWarehouseReview(ctx context.Context, tx pgx.Tx, stored storedWarehouseReview) (string, warehouseSnapshot, error) {
+	r := stored.review
 	in := domain.WarehouseReviewRequest{Tenant: r.Tenant, MoyskladAccount: r.MoyskladAccount, OzonAccount: r.OzonAccount, MoyskladWarehouseID: r.MoyskladWarehouseID, OzonWarehouseID: r.OzonWarehouseID}
 	snap, err := warehouseReviewSnapshot(ctx, tx, in)
 	status := "CURRENT"
 	if errors.Is(err, ErrReviewSource) || errors.Is(err, ErrReviewScope) {
 		status = "STALE_SOURCE"
 	} else if err != nil {
-		return domain.WarehouseReviewResult{}, err
-	} else if snap.MoyID != r.MoyskladImportID || snap.OzonID != r.OzonImportID || snap.MoyFingerprint != mf || snap.OzonFingerprint != of || warehouseObservationHash(snap) != oh || snap.IsRFBS == nil || *snap.IsRFBS {
+		return "", snap, err
+	} else if snap.MoyID != r.MoyskladImportID || snap.OzonID != r.OzonImportID || snap.MoyFingerprint != stored.moyFingerprint || snap.OzonFingerprint != stored.ozonFingerprint || warehouseObservationHash(snap) != stored.observationHash || snap.IsRFBS == nil || *snap.IsRFBS {
 		status = "STALE_SOURCE"
-	} else if snap.Conflict || warehouseMappingHash(snap) != mh {
+	} else if snap.Conflict || warehouseMappingHash(snap) != stored.mappingHash || pointerInt64Changed(r.ExistingMappingID, snap.MappingID) || pointerIntChanged(r.ExistingMappingVersion, snap.MappingVersion) {
 		status = "STALE_MAPPING"
 	}
 	if !time.Now().Before(r.ExpiresAt) {
 		status = "EXPIRED"
 	}
-	if err = tx.Commit(ctx); err != nil {
-		return domain.WarehouseReviewResult{}, err
-	}
-	return domain.WarehouseReviewResult{Review: r, Status: status, PrincipalType: "LOCAL_OPERATOR_SESSION"}, nil
+	return status, snap, nil
 }

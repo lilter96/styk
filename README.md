@@ -97,7 +97,7 @@ Confirmation re-reads the latest completed imports and revalidates the selected 
 
 ## Warehouse mapping V1
 
-Authenticated local operators can create and inspect revision-bound durable warehouse reviews through the API. Reviews do not confirm mappings. See [warehouse review backend](docs/warehouse-mapping-reviews-backend.md).
+Authenticated local operators can create and inspect revision-bound durable warehouse reviews and explicitly confirm them through the local API. Confirmation is operator attestation with transactional audit and idempotency, not independent proof of physical identity or stock safety. See [warehouse review backend](docs/warehouse-mapping-reviews-backend.md).
 
 The local console offers a read-only warehouse pair review with FBS eligibility, conflict checks and scoped history. It does not confirm mappings; see [warehouse mapping review](docs/warehouse-mapping-review-v1.md).
 

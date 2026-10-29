@@ -12,7 +12,7 @@ import (
 	"github.com/lilter96/styk/internal/postgres"
 )
 
-// Handler exposes only explicitly scoped reads to an authenticated local operator.
+// Handler exposes scoped reads and explicit local mapping operations to an authenticated local operator.
 func Handler(db *postgres.Store, secret, origin string) (http.Handler, error) {
 	if db == nil {
 		return nil, errors.New("console database required")
@@ -95,6 +95,7 @@ func Handler(db *postgres.Store, secret, origin string) (http.Handler, error) {
 	mux.HandleFunc("GET /api/moysklad-products", a.authorized(searchTargets(db)))
 	mux.HandleFunc("GET /api/product-mapping-history", a.authorized(mappingHistory(db)))
 	mux.HandleFunc("POST /api/warehouse-mapping-reviews", a.authorized(a.createWarehouseReview(db, lifetime)))
+	mux.HandleFunc("POST /api/warehouse-mapping-reviews/{id}/confirm", a.authorized(a.confirmWarehouseReview(db)))
 	mux.HandleFunc("GET /api/warehouse-mapping-reviews/{id}", a.authorized(a.inspectWarehouseReview(db)))
 	mux.HandleFunc("GET /api/warehouse-mapping-review", a.authorized(warehouseReview(db)))
 	mux.HandleFunc("GET /api/warehouses", a.authorized(warehouses(db)))

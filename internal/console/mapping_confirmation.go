@@ -1,6 +1,7 @@
 package console
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -13,6 +14,17 @@ import (
 )
 
 func (a *auth) confirmMappingReview(db *postgres.Store) http.HandlerFunc {
+	service := application.MappingConfirmation{Store: db}
+	return a.confirmationHandler(service.Confirm)
+}
+
+func (a *auth) confirmWarehouseReview(db *postgres.Store) http.HandlerFunc {
+	service := application.WarehouseConfirmation{Store: db}
+	return a.confirmationHandler(service.Confirm)
+}
+
+// Both confirmation operations use the same local session, origin and request contract.
+func (a *auth) confirmationHandler(confirm func(context.Context, domain.MappingConfirmationRequest) (domain.MappingConfirmationResult, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Origin") != a.origin {
 			writeError(w, http.StatusForbidden, "FORBIDDEN")
@@ -40,7 +52,7 @@ func (a *auth) confirmMappingReview(db *postgres.Store) http.HandlerFunc {
 			return
 		}
 		req := domain.MappingConfirmationRequest{ReviewID: r.PathValue("id"), SessionID: audit, IdempotencyKey: body.IdempotencyKey, Acknowledged: *body.Acknowledge, Explanation: body.Explanation}
-		result, err := (application.MappingConfirmation{Store: db}).Confirm(r.Context(), req)
+		result, err := confirm(r.Context(), req)
 		if err != nil {
 			switch {
 			case errors.Is(err, domain.ErrInvalidMappingConfirmation):
