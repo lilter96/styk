@@ -205,7 +205,7 @@ describe("read-only views", () => {
   });
 });
 
-it("reviews candidates and manual search without enabling confirmation", async () => {
+it("reviews candidates and requires a durable review before confirmation", async () => {
   vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
     const path = String(input);
     if (path.includes("moysklad-products"))
@@ -239,13 +239,7 @@ it("reviews candidates and manual search without enabling confirmation", async (
   fireEvent.click(await screen.findByRole("button", { name: "Review" }));
   expect(await screen.findByText(/variant · v — evidence/)).toBeTruthy();
   fireEvent.click(await screen.findByRole("button", { name: "variant · v" }));
-  expect(screen.getByText(/DETERMINISTIC_CANDIDATE/)).toBeTruthy();
-  expect(
-    (
-      screen.getByRole("button", {
-        name: "Confirm mapping unavailable",
-      }) as HTMLButtonElement
-    ).disabled,
-  ).toBe(true);
+  expect(screen.getByText(/DETERMINISTIC_CANDIDATE: article/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Confirm mapping" })).toBeNull();
   expect(await screen.findByText(/No confirmed mapping history/)).toBeTruthy();
 });

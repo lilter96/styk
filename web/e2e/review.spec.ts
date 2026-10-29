@@ -25,7 +25,10 @@ test("review synthetic mapping and audit without writing", async ({ page }) => {
   await page.getByLabel("Article, code or identity").fill("offer");
   await page.getByRole("button", { name: "product · item" }).click();
   await expect(
-    page.getByRole("button", { name: "Confirm mapping unavailable" }),
-  ).toBeDisabled();
+    page.getByRole("button", { name: "Create review" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Confirm mapping", exact: true }),
+  ).toHaveCount(0);
   await expect(page.getByText(/synthetic explicit confirmation/)).toBeVisible();
 });

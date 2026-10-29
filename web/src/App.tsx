@@ -1,5 +1,10 @@
 import { ProductReview } from "./ProductReview";
-import { useState, type FormEvent } from "react";
+import {
+  ConfirmationNotice,
+  useConfirmation,
+  type Confirmation,
+} from "./Confirmation";
+import { useEffect, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { NavLink, Route, Routes } from "react-router-dom";
 import {
@@ -86,8 +91,8 @@ function Login({ onDone }: { onDone: () => void }) {
         <p className="eyebrow">Local operator console</p>
         <h1>See the whole connection.</h1>
         <p>
-          Inspect your integration evidence in one place. This console is
-          read-only.
+          Inspect integration evidence and explicitly confirm product mappings.
+          Marketplace data is read-only.
         </p>
         <form onSubmit={submit}>
           <label htmlFor="secret">Operator secret</label>
@@ -206,7 +211,7 @@ export function Overview({
         </div>
         <span className="readonly">
           <i />
-          Read-only workspace
+          Marketplace writes disabled
         </span>
       </div>
       <section className="intro">
@@ -276,7 +281,15 @@ export function Overview({
     </>
   );
 }
-export function Products({ scope }: { scope: Scope }) {
+export function Products({
+  scope,
+  confirmation,
+}: {
+  scope: Scope;
+  confirmation?: Confirmation;
+}) {
+  const localConfirmation = useConfirmation();
+  const activeConfirmation = confirmation ?? localConfirmation;
   const [review, setReview] = useState<Product | null>(null);
   const [search, setSearch] = useState(""),
     [archived, setArchived] = useState(""),
@@ -314,15 +327,20 @@ export function Products({ scope }: { scope: Scope }) {
         </div>
         <span className="readonly">
           <i />
-          Read only
+          Local mapping review
         </span>
       </div>
       {review && (
         <ProductReview
           key={review.product_id}
-          product={review}
+          product={
+            q.data?.items.find(
+              (item) => item.product_id === review.product_id,
+            ) ?? review
+          }
           scope={scope}
           close={() => setReview(null)}
+          confirmation={activeConfirmation}
         />
       )}
       <div className="toolbar">
@@ -750,6 +768,16 @@ export function Diagnostics({
 
 export function App() {
   const client = useQueryClient();
+  const confirmation = useConfirmation();
+  useEffect(() => {
+    if (!confirmation.pending) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [confirmation.pending]);
   const session = useQuery({
     queryKey: ["session"],
     queryFn: ({ signal }) => api<null>("/api/session", signal),
@@ -783,11 +811,20 @@ export function App() {
     );
   if (!session.isSuccess)
     return (
-      <Login
-        onDone={() => {
-          void client.invalidateQueries({ queryKey: ["session"] });
-        }}
-      />
+      <>
+        {confirmation.sessionLost && (
+          <p role="alert">
+            The previous confirmation may have committed. After signing in,
+            inspect mapping history for the original account pair; the new
+            session cannot replay it.
+          </p>
+        )}
+        <Login
+          onDone={() => {
+            void client.invalidateQueries({ queryKey: ["session"] });
+          }}
+        />
+      </>
     );
   async function logout() {
     await fetch("/api/session", {
@@ -820,13 +857,18 @@ export function App() {
           </NavLink>
         </nav>
         <div className="sidebar-foot">
-          <div className="sidebar-badge">Read-only mode</div>
+          <div className="sidebar-badge">Marketplace writes disabled</div>
           <p>
             Observe first.
             <br />
             No external changes are made.
           </p>
-          <button onClick={() => void logout()}>Sign out</button>
+          <button
+            disabled={!!confirmation.pending && !confirmation.sessionLost}
+            onClick={() => void logout()}
+          >
+            Sign out
+          </button>
         </div>
       </aside>
       <main className="main">
@@ -839,6 +881,16 @@ export function App() {
           </span>
         </header>
         <div className="content">
+          <ConfirmationNotice
+            confirmation={confirmation}
+            scope={scope}
+            restore={(original) => {
+              setTenant(original.tenant);
+              setChosen(original.tenant);
+              setMoy(original.moy);
+              setOzon(original.ozon);
+            }}
+          />
           <div className="scope-panel">
             <form
               onSubmit={(e) => {
@@ -917,6 +969,7 @@ export function App() {
                 <Products
                   key={`${scope.tenant}:${scope.moy}:${scope.ozon}`}
                   scope={scope}
+                  confirmation={confirmation}
                 />
               }
             />

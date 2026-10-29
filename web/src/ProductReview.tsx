@@ -1,9 +1,16 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { api, params, type Page, type Product } from "./api";
+import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { api, post, params, ApiError, type Page, type Product } from "./api";
+import type { Confirmation } from "./Confirmation";
 
 type Scope = { tenant: string; moy: string; ozon: string };
-type Target = { kind: string; id: string; article: string; code: string };
+type Target = {
+  kind: string;
+  id: string;
+  article: string;
+  code: string;
+  parent_id?: string;
+};
 type History = {
   mapping_id: number;
   version: number;
@@ -15,20 +22,48 @@ type History = {
   confirmed_at: string;
   ozon_import_id: number;
   moysklad_import_id: number;
+  evidence_class?: string;
+  principal_type?: string;
+  explanation?: string;
+};
+type Review = {
+  Review: {
+    ID: string;
+    EvidenceClass: string;
+    CreatedAt: string;
+    ExpiresAt: string;
+    OzonImportID: number;
+    MoyskladImportID: number;
+    ExistingMappingVersion: number | null;
+    Source: { ID: string };
+    Target: { ID: string; Kind: string };
+  };
+  Status: string;
+  MappingConflict: boolean;
+  PrincipalType: string;
 };
 export function ProductReview({
   product,
   scope,
   close,
+  confirmation,
 }: {
   product: Product;
   scope: Scope;
   close: () => void;
+  confirmation: Confirmation;
 }) {
+  const client = useQueryClient();
   const [search, setSearch] = useState("");
   const [offset, setOffset] = useState(0);
   const [historyOffset, setHistoryOffset] = useState(0);
   const [selected, setSelected] = useState<Target | null>(null);
+  const [evidence, setEvidence] = useState("OPERATOR_ATTESTED");
+  const [reviewID, setReviewID] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [reviewError, setReviewError] = useState("");
+  const [acknowledge, setAcknowledge] = useState(false);
+  const [explanation, setExplanation] = useState("");
   const base = {
     tenant: scope.tenant,
     moysklad_account: scope.moy,
@@ -55,11 +90,50 @@ export function ProductReview({
         signal,
       ),
   });
+  const review = useQuery({
+    queryKey: ["mapping-review", reviewID],
+    queryFn: ({ signal }) =>
+      api<Review>(`/api/product-mapping-reviews/${reviewID}`, signal),
+    enabled: !!reviewID,
+    staleTime: 0,
+    refetchInterval: 5000,
+    retry: false,
+  });
+  useEffect(() => {
+    if (review.error instanceof ApiError && review.error.status === 401)
+      void client.invalidateQueries({ queryKey: ["session"] });
+  }, [review.error, client]);
   const candidate =
     selected &&
     product.candidates.find(
       (c) => c.kind === selected.kind && c.id === selected.id,
     );
+  async function createReview() {
+    if (!selected || creating || confirmation.pending) return;
+    setCreating(true);
+    setReviewError("");
+    try {
+      const result = await post<Review>("/api/product-mapping-reviews", {
+        ...base,
+        product_id: product.product_id,
+        target_kind: selected.kind,
+        target_id: selected.id,
+        evidence_class: evidence,
+      });
+      setReviewID(result.Review.ID);
+      setAcknowledge(false);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401)
+        void client.invalidateQueries({ queryKey: ["session"] });
+      setReviewError(
+        err instanceof ApiError && err.status === 401
+          ? "Session expired. Sign in again."
+          : "Review creation failed. Check the selected identities and account scope.",
+      );
+    } finally {
+      setCreating(false);
+    }
+  }
   return (
     <section className="warehouse-panel" aria-label="Product review">
       <div className="heading-row">
@@ -91,10 +165,12 @@ export function ProductReview({
               {c.kind} · {c.id} — evidence: {c.evidence.join(", ")}
               <button
                 className="link-button"
+                disabled={creating}
                 onClick={() => {
                   setSearch(c.id);
                   setOffset(0);
                   setSelected(null);
+                  setReviewID("");
                 }}
               >
                 Find candidate details
@@ -113,11 +189,13 @@ export function ProductReview({
       <label>
         Article, code or identity
         <input
+          disabled={creating}
           value={search}
           onChange={(e) => {
             setSearch(e.target.value);
             setOffset(0);
             setSelected(null);
+            setReviewID("");
           }}
         />
       </label>
@@ -131,10 +209,21 @@ export function ProductReview({
         <ul>
           {targets.data?.items.map((t) => (
             <li key={t.kind + t.id}>
-              <button className="link-button" onClick={() => setSelected(t)}>
+              <button
+                className="link-button"
+                disabled={creating}
+                onClick={() => {
+                  setSelected(t);
+                  setReviewID("");
+                  setEvidence("OPERATOR_ATTESTED");
+                }}
+              >
                 {t.kind} · {t.id}
               </button>{" "}
               · article: {t.article || "Unknown"} · code: {t.code || "Unknown"}
+              {t.kind === "variant" && (
+                <> · parent product: {t.parent_id || "Unknown"}</>
+              )}
             </li>
           ))}
         </ul>
@@ -171,13 +260,124 @@ export function ProductReview({
             {selected.code || "Unknown"}. Import changes since review and
             independent identity verification are not established.
           </p>
+          {selected.kind === "variant" && (
+            <p>Parent product: {selected.parent_id || "Unknown"}</p>
+          )}
           <p>
-            A local operator selection is an attestation, not independently
-            verified evidence. Confirmation is unavailable in this console; use
-            the trusted administrative workflow only after independently
-            verifying identity and reviewing the current imports.
+            By confirming, you attest that these products represent the same
+            item. This relationship has not been independently verified.
           </p>
-          <button disabled>Confirm mapping unavailable</button>
+          <label>
+            Evidence classification{" "}
+            <select
+              disabled={creating}
+              value={evidence}
+              onChange={(e) => {
+                setEvidence(e.target.value);
+                setReviewID("");
+              }}
+            >
+              <option value="OPERATOR_ATTESTED">OPERATOR_ATTESTED</option>
+              {candidate && (
+                <option value="DETERMINISTIC_CANDIDATE">
+                  DETERMINISTIC_CANDIDATE
+                </option>
+              )}
+            </select>
+          </label>
+          <button
+            disabled={creating || !!confirmation.pending}
+            onClick={() => void createReview()}
+          >
+            {creating ? "Creating review…" : "Create review"}
+          </button>
+          {reviewError && <p role="alert">{reviewError}</p>}
+          {reviewID &&
+            (review.isLoading ? (
+              <p role="status">Loading review…</p>
+            ) : review.error ? (
+              <p role="alert">
+                Review unavailable. Sign in again if your session ended.
+              </p>
+            ) : (
+              review.data && (
+                <div>
+                  <h3>Durable review</h3>
+                  <p>
+                    Ozon product {review.data.Review.Source.ID} → MoySklad{" "}
+                    {review.data.Review.Target.Kind}{" "}
+                    {review.data.Review.Target.ID}
+                  </p>
+                  <p>
+                    {review.data.Review.EvidenceClass} · {review.data.Status} ·
+                    created{" "}
+                    <time dateTime={review.data.Review.CreatedAt}>
+                      {new Date(review.data.Review.CreatedAt).toLocaleString()}
+                    </time>{" "}
+                    · expires{" "}
+                    <time dateTime={review.data.Review.ExpiresAt}>
+                      {new Date(review.data.Review.ExpiresAt).toLocaleString()}
+                    </time>
+                  </p>
+                  <p>
+                    Import references: Ozon {review.data.Review.OzonImportID},
+                    MoySklad {review.data.Review.MoyskladImportID}.{" "}
+                    {review.data.Review.ExistingMappingVersion !== null &&
+                      `Existing mapping version: ${review.data.Review.ExistingMappingVersion}. `}
+                    {review.data.MappingConflict &&
+                      "Existing mapping conflict: confirmation is blocked."}
+                  </p>
+                  {review.data.Status !== "CURRENT" && (
+                    <p>
+                      Review expired or source/mapping changed. Create a new
+                      review; the old revisions will not be refreshed.
+                    </p>
+                  )}
+                  <label>
+                    Optional explanation (no credentials or customer data)
+                    <input
+                      value={explanation}
+                      onChange={(e) => setExplanation(e.target.value)}
+                      maxLength={1000}
+                    />
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={acknowledge}
+                      onChange={(e) => setAcknowledge(e.target.checked)}
+                    />{" "}
+                    I explicitly confirm this relationship.
+                  </label>
+                  <button
+                    disabled={
+                      !acknowledge ||
+                      !!confirmation.pending ||
+                      review.data.Status !== "CURRENT" ||
+                      confirmation.result?.review_id === reviewID ||
+                      review.data.MappingConflict ||
+                      Date.now() >= Date.parse(review.data.Review.ExpiresAt)
+                    }
+                    onClick={() => {
+                      try {
+                        confirmation.start(
+                          scope,
+                          product.product_id,
+                          reviewID,
+                          explanation,
+                        );
+                      } catch {
+                        setReviewError(
+                          "Explanation is invalid or exceeds 1,000 UTF-8 bytes.",
+                        );
+                      }
+                    }}
+                  >
+                    Confirm mapping
+                  </button>
+                </div>
+              )
+            ))}
         </div>
       )}
       <h3>Mapping audit history</h3>
@@ -196,6 +396,9 @@ export function ProductReview({
               {new Date(h.confirmed_at).toLocaleString()}; provenance:{" "}
               {h.provenance}; import references {h.ozon_import_id} /{" "}
               {h.moysklad_import_id}
+              {h.evidence_class && <>; evidence: {h.evidence_class}</>}
+              {h.principal_type && <>; principal: {h.principal_type}</>}
+              {h.explanation && <>; explanation: {h.explanation}</>}
             </li>
           ))}
         </ul>

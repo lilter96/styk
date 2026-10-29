@@ -1,6 +1,6 @@
 # Web console V1
 
-The console is a local, read-only operator tool. The React/TypeScript Vite application uses React Router and TanStack Query; the Go API queries PostgreSQL and calls the existing matching and Integration Doctor logic. No browser code calls a marketplace, and no screen creates mappings, commits inventory, or schedules publication. Account registration is a trusted local administrative assertion, not authenticated tenant authorization.
+The console is a local operator tool with explicit product mapping confirmation in the local database. The React/TypeScript Vite application uses React Router and TanStack Query; the Go API queries PostgreSQL and calls the existing matching and Integration Doctor logic. No browser code calls a marketplace, and no screen commits inventory or schedules publication. Account registration is a trusted local administrative assertion, not authenticated tenant authorization.
 
 ## Local setup
 
@@ -20,7 +20,7 @@ The authenticated GET endpoints are `/api/registrations`, `/api/diagnostics`, `/
 
 Overview distinguishes registered sources, completed imports, observation age and unchecked live connectivity. Products show the existing deterministic engine's suggestions; a suggestion is not confirmation. Warehouses show confirmed mappings only for the selected account pair and retain source-specific stock fields. No row means no observation; null means unknown; reported zero remains zero. Observations older than one hour are flagged stale; age is not proof of source freshness. Diagnostics shows Integration Doctor's actual checks and decision status. A missing pool is NOT_CHECKED; UNKNOWN and BLOCKED do not imply zero. READY_CONDITIONAL is never synthesized by the console.
 
-The current account selectors require manually entering an existing tenant. The UI does not register accounts, trigger imports, confirm mappings, manage users, or provide stock publication. Future mapping confirmation requires independently verified identity, explicit authenticated operator approval and audit history; product and warehouse names alone are insufficient.
+The current account selectors require manually entering an existing tenant. The UI can explicitly confirm product mappings through a revision-bound review, but does not register accounts, trigger imports, manage users, confirm warehouse mappings or provide stock publication. An operator-attested mapping is not independently verified identity. See [product mapping review](product-mapping-review-v1.md) for its audit and recovery limitations.
 
 ## Verification and limitations
 
