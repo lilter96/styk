@@ -71,7 +71,9 @@ func providerClock(ctx context.Context, tx pgx.Tx) (time.Time, error) {
 
 func validateProviderCredential(ctx context.Context, tx pgx.Tx, a providercall.Attempt) error {
 	var rejected, current bool
-	err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM provider_call_rejected_credentials WHERE provider=$1 AND account_id=$2 AND tenant_id=$3 AND credential_revision=$4),($4::bigint=0 OR EXISTS(SELECT 1 FROM connection_credentials c JOIN stock_connections s ON s.tenant_id=c.tenant_id AND s.source=c.provider AND s.account_id=c.account_id WHERE c.provider=$1 AND c.account_id=$2 AND c.tenant_id=$3 AND c.revision=$4 AND c.enabled))`, a.Scope.Provider, a.Scope.Account, a.Scope.Tenant, a.Scope.CredentialRevision).Scan(&rejected, &current)
+	// Revision zero does not identify stored credential material. Ignore legacy
+	// rejection rows so a corrected explicit probe can authenticate again.
+	err := tx.QueryRow(ctx, `SELECT ($4::bigint>0 AND EXISTS(SELECT 1 FROM provider_call_rejected_credentials WHERE provider=$1 AND account_id=$2 AND tenant_id=$3 AND credential_revision=$4)),($4::bigint=0 OR EXISTS(SELECT 1 FROM connection_credentials c JOIN stock_connections s ON s.tenant_id=c.tenant_id AND s.source=c.provider AND s.account_id=c.account_id WHERE c.provider=$1 AND c.account_id=$2 AND c.tenant_id=$3 AND c.revision=$4 AND c.enabled))`, a.Scope.Provider, a.Scope.Account, a.Scope.Tenant, a.Scope.CredentialRevision).Scan(&rejected, &current)
 	if err != nil {
 		return fmt.Errorf("validate provider credential revision: %w", err)
 	}

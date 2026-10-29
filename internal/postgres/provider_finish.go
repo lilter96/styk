@@ -10,6 +10,10 @@ import (
 	"github.com/lilter96/styk/internal/providercall"
 )
 
+// FinishProviderCall records an admitted attempt. Credential rejection fences
+// only stored revisions (>0). Revision-zero scopes represent unversioned probes
+// or upstream-authorized environment clients and retain the shared account quota;
+// their caller must stop a rejected operation and authorize a later submission.
 func (s *Store) FinishProviderCall(ctx context.Context, lease providercall.Lease, result providercall.Result) error {
 	a := lease.Attempt
 	return s.providerTransaction(ctx, func(ctx context.Context, tx pgx.Tx) error {
@@ -59,6 +63,9 @@ func finishProviderPermit(ctx context.Context, tx pgx.Tx, a providercall.Attempt
 func applyProviderResponse(ctx context.Context, tx pgx.Tx, a providercall.Attempt, r providercall.Result, now time.Time) error {
 	switch r.Status {
 	case http.StatusUnauthorized:
+		if a.Scope.CredentialRevision == 0 {
+			break
+		}
 		_, err := tx.Exec(ctx, `INSERT INTO provider_call_rejected_credentials(provider,account_id,tenant_id,credential_revision,rejected_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`, a.Scope.Provider, a.Scope.Account, a.Scope.Tenant, a.Scope.CredentialRevision, now)
 		if err != nil {
 			return fmt.Errorf("reject provider credential revision: %w", err)
