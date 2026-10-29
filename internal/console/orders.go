@@ -18,10 +18,11 @@ import (
 )
 
 type ordersAPI struct {
-	db        *postgres.Store
-	service   *orderflow.Service
-	factory   orderprovider.Factory
-	simulated bool
+	db          *postgres.Store
+	service     *orderflow.Service
+	initializer *orderflow.MetadataInitializer
+	factory     orderprovider.Factory
+	simulated   bool
 }
 
 func registerOrdersRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c *connections) error {
@@ -39,6 +40,10 @@ func registerOrdersRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c *co
 	if err != nil {
 		return err
 	}
+	api.initializer, err = orderflow.NewMetadataInitializer(db, factory, orderflow.ServiceOptions{AllowScope: api.allowed})
+	if err != nil {
+		return err
+	}
 	for _, route := range []struct {
 		pattern  string
 		handler  http.HandlerFunc
@@ -47,6 +52,7 @@ func registerOrdersRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c *co
 		{"GET /api/orders/config", api.config, false}, {"POST /api/orders/config", api.saveConfig, true},
 		{"GET /api/orders/postings", api.postings, false}, {"GET /api/orders/operations", api.history, false},
 		{"GET /api/orders/metadata", api.metadata, false}, {"POST /api/orders/preview", api.preview, true},
+		{"GET /api/orders/metadata/registry", api.metadataRegistry, false}, {"POST /api/orders/metadata/attributes", api.createMetadata, true},
 		{"POST /api/orders/approve", api.approve, true}, {"POST /api/orders/check", api.check, true},
 	} {
 		handler := route.handler

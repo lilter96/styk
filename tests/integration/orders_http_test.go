@@ -160,13 +160,13 @@ func (b *ordersHTTPBrowser) approve(t *testing.T, preview orders.Preview) orders
 func ordersHTTPIsolation(t *testing.T, a, b *ordersHTTPBrowser, guessedPreview string) {
 	t.Helper()
 	for _, pair := range []struct{ actor, foreign *ordersHTTPBrowser }{{a, b}, {b, a}} {
-		for _, path := range []string{"config", "postings", "operations", "metadata"} {
+		for _, path := range []string{"config", "postings", "operations", "metadata", "metadata/registry"} {
 			status, raw := pair.actor.request(t, 2, http.MethodGet, "/api/orders/"+path+ordersHTTPQuery(pair.foreign.scope), nil, false)
 			if status != http.StatusNotFound || strings.Contains(string(raw), "synthetic-orders-") {
 				t.Fatalf("foreign orders %s read: %d", path, status)
 			}
 		}
-		for _, path := range []string{"config", "preview", "approve", "check"} {
+		for _, path := range []string{"config", "preview", "approve", "check", "metadata/attributes"} {
 			body := ordersHTTPBody(pair.foreign.scope)
 			body["preview_id"], body["acknowledge"], body["idempotency_key"] = guessedPreview, true, "cross-tenant"
 			status, raw := pair.actor.request(t, 1, http.MethodPost, "/api/orders/"+path, body, true)
@@ -182,5 +182,14 @@ func ordersHTTPIsolation(t *testing.T, a, b *ordersHTTPBrowser, guessedPreview s
 	}
 	if status, _ := a.request(t, 2, http.MethodPost, "/api/orders/check", ordersHTTPBody(a.scope), false); status != http.StatusForbidden {
 		t.Fatalf("mutation without cross-replica CSRF: %d", status)
+	}
+	metadata := ordersHTTPBody(a.scope)
+	metadata["unique_code"], metadata["type"], metadata["idempotency_key"] = "styk-order-status", "string", "explicit-metadata-confirmation"
+	if status, _ := a.request(t, 2, http.MethodPost, "/api/orders/metadata/attributes", metadata, true); status != http.StatusBadRequest {
+		t.Fatalf("metadata setup without explicit confirmation: %d", status)
+	}
+	metadata["acknowledge"] = true
+	if status, _ := a.request(t, 2, http.MethodPost, "/api/orders/metadata/attributes", metadata, false); status != http.StatusForbidden {
+		t.Fatalf("metadata setup without cross-replica CSRF: %d", status)
 	}
 }
