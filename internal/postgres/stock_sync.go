@@ -92,7 +92,7 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 	// Use the established import/mapping lock order. Every target in a frozen
 	// review sees one consistent latest batch and matching version; no external
 	// request is made while these transaction locks are held.
-	for _, key := range []string{"ozon:" + scope.OzonAccount, "moysklad:" + scope.MoyskladAccount, "matching:" + scope.Tenant, "warehouse-mapping:" + scope.Tenant} {
+	for _, key := range stockReviewLockKeys(scope) {
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, key); err != nil {
 			return review, err
 		}

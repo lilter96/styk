@@ -57,8 +57,7 @@ type Client struct {
 }
 
 // NewControlledTestStockClient permits the owner-authorized test scope and
-// official Ozon host. The legacy manual target is fixed; automatic writes
-// additionally require a bound, database-revalidated publication intent.
+// official Ozon host. Every write requires a bound, database-revalidated intent.
 func NewControlledTestStockClient(scope domain.StockSyncScope, key string) (*Client, error) {
 	if !testpublication.Enabled(scope) {
 		return nil, ErrStockWritesDisabled

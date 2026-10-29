@@ -564,12 +564,35 @@ func StockSyncPublic(value any) any {
 
 // StockPublicationCanDispatch is the final pre-I/O check, after credentials were
 // resolved. No transaction remains open during the network operation.
-func (s *Store) StockPublicationCanDispatch(ctx context.Context, op domain.StockPublication, now time.Time) (bool, error) {
-	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
+func (s *Store) StockPublicationCanDispatch(ctx context.Context, op domain.StockPublication, now time.Time) (allowed bool, resultErr error) {
+	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
+	defer cancel()
+	conn, keys, err := s.lockDispatchConnection(ctx, op.StockSyncScope)
 	if err != nil {
 		return false, err
 	}
-	defer tx.Rollback(context.Background())
+	defer func() {
+		if err := releaseDispatchConnection(conn, keys); err != nil {
+			allowed, resultErr = false, errors.Join(resultErr, err)
+		}
+	}()
+	tx, err := conn.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
+	if err != nil {
+		return false, err
+	}
+	defer func() {
+		if err := rollbackDispatch(tx); err != nil {
+			allowed, resultErr = false, errors.Join(resultErr, err)
+		}
+	}()
+	return s.checkDispatchSnapshot(ctx, tx, op, now)
+}
+
+func (s *Store) checkDispatchSnapshot(ctx context.Context, tx pgx.Tx, op domain.StockPublication, now time.Time) (bool, error) {
+	now, err := dispatchClock(ctx, tx, now)
+	if err != nil {
+		return false, err
+	}
 	var enabled bool
 	if err = tx.QueryRow(ctx, `SELECT enabled FROM stock_sync_settings WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3`, op.Tenant, op.MoyskladAccount, op.OzonAccount).Scan(&enabled); err != nil {
 		return false, err
@@ -581,40 +604,54 @@ func (s *Store) StockPublicationCanDispatch(ctx context.Context, op domain.Stock
 	if err != nil {
 		return false, err
 	}
-	if op.StockSyncScope == testpublication.Scope() {
-		if !testpublication.Enabled(op.StockSyncScope) || op.OutboxClaimToken == "" || len(op.Targets) != 1 {
-			return false, nil
-		}
-		t := op.Targets[0]
-		automaticAllowed, authErr := authorizedAutomaticReview(ctx, tx, review, now)
-		if authErr != nil {
-			return false, authErr
-		}
-		if automaticAllowed {
-			reviewed := review.Targets[0]
-			automaticAllowed = reviewed.Quantity != nil && t.ProductID == reviewed.ProductID && t.WarehouseID == reviewed.WarehouseID && t.Quantity == *reviewed.Quantity && t.Decision.Request.Pool.ItemID == reviewed.SourceItemID && t.Decision.Request.Pool.WarehouseID == reviewed.SourceWarehouseID
-			if automaticAllowed && reviewed.InitialPublication {
-				if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_initial_publications WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND product_id=$4 AND warehouse_id=$5 AND publication_id=$6 AND config_revision=$7)`, op.Tenant, op.MoyskladAccount, op.OzonAccount, t.ProductID, t.WarehouseID, op.ID, review.Attestations[0].AutomaticPolicyRevision).Scan(&automaticAllowed); err != nil {
-					return false, err
-				}
-			}
-		}
-		manualAllowed := len(review.Targets) == 1 && !review.Targets[0].InitialPublication && testpublication.TargetAllowed(op.StockSyncScope, t.ProductID, t.WarehouseID, t.Decision.Request.Pool.ItemID, t.Decision.Request.Pool.WarehouseID, t.Quantity)
-		if !automaticAllowed && !manualAllowed {
-			return false, nil
-		}
-		var owned bool
-		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM outbox_tasks WHERE publication_operation_id=$1 AND task_type='stock_publication' AND state='running' AND claim_token=$2 AND lease_until>$3)`, op.ID, op.OutboxClaimToken, now).Scan(&owned); err != nil {
-			return false, err
-		}
-		if !owned {
-			return false, nil
-		}
-	} else if op.OutboxClaimToken != "" {
+	allowed, err := dispatchAuthorized(ctx, tx, op, review, now)
+	if err != nil || !allowed {
+		return false, err
+	}
+	matches, err := dispatchTargetsMatch(ctx, tx, op)
+	if err != nil || !matches || !review.ExpiresAt.After(now) {
+		return false, err
+	}
+	return s.checkDispatchReview(ctx, tx, op, review, now)
+}
+
+func dispatchAuthorized(ctx context.Context, tx pgx.Tx, op domain.StockPublication, review domain.StockSyncReview, now time.Time) (bool, error) {
+	if op.StockSyncScope != testpublication.Scope() {
+		return op.OutboxClaimToken == "", nil
+	}
+	if !testpublication.Enabled(op.StockSyncScope) || op.OutboxClaimToken == "" || len(op.Targets) != 1 {
 		return false, nil
 	}
-	// A worker may have been paused while recovery marked its claim UNKNOWN.
-	// Its in-memory operation is not proof of current ownership.
+	automatic, err := automaticDispatchAllowed(ctx, tx, op, review, now)
+	if err != nil {
+		return false, err
+	}
+	t := op.Targets[0]
+	manual := len(review.Targets) == 1 && !review.Targets[0].InitialPublication && testpublication.TargetAllowed(op.StockSyncScope, t.ProductID, t.WarehouseID, t.Decision.Request.Pool.ItemID, t.Decision.Request.Pool.WarehouseID, t.Quantity)
+	if !automatic && !manual {
+		return false, nil
+	}
+	return controlledDispatchClaim(ctx, tx, op, now)
+}
+
+func automaticDispatchAllowed(ctx context.Context, tx pgx.Tx, op domain.StockPublication, review domain.StockSyncReview, now time.Time) (bool, error) {
+	allowed, err := authorizedAutomaticReview(ctx, tx, review, now)
+	if err != nil || !allowed {
+		return false, err
+	}
+	t, reviewed := op.Targets[0], review.Targets[0]
+	if reviewed.Quantity == nil || t.ProductID != reviewed.ProductID || t.WarehouseID != reviewed.WarehouseID || t.Quantity != *reviewed.Quantity || t.Decision.Request.Pool.ItemID != reviewed.SourceItemID || t.Decision.Request.Pool.WarehouseID != reviewed.SourceWarehouseID {
+		return false, nil
+	}
+	if !reviewed.InitialPublication {
+		return true, nil
+	}
+	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_initial_publications WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND product_id=$4 AND warehouse_id=$5 AND publication_id=$6 AND config_revision=$7)`, op.Tenant, op.MoyskladAccount, op.OzonAccount, t.ProductID, t.WarehouseID, op.ID, review.Attestations[0].AutomaticPolicyRevision).Scan(&allowed)
+	return allowed, err
+}
+
+func dispatchTargetsMatch(ctx context.Context, tx pgx.Tx, op domain.StockPublication) (bool, error) {
+	// Recovery may have marked the in-memory claim UNKNOWN while it was paused.
 	if len(op.Targets) == 0 {
 		return false, nil
 	}
@@ -624,7 +661,7 @@ func (s *Store) StockPublicationCanDispatch(ctx context.Context, op domain.Stock
 		}
 		var currentState string
 		var product, warehouse, quantity string
-		err = tx.QueryRow(ctx, `SELECT t.state,t.product_id,t.warehouse_id,t.quantity FROM stock_publication_targets t JOIN stock_publications p ON p.id=t.operation_id WHERE p.id=$1 AND p.tenant_id=$2 AND p.moysklad_account=$3 AND p.ozon_account=$4 AND t.id=$5`, op.ID, op.Tenant, op.MoyskladAccount, op.OzonAccount, target.ID).Scan(&currentState, &product, &warehouse, &quantity)
+		err := tx.QueryRow(ctx, `SELECT t.state,t.product_id,t.warehouse_id,t.quantity FROM stock_publication_targets t JOIN stock_publications p ON p.id=t.operation_id WHERE p.id=$1 AND p.tenant_id=$2 AND p.moysklad_account=$3 AND p.ozon_account=$4 AND t.id=$5`, op.ID, op.Tenant, op.MoyskladAccount, op.OzonAccount, target.ID).Scan(&currentState, &product, &warehouse, &quantity)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, nil
 		}
@@ -635,14 +672,25 @@ func (s *Store) StockPublicationCanDispatch(ctx context.Context, op domain.Stock
 			return false, nil
 		}
 	}
-	if !review.ExpiresAt.After(now) {
-		return false, nil
-	}
+	return true, nil
+}
+
+func (s *Store) checkDispatchReview(ctx context.Context, tx pgx.Tx, op domain.StockPublication, review domain.StockSyncReview, now time.Time) (bool, error) {
 	current, err := s.stockSyncReview(ctx, tx, op.StockSyncScope, review.Attestations, now)
 	if err != nil {
 		return false, err
 	}
-	return current.Ready && stableSyncEvidence(current) == stableSyncEvidence(review), nil
+	if !current.Ready || stableSyncEvidence(current) != stableSyncEvidence(review) {
+		return false, nil
+	}
+	now, err = dispatchClock(ctx, tx, now)
+	if err != nil || !dispatchReviewUnexpired(review, current, now) {
+		return false, err
+	}
+	if op.StockSyncScope == testpublication.Scope() {
+		return controlledDispatchClaim(ctx, tx, op, now)
+	}
+	return true, nil
 }
 
 // RefreshStockSyncScope is a bounded internal reevaluation hook for one known

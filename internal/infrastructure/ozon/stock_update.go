@@ -50,9 +50,8 @@ func safeStockCode(v string) string {
 }
 
 // BindControlledTestIntent restricts this single-use client to one frozen
-// automatic publication. The worker supplies an authorization callback that
-// rechecks the claimed outbox task and the current audited policy in Postgres
-// immediately before dispatch. This does not enable other accounts or hosts.
+// publication. The worker supplies an authorization callback that rechecks the
+// claimed outbox task and current evidence in Postgres before dispatch.
 func (c *Client) BindControlledTestIntent(item StockUpdate, authorize func(context.Context) (bool, error)) error {
 	c.intentMu.Lock()
 	defer c.intentMu.Unlock()
@@ -69,35 +68,46 @@ func (c *Client) BindControlledTestIntent(item StockUpdate, authorize func(conte
 	return nil
 }
 
+func (c *Client) consumeStockIntent(items []StockUpdate) (func(context.Context) (bool, error), error) {
+	if c.controlledTestScope == nil {
+		if c.allowSyntheticStockWrites {
+			return nil, nil
+		}
+		return nil, ErrStockWritesDisabled
+	}
+	if !testpublication.Enabled(*c.controlledTestScope) || len(items) != 1 {
+		return nil, ErrStockWritesDisabled
+	}
+	c.intentMu.Lock()
+	defer c.intentMu.Unlock()
+	if c.controlledIntent == nil || c.controlledIntentUsed || *c.controlledIntent != items[0] || c.controlledAuthorize == nil || !testpublication.AutomaticQuantityAllowed(strconv.FormatInt(items[0].Quantity, 10)) {
+		return nil, ErrStockWritesDisabled
+	}
+	c.controlledIntentUsed = true
+	return c.controlledAuthorize, nil
+}
+
+func (c *Client) authorizeStockIntent(ctx context.Context, authorize func(context.Context) (bool, error)) error {
+	if authorize == nil {
+		return nil
+	}
+	if !testpublication.Enabled(*c.controlledTestScope) {
+		return ErrStockWritesDisabled
+	}
+	allowed, err := authorize(ctx)
+	if err != nil || !allowed || !testpublication.Enabled(*c.controlledTestScope) {
+		return ErrStockWritesDisabled
+	}
+	return ctx.Err()
+}
+
 // UpdateStocks sends exactly ONE HTTP attempt. Read-client retries are never
 // reused for an external write. Any ambiguous transport/schema/server result
 // must be reconciled by an explicit read; it is not a retry instruction.
 func (c *Client) UpdateStocks(ctx context.Context, items []StockUpdate) ([]StockUpdateResult, error) {
-	if c.controlledTestScope != nil {
-		if !testpublication.Enabled(*c.controlledTestScope) || len(items) != 1 {
-			return nil, ErrStockWritesDisabled
-		}
-		c.intentMu.Lock()
-		if c.controlledIntent != nil {
-			if c.controlledIntentUsed || *c.controlledIntent != items[0] || c.controlledAuthorize == nil || !testpublication.AutomaticQuantityAllowed(strconv.FormatInt(items[0].Quantity, 10)) {
-				c.intentMu.Unlock()
-				return nil, ErrStockWritesDisabled
-			}
-			c.controlledIntentUsed = true
-			authorize := c.controlledAuthorize
-			c.intentMu.Unlock()
-			allowed, err := authorize(ctx)
-			if err != nil || !allowed {
-				return nil, ErrStockWritesDisabled
-			}
-		} else {
-			c.intentMu.Unlock()
-			if items[0].ProductID != testpublication.OzonProduct || items[0].WarehouseID != testpublication.OzonWarehouse || !testpublication.QuantityAllowed(strconv.FormatInt(items[0].Quantity, 10)) {
-				return nil, ErrStockWritesDisabled
-			}
-		}
-	} else if !c.allowSyntheticStockWrites {
-		return nil, ErrStockWritesDisabled
+	authorize, err := c.consumeStockIntent(items)
+	if err != nil {
+		return nil, err
 	}
 	if len(items) == 0 || len(items) > 100 {
 		return nil, errors.New("stock update supports one to one hundred targets")
@@ -123,6 +133,9 @@ func (c *Client) UpdateStocks(ctx context.Context, items []StockUpdate) ([]Stock
 	}
 	payload, _ := json.Marshal(body)
 	if err := c.wait(ctx); err != nil {
+		return nil, err
+	}
+	if err := c.authorizeStockIntent(ctx, authorize); err != nil {
 		return nil, err
 	}
 	u := c.base.ResolveReference(&url.URL{Path: stockUpdatePath})

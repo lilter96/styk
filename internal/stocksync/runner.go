@@ -141,9 +141,9 @@ func (r Runner) RunNext(ctx context.Context) (bool, error) {
 		}
 		return true, nil
 	}
-	if r.ControlledTest && automatic {
+	if r.ControlledTest {
 		if len(items) != 1 {
-			return true, errors.New("automatic test publication must contain exactly one target")
+			return true, errors.New("controlled test publication must contain exactly one target")
 		}
 		if err = client.BindControlledTestIntent(items[0], func(check context.Context) (bool, error) {
 			return r.Store.StockPublicationCanDispatch(check, *op, time.Now().UTC())

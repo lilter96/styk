@@ -58,7 +58,11 @@ func TestControlledClientNegotiatesHTTP1WithHTTP2CapableServer(t *testing.T) {
 			pool := x509.NewCertPool()
 			pool.AddCert(server.Certificate())
 			transport.TLSClientConfig.RootCAs = pool
-			result, err := c.UpdateStocks(context.Background(), []StockUpdate{{testpublication.OzonProduct, testpublication.OzonWarehouse, 1}})
+			item := StockUpdate{testpublication.OzonProduct, testpublication.OzonWarehouse, 1}
+			if err = c.BindControlledTestIntent(item, func(context.Context) (bool, error) { return true, nil }); err != nil {
+				t.Fatal(err)
+			}
+			result, err := c.UpdateStocks(context.Background(), []StockUpdate{item})
 			if err != nil || calls.Load() != 1 || len(result) != 1 || result[0].State != "SUCCEEDED" {
 				t.Fatalf("HTTP/1 negotiation: calls=%d result=%+v err=%v", calls.Load(), result, err)
 			}
@@ -101,7 +105,11 @@ func TestControlledLiveClientIsFixedToOneAccountAndTarget(t *testing.T) {
 	if calls.Load() != 0 {
 		t.Fatal("an unapproved target reached the transport")
 	}
-	result, err := c.UpdateStocks(context.Background(), []StockUpdate{{testpublication.OzonProduct, testpublication.OzonWarehouse, 7}})
+	item := StockUpdate{testpublication.OzonProduct, testpublication.OzonWarehouse, 7}
+	if err = c.BindControlledTestIntent(item, func(context.Context) (bool, error) { return true, nil }); err != nil {
+		t.Fatal(err)
+	}
+	result, err := c.UpdateStocks(context.Background(), []StockUpdate{item})
 	if err != nil || calls.Load() != 1 || len(result) != 1 || result[0].State != "SUCCEEDED" {
 		t.Fatalf("approved target: %+v %v", result, err)
 	}
@@ -165,6 +173,90 @@ func TestControlledAutomaticIntentRequiresCurrentAuthorization(t *testing.T) {
 		t.Fatal("consumed intent was reused")
 	}
 }
+
+func TestControlledManualStockRequiresBoundIntent(t *testing.T) {
+	t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", "true")
+	c, err := NewControlledTestStockClient(testpublication.Scope(), "synthetic-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	c.http.Transport = transportFunc(func(*http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return nil, errors.New("unexpected transport call")
+	})
+	item := StockUpdate{ProductID: testpublication.OzonProduct, WarehouseID: testpublication.OzonWarehouse, Quantity: 1}
+	if _, err = c.UpdateStocks(context.Background(), []StockUpdate{item}); !errors.Is(err, ErrStockWritesDisabled) {
+		t.Fatalf("unbound manual write was not rejected: %v", err)
+	}
+	if calls.Load() != 0 {
+		t.Fatal("unbound manual write reached the transport")
+	}
+}
+
+type rateWaitContext struct {
+	context.Context
+	started chan struct{}
+	once    sync.Once
+}
+
+func (c *rateWaitContext) Done() <-chan struct{} {
+	c.once.Do(func() { close(c.started) })
+	return c.Context.Done()
+}
+
+func TestControlledWriteRechecksAuthorizationAfterRateWait(t *testing.T) {
+	t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", "true")
+	tests := []struct {
+		name string
+		item StockUpdate
+	}{
+		{"manual", StockUpdate{ProductID: testpublication.OzonProduct, WarehouseID: testpublication.OzonWarehouse, Quantity: 1}},
+		{"automatic", StockUpdate{ProductID: "123", WarehouseID: "456", Quantity: 1}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) { assertAuthorizationAfterRateWait(t, tc.item) })
+	}
+}
+
+func assertAuthorizationAfterRateWait(t *testing.T, item StockUpdate) {
+	t.Helper()
+	c, err := NewControlledTestStockClient(testpublication.Scope(), "synthetic-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	c.http.Transport = transportFunc(func(*http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return nil, errors.New("unexpected transport call")
+	})
+	var authorized atomic.Bool
+	authorized.Store(true)
+	if err = c.BindControlledTestIntent(item, func(context.Context) (bool, error) { return authorized.Load(), nil }); err != nil {
+		t.Fatal(err)
+	}
+	c.next = time.Now().Add(2 * time.Second)
+	base, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ctx := &rateWaitContext{Context: base, started: make(chan struct{})}
+	done := make(chan error, 1)
+	go func() { _, e := c.UpdateStocks(ctx, []StockUpdate{item}); done <- e }()
+	select {
+	case <-ctx.started:
+		authorized.Store(false)
+	case <-time.After(time.Second):
+		t.Fatal("write did not enter the rate limiter")
+	}
+	select {
+	case err = <-done:
+		if !errors.Is(err, ErrStockWritesDisabled) || calls.Load() != 0 {
+			t.Fatalf("revoked authorization reached the transport: calls=%d err=%v", calls.Load(), err)
+		}
+	case <-time.After(4 * time.Second):
+		t.Fatal("write did not finish")
+	}
+}
+
 func TestStockWriteSingleAttemptAndAmbiguousResult(t *testing.T) {
 	for _, status := range []int{500, 502, 503, 307} {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {
