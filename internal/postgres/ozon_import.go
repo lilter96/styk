@@ -70,7 +70,7 @@ func saveOzonImportTx(ctx context.Context, tx pgx.Tx, snap domain.OzonImport, fi
 		return 0, false, fmt.Errorf("insert Ozon batch: %w", err)
 	}
 	for _, p := range snap.Products {
-		_, err = tx.Exec(ctx, `INSERT INTO ozon_product_observations(import_id,product_id,offer_id,sku,archived) VALUES($1,$2,$3,NULLIF($4,''),$5)`, id, p.ProductID, p.OfferID, p.SKU, p.Archived)
+		_, err = tx.Exec(ctx, `INSERT INTO ozon_product_observations(import_id,product_id,offer_id,sku,archived,name) VALUES($1,$2,$3,NULLIF($4,''),$5,NULLIF($6,''))`, id, p.ProductID, p.OfferID, p.SKU, p.Archived, p.Name)
 		if err != nil {
 			return 0, false, fmt.Errorf("insert Ozon product: %w", err)
 		}

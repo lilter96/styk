@@ -78,7 +78,7 @@ func catalogClient(account, key string) *ozon.Client {
 			attempts = n
 		}
 	}
-	client, _ := ozon.New(ozon.Options{BaseURL: ozon.BaseURL, ClientID: account, APIKey: key, Timeout: timeout, Interval: interval, Backoff: backoff, MaxRetryAfter: maxRetry, Attempts: attempts, PageSize: 100})
+	client, _ := ozon.New(ozon.Options{BaseURL: ozon.BaseURL, ClientID: account, APIKey: key, Timeout: timeout, Interval: interval, Backoff: backoff, MaxRetryAfter: maxRetry, Attempts: attempts, PageSize: 100, IncludeProductNames: true})
 	return client
 }
 

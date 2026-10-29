@@ -229,6 +229,9 @@ export type Report = {
   mapping_counts: Record<string, number>;
 };
 export type Product = {
+  name?: string;
+  target_name?: string;
+  target_article?: string;
   product_id: string;
   offer_id: string;
   sku: string | null;

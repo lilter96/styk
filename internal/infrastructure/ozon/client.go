@@ -37,6 +37,7 @@ type Options struct {
 	Attempts, PageSize                        int
 	HTTPClient                                *http.Client
 	AllowSyntheticStockWrites                 bool
+	IncludeProductNames                       bool
 }
 type Client struct {
 	base                                      *url.URL
@@ -52,6 +53,7 @@ type Client struct {
 	controlledAuthorize                       func(context.Context) (bool, error)
 	intentMu                                  sync.Mutex
 	controlledIntentUsed                      bool
+	includeProductNames                       bool
 }
 
 // NewControlledTestStockClient permits the owner-authorized test scope and
@@ -141,7 +143,7 @@ func New(o Options) (*Client, error) {
 	}
 	hc.Timeout = o.Timeout
 	hc.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return &Client{base: u, id: o.ClientID, key: o.APIKey, http: hc, timeout: o.Timeout, interval: o.Interval, backoff: o.Backoff, maxRetryAfter: o.MaxRetryAfter, attempts: o.Attempts, pageSize: o.PageSize, allowSyntheticStockWrites: o.AllowSyntheticStockWrites}, nil
+	return &Client{base: u, id: o.ClientID, key: o.APIKey, http: hc, timeout: o.Timeout, interval: o.Interval, backoff: o.Backoff, maxRetryAfter: o.MaxRetryAfter, attempts: o.Attempts, pageSize: o.PageSize, allowSyntheticStockWrites: o.AllowSyntheticStockWrites, includeProductNames: o.IncludeProductNames}, nil
 }
 func sleep(ctx context.Context, d time.Duration) error {
 	if d <= 0 {
@@ -191,7 +193,7 @@ func retryAfter(v string) (time.Duration, bool) {
 
 // Only these documented read operations can be invoked; POST does not imply a write.
 func (c *Client) post(ctx context.Context, path string, body any, out any) error {
-	if path != productPath && path != warehousePath && path != stockPath && path != "/v4/posting/fbs/list" && path != "/v3/posting/fbs/get" {
+	if path != productPath && path != productInfoPath && path != warehousePath && path != stockPath && path != "/v4/posting/fbs/list" && path != "/v3/posting/fbs/get" {
 		return errors.New("Ozon operation not allowed")
 	}
 	b, _ := ctx.Value(budgetKey{}).(*budget)
@@ -469,6 +471,11 @@ func (c *Client) Read(ctx context.Context) (domain.OzonImport, error) {
 					return domain.OzonImport{}, err
 				}
 			}
+		}
+	}
+	if c.includeProductNames {
+		if err := c.readProductNames(ctx, snap.Products); err != nil {
+			return domain.OzonImport{}, fmt.Errorf("read product names: %w", err)
 		}
 	}
 	if b != nil {

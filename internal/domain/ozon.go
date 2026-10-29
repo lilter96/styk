@@ -6,6 +6,7 @@ import "time"
 type OzonProduct struct {
 	ProductID, OfferID, SKU string
 	Archived                *bool
+	Name                    string `json:",omitempty"`
 }
 type OzonWarehouse struct {
 	ID, Name, Status, WarehouseType string

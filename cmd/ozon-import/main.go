@@ -85,7 +85,7 @@ func run() error {
 			return errors.New("OZON_MAX_ATTEMPTS must be an integer")
 		}
 	}
-	c, err := ozon.New(ozon.Options{BaseURL: ozon.BaseURL, ClientID: id, APIKey: key, Timeout: timeout, Interval: interval, Backoff: backoff, MaxRetryAfter: maxRetry, Attempts: attempts, PageSize: 100})
+	c, err := ozon.New(ozon.Options{BaseURL: ozon.BaseURL, ClientID: id, APIKey: key, Timeout: timeout, Interval: interval, Backoff: backoff, MaxRetryAfter: maxRetry, Attempts: attempts, PageSize: 100, IncludeProductNames: true})
 	if err != nil {
 		return err
 	}
