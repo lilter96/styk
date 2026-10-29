@@ -72,6 +72,7 @@ function mockAPI(
       code: string,
       body: Record<string, unknown>,
     ) => Response | undefined;
+    reconcileResponse?: () => Response;
   } = {},
 ) {
   let current = registry(options.ready);
@@ -86,6 +87,11 @@ function mockAPI(
           ozon_account: url.searchParams.get("ozon_account"),
         },
       });
+    if (url.pathname.endsWith("/metadata/reconcile"))
+      return (
+        options.reconcileResponse?.() ??
+        json({ state: "UNKNOWN", registry: current })
+      );
     if (url.pathname.endsWith("/metadata/attributes")) {
       const body = JSON.parse(init!.body as string);
       const custom = options.fieldResponse?.(body.unique_code, body);
@@ -185,6 +191,88 @@ afterEach(() => {
   sessionStorage.clear();
   vi.unstubAllGlobals();
 });
+
+it("explicitly reconciles an unknown field by read-only route and preserves its original creation key", async () => {
+  const confirmed = registry(1);
+  const { fetcher, setRegistry } = mockAPI({
+    fieldResponse: () => json({ error: "UNAVAILABLE" }, 503),
+    reconcileResponse: () =>
+      json({
+        state: "RECONCILED",
+        registry: confirmed,
+        code: "CONFIRMED_BY_MARKER_AFTER_RESPONSE_DRIFT",
+      }),
+  });
+  mount();
+  await acknowledge();
+  fireEvent.click(createButton());
+  await screen.findByText(/Результат создания неизвестен:/);
+  const original = JSON.parse(creationPosts(fetcher)[0][1]!.body as string);
+  expect(
+    fetcher.mock.calls.filter(([path]) => path.endsWith("/metadata/reconcile")),
+  ).toHaveLength(0);
+  setRegistry(confirmed);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Проверить результат: ID заказа Ozon" }),
+  );
+  await screen.findByText(
+    "Поле найдено в МойСклад. Результат подтверждён сверкой.",
+  );
+  expect(screen.getByText("Подтверждено в МойСклад")).toBeTruthy();
+  const checks = fetcher.mock.calls.filter(([path]) =>
+    path.endsWith("/metadata/reconcile"),
+  );
+  expect(checks).toHaveLength(1);
+  expect(JSON.parse(checks[0][1]!.body as string)).toEqual({
+    ...orderScopeBody(scope),
+    unique_code: "styk-order-id",
+    acknowledge: true,
+  });
+  expect(creationPosts(fetcher)).toHaveLength(1);
+  expect(JSON.stringify(sessionStorage)).toContain(original.idempotency_key);
+  expect(
+    fetcher.mock.calls.filter(
+      ([path]) => path.endsWith("/config") || path.endsWith("/approve"),
+    ),
+  ).toHaveLength(0);
+});
+
+it.each(["UNKNOWN", "http403"])(
+  "keeps creation blocked after an explicit inconclusive result check (%s)",
+  async (outcome) => {
+    const { fetcher } = mockAPI({
+      fieldResponse: () => json({ error: "UNAVAILABLE" }, 503),
+      reconcileResponse: () =>
+        outcome === "http403"
+          ? json({ error: "FORBIDDEN" }, 403)
+          : json({ state: "UNKNOWN", registry: registry() }),
+    });
+    mount();
+    await acknowledge();
+    fireEvent.click(createButton());
+    await screen.findByText(/Результат создания неизвестен:/);
+    const check = screen.getByRole("button", {
+      name: "Проверить результат: ID заказа Ozon",
+    });
+    fireEvent.click(check);
+    await screen.findByText(
+      outcome === "http403"
+        ? "Недостаточно прав для проверки результата в МойСклад."
+        : "Сверка пока не подтвердила создание поля. Повторное создание не выполняется.",
+    );
+    await waitFor(() =>
+      expect((check as HTMLButtonElement).disabled).toBe(false),
+    );
+    expect((createButton() as HTMLButtonElement).disabled).toBe(true);
+    expect(creationPosts(fetcher)).toHaveLength(1);
+    expect(
+      fetcher.mock.calls.filter(([path]) =>
+        path.endsWith("/metadata/reconcile"),
+      ),
+    ).toHaveLength(1);
+    expect(screen.getByText(/Результат создания неизвестен:/)).toBeTruthy();
+  },
+);
 
 it("only reads on view and requires explicit account-targeted consent before sequential creation", async () => {
   const { fetcher } = mockAPI();

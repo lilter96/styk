@@ -102,6 +102,7 @@ export function OrdersMetadataSetup({
   const [consent, setConsent] = useState(false);
   const [intents, setIntents] = useState<Intents>(() => readIntents(scope));
   const [busy, setBusy] = useState(false);
+  const [reconciling, setReconciling] = useState<string | null>(null);
   const [storageError, setStorageError] = useState("");
   const lock = useRef(false);
   const registryKey = ["orders-metadata-registry", scope];
@@ -243,6 +244,60 @@ export function OrdersMetadataSetup({
       onBusy(false);
     }
   }
+  async function reconcileField(code: string) {
+    const intent = intents[code];
+    if (lock.current || disabled || intent?.state !== "unknown") return;
+    lock.current = true;
+    setBusy(true);
+    setReconciling(code);
+    onBusy(true);
+    try {
+      const result = await post<SetupResult>(
+        "/api/orders/metadata/reconcile",
+        {
+          ...orderScopeBody(scope),
+          unique_code: code,
+          acknowledge: true,
+        },
+        AbortSignal.timeout(30000),
+      );
+      if (result.registry && !sameOrderScope(result.registry.scope, scope))
+        throw new Error("registry scope mismatch");
+      if (result.registry) client.setQueryData(registryKey, result.registry);
+      const ready =
+        result.state === "RECONCILED" &&
+        !!verifiedAttribute(result.registry, code);
+      persist({
+        ...intents,
+        [code]: {
+          ...intent,
+          state: ready ? "reconciled" : "unknown",
+          message: ready
+            ? "Поле найдено в МойСклад. Результат подтверждён сверкой."
+            : "Сверка пока не подтвердила создание поля. Повторное создание не выполняется.",
+        },
+      });
+    } catch (error) {
+      persist({
+        ...intents,
+        [code]: {
+          ...intent,
+          state: "unknown",
+          message:
+            error instanceof ApiError && error.status === 403
+              ? "Недостаточно прав для проверки результата в МойСклад."
+              : `Не удалось проверить результат. ${orderRequestError(error)}`,
+        },
+      });
+    } finally {
+      await client.invalidateQueries({ queryKey: registryKey });
+      await client.invalidateQueries({ queryKey: ["orders-metadata", scope] });
+      lock.current = false;
+      setBusy(false);
+      setReconciling(null);
+      onBusy(false);
+    }
+  }
   function toggleMappings(checked: boolean) {
     if (disabled || busy || (checked && !fieldsReady)) return;
     const sources = orderServiceFields.map((field) => String(field.source));
@@ -291,17 +346,34 @@ export function OrdersMetadataSetup({
                 {ready
                   ? "Подтверждено в МойСклад"
                   : intent?.state === "unknown"
-                    ? busy
-                      ? "Проверяем создание"
-                      : "Результат неизвестен"
+                    ? reconciling === field.unique_code
+                      ? "Проверяем результат"
+                      : busy
+                        ? "Проверяем создание"
+                        : "Результат неизвестен"
                     : intent?.state === "denied"
                       ? "Недостаточно прав"
                       : intent
                         ? "Создание не подтверждено"
                         : "Не настроено"}
               </span>
-              {!ready && intent?.message && (
-                <p className="orders-warning">{intent.message}</p>
+              {intent?.message && (
+                <p className={ready ? "orders-note" : "orders-warning"}>
+                  {intent.message}
+                </p>
+              )}
+              {!ready && intent?.state === "unknown" && (
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy || disabled}
+                  aria-label={`Проверить результат: ${field.label}`}
+                  onClick={() => void reconcileField(field.unique_code)}
+                >
+                  {reconciling === field.unique_code
+                    ? "Проверяем результат…"
+                    : "Проверить результат"}
+                </button>
               )}
             </li>
           );
@@ -310,8 +382,8 @@ export function OrdersMetadataSetup({
       {pendingUnknown && !busy && (
         <p className="orders-warning" role="alert">
           Результат создания неизвестен: поле могло появиться в МойСклад.
-          Повторная отправка не выполняется. Обновите сведения о полях для
-          проверки результата.
+          Повторная отправка не выполняется. Нажмите «Проверить результат»: STYK
+          только прочитает поле в МойСклад.
         </p>
       )}
       {storageError && (
@@ -350,7 +422,7 @@ export function OrdersMetadataSetup({
             }
             onClick={() => void createFields()}
           >
-            {busy
+            {busy && !reconciling
               ? "Создаём и проверяем служебные поля…"
               : "Создать служебные поля Ozon в МойСклад"}
           </button>
