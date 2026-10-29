@@ -17,6 +17,8 @@ type testStore struct {
 	waitAdmission   bool
 	waitStart       bool
 	cleanupCanceled atomic.Bool
+	failFirstFinish bool
+	lastStatus      atomic.Int64
 }
 
 func (s *testStore) TryAcquireProviderCall(ctx context.Context, a Attempt) (Admission, error) {
@@ -39,9 +41,13 @@ func (s *testStore) StartProviderCall(ctx context.Context, _ Lease) (time.Durati
 	}
 	return 0, nil
 }
-func (s *testStore) FinishProviderCall(ctx context.Context, _ Lease, _ Result) error {
-	s.finishes.Add(1)
+func (s *testStore) FinishProviderCall(ctx context.Context, _ Lease, result Result) error {
+	count := s.finishes.Add(1)
+	s.lastStatus.Store(int64(result.Status))
 	s.cleanupCanceled.Store(ctx.Err() != nil)
+	if s.failFirstFinish && count == 1 {
+		return errors.New("coordination unavailable")
+	}
 	return ctx.Err()
 }
 
@@ -123,5 +129,35 @@ func TestStartWaitCanAbortWithoutSending(t *testing.T) {
 	}
 	if store.finishes.Load() != 1 || store.cleanupCanceled.Load() {
 		t.Fatal("canceled permit not released")
+	}
+}
+
+func TestAbortPreservesObservedResponseAfterCoordinationFailure(t *testing.T) {
+	t.Parallel()
+	for _, status := range []int{http.StatusOK, http.StatusUnauthorized, http.StatusTooManyRequests} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			t.Parallel()
+			store := &testStore{failFirstFinish: true}
+			gate, err := New(store, Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			permit, err := gate.Begin(context.Background(), fixtureRequest())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = permit.Start(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if err = permit.Finish(context.Background(), status, nil); err == nil {
+				t.Fatal("completion failure hidden")
+			}
+			if err = permit.Abort(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if store.lastStatus.Load() != int64(status) || store.starts.Load() != 1 {
+				t.Fatal("observed response lost or HTTP replayed")
+			}
+		})
 	}
 }

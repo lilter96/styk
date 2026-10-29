@@ -20,6 +20,8 @@ type Permit struct {
 	mu                sync.Mutex
 	started           bool
 	finished          bool
+	response          Result
+	hasResponse       bool
 }
 
 func New(store Store, options Options) (*Coordinator, error) {
@@ -91,6 +93,14 @@ func (p *Permit) finish(ctx context.Context, result Result) error {
 	defer p.mu.Unlock()
 	if p.finished {
 		return nil
+	}
+	// A deferred Abort must preserve an observed response when the first
+	// completion transaction failed or its commit acknowledgement was lost.
+	if !p.hasResponse && result.Status != 0 {
+		p.response, p.hasResponse = result, true
+	}
+	if p.hasResponse {
+		result = p.response
 	}
 	// Cancellation must still release the reservation and persist a response.
 	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
