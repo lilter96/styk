@@ -47,7 +47,7 @@ func (runner Runner) readback(ctx context.Context, work Work) error {
 	if work.Command.Target.Account == source.Identity.Account {
 		observed = source
 	}
-	if !selectedFieldsMatch(work.Command, observed) {
+	if !ReadbackMatches(work.Command, observed) {
 		return runner.stop(ctx, work, "READBACK_SELECTED_FIELDS_DIFFER")
 	}
 	return runner.completeReadback(ctx, work, source, target)
@@ -101,25 +101,6 @@ func creationIdentityMatches(command catalog.Command, identity catalog.Identity)
 	return command.Target.OfferID == "" || identity.OfferID == command.Target.OfferID
 }
 
-func selectedFieldsMatch(command catalog.Command, observed catalog.Product) bool {
-	for field, value := range command.Values {
-		actual, ok := observed.Fields[field]
-		if !ok || !catalog.EqualValue(value, actual) {
-			return false
-		}
-	}
-	for extension, value := range command.Extensions {
-		actual, ok := observed.Extensions[extension]
-		if !ok || !catalog.EqualValue(value, actual) {
-			return false
-		}
-	}
-	if command.Parent != nil && (observed.Parent == nil || !command.Parent.SameEntity(*observed.Parent)) {
-		return false
-	}
-	return true
-}
-
 // RebaseDecision lets the store advance pending commands of one enrollment after
 // a sibling command is RECONCILED. The immutable preview remains unchanged. The
 // store must serialize sibling claims and rebase only on these verified facts.
@@ -128,7 +109,7 @@ func RebaseDecision(decision Decision, applied catalog.Command, source, target c
 	if source.Revision == "" || target.Revision == "" || applied.Action != catalog.ActionUpdate || !approvedCommand(decision, applied) {
 		return Decision{}, ErrStale
 	}
-	if !selectedFieldsMatch(applied, productForAccount(source, target, applied.Target.Account)) {
+	if !ReadbackMatches(applied, productForAccount(source, target, applied.Target.Account)) {
 		return Decision{}, ErrStale
 	}
 	expectedSource, expectedTarget := decision.Source, decision.Target
