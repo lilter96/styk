@@ -220,7 +220,7 @@ func (c *CatalogClient) decodeCatalogProduct(raw []byte, account catalog.Account
 	if err := c.catalogParent(&p, row.Product); err != nil {
 		return catalog.Product{}, err
 	}
-	p.Fields, p.Extensions = catalogFields(fields), catalogExtensions(fields)
+	p.Fields, p.Extensions = c.catalogFields(fields), catalogExtensions(fields)
 	setCatalogProvenance(&p)
 	return p, nil
 }
@@ -243,11 +243,11 @@ func (c *CatalogClient) catalogParent(p *catalog.Product, parent *catalogReferen
 	return nil
 }
 
-func catalogFields(raw map[string]json.RawMessage) map[catalog.Field]catalog.Value {
+func (c *CatalogClient) catalogFields(raw map[string]json.RawMessage) map[catalog.Field]catalog.Value {
 	names := map[catalog.Field]string{catalog.FieldName: "name", catalog.FieldDescription: "description", catalog.FieldArticle: "article", catalog.FieldPrice: "salePrices", catalog.FieldBarcodes: "barcodes", catalog.FieldBarcode: "barcodes", catalog.FieldCategory: "productFolder", catalog.FieldAttributes: "attributes", catalog.FieldUnit: "uom", catalog.FieldImages: "images"}
 	out := make(map[catalog.Field]catalog.Value, len(names))
 	for field, key := range names {
-		out[field] = catalogObservedValue(raw[key])
+		out[field] = c.catalogObservedField(key, raw[key])
 	}
 	if image := raw["images"]; len(image) > 0 && image[0] == '{' {
 		out[catalog.FieldImages] = catalog.Value{State: catalog.StateUnknown}
@@ -266,9 +266,20 @@ func catalogObservedValue(raw json.RawMessage) catalog.Value {
 }
 
 func catalogExtensions(raw map[string]json.RawMessage) map[string]catalog.Value {
-	out := make(map[string]catalog.Value, 4)
-	for _, key := range []string{"code", "article", "externalCode", "characteristics"} {
+	out := make(map[string]catalog.Value, 10)
+	for _, key := range []string{"code", "article", "externalCode"} {
 		out["moysklad."+key] = catalogObservedValue(raw[key])
+	}
+	out["moysklad.characteristics"] = catalogObservedValue(raw["characteristics"])
+	if out["moysklad.characteristics"].State == catalog.StateKnown {
+		canonical, err := canonicalCatalogCharacteristics(raw["characteristics"])
+		out["moysklad.characteristics"] = catalogCanonicalObservation(canonical, err)
+	}
+	metadata := map[string]string{"characteristic_metadata": "characteristics", "sale_price_metadata": "salePrices", "barcode_metadata": "barcodes", "category_metadata": "productFolder", "unit_metadata": "uom", "attribute_metadata": "attributes"}
+	for key, field := range metadata {
+		if len(raw[field]) != 0 {
+			out["moysklad."+key] = catalogObservedValue(raw[field])
+		}
 	}
 	return out
 }

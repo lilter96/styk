@@ -177,8 +177,12 @@ func (c *CatalogClient) referenceID(r catalogReference, path, kind string) (stri
 }
 
 func (c *CatalogClient) reference(kind, id string) catalogReference {
+	return c.referenceAt("entity/"+kind, kind, id)
+}
+
+func (c *CatalogClient) referenceAt(path, kind, id string) catalogReference {
 	var r catalogReference
-	r.Meta.Href = c.client.base.ResolveReference(&url.URL{Path: "entity/" + kind + "/" + id}).String()
+	r.Meta.Href = c.client.base.ResolveReference(&url.URL{Path: path + "/" + strings.ToLower(id)}).String()
 	r.Meta.Type, r.Meta.MediaType = kind, "application/json"
 	return r
 }

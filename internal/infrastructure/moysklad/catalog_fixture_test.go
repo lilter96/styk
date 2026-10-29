@@ -196,6 +196,7 @@ func (s *catalogSimulator) serveWrite(w http.ResponseWriter, r *http.Request) {
 		row["name"] = "Parent (M)"
 	}
 	row["updated"] = fmt.Sprintf("2026-10-29 11:00:00.%03d", s.writes)
+	s.enrichMetadata(row)
 	s.rows[parts[1]+":"+id] = row
 	if s.mode == "disconnect" {
 		s.disconnect(w)
@@ -255,6 +256,51 @@ func (s *catalogSimulator) disconnect(w http.ResponseWriter) {
 	}
 	if err := conn.Close(); err != nil {
 		s.t.Error(err)
+	}
+}
+
+func (s *catalogSimulator) enrichMetadata(row map[string]any) {
+	if s.mode != "curated-metadata" {
+		return
+	}
+	for _, field := range []string{"characteristics", "salePrices", "barcodes", "attributes"} {
+		items, ok := row[field].([]any)
+		if !ok {
+			continue
+		}
+		for _, item := range items {
+			s.enrichMetadataItem(field, item)
+		}
+		for left, right := 0, len(items)-1; left < right; left, right = left+1, right-1 {
+			items[left], items[right] = items[right], items[left]
+		}
+	}
+	for _, field := range []string{"productFolder", "uom"} {
+		if reference, ok := row[field].(map[string]any); ok {
+			reference["name"] = "Provider display name"
+		}
+	}
+}
+
+func (s *catalogSimulator) enrichMetadataItem(field string, value any) {
+	item, ok := value.(map[string]any)
+	if !ok {
+		return
+	}
+	switch field {
+	case "characteristics":
+		item["name"] = "Provider characteristic display name"
+		item["meta"] = catalogMetadataRef(s.server.URL+"/entity/variant/metadata/characteristics/"+item["id"].(string), "attributemetadata")
+	case "salePrices":
+		item["value"] = json.Number("19900.00")
+		for _, key := range []string{"currency", "priceType"} {
+			if reference, ok := item[key].(map[string]any); ok {
+				reference["name"] = "Expanded provider name"
+				reference["id"] = "Read only provider identity"
+			}
+		}
+	case "attributes":
+		item["name"], item["id"], item["type"] = "Provider attribute name", catalogTestAttr, "string"
 	}
 }
 

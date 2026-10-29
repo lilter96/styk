@@ -168,31 +168,9 @@ func catalogPayloadExtensions(body map[string]any, cmd catalog.Command) error {
 }
 
 func validateCatalogCharacteristics(raw json.RawMessage) error {
-	var rows []map[string]json.RawMessage
-	if json.Unmarshal(raw, &rows) != nil || len(rows) == 0 || len(rows) > 100 {
+	canonical, err := canonicalCatalogCharacteristics(raw)
+	if !canonicalCatalogSelection(catalog.Value{State: catalog.StateKnown, Data: raw}, canonical, err) {
 		return ErrCatalogInvalid
-	}
-	seen := make(map[string]bool, len(rows))
-	for _, row := range rows {
-		var id, name, value string
-		if json.Unmarshal(row["value"], &value) != nil || utf8.RuneCountInString(value) > 255 || value == "" || len(row) < 2 || len(row) > 3 {
-			return ErrCatalogInvalid
-		}
-		if rawID, ok := row["id"]; ok && (json.Unmarshal(rawID, &id) != nil || !orderUUID.MatchString(id)) {
-			return ErrCatalogInvalid
-		}
-		if rawName, ok := row["name"]; ok && (json.Unmarshal(rawName, &name) != nil || name == "" || utf8.RuneCountInString(name) > 255) {
-			return ErrCatalogInvalid
-		}
-		if (id == "" && name == "") || seen[id+":"+name] {
-			return ErrCatalogInvalid
-		}
-		for key := range row {
-			if key != "id" && key != "name" && key != "value" {
-				return ErrCatalogInvalid
-			}
-		}
-		seen[id+":"+name] = true
 	}
 	return nil
 }
@@ -202,32 +180,20 @@ func (c *CatalogClient) catalogReferencePayload(body map[string]any, key, kind s
 		body[key] = nil
 		return nil
 	}
-	var r catalogReference
-	if value.State != catalog.StateKnown || json.Unmarshal(value.Data, &r) != nil {
+	canonical, err := c.canonicalCatalogReference(value.Data, "entity/"+kind, kind)
+	if !canonicalCatalogSelection(value, canonical, err) {
 		return ErrCatalogInvalid
 	}
-	id, err := c.referenceID(r, "entity/"+kind, kind)
-	if err != nil {
-		return err
-	}
-	body[key] = c.reference(kind, id)
+	body[key] = canonical
 	return nil
 }
 
 func (c *CatalogClient) catalogPricePayload(body map[string]any, value catalog.Value) error {
-	var rows []json.RawMessage
-	if value.State != catalog.StateKnown || json.Unmarshal(value.Data, &rows) != nil || len(rows) == 0 || len(rows) > 100 {
+	canonical, err := c.canonicalCatalogPrices(value.Data)
+	if !canonicalCatalogSelection(value, canonical, err) {
 		return ErrCatalogInvalid
 	}
-	seen := make(map[string]bool, len(rows))
-	for _, raw := range rows {
-		id, err := c.catalogPriceIdentity(raw)
-		if err != nil || seen[id] {
-			return ErrCatalogInvalid
-		}
-		seen[id] = true
-	}
-	body["salePrices"] = json.RawMessage(value.Data)
+	body["salePrices"] = canonical
 	return nil
 }
 
@@ -238,7 +204,7 @@ func (c *CatalogClient) catalogPriceIdentity(raw json.RawMessage) (string, error
 		PriceType catalogReference `json:"priceType"`
 	}
 	var fields map[string]json.RawMessage
-	if json.Unmarshal(raw, &row) != nil || json.Unmarshal(raw, &fields) != nil || len(fields) != 3 {
+	if json.Unmarshal(raw, &row) != nil || json.Unmarshal(raw, &fields) != nil || len(fields) != 3 || len(fields["value"]) == 0 || fields["value"][0] == '"' {
 		return "", ErrCatalogInvalid
 	}
 	amount, err := strconv.ParseFloat(row.Value.String(), 64)
@@ -259,23 +225,11 @@ func catalogBarcodePayload(body map[string]any, value catalog.Value) error {
 		body["barcodes"] = []any{}
 		return nil
 	}
-	var rows []map[string]string
-	if value.State != catalog.StateKnown || json.Unmarshal(value.Data, &rows) != nil || len(rows) == 0 || len(rows) > 100 {
+	canonical, err := canonicalCatalogBarcodes(value.Data)
+	if !canonicalCatalogSelection(value, canonical, err) {
 		return ErrCatalogInvalid
 	}
-	seen := make(map[string]bool, len(rows))
-	for _, row := range rows {
-		if len(row) != 1 {
-			return ErrCatalogInvalid
-		}
-		for kind, code := range row {
-			if !validCatalogBarcode(kind, code) || seen[kind+":"+code] {
-				return ErrCatalogInvalid
-			}
-			seen[kind+":"+code] = true
-		}
-	}
-	body["barcodes"] = json.RawMessage(value.Data)
+	body["barcodes"] = canonical
 	return nil
 }
 
@@ -288,35 +242,10 @@ func validCatalogBarcode(kind, code string) bool {
 }
 
 func (c *CatalogClient) catalogAttributesPayload(body map[string]any, value catalog.Value) error {
-	var rows []map[string]json.RawMessage
-	if value.State != catalog.StateKnown || json.Unmarshal(value.Data, &rows) != nil || len(rows) == 0 || len(rows) > 100 {
+	canonical, err := c.canonicalCatalogAttributes(value.Data)
+	if !canonicalCatalogSelection(value, canonical, err) {
 		return ErrCatalogInvalid
 	}
-	seen := make(map[string]bool, len(rows))
-	for _, row := range rows {
-		var r catalogReference
-		if json.Unmarshal(row["meta"], &r.Meta) != nil || len(row) != 2 || row["value"] == nil {
-			return ErrCatalogInvalid
-		}
-		id, err := c.referenceID(r, "entity/product/metadata/attributes", "attributemetadata")
-		if err != nil || seen[id] || !catalogScalar(row["value"]) {
-			return ErrCatalogInvalid
-		}
-		seen[id] = true
-	}
-	body["attributes"] = json.RawMessage(value.Data)
+	body["attributes"] = canonical
 	return nil
-}
-
-func catalogScalar(raw json.RawMessage) bool {
-	var value any
-	if json.Unmarshal(raw, &value) != nil {
-		return false
-	}
-	switch value.(type) {
-	case nil, string, bool, float64:
-		return true
-	default:
-		return false
-	}
 }
