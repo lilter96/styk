@@ -34,14 +34,14 @@ func reservationFrontier(observations []Observation) (map[string]bool, bool) {
 
 func splitProven(parent Observation, byPosting map[string]Observation) bool {
 	children := make([]orders.Posting, 0, len(parent.Posting.ChildPostingNumbers))
-	if parent.Quarantined || parent.Truncated || len(parent.Posting.Drift) != 0 {
+	if parent.Quarantined || parent.Truncated || materialDrift(parent.Posting.Drift) {
 		return false
 	}
 	for _, number := range parent.Posting.ChildPostingNumbers {
 		identity := parent.Posting
 		identity.PostingNumber = number
 		child, found := byPosting[observationKey(identity)]
-		if !found || child.Quarantined || child.Truncated || len(child.Posting.Drift) != 0 {
+		if !found || child.Quarantined || child.Truncated || materialDrift(child.Posting.Drift) {
 			return false
 		}
 		children = append(children, child.Posting)

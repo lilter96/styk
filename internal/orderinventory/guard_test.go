@@ -78,6 +78,12 @@ func TestOrderInventoryPendingOverridesAttestedZero(t *testing.T) {
 		{"warehouse unknown", func(i *Input) { i.Observations[0].Positions[0].WarehouseID = nil }},
 		{"native origin differs", func(i *Input) { i.Observations[0].NativeSyncID = ptr("foreign-sync") }},
 		{"quarantined source", func(i *Input) { i.Observations[0].Quarantined = true }},
+		{"material quantity drift", func(i *Input) {
+			i.Observations[0].Posting.Drift = []orders.Drift{{Path: "$.result.products[0].quantity", Code: "type_mismatch"}}
+		}},
+		{"material chronology drift", func(i *Input) {
+			i.Observations[0].Posting.Drift = []orders.Drift{{Path: "evidence", Code: "ORDERING_SUPERSEDED_OBSERVATION"}}
+		}},
 		{"bounded observations truncated", func(i *Input) { i.Truncated = true }},
 	}
 	for _, tc := range tests {
@@ -158,11 +164,86 @@ func TestOrderInventorySplitUsesConservedChildrenOnly(t *testing.T) {
 func TestOrderInventoryDuplicateNativeOriginIsUnknown(t *testing.T) {
 	t.Parallel()
 	input := inventoryFixture()
-	duplicate := input.Observations[0]
-	duplicate.Posting.PostingNumber = "another-posting"
-	duplicate.Binding.PostingNumber = duplicate.Posting.PostingNumber
+	duplicate := inventoryObservation(input.Now, "another-posting", "3")
+	duplicate.Binding.CustomerOrderID = input.Observations[0].Binding.CustomerOrderID
+	duplicate.Target.Correlation = duplicate.Binding
+	duplicate.Positions[0].OrderID = duplicate.Binding.CustomerOrderID
 	input.Observations = append(input.Observations, duplicate)
 	if !Assess(input).Blocked {
 		t.Fatal("one native reservation attributed to multiple postings")
+	}
+}
+
+func TestOrderInventoryInformationalDriftDoesNotInventObligation(t *testing.T) {
+	t.Parallel()
+	input := inventoryFixture()
+	input.Observations[0].Posting.Drift = []orders.Drift{{Path: "$", Code: "schema_unverified"}, {Path: "$.result.requirements", Code: "unsupported_typed_field"}, {Path: "$.result.financial_data.extra", Code: "unknown_key"}}
+	if Assess(input).Blocked {
+		t.Fatal("informational contract warnings blocked known native reservation")
+	}
+	input.Observations[0].Posting.Status = orders.Present("cancelled")
+	input.Observations[0].Binding.CustomerOrderID = ""
+	input.Observations[0].Work, input.Observations[0].Target = nil, nil
+	input.Observations[0].Positions = nil
+	decision := inventoryDecision(input)
+	if decision.Status != domain.StockReady || decision.Quantity == nil || *decision.Quantity != "7" {
+		t.Fatalf("historical cancellation changed unrelated baseline reserve: %+v", decision)
+	}
+	input.Observations[0].ProjectionAttempted = true
+	if !Assess(input).Blocked {
+		t.Fatal("cancelled status released an attempted unknown native projection")
+	}
+}
+
+func TestOrderInventoryCancelledZeroReadbackNeedsNoNewBaseline(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		edit    func(*Input)
+		blocked bool
+	}{
+		{"fresh complete explicit zero", func(*Input) {}, false},
+		{"missing reserve", func(i *Input) { i.Observations[0].Target.Positions[0].Reserve = orders.Field[orders.Decimal]{} }, true},
+		{"positive native reserve", func(i *Input) { i.Observations[0].Target.Positions[0].Reserve = orders.Present(orders.Decimal("3")) }, true},
+		{"incomplete positions", func(i *Input) { i.Observations[0].Target.Complete = false }, true},
+		{"stale native zero", func(i *Input) { i.Observations[0].Target.ObservedAt = i.Now.Add(-time.Hour) }, true},
+		{"future native zero", func(i *Input) { i.Observations[0].Target.ObservedAt = i.Now.Add(time.Minute) }, true},
+		{"unknown native outcome", func(i *Input) { i.Observations[0].Work.State = orders.StateUnknown }, true},
+		{"wrong native warehouse", func(i *Input) { i.Observations[0].Target.Fields.StoreID = "another-store" }, true},
+		{"unknown native assortment", func(i *Input) { i.Observations[0].Target.Positions[0].MoyskladKind = "" }, true},
+		{"active zero remains pending", func(i *Input) { i.Observations[0].Posting.Status = orders.Present("awaiting_packaging") }, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			input := inventoryFixture()
+			input.Observations[0].Posting.Status = orders.Present("cancelled")
+			setReserve(&input.Observations[0], "0")
+			input.Observations[0].Positions = nil
+			tc.edit(&input)
+			guard := Assess(input)
+			if guard.Blocked != tc.blocked {
+				t.Fatalf("cancelled native zero attribution: %+v", guard)
+			}
+			if *input.Baseline.Physical != "10" || *input.Baseline.Reserve != "3" {
+				t.Fatal("native cancellation changed stock baseline")
+			}
+		})
+	}
+}
+
+func TestOrderInventoryAllSellersShareOneReserveLimit(t *testing.T) {
+	t.Parallel()
+	input := inventoryFixture()
+	another := inventoryObservation(input.Now, "another", "3")
+	another.Posting.Scope.OzonAccount = "another-seller"
+	another.Binding.Scope = another.Posting.Scope
+	another.Work.Scope = another.Posting.Scope
+	another.Work.Command.Scope = another.Posting.Scope
+	another.Work.Command.Correlation.Scope = another.Posting.Scope
+	another.Target.Scope, another.Target.Correlation = another.Posting.Scope, another.Binding
+	input.Observations = append(input.Observations, another)
+	if !Assess(input).Blocked {
+		t.Fatal("seller accounts attributed six units to three source reserve")
 	}
 }

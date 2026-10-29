@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/lilter96/styk/internal/domain"
@@ -13,9 +14,11 @@ import (
 // All Ozon accounts mapping into this tenant's source pool participate. An
 // unknown warehouse conservatively affects every warehouse for the same item.
 const orderInventoryHeadsSQL = `
-SELECT h.projection,h.quarantined,affected.lines,
-       COALESCE(b.customer_order_id,''),COALESCE(b.sync_id,''),COALESCE(b.marker,''),w.work,r.observed_target
+SELECT h.projection,source.posting->'status',h.checked_at,h.quarantined,affected.lines,
+       COALESCE(b.customer_order_id,''),COALESCE(b.sync_id,''),COALESCE(b.marker,''),w.work,r.observed_target,
+       EXISTS(SELECT 1 FROM orders_work attempted WHERE attempted.tenant_id=h.tenant_id AND attempted.moysklad_account=h.moysklad_account AND attempted.ozon_account=h.ozon_account AND attempted.posting_number=h.posting_number AND attempted.action IN ('mirror_create','mirror_update') AND attempted.dispatch_count>0)
 FROM orders_posting_heads h
+JOIN orders_posting_observations source ON source.id=h.observation_id AND source.tenant_id=h.tenant_id AND source.moysklad_account=h.moysklad_account AND source.ozon_account=h.ozon_account AND source.posting_number=h.posting_number
 JOIN LATERAL (
  SELECT jsonb_agg(DISTINCT line->'identity') AS lines
  FROM jsonb_array_elements(h.projection->'lines') line
@@ -67,12 +70,22 @@ func readOrderInventoryHeads(ctx context.Context, tx pgx.Tx, pool domain.StockPo
 
 func scanOrderInventoryHead(row pgx.Row) (orderinventory.Observation, error) {
 	var result orderinventory.Observation
-	var posting, lines, work, target []byte
-	if err := row.Scan(&posting, &result.Quarantined, &lines, &result.Binding.CustomerOrderID, &result.Binding.SyncID, &result.Binding.Marker, &work, &target); err != nil {
+	var posting, status, lines, work, target []byte
+	var checked time.Time
+	if err := row.Scan(&posting, &status, &checked, &result.Quarantined, &lines, &result.Binding.CustomerOrderID, &result.Binding.SyncID, &result.Binding.Marker, &work, &target, &result.ProjectionAttempted); err != nil {
 		return result, fmt.Errorf("decode order inventory head: %w", err)
 	}
 	if err := ordersDecode(posting, &result.Posting); err != nil {
 		return result, err
+	}
+	result.Posting.Evidence.CheckedAt = checked
+	// A retained projected status is useful for display, but an omitted status
+	// in the selected source observation cannot authorize the terminal branches.
+	result.Posting.Status = orders.Field[string]{}
+	if len(status) != 0 {
+		if err := ordersDecode(status, &result.Posting.Status); err != nil {
+			return result, err
+		}
 	}
 	if err := ordersDecode(lines, &result.Lines); err != nil {
 		return result, err

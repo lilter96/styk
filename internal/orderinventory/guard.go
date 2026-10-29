@@ -29,17 +29,18 @@ const (
 // Observation preserves native facts separately from the correlation binding.
 // A resolved binding or a successful mirror alone cannot prove stock coverage.
 type Observation struct {
-	Posting          orders.Posting
-	Lines            []orders.LineIdentity
-	Binding          orders.Correlation
-	Work             *orders.Work
-	Target           *orders.TargetObservation
-	Positions        []domain.StockObservedOrderPosition
-	NativeSyncID     *string
-	NativeStartedAt  time.Time
-	NativeFinishedAt time.Time
-	Quarantined      bool
-	Truncated        bool
+	Posting             orders.Posting
+	Lines               []orders.LineIdentity
+	Binding             orders.Correlation
+	Work                *orders.Work
+	Target              *orders.TargetObservation
+	Positions           []domain.StockObservedOrderPosition
+	NativeSyncID        *string
+	NativeStartedAt     time.Time
+	NativeFinishedAt    time.Time
+	Quarantined         bool
+	Truncated           bool
+	ProjectionAttempted bool
 }
 
 type Input struct {
@@ -75,7 +76,7 @@ func (guard Guard) Apply(decision *domain.StockDecision) {
 	if len(guard.Obligations) == 0 && !guard.Truncated {
 		return
 	}
-	decision.Checks = append(decision.Checks, domain.StockCheck{Code: AttributionPending, Passed: !guard.Blocked, Message: "Observed order obligations have native reservation attribution in the selected stock baseline.", Evidence: guard.reference()})
+	decision.Checks = append(decision.Checks, domain.StockCheck{Code: AttributionPending, Passed: !guard.Blocked, Message: "Observed order obligations have no pending reserve attribution for this stock pool.", Evidence: guard.reference()})
 	if !guard.Blocked {
 		return
 	}
@@ -88,7 +89,7 @@ func (guard Guard) Apply(decision *domain.StockDecision) {
 func (guard Guard) reference() string {
 	var result strings.Builder
 	for _, obligation := range guard.Obligations {
-		fmt.Fprintf(&result, "%s/%s:%s(%s);", obligation.Scope.OzonAccount, obligation.PostingNumber, obligation.State, obligation.Reason)
+		fmt.Fprintf(&result, "%s/%s:%s(native=%s,quantity=%s,reserve=%s,reason=%s);", obligation.Scope.OzonAccount, obligation.PostingNumber, obligation.State, obligation.CustomerOrderID, obligation.Quantity, obligation.Reserve, obligation.Reason)
 	}
 	if guard.Truncated {
 		result.WriteString("bounded_evidence_truncated;")

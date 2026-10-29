@@ -35,12 +35,20 @@ func assessObservation(input Input, observation Observation) Obligation {
 	posting := observation.Posting
 	result := Obligation{Scope: posting.Scope, PostingNumber: posting.PostingNumber, CustomerOrderID: observation.Binding.CustomerOrderID, State: SourceObserved}
 	quantity, ok := obligationUnits(observation)
-	if !ok || posting.Scope.Tenant != input.Pool.Tenant || posting.Scope.MoyskladAccount != input.Pool.MoyskladAccount || posting.Evidence.Origin != orders.OriginOzon || observation.Quarantined || observation.Truncated || len(posting.Drift) != 0 {
+	if !ok || posting.Validate() != nil || posting.Scope.Tenant != input.Pool.Tenant || posting.Scope.MoyskladAccount != input.Pool.MoyskladAccount || posting.Evidence.Origin != orders.OriginOzon || observation.Quarantined || observation.Truncated || materialDrift(posting.Drift) {
 		return pending(result, Unknown, "source_evidence_incomplete")
 	}
 	result.Quantity = strconv.FormatInt(quantity, 10)
+	if unprojectedCancellation(observation) {
+		result.State, result.Reserve = Cancelled, "0"
+		return result
+	}
 	if !readbackProven(observation) {
 		return pending(result, ProjectionPending, "native_readback_not_reconciled")
+	}
+	if cancelledZeroReadback(input, observation) {
+		result.State, result.Reserve = Cancelled, "0"
+		return result
 	}
 	reserve, shipped, ok := nativeUnits(input, observation)
 	if !ok {
@@ -74,10 +82,13 @@ func readbackProven(observation Observation) bool {
 	if work == nil || target == nil || work.State != orders.StateReconciled || !work.Command.Action.IsMirror() || !target.Complete || target.Revision == "" {
 		return false
 	}
-	if binding.CustomerOrderID == "" || target.Scope != observation.Posting.Scope || binding.Scope != target.Scope || target.Correlation != binding || work.Scope != target.Scope {
+	if binding.CustomerOrderID == "" || target.Scope != observation.Posting.Scope || binding.Scope != target.Scope || target.Correlation != binding || work.Scope != target.Scope || work.Command.Scope != target.Scope || work.Command.Correlation.Scope != target.Scope {
 		return false
 	}
-	if work.Command.ExpectedSourceRevision != observation.Posting.Evidence.Revision || work.Command.PostingNumber != binding.PostingNumber || binding.PostingNumber != observation.Posting.PostingNumber || work.Command.Correlation.SyncID != binding.SyncID || work.Command.Correlation.Marker != binding.Marker {
+	if work.Command.ExpectedSourceRevision != observation.Posting.Evidence.Revision || work.Command.PostingNumber != binding.PostingNumber || binding.PostingNumber != observation.Posting.PostingNumber || work.Command.Correlation.PostingNumber != binding.PostingNumber || work.Command.Correlation.SyncID != binding.SyncID || work.Command.Correlation.Marker != binding.Marker {
+		return false
+	}
+	if work.Command.Correlation.CustomerOrderID != "" && work.Command.Correlation.CustomerOrderID != binding.CustomerOrderID {
 		return false
 	}
 	return !target.ObservedAt.IsZero() && !target.ObservedAt.Before(observation.Posting.Evidence.ObservedAt)
@@ -133,6 +144,9 @@ func uniqueAttribution(total int64, result Obligation, seen map[string]bool) (in
 	if !settled(result.State) {
 		return total, result
 	}
+	if result.State == Cancelled && result.CustomerOrderID == "" && result.Reserve == "0" {
+		return total, result
+	}
 	key := result.Scope.Tenant + "/" + result.Scope.MoyskladAccount + "/" + result.CustomerOrderID
 	reserve, ok := whole(result.Reserve)
 	if !ok || seen[key] || total > math.MaxInt64-reserve {
@@ -140,6 +154,16 @@ func uniqueAttribution(total int64, result Obligation, seen map[string]bool) (in
 	}
 	seen[key] = true
 	return total + reserve, result
+}
+
+// A cancellation before any STYK dispatch has no additional marketplace
+// obligation. Foreign native reserves remain entirely in the source baseline.
+// A journaled dispatch or a resolved native identity requires native evidence.
+func unprojectedCancellation(observation Observation) bool {
+	if !knownStatus(observation.Posting, "cancelled") || observation.Binding.CustomerOrderID != "" || observation.ProjectionAttempted {
+		return false
+	}
+	return observation.Work == nil || observation.Work.DispatchCount == 0
 }
 
 func reserveFitsBaseline(input Input, matched int64) bool {
