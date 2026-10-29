@@ -387,7 +387,8 @@ export function ProductMappingPage({
                           onClick={() => setReview(product)}
                         >
                           <span>
-                            {target?.name ||
+                            {product.target_name ||
+                              target?.name ||
                               (product.target_id
                                 ? `Товар МойСклад: ${product.target_id}`
                                 : "Выберите товар МойСклад")}
@@ -399,18 +400,17 @@ export function ProductMappingPage({
                         )}
                       </td>
                       <td className="mapping-article" data-label="Артикул">
-                        {target?.article || "—"}
+                        {product.target_article || target?.article || "—"}
                       </td>
                       <td data-label="Товар в Ozon">
                         <strong>
-                          {(product as Product & { name?: string }).name ||
+                          {product.name ||
                             product.offer_id ||
                             `Товар ${product.product_id}`}
                         </strong>
-                        {(product as Product & { name?: string }).name &&
-                          product.offer_id && (
-                            <small>Offer ID: {product.offer_id}</small>
-                          )}
+                        {product.name && product.offer_id && (
+                          <small>Offer ID: {product.offer_id}</small>
+                        )}
                         <small>ID товара: {product.product_id}</small>
                         {product.sku && <small>SKU: {product.sku}</small>}
                         {product.archived === true && <small>В архиве</small>}

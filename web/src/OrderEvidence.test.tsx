@@ -65,7 +65,9 @@ it("shows observed reserve without treating missing order coverage as zero", asy
     target: { value: "24" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Проверить заказы" }));
-  await screen.findByText(/неполные данные не сохранены/);
+  await screen.findByText(
+    /Неполные данные не сохранены как завершённая проверка/,
+  );
   await waitFor(() =>
     expect(
       calls.some(
@@ -74,5 +76,144 @@ it("shows observed reserve without treating missing order coverage as zero", asy
       ),
     ).toBe(true),
   );
+  client.clear();
+});
+
+it("restores an incomplete run and resumes the same period explicitly", async () => {
+  const requests: number[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
+    let data: unknown = {
+      positions: [],
+      postings: [],
+      truncated: false,
+      progress: {
+        window_hours: 24,
+        from: "2026-10-28T10:00:00Z",
+        to: "2026-10-29T10:00:00Z",
+        source_status: "IN_PROGRESS",
+        posting_status: "COMPLETED",
+        source_completed_windows: 2,
+        source_pending_windows: 3,
+      },
+    };
+    if (init?.method === "POST") {
+      requests.push(JSON.parse(String(init.body)).window_hours);
+      data = { source_status: "COMPLETED", posting_status: "COMPLETED" };
+    }
+    return new Response(JSON.stringify(data), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <OrderEvidence
+        scope={{ tenant: "t", moysklad_account: "m", ozon_account: "o" }}
+        product="1"
+        warehouse="2"
+      />
+    </QueryClientProvider>,
+  );
+  fireEvent.click(screen.getByText("Заказы и резервы"));
+  await screen.findByText(/Завершено интервалов: 2; осталось: 3/);
+  expect(
+    screen.getByText(/неполная проверка не подтверждает полноту данных/),
+  ).toBeTruthy();
+  expect(requests).toEqual([]);
+  fireEvent.click(screen.getByRole("button", { name: "Продолжить проверку" }));
+  await screen.findByText(
+    "Проверка обоих сервисов за выбранный период завершена.",
+  );
+  expect(requests).toEqual([24]);
+  client.clear();
+});
+
+it("warns that changing the period replaces unfinished progress", async () => {
+  const fetcher = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        positions: [],
+        postings: [],
+        truncated: false,
+        progress: {
+          window_hours: 24,
+          from: "2026-10-28T10:00:00Z",
+          to: "2026-10-29T10:00:00Z",
+          source_status: "IN_PROGRESS",
+          posting_status: "COMPLETED",
+        },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    ),
+  );
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <OrderEvidence
+        scope={{ tenant: "t", moysklad_account: "m", ozon_account: "o" }}
+        product="1"
+        warehouse="2"
+      />
+    </QueryClientProvider>,
+  );
+  fireEvent.click(screen.getByText("Заказы и резервы"));
+  await screen.findByRole("button", { name: "Продолжить проверку" });
+  fireEvent.change(screen.getByLabelText("Период проверки"), {
+    target: { value: "1" },
+  });
+  expect(screen.getByText(/заменит незавершённый прогресс/)).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Начать новую проверку" }),
+  ).toBeTruthy();
+  expect(
+    fetcher.mock.calls.filter(([, init]) => init?.method === "POST"),
+  ).toHaveLength(0);
+  client.clear();
+});
+
+it("does not offer continuation for an expired run", async () => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        positions: [],
+        postings: [],
+        truncated: false,
+        progress: {
+          window_hours: 1,
+          from: "2026-10-28T10:00:00Z",
+          to: "2026-10-28T11:00:00Z",
+          source_status: "IN_PROGRESS",
+          posting_status: "COMPLETED",
+          expired: true,
+        },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    ),
+  );
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <OrderEvidence
+        scope={{ tenant: "t", moysklad_account: "m", ozon_account: "o" }}
+        product="1"
+        warehouse="2"
+      />
+    </QueryClientProvider>,
+  );
+  fireEvent.click(screen.getByText("Заказы и резервы"));
+  await screen.findByText(/Срок незавершённой проверки истёк/);
+  expect(
+    screen.getByRole("button", { name: "Начать новую проверку" }),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Продолжить проверку" }),
+  ).toBeNull();
   client.clear();
 });

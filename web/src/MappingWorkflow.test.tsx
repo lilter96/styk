@@ -382,3 +382,21 @@ it("keeps successful and remaining items visible after an individual confirmatio
     mock.mock.calls.filter(([path]) => String(path).endsWith("/confirm")),
   ).toHaveLength(1);
 });
+
+it("shows confirmed target and Ozon names supplied by the catalog", async () => {
+  setup("CURRENT", false, false, {}, [
+    {
+      ...product,
+      name: "Название Ozon",
+      target_id: "outside-first-page",
+      target_kind: "product",
+      target_name: "Название МойСклад",
+      target_article: "ART-42",
+      match_status: "CONFIRMED",
+    },
+  ]);
+  expect(await screen.findByText("Название Ozon")).toBeTruthy();
+  expect(screen.getByText("Название МойСклад")).toBeTruthy();
+  expect(screen.getByText("ART-42")).toBeTruthy();
+  expect(screen.getByText("Offer ID: offer")).toBeTruthy();
+});

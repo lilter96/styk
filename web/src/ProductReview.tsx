@@ -167,12 +167,11 @@ export function ProductReview({
         <div className="mapping-review-source">
           <span>Товар в Ozon</span>
           <strong>
-            {(product as Product & { name?: string }).name ||
-              product.offer_id ||
-              `Товар ${product.product_id}`}
+            {product.name || product.offer_id || `Товар ${product.product_id}`}
           </strong>
-          {(product as Product & { name?: string }).name &&
-            product.offer_id && <span>Offer ID: {product.offer_id}</span>}
+          {product.name && product.offer_id && (
+            <span>Offer ID: {product.offer_id}</span>
+          )}
           <span>ID товара: {product.product_id}</span>
           {product.sku && <span>SKU: {product.sku}</span>}
         </div>
