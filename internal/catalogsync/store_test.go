@@ -20,6 +20,7 @@ type memoryStore struct {
 	beginCount     int
 	due            bool
 	failCompletion bool
+	dueLimit       int
 }
 
 func (store *memoryStore) CatalogConfig(_ context.Context, scope catalog.Scope) (Config, error) {
@@ -38,7 +39,8 @@ func (store *memoryStore) SaveCatalogConfig(_ context.Context, request SaveConfi
 	return clone(request.Config), nil
 }
 
-func (store *memoryStore) DueCatalogConfigs(context.Context, time.Time, int) ([]Config, error) {
+func (store *memoryStore) DueCatalogConfigs(_ context.Context, _ time.Time, limit int) ([]Config, error) {
+	store.dueLimit = limit
 	if !store.due {
 		return nil, nil
 	}

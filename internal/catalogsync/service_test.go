@@ -155,7 +155,7 @@ func TestAutomaticDecisionsRequirePreviouslyAuthorizedFields(t *testing.T) {
 			if _, err := f.service.Tick(f.ctx); err != nil {
 				t.Fatal(err)
 			}
-			if len(f.store.approvals) != tc.operations || f.target.writes != 0 {
+			if len(f.store.approvals) != tc.operations || f.target.writes != 0 || f.store.dueLimit != 1 {
 				t.Fatalf("automatic decisions=%d, writes=%d", len(f.store.approvals), f.target.writes)
 			}
 		})

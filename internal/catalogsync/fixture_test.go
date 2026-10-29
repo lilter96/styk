@@ -101,22 +101,25 @@ func clone[T any](input T) T {
 }
 
 type memoryProvider struct {
-	products      map[string]catalog.Product
-	markers       map[string]string
-	guard         func(context.Context) (bool, error)
-	writes        int
-	polls         int
-	writeErr      error
-	readErr       error
-	applyOnError  bool
-	accept        bool
-	bindHook      func()
-	pollState     catalog.ReceiptState
-	commands      []catalog.Command
-	writeReceipt  *catalog.Receipt
-	validation    []catalog.FieldError
-	validationErr error
-	pollReceipt   *catalog.Receipt
+	products        map[string]catalog.Product
+	markers         map[string]string
+	guard           func(context.Context) (bool, error)
+	writes          int
+	polls           int
+	writeErr        error
+	readErr         error
+	applyOnError    bool
+	accept          bool
+	bindHook        func()
+	pollState       catalog.ReceiptState
+	commands        []catalog.Command
+	writeReceipt    *catalog.Receipt
+	validation      []catalog.FieldError
+	validationErr   error
+	pollReceipt     *catalog.Receipt
+	verification    []catalog.FieldError
+	verificationErr error
+	verifications   int
 }
 
 func newMemoryProvider(product catalog.Product) *memoryProvider {
@@ -153,6 +156,11 @@ func (provider *memoryProvider) LookupCatalogCreate(_ context.Context, command c
 
 func (provider *memoryProvider) ValidateCatalog(context.Context, catalog.Command) ([]catalog.FieldError, error) {
 	return provider.validation, provider.validationErr
+}
+
+func (provider *memoryProvider) VerifyCatalogFields(catalog.Command, catalog.Product) ([]catalog.FieldError, error) {
+	provider.verifications++
+	return provider.verification, provider.verificationErr
 }
 
 func (provider *memoryProvider) BindCatalogIntent(_ catalog.Command, guard func(context.Context) (bool, error)) error {

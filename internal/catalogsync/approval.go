@@ -59,11 +59,11 @@ func (service Service) Tick(ctx context.Context) (bool, error) {
 	if service.Store == nil || service.Resolver == nil {
 		return false, ErrBlocked
 	}
-	configs, err := service.Store.DueCatalogConfigs(ctx, service.now(), 20)
+	configs, err := service.Store.DueCatalogConfigs(ctx, service.now(), 1)
 	if err != nil {
 		return false, fmt.Errorf("claim due catalog configurations: %w", err)
 	}
-	if len(configs) > 20 {
+	if len(configs) > 1 {
 		return false, ErrInvalid
 	}
 	worked := false

@@ -47,7 +47,7 @@ func (runner Runner) readback(ctx context.Context, work Work) error {
 	if work.Command.Target.Account == source.Identity.Account {
 		observed = source
 	}
-	if !ReadbackMatches(work.Command, observed) {
+	if !verifiedReadback(clients.forAccount(work.Command.Target.Account), work.Command, observed) {
 		return runner.stop(ctx, work, "READBACK_SELECTED_FIELDS_DIFFER")
 	}
 	return runner.completeReadback(ctx, work, source, target)
@@ -106,7 +106,7 @@ func creationIdentityMatches(command catalog.Command, identity catalog.Identity)
 // store must serialize sibling claims and rebase only on these verified facts.
 // Unrelated concurrent edits reject rebasing and require a fresh review.
 func RebaseDecision(decision Decision, applied catalog.Command, source, target catalog.Product) (Decision, error) {
-	if source.Revision == "" || target.Revision == "" || applied.Action != catalog.ActionUpdate || !approvedCommand(decision, applied) {
+	if source.Revision == "" || target.Revision == "" || !rebasableCommand(applied) || !approvedCommand(decision, applied) {
 		return Decision{}, ErrStale
 	}
 	if !ReadbackMatches(applied, productForAccount(source, target, applied.Target.Account)) {
@@ -127,6 +127,18 @@ func RebaseDecision(decision Decision, applied catalog.Command, source, target c
 	decision.Source, decision.Target = source, target
 	decision.Commands = rebaseCommandRevisions(decision.Commands, source, target)
 	return decision, nil
+}
+
+func rebasableCommand(command catalog.Command) bool {
+	if command.Action != catalog.ActionUpdate || len(command.Extensions) != 0 {
+		return false
+	}
+	for field := range command.Values {
+		if !field.LiveWritable() {
+			return false
+		}
+	}
+	return true
 }
 
 func approvedCommand(decision Decision, command catalog.Command) bool {
