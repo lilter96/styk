@@ -11,8 +11,12 @@ import (
 
 func (r *Runner) dispatch(ctx context.Context, work orders.Work) error {
 	if !work.Command.Action.IsMirror() {
-		return r.stop(ctx, work, "OUTGOING_CAPABILITY_UNVERIFIED")
+		return r.dispatchFulfillment(ctx, work)
 	}
+	return r.dispatchMirror(ctx, work)
+}
+
+func (r *Runner) dispatchMirror(ctx context.Context, work orders.Work) error {
 	allowed, err := r.store.GuardOrderDispatch(ctx, orders.DispatchGuard{Work: work, Now: r.now()})
 	if err != nil {
 		return fmt.Errorf("check order dispatch authority: %w", err)
@@ -39,6 +43,46 @@ func (r *Runner) dispatch(ctx context.Context, work orders.Work) error {
 		return r.reconcileTarget(ctx, work, *target)
 	}
 	return r.bindAndWrite(ctx, work, client)
+}
+
+func (r *Runner) dispatchFulfillment(ctx context.Context, work orders.Work) error {
+	allowed, err := r.store.GuardOrderDispatch(ctx, orders.DispatchGuard{Work: work, Now: r.now()})
+	if err != nil {
+		return fmt.Errorf("check order dispatch authority: %w", err)
+	}
+	if !allowed {
+		return r.stop(ctx, work, "CONFIG_MAPPING_OR_CREDENTIALS_CHANGED")
+	}
+	decision, sourceErr := r.reviewedDecision(ctx, work)
+	if sourceErr == nil {
+		sourceErr = r.freshSource(ctx, work, decision.Posting)
+	}
+	if sourceErr != nil {
+		return r.stop(ctx, work, "FRESH_SOURCE_CHANGED_OR_UNAVAILABLE")
+	}
+	client, err := resolveOrderClient(ctx, r.resolver, work.Scope, "ozon", work.Credentials.Ozon)
+	if err != nil {
+		return r.stop(ctx, work, "SCOPED_SOURCE_CREDENTIALS_UNAVAILABLE")
+	}
+	var began atomic.Bool
+	authorize := func(check context.Context) (bool, error) {
+		allowed, err := r.store.GuardOrderDispatch(check, orders.DispatchGuard{Work: work, Now: r.now(), Begin: true})
+		if allowed && err == nil {
+			began.Store(true)
+		}
+		return allowed, err
+	}
+	if err := client.BindOrderIntent(work.Command, authorize); err != nil {
+		return r.stop(ctx, work, "INTENT_BINDING_REJECTED")
+	}
+	send, cancel := context.WithDeadline(ctx, work.LeaseUntil)
+	receipt, writeErr := client.WriteOrder(send, work.Command)
+	cancel()
+	if !began.Load() {
+		return r.stop(ctx, work, "FINAL_DISPATCH_GUARD_NOT_ENTERED")
+	}
+	work.State, work.DispatchCount = orders.StateDispatching, 1
+	return r.recordWrite(ctx, work, receipt, writeErr)
 }
 
 func (r *Runner) reviewedDecision(ctx context.Context, work orders.Work) (orders.Decision, error) {

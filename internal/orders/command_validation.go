@@ -4,7 +4,8 @@ import "fmt"
 
 func (action Action) Valid() bool {
 	switch action {
-	case ActionMirrorCreate, ActionMirrorUpdate, ActionPostingPack, ActionPostingShip, ActionPostingCancel, ActionPostingDeliver:
+	case ActionMirrorCreate, ActionMirrorUpdate, ActionPostingPack, ActionPostingShip, ActionPostingCancel, ActionPostingDeliver,
+		ActionPostingSplit, ActionPostingPartialCancel, ActionPostingTracking, ActionPostingLastMile, ActionPostingSentBySeller, ActionPostingLabelCreate:
 		return true
 	default:
 		return false
@@ -61,6 +62,9 @@ func (command Command) validatePostingAction() error {
 		return ErrInvalid
 	}
 	action := command.PostingAction
+	if action.Parameters.HasPrivateValues() {
+		return ErrInvalid
+	}
 	if action.Capability.Validate() != nil || action.Capability.WarehouseID != command.Warehouse.OzonWarehouseID {
 		return ErrStale
 	}

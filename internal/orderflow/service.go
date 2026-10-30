@@ -10,8 +10,10 @@ import (
 )
 
 type ServiceOptions struct {
-	AllowScope func(orders.Scope) bool
-	Now        func() time.Time
+	AllowScope      func(orders.Scope) bool
+	Now             func() time.Time
+	CustomerReader  orders.CustomerReader
+	ActionProtector orders.ActionInputProtector
 }
 
 // Service freezes scoped facts and commands for review. The store repeats all
@@ -86,6 +88,9 @@ func (s *Service) validatePreviewRequest(request orders.PreviewRequest) error {
 	}
 	if !s.allowed(request.Scope) {
 		return orders.ErrBlocked
+	}
+	if err := validateProposals(request); err != nil {
+		return err
 	}
 	seen := make(map[orders.Action]bool, len(request.Actions))
 	for _, action := range request.Actions {

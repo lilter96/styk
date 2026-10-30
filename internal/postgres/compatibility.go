@@ -15,7 +15,7 @@ func (s *Store) RequireCurrentSchema(ctx context.Context) error {
 	defer cancel()
 	var version int64
 	err := s.Pool.QueryRow(ctx, `SELECT COALESCE(max(version_id),0) FROM (SELECT DISTINCT ON(version_id) version_id,is_applied FROM goose_db_version ORDER BY version_id,id DESC) versions WHERE is_applied`).Scan(&version)
-	if err != nil || version < 48 {
+	if err != nil || version < 51 {
 		return ErrSchemaIncompatible
 	}
 	var compatible bool

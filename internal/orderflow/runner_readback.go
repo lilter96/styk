@@ -18,6 +18,9 @@ func (r *Runner) readback(ctx context.Context, work orders.Work) error {
 	if !allowed {
 		return r.deferReadback(ctx, work, "READBACK_AUTHORITY_CHANGED")
 	}
+	if !work.Command.Action.IsMirror() {
+		return r.readbackFulfillment(ctx, work)
+	}
 	decision, sourceErr := r.reviewedDecision(ctx, work)
 	if sourceErr == nil {
 		sourceErr = r.freshSource(ctx, work, decision.Posting)
@@ -35,9 +38,21 @@ func (r *Runner) readback(ctx context.Context, work orders.Work) error {
 	return r.reconcileTarget(ctx, work, target)
 }
 
+func (r *Runner) readbackFulfillment(ctx context.Context, work orders.Work) error {
+	client, err := resolveOrderClient(ctx, r.resolver, work.Scope, "ozon", work.Credentials.Ozon)
+	if err != nil {
+		return r.deferReadback(ctx, work, "SCOPED_SOURCE_CREDENTIALS_UNAVAILABLE")
+	}
+	posting, err := client.ReadOrderPosting(ctx, work.Scope, work.Command.PostingNumber)
+	if err != nil {
+		return r.deferReadback(ctx, work, "FULFILLMENT_READBACK_UNAVAILABLE")
+	}
+	return r.reconcileFulfillment(ctx, work, posting)
+}
+
 func (r *Runner) readWorkTarget(ctx context.Context, work orders.Work) (orders.TargetObservation, error) {
 	if !work.Command.Action.IsMirror() {
-		return orders.TargetObservation{}, orders.ErrBlocked
+		return r.readFulfillmentResult(ctx, work)
 	}
 	client, err := resolveOrderClient(ctx, r.resolver, work.Scope, "moysklad", work.Credentials.Moysklad)
 	if err != nil {
@@ -67,6 +82,22 @@ func (r *Runner) readWorkTarget(ctx context.Context, work orders.Work) (orders.T
 func (r *Runner) reconcileTarget(ctx context.Context, work orders.Work, target orders.TargetObservation) error {
 	correlation := target.Correlation
 	return r.complete(ctx, work, orders.Completion{State: orders.StateReconciled, Code: "TARGET_FACTS_CONFIRMED", Correlation: &correlation, ObservedTarget: &target})
+}
+
+func (r *Runner) readFulfillmentResult(ctx context.Context, work orders.Work) (orders.TargetObservation, error) {
+	client, err := resolveOrderClient(ctx, r.resolver, work.Scope, "ozon", work.Credentials.Ozon)
+	if err != nil {
+		return orders.TargetObservation{}, err
+	}
+	posting, err := client.ReadOrderPosting(ctx, work.Scope, work.Command.PostingNumber)
+	if err != nil {
+		return orders.TargetObservation{}, err
+	}
+	return orders.TargetObservation{Scope: posting.Scope, ObservedAt: r.now(), Complete: true, Correlation: orders.Correlation{PostingNumber: posting.PostingNumber}}, nil
+}
+
+func (r *Runner) reconcileFulfillment(ctx context.Context, work orders.Work, posting orders.Posting) error {
+	return r.complete(ctx, work, orders.Completion{State: orders.StateReconciled, Code: "FULFILLMENT_CONFIRMED", ObservedPosting: &posting, NextRunAt: r.now().Add(r.options.PollInterval)})
 }
 
 func (r *Runner) deferReadback(ctx context.Context, work orders.Work, code string) error {

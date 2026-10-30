@@ -34,14 +34,15 @@ func (a *ordersAPI) saveConfig(w http.ResponseWriter, r *http.Request) {
 func (a *ordersAPI) preview(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		orderRequestScope
-		ExpectedRevision int64           `json:"expected_revision"`
-		PostingNumbers   []string        `json:"posting_numbers"`
-		Actions          []orders.Action `json:"actions"`
+		ExpectedRevision int64                   `json:"expected_revision"`
+		PostingNumbers   []string                `json:"posting_numbers"`
+		Actions          []orders.Action         `json:"actions"`
+		Proposals        []orders.ActionProposal `json:"proposals"`
 	}
 	if !decodeStockSync(w, r, &body) {
 		return
 	}
-	result, err := a.service.Preview(r.Context(), orders.PreviewRequest{Scope: body.scope(), ExpectedRevision: body.ExpectedRevision, PostingNumbers: body.PostingNumbers, Actions: body.Actions, Actor: catalogActor(r)})
+	result, err := a.service.Preview(r.Context(), orders.PreviewRequest{Scope: body.scope(), ExpectedRevision: body.ExpectedRevision, PostingNumbers: body.PostingNumbers, Actions: body.Actions, Proposals: body.Proposals, Actor: catalogActor(r)})
 	if err != nil {
 		ordersHTTPError(w, err)
 		return

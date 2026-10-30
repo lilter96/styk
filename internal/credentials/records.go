@@ -16,7 +16,7 @@ type RecordScope struct {
 }
 
 func recordAAD(scope RecordScope) ([]byte, error) {
-	if !scope.Valid() || !validID(scope.RecordID) || scope.Purpose != "order-customer" || scope.Revision < 1 {
+	if !scope.Valid() || !validID(scope.RecordID) || !validRecordPurpose(scope.Purpose) || scope.Revision < 1 {
 		return nil, ErrOwnership
 	}
 	return json.Marshal(struct {
@@ -25,6 +25,10 @@ func recordAAD(scope RecordScope) ([]byte, error) {
 		Tenant, Provider, Account, RecordID string
 		Revision                            int64
 	}{1, scope.Purpose, scope.Tenant, scope.Provider, scope.Account, scope.RecordID, scope.Revision})
+}
+
+func validRecordPurpose(purpose string) bool {
+	return purpose == "order-customer" || purpose == "order-action" || purpose == "order-artifact"
 }
 
 func (v *Vault) EncryptRecord(scope RecordScope, plain []byte) ([]byte, error) {

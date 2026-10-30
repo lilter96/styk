@@ -10,6 +10,7 @@ import (
 	"github.com/lilter96/styk/internal/credentials"
 	"github.com/lilter96/styk/internal/infrastructure/moysklad"
 	"github.com/lilter96/styk/internal/orderflow"
+	"github.com/lilter96/styk/internal/orderprivacy"
 	"github.com/lilter96/styk/internal/orderprovider"
 	"github.com/lilter96/styk/internal/orders"
 	"github.com/lilter96/styk/internal/postgres"
@@ -36,7 +37,7 @@ func registerOrdersRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c *co
 	}
 	factory.NewOzon = c.ozonFactory
 	api := &ordersAPI{db: db, factory: factory, simulated: c.catalogSimulator}
-	api.service, err = orderflow.NewService(db, factory, orderflow.ServiceOptions{AllowScope: api.allowed})
+	api.service, err = orderflow.NewService(db, factory, orderflow.ServiceOptions{AllowScope: api.allowed, ActionProtector: orderprivacy.ActionProtector{Vault: c.vault, Store: db}})
 	if err != nil {
 		return err
 	}
@@ -51,6 +52,7 @@ func registerOrdersRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c *co
 	}{
 		{"GET /api/orders/config", api.config, false}, {"POST /api/orders/config", api.saveConfig, true},
 		{"GET /api/orders/postings", api.postings, false}, {"GET /api/orders/operations", api.history, false},
+		{"GET /api/orders/action-options", api.actionOptions, false},
 		{"GET /api/orders/metadata", api.metadata, false}, {"POST /api/orders/preview", api.preview, true},
 		{"GET /api/orders/metadata/registry", api.metadataRegistry, false}, {"POST /api/orders/metadata/attributes", api.createMetadata, true},
 		{"POST /api/orders/metadata/reconcile", api.reconcileMetadata, true},
@@ -131,4 +133,13 @@ func (a *ordersAPI) history(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, page)
+}
+
+func (a *ordersAPI) actionOptions(w http.ResponseWriter, r *http.Request) {
+	result, err := a.service.ActionOptions(r.Context(), orders.ActionOptionsRequest{Scope: orderScope(r), PostingNumber: r.URL.Query().Get("posting_number")})
+	if err != nil {
+		ordersHTTPError(w, err)
+		return
+	}
+	writeJSON(w, result)
 }

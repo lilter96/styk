@@ -61,17 +61,9 @@ func (c *OrdersClient) ReadOrderCorrelation(_ context.Context, _ orders.Correlat
 	return orders.Correlation{}, ErrOrderUnsupported
 }
 
-func (c *OrdersClient) WriteOrder(_ context.Context, _ orders.Command) (orders.Receipt, error) {
-	return orders.Receipt{}, orders.ErrBlocked
-}
-
-func (c *OrdersClient) BindOrderIntent(_ orders.Command, _ func(context.Context) (bool, error)) error {
-	return orders.ErrBlocked
-}
-
 func orderReadPath(path string) bool {
 	switch path {
-	case "/v4/posting/fbs/list", "/v4/posting/fbs/unfulfilled/list", "/v3/posting/fbs/get", "/v2/warehouse/list", "/v2/delivery-method/list":
+	case "/v4/posting/fbs/list", "/v4/posting/fbs/unfulfilled/list", "/v3/posting/fbs/get", "/v2/warehouse/list", "/v2/delivery-method/list", "/v1/posting/fbs/cancel-reason":
 		return true
 	default:
 		return false

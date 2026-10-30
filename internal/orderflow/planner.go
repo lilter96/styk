@@ -46,7 +46,7 @@ func (s *Service) planPreview(ctx context.Context, request orders.PreviewRequest
 		Credentials: review.Credentials, Actor: request.Actor, Automatic: automatic, CreatedAt: now,
 		ExpiresAt: now.Add(time.Duration(review.Config.PreviewTTLSeconds) * time.Second), Decisions: make([]orders.Decision, 0, len(postings))}
 	for _, posting := range postings {
-		decision, planErr := s.planPosting(ctx, review, posting, request.Actions, automatic, now)
+		decision, planErr := s.planRequestedPosting(ctx, request, review, posting, automatic, now)
 		if planErr != nil {
 			return orders.Preview{}, planErr
 		}
@@ -155,7 +155,7 @@ func (s *Service) planMirror(ctx context.Context, review orders.ReviewContext, d
 	}
 	positions, validations := ordermoney.ProjectLines(decision.Posting, review.ProductMappings)
 	decision.Validation = append(decision.Validation, validations...)
-	write, validations := mirrorWrite(decision.Posting, review, positions)
+	write, validations := mirrorWrite(decision.Posting, review, positions, s.options.CustomerReader)
 	decision.Validation = append(decision.Validation, validations...)
 	if len(decision.Validation) > 0 {
 		return decision, nil

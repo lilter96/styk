@@ -8,13 +8,13 @@ import (
 	"github.com/lilter96/styk/internal/orders"
 )
 
-func mirrorWrite(posting orders.Posting, review orders.ReviewContext, positions []orders.PositionWrite) (orders.CustomerOrderWrite, []orders.Validation) {
+func mirrorWrite(posting orders.Posting, review orders.ReviewContext, positions []orders.PositionWrite, customerReader orders.CustomerReader) (orders.CustomerOrderWrite, []orders.Validation) {
 	config := review.Config
 	write := orders.CustomerOrderWrite{CurrencyID: config.CurrencyID, OrganizationID: config.OrganizationID, AgentID: config.AgentID,
 		StoreID: config.StoreID, StateID: postingState(posting, config), SalesChannelID: config.SalesChannelID, Positions: positions}
 	validations := make([]orders.Validation, 0)
 	for _, mapping := range config.FieldMappings {
-		if validation := applyMirrorMapping(&write, posting, review.Metadata, mapping); validation.Code != "" {
+		if validation := applyMirrorMapping(&write, posting, review.Metadata, mapping, customerReader); validation.Code != "" {
 			validations = append(validations, validation)
 		}
 	}
@@ -32,9 +32,9 @@ func mirrorWrite(posting orders.Posting, review orders.ReviewContext, positions 
 	return write, validations
 }
 
-func applyMirrorMapping(write *orders.CustomerOrderWrite, posting orders.Posting, metadata orders.MetadataRegistry, mapping orders.FieldMapping) orders.Validation {
+func applyMirrorMapping(write *orders.CustomerOrderWrite, posting orders.Posting, metadata orders.MetadataRegistry, mapping orders.FieldMapping, customerReader orders.CustomerReader) orders.Validation {
 	if strings.HasPrefix(mapping.Source, "customer.") {
-		return orders.Validation{Field: mapping.Source, Code: "protected_customer_projection_unavailable"}
+		return applyCustomerMapping(write, posting, mapping, customerReader)
 	}
 	switch mapping.Target {
 	case "name", "description", "attribute":
@@ -191,6 +191,12 @@ func historicalCancellationValidation(write orders.CustomerOrderWrite) []orders.
 		}
 	}
 	return result
+}
+
+func applyCustomerMapping(_ *orders.CustomerOrderWrite, _ orders.Posting, mapping orders.FieldMapping, _ orders.CustomerReader) orders.Validation {
+	// A transient value must not be reported as projected until dispatch and
+	// readback both bind it to the protected customer revision.
+	return orders.Validation{Field: mapping.Source, Code: "protected_customer_projection_unavailable"}
 }
 
 func postingState(posting orders.Posting, config orders.Config) string {

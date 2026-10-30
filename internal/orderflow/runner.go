@@ -17,13 +17,14 @@ type previewReader interface {
 }
 
 type RunnerOptions struct {
-	WorkerID      string
-	LeaseDuration time.Duration
-	PollInterval  time.Duration
-	AllowScope    func(orders.Scope) bool
-	Now           func() time.Time
-	Service       *Service
-	Collector     Collector
+	WorkerID       string
+	LeaseDuration  time.Duration
+	PollInterval   time.Duration
+	AllowScope     func(orders.Scope) bool
+	Now            func() time.Time
+	Service        *Service
+	Collector      Collector
+	CustomerReader orders.CustomerReader
 }
 
 // Runner performs one claimed phase per call. Acknowledgements and uncertain

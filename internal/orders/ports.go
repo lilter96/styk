@@ -24,11 +24,12 @@ type ReviewContext struct {
 }
 
 type PreviewRequest struct {
-	Scope            Scope    `json:"scope"`
-	ExpectedRevision int64    `json:"expected_revision"`
-	PostingNumbers   []string `json:"posting_numbers,omitempty"`
-	Actions          []Action `json:"actions,omitempty"`
-	Actor            string   `json:"-"`
+	Scope            Scope            `json:"scope"`
+	ExpectedRevision int64            `json:"expected_revision"`
+	PostingNumbers   []string         `json:"posting_numbers,omitempty"`
+	Actions          []Action         `json:"actions,omitempty"`
+	Proposals        []ActionProposal `json:"proposals,omitempty"`
+	Actor            string           `json:"-"`
 }
 
 type Approval struct {

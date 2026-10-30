@@ -339,31 +339,36 @@ type PositionWrite struct {
 // CustomerOrderWrite deliberately has no sum, paid or shipped fields: those
 // values are computed provider facts. No payment or shipment document is implied.
 type CustomerOrderWrite struct {
-	OwnedFields    []string         `json:"owned_fields,omitempty"`
-	CurrencyID     string           `json:"currency_id,omitempty"`
-	RateValue      Field[Decimal]   `json:"rate_value"`
-	OrganizationID string           `json:"organization_id"`
-	AgentID        string           `json:"agent_id"`
-	StoreID        string           `json:"store_id"`
-	StateID        string           `json:"state_id"`
-	SalesChannelID string           `json:"sales_channel_id"`
-	Name           Field[string]    `json:"name"`
-	Description    Field[string]    `json:"description"`
-	Moment         Field[time.Time] `json:"moment"`
-	DeliveryAt     Field[time.Time] `json:"delivery_at"`
-	Applicable     Field[bool]      `json:"applicable"`
-	VATEnabled     Field[bool]      `json:"vat_enabled"`
-	VATIncluded    Field[bool]      `json:"vat_included"`
-	Positions      []PositionWrite  `json:"positions"`
-	Attributes     []AttributeWrite `json:"attributes"`
+	OwnedFields         []string         `json:"owned_fields,omitempty"`
+	CurrencyID          string           `json:"currency_id,omitempty"`
+	RateValue           Field[Decimal]   `json:"rate_value"`
+	OrganizationID      string           `json:"organization_id"`
+	AgentID             string           `json:"agent_id"`
+	StoreID             string           `json:"store_id"`
+	StateID             string           `json:"state_id"`
+	SalesChannelID      string           `json:"sales_channel_id"`
+	Name                Field[string]    `json:"name"`
+	Description         Field[string]    `json:"description"`
+	Moment              Field[time.Time] `json:"moment"`
+	DeliveryAt          Field[time.Time] `json:"delivery_at"`
+	Applicable          Field[bool]      `json:"applicable"`
+	VATEnabled          Field[bool]      `json:"vat_enabled"`
+	VATIncluded         Field[bool]      `json:"vat_included"`
+	Positions           []PositionWrite  `json:"positions"`
+	Attributes          []AttributeWrite `json:"attributes"`
+	ShipmentAddress     Field[string]    `json:"-"`
+	TransientAttributes []AttributeWrite `json:"-"`
 }
 
 // PostingAction is an explicit command with reviewed capability evidence.
 // Provider status fields are never copied into this command union.
 type PostingAction struct {
-	Capability CapabilityRef  `json:"capability"`
-	Lines      []LineIdentity `json:"lines"`
-	ReasonID   Field[string]  `json:"reason_id"`
+	Capability     CapabilityRef         `json:"capability"`
+	Lines          []LineIdentity        `json:"lines"`
+	ReasonID       Field[string]         `json:"reason_id"`
+	Parameters     ActionParameters      `json:"parameters"`
+	ProtectedInput *ProtectedActionInput `json:"protected_input,omitempty"`
+	ContractHash   string                `json:"contract_hash,omitempty"`
 }
 
 type Command struct {
