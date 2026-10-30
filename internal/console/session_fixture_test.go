@@ -21,6 +21,3 @@ func newAuth(_, origin string) (*auth, error) {
 func (a *auth) login(w http.ResponseWriter, r *http.Request) {
 	a.boundary.(*sessionfixture.Auth).Login(w, r)
 }
-func (a *auth) logout(w http.ResponseWriter, r *http.Request) {
-	a.boundary.(*sessionfixture.Auth).Logout(w, r)
-}

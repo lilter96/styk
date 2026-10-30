@@ -3,12 +3,12 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -113,7 +113,7 @@ func TestStockImportedEvidenceIsUnknownAndImmutable(t *testing.T) {
 		t.Fatalf("missing frozen evidence: %+v", d.Evidence)
 	}
 	read, err := f.store.StockDecision(ctx, f.req.Pool.Tenant, f.req.Target.OzonAccount, d.ID)
-	if err != nil || !reflect.DeepEqual(d, read) {
+	if err != nil || !stockDecisionsEqual(t, d, read) {
 		t.Fatalf("decision replay mismatch: %v", err)
 	}
 	var storedAt time.Time
@@ -134,7 +134,7 @@ func TestStockImportedEvidenceIsUnknownAndImmutable(t *testing.T) {
 		t.Fatal(err)
 	}
 	read, err = f.store.StockDecision(ctx, f.req.Pool.Tenant, f.req.Target.OzonAccount, d.ID)
-	if err != nil || !reflect.DeepEqual(d, read) {
+	if err != nil || !stockDecisionsEqual(t, d, read) {
 		t.Fatal("legacy observation update altered historical decision")
 	}
 	var outbox int
@@ -275,7 +275,7 @@ func TestStockPolicyVersionsAreImmutable(t *testing.T) {
 		t.Fatal("policy history was mutable")
 	}
 	read, err := f.store.StockDecision(ctx, f.req.Pool.Tenant, f.req.Target.OzonAccount, first.ID)
-	if err != nil || !reflect.DeepEqual(first, read) {
+	if err != nil || !stockDecisionsEqual(t, first, read) {
 		t.Fatal("old policy or decision changed")
 	}
 }
@@ -316,7 +316,7 @@ func TestStockMissingMappingVersionIsBlocked(t *testing.T) {
 		t.Fatalf("missing mapping history accepted: %+v", later)
 	}
 	old, err := f.store.StockDecision(ctx, f.req.Pool.Tenant, f.req.Target.OzonAccount, first.ID)
-	if err != nil || !reflect.DeepEqual(first, old) {
+	if err != nil || !stockDecisionsEqual(t, first, old) {
 		t.Fatal("prior version was not preserved")
 	}
 }
@@ -398,7 +398,7 @@ func TestStockRepeatedImportAndMissingObservation(t *testing.T) {
 		t.Fatalf("missing row treated as stock: %+v", missing)
 	}
 	previous, err := f.store.StockDecision(ctx, f.req.Pool.Tenant, f.req.Target.OzonAccount, before.ID)
-	if err != nil || !reflect.DeepEqual(previous, before) {
+	if err != nil || !stockDecisionsEqual(t, previous, before) {
 		t.Fatal("prior evidence changed")
 	}
 }
@@ -444,7 +444,7 @@ func TestStockConflictsAndMappingVersionHistory(t *testing.T) {
 		t.Fatalf("mapping conflict not blocked: %+v", blocked)
 	}
 	prior, err := f.store.StockDecision(ctx, f.req.Pool.Tenant, f.req.Target.OzonAccount, first.ID)
-	if err != nil || !reflect.DeepEqual(first, prior) {
+	if err != nil || !stockDecisionsEqual(t, first, prior) {
 		t.Fatal("mapping change rewrote historical decision")
 	}
 	variantMismatch := f.req
@@ -479,7 +479,7 @@ func TestStockDecisionRollbackAndConstraint(t *testing.T) {
 		t.Fatalf("partial decision after rollback: %d %d %d %v", decisions, evidence, newPools, err)
 	}
 	read, err := f.store.StockDecision(ctx, f.req.Pool.Tenant, f.req.Target.OzonAccount, first.ID)
-	if err != nil || !reflect.DeepEqual(first, read) {
+	if err != nil || !stockDecisionsEqual(t, first, read) {
 		t.Fatal("prior decision lost after rollback")
 	}
 	if _, err = f.store.Pool.Exec(ctx, `ALTER TABLE stock_decision_evidence DROP CONSTRAINT test_stock_evidence_failure`); err != nil {
@@ -580,7 +580,22 @@ func TestStockMappingChangeDuringCalculation(t *testing.T) {
 		t.Fatalf("calculation mixed mapping versions: %+v", got.d)
 	}
 	old, err := f.store.StockDecision(ctx, f.req.Pool.Tenant, f.req.Target.OzonAccount, before.ID)
-	if err != nil || !reflect.DeepEqual(before, old) {
+	if err != nil || !stockDecisionsEqual(t, before, old) {
 		t.Fatal("historical decision changed")
 	}
+}
+
+// Persistence freezes the JSON contract. time.Location and monotonic clock
+// internals are not serialized and must not turn equal snapshots into failures.
+func stockDecisionsEqual(t testing.TB, a, b domain.StockDecision) bool {
+	t.Helper()
+	left, err := json.Marshal(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	right, err := json.Marshal(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bytes.Equal(left, right)
 }
