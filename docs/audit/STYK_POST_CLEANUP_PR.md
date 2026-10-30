@@ -1,7 +1,10 @@
 # Pull Request
 
-Branch: `chore/styk-cleanup-and-demo-seed`.
+[PR #2: chore: cleanup STYK project and prepare development environment](https://github.com/lilter96/styk/pull/2)
 
-Base: repository default branch `master`.
-
-The PR is created only after local checks and review of the committed diff. It must remain open; no merge is authorized. The final actual GitHub URL is recorded here after creation and in the machine-readable report. No fabricated PR link is used.
+- State verified: OPEN.
+- Base: `master`.
+- Head: `chore/styk-cleanup-and-demo-seed`.
+- Merge: not performed; mergedAt is null.
+- Local checks completed successfully. GitHub-hosted CI is separate; its live status is visible on the PR and is not represented as a completed local check.
+- Report: [STYK_POST_CLEANUP_HANDOFF](STYK_POST_CLEANUP_HANDOFF.md).

@@ -60,3 +60,5 @@ Tracked files deleted: **0**. Dependencies removed: **0**. No deletion was justi
 | `cd41eb3ecba13b6d024891fe0f1a3b680cef4481` | test: validate development foreign keys after seeding |
 
 This list records the code checkpoint before the reporting commit; the open PR contains the final documentation commits as well. No self-referential commit hash is fabricated.
+
+Documentation checkpoint: `2d51f39` ? setup/handoff and generated-cache exclusions. Actual review: [PR #2](https://github.com/lilter96/styk/pull/2). The following link-recording documentation commit is discoverable in the PR history; this file does not invent its own future hash.

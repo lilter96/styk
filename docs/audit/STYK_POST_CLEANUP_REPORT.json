@@ -3,7 +3,7 @@
   "date": "2026-10-30",
   "branch": "chore/styk-cleanup-and-demo-seed",
   "base": "master",
-  "pr_url": null,
+  "pr_url": "https://github.com/lilter96/styk/pull/2",
   "local_ready": true,
   "production_ready": false,
   "commits_at_code_checkpoint": [
@@ -300,5 +300,20 @@
     "Analytics/billing/production rollout not implemented",
     "Windows/fixed-local-instance helper scope",
     "Unrelated pre-existing design screenshots remain untracked and preserved"
-  ]
+  ],
+  "pr_state": "OPEN",
+  "merged": false,
+  "github_ci_snapshot": [
+    {
+      "__typename": "CheckRun",
+      "completedAt": "0001-01-01T00:00:00Z",
+      "conclusion": "",
+      "detailsUrl": "https://github.com/lilter96/styk/actions/runs/41053129018/job/124053863776",
+      "name": "test",
+      "startedAt": "2026-10-30T12:08:34Z",
+      "status": "IN_PROGRESS",
+      "workflowName": "CI"
+    }
+  ],
+  "documentation_commit": "2d51f39"
 }
