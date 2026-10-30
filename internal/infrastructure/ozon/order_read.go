@@ -18,6 +18,7 @@ const (
 
 var _ orders.Reader = (*OrdersClient)(nil)
 var _ orders.SourceReader = (*OrdersClient)(nil)
+var _ orders.LabelTaskReader = (*OrdersClient)(nil)
 
 func (c *OrdersClient) orderPost(ctx context.Context, path string, body any) (json.RawMessage, error) {
 	if !c.ReadonlyReaderRequest || !orderReadPath(path) {

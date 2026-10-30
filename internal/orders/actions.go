@@ -146,6 +146,31 @@ type ActionOptionsRequest struct {
 	PostingNumber string `json:"posting_number"`
 }
 
+// ExpectedPostingStatus returns the Ozon posting status that confirms a
+// fulfilled action was applied by the provider. Empty string means the action
+// does not change the posting status (e.g. tracking set) or status is verified
+// through a separate provider resource (e.g. label task).
+func ExpectedPostingStatus(action Action) string {
+	switch action {
+	case ActionPostingPack, ActionPostingSplit:
+		return "awaiting_deliver"
+	case ActionPostingShip:
+		return "delivering"
+	case ActionPostingDeliver:
+		return "delivered"
+	case ActionPostingCancel:
+		return "cancelled"
+	case ActionPostingPartialCancel:
+		return "partially_cancelled"
+	case ActionPostingLastMile:
+		return "awaiting_deliver"
+	case ActionPostingSentBySeller:
+		return "awaiting_packaging"
+	default:
+		return ""
+	}
+}
+
 func (input ActionParameters) HasPrivateValues() bool {
 	return input.ReasonMessage != "" || input.TrackingNumber != "" || input.EventReference != ""
 }

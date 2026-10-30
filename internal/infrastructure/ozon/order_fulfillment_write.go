@@ -213,9 +213,18 @@ func (c *OrdersClient) statusTransitionReceipt(command orders.Command, data []by
 	return orderReceipt(command, orders.StateAcknowledged, status, "provider_acknowledged"), nil
 }
 
-// BindOrderIntent is retained for the shared Provider interface; fulfillment
-// intents use the runner-level guard instead of a per-client callback.
-func (c *OrdersClient) BindOrderIntent(_ orders.Command, _ func(context.Context) (bool, error)) error {
+// BindOrderIntent begins the durable dispatch intent for a fulfillment command.
+// It invokes the runner's authorization guard (Begin: true) to record that the
+// command is about to be sent to the provider. The guard must be entered before
+// WriteOrder is called; otherwise the runner treats the dispatch as rejected.
+func (c *OrdersClient) BindOrderIntent(command orders.Command, authorize func(context.Context) (bool, error)) error {
+	if authorize == nil {
+		return orders.ErrInvalid
+	}
+	allowed, err := authorize(context.Background())
+	if err != nil || !allowed {
+		return orders.ErrBlocked
+	}
 	return nil
 }
 
