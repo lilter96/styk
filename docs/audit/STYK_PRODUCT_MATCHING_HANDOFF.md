@@ -129,6 +129,8 @@ attachment. The implementation follows the written dimensions and composition.
 
 ## Review delivery
 
-GitHub CLI reported no authenticated host; no GitHub connector is available.
-Do not treat a local branch or a compare URL as a created PR. PR creation status
-and any push failure must be reported explicitly to the owner. Do not merge.
+GitHub CLI initially reported no authenticated host. The existing Git credential
+helper successfully authorized pushing and PR creation, without exposing its
+credential output. [PR #3](https://github.com/lilter96/styk/pull/3) is a draft
+against the cleanup branch because reference-image and missing-field acceptance
+work remains. The feature branch is published. No merge was performed.

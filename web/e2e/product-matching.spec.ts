@@ -95,9 +95,16 @@ test("matching modal uses the local Go search and captures desktop states", asyn
     path: "../docs/audit/product-matching/selected.png",
   });
   const input = dialog.getByRole("textbox", { name: "Поиск товара МойСклад" });
+  const searched = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      url.pathname === "/api/moysklad-products" &&
+      url.searchParams.get("query") === data.items[0].name
+    );
+  });
   await input.fill(data.items[0].name);
+  expect((await searched).status()).toBe(200);
   await expect(dialog.locator(".matching-result").first()).toBeVisible();
-  await expect.poll(() => input.inputValue()).toBe(data.items[0].name);
   await page.screenshot({ path: "../docs/audit/product-matching/search.png" });
   await input.fill("no-such-matching-product-89723");
   await expect(dialog.getByText(/Товары не найдены/)).toBeVisible();
