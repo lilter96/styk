@@ -1,0 +1,304 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-30",
+  "branch": "chore/styk-cleanup-and-demo-seed",
+  "base": "master",
+  "pr_url": null,
+  "local_ready": true,
+  "production_ready": false,
+  "commits_at_code_checkpoint": [
+    {
+      "hash": "d919088fc9cfd34bbbadaee247dde0444c536695",
+      "subject": "chore: preserve pre-cleanup working tree"
+    },
+    {
+      "hash": "01d76b6fb730a4713aec44c4078446ef79702a22",
+      "subject": "refactor: remove unused code and dependencies"
+    },
+    {
+      "hash": "dc7d6da308125602d5e9a859891f2fcfe639b738",
+      "subject": "refactor: isolate and trim synthetic session adapters"
+    },
+    {
+      "hash": "93740f42d83bc4831d2c1e8212e4a195198e6fcf",
+      "subject": "chore: add safe development database reset"
+    },
+    {
+      "hash": "9befba3fb5cc5ff11ce767d85bc5738673014456",
+      "subject": "feat: add reproducible demo data seeding"
+    },
+    {
+      "hash": "a51ce98671bbca79eaca755908b9c3764f5aeda8",
+      "subject": "test: verify demo account and data integrity"
+    },
+    {
+      "hash": "cd41eb3ecba13b6d024891fe0f1a3b680cef4481",
+      "subject": "test: validate development foreign keys after seeding"
+    }
+  ],
+  "database": {
+    "name": "styk_demo_dev",
+    "host": "127.0.0.1",
+    "port": 55433,
+    "container": "styk-redesign-db",
+    "migration_version": 44,
+    "backup_restore_verified": true,
+    "migration_sources_changed": false,
+    "counts": {
+      "users": 1,
+      "verified_active_owners": 1,
+      "organizations": 1,
+      "physical_products": 500,
+      "marketplace_listings": 2500,
+      "catalog_price_snapshots": 2500,
+      "moysklad_accounts": 1,
+      "ozon_accounts": 5,
+      "source_warehouses": 3,
+      "marketplace_warehouses": 15,
+      "source_warehouse_stock": 1500,
+      "marketplace_warehouse_stock": 7500,
+      "postings": 1000,
+      "source_orders": 1000,
+      "product_mappings": 1960,
+      "warehouse_mappings": 15,
+      "import_operations": 10,
+      "outbox_tasks": 22,
+      "succeeded_mock_tasks": 12,
+      "provider_credentials": 0,
+      "unvalidated_public_foreign_keys": 0,
+      "invalid_stock_arithmetic": 0,
+      "inconsistent_prices": 0,
+      "goose_version": 44,
+      "foreign_tenant_rows": 0
+    }
+  },
+  "account": {
+    "email": "demo@styk.local",
+    "organization": "STYK Demo Company",
+    "role": "OWNER",
+    "verified": true,
+    "active": true,
+    "requested_display_label": "STYK Demo Admin",
+    "display_name_column_exists": false,
+    "password_minimum_length_verified": true,
+    "password_delivery": "current-user Windows DPAPI, one-time local command; no plaintext in report"
+  },
+  "urls": {
+    "frontend": "http://127.0.0.1:5173",
+    "backend": "http://127.0.0.1:8080",
+    "mail": "http://127.0.0.1:8025",
+    "presentation_demo": "http://127.0.0.1:5185",
+    "landing": "http://127.0.0.1:5186"
+  },
+  "cleanup": {
+    "tracked_files_deleted": 0,
+    "dependencies_removed": 0,
+    "ignored_obsolete_files_removed": [
+      ".local/local-login.txt",
+      ".local/start-local.py"
+    ],
+    "preserved": [
+      "production migrations",
+      "sync business logic",
+      "provider credentials in former DB",
+      "existing design screenshots and experiment evidence"
+    ],
+    "dependency_change": "x/crypto reclassified direct; versions unchanged"
+  },
+  "checks": [
+    {
+      "name": "make lint",
+      "result": "PASS",
+      "command": "make lint",
+      "notes": "gofmt, go vet and pinned golangci-lint: zero issues"
+    },
+    {
+      "name": "go vet",
+      "result": "PASS",
+      "command": "go vet ./...",
+      "notes": "Executed by make lint"
+    },
+    {
+      "name": "Go unit",
+      "result": "PASS",
+      "command": "make test",
+      "notes": "Complete default package set"
+    },
+    {
+      "name": "Go race",
+      "result": "PASS",
+      "command": "go test -race ./...",
+      "notes": "Complete default package set"
+    },
+    {
+      "name": "named binaries",
+      "result": "PASS",
+      "command": "make build",
+      "notes": "All existing targets"
+    },
+    {
+      "name": "Go build",
+      "result": "PASS",
+      "command": "go build ./...",
+      "notes": "Includes demo-seed"
+    },
+    {
+      "name": "migrations",
+      "result": "PASS",
+      "command": "make migrate",
+      "notes": "Isolated demo schema version 44"
+    },
+    {
+      "name": "integration",
+      "result": "PASS",
+      "command": "make test-integration",
+      "notes": "Full final run passed in 233.798s"
+    },
+    {
+      "name": "seed integration race",
+      "result": "PASS",
+      "command": "go test -race -tags=integration ./internal/devseed -count=1",
+      "notes": "Separate empty marked tmpfs PostgreSQL; rollback/concurrency/guard checks"
+    },
+    {
+      "name": "TypeScript",
+      "result": "PASS",
+      "command": "npm run typecheck",
+      "notes": "Real console"
+    },
+    {
+      "name": "frontend lint",
+      "result": "PASS",
+      "command": "npm run lint",
+      "notes": "Real console"
+    },
+    {
+      "name": "frontend tests",
+      "result": "PASS",
+      "command": "npm test",
+      "notes": "203 tests / 18 files"
+    },
+    {
+      "name": "frontend build",
+      "result": "PASS",
+      "command": "npm run build",
+      "notes": "Real console"
+    },
+    {
+      "name": "demo build",
+      "result": "PASS",
+      "command": "npm --prefix ../styk-demo run build",
+      "notes": "Existing large-chunk/directive warnings"
+    },
+    {
+      "name": "landing build",
+      "result": "PASS",
+      "command": "npm --prefix ../styk-landing run build",
+      "notes": "Nested demo, prerender and copy"
+    },
+    {
+      "name": "auth smoke",
+      "result": "PASS",
+      "command": "python scripts/dev-demo.py check",
+      "notes": "Login 204 / session 200, no password logged"
+    },
+    {
+      "name": "browser smoke",
+      "result": "PASS",
+      "command": "python scripts/dev-demo.py smoke",
+      "notes": "2 tests, six pages, cookie/CSRF/anonymous/foreign scope"
+    },
+    {
+      "name": "integrity",
+      "result": "PASS",
+      "command": "demo-db.py verify + scoped count queries",
+      "notes": "FK validation and arithmetic/tenant/price checks"
+    },
+    {
+      "name": "Docker readiness",
+      "result": "PASS",
+      "command": "pg_isready; docker ps",
+      "notes": "PostgreSQL ready; Mailpit healthy"
+    },
+    {
+      "name": "worker",
+      "result": "PASS",
+      "command": "process path verification and outbox query",
+      "notes": "One worker; 12 mock tasks succeeded"
+    },
+    {
+      "name": "idempotence",
+      "result": "PASS",
+      "command": "python scripts/dev-demo.py seed (repeat)",
+      "notes": "existing=true; counts unchanged"
+    },
+    {
+      "name": "backup/reset",
+      "result": "PASS",
+      "command": "APP_ENV=development demo-db.py reset --confirm styk_demo_dev",
+      "notes": "Restore and row counts verified before reset; Goose retained"
+    },
+    {
+      "name": "production boundary",
+      "result": "PASS",
+      "command": "APP_ENV=production demo-db.py reset --confirm styk_demo_dev",
+      "notes": "Expected rejection before mutation"
+    },
+    {
+      "name": "runtime dependency isolation",
+      "result": "PASS",
+      "command": "go list -deps ./cmd/api ./cmd/worker",
+      "notes": "No sessionfixture dependency"
+    },
+    {
+      "name": "presentation/legal URLs",
+      "result": "PASS",
+      "command": "local HTTP GET checks",
+      "notes": "Six URLs returned 200"
+    },
+    {
+      "name": "secret scan",
+      "result": "PASS",
+      "command": "exact runtime credential values vs candidate/tracked files",
+      "notes": "No generated secret values found"
+    },
+    {
+      "name": "Python syntax",
+      "result": "PASS",
+      "command": "compile(source, path, exec)",
+      "notes": "Both helpers parsed without generated source artifacts"
+    },
+    {
+      "name": "provider mutations",
+      "result": "SKIPPED",
+      "command": "not invoked",
+      "notes": "No real credentials or write permission required"
+    },
+    {
+      "name": "production/load/CVE certification",
+      "result": "NOT VERIFIED",
+      "command": "outside local task",
+      "notes": "No production-readiness claim"
+    }
+  ],
+  "final_check_summary": {
+    "PASS": 27,
+    "FAIL": 0,
+    "SKIPPED": 1,
+    "NOT VERIFIED": 1
+  },
+  "resolved_failures": [
+    "Stock replay tests compared nonserialized time representation; now compare full JSON snapshots",
+    "Synthetic fixture error contract regression fixed and full integration suite passed",
+    "Seed schema/bind errors fixed; failed transactions rolled back",
+    "Unused test scaffolding caught and removed by lint"
+  ],
+  "limitations": [
+    "WB/Yandex operational adapters absent; 3+1 demo entries stay in presentation layer",
+    "Orders are observations, not a new fulfillment/returns product",
+    "Prices are synthetic catalog facts, not provider-verified repricing",
+    "Analytics/billing/production rollout not implemented",
+    "Windows/fixed-local-instance helper scope",
+    "Unrelated pre-existing design screenshots remain untracked and preserved"
+  ]
+}

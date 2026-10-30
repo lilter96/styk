@@ -26,11 +26,12 @@ def sql(query, database="postgres"):
 
 
 def inspect():
-    data = json.loads(run(["docker", "inspect", CONTAINER]))[0]
-    ports = data["HostConfig"]["PortBindings"].get("5432/tcp", [])
-    if data["Config"]["Image"] != "postgres:17.6" or ports != [{"HostIp": "127.0.0.1", "HostPort": "55433"}]:
+    template = '{{json .Config.Image}}|{{json .HostConfig.PortBindings}}|{{json .State.Running}}'
+    image, bindings, running = run(["docker", "inspect", "--format", template, CONTAINER]).decode().strip().split('|')
+    ports = json.loads(bindings).get("5432/tcp", [])
+    if json.loads(image) != "postgres:17.6" or ports != [{"HostIp": "127.0.0.1", "HostPort": "55433"}]:
         raise RuntimeError("Expected local PostgreSQL image and loopback mapping not found")
-    if not data["State"]["Running"]:
+    if not json.loads(running):
         raise RuntimeError("Local demo PostgreSQL container is not running")
 
 

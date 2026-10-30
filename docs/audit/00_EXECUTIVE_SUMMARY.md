@@ -1,5 +1,7 @@
 # STYK: итог технического аудита
 
+> Historical read-only snapshot. For the subsequent cleanup, verified environment and resolved test issues, use [STYK_POST_CLEANUP_HANDOFF](STYK_POST_CLEANUP_HANDOFF.md).
+
 Дата: 30 октября 2026. Объект: текущее рабочее дерево E:/work/styk, включая незакоммиченные изменения, и доступные соседние frontend-проекты. Это аудит кода, а не сертификация безопасности или успешности внешних интеграций.
 
 ## Главный вывод
