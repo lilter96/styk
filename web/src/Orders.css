@@ -85,7 +85,8 @@
   font-weight: 500;
 }
 .orders-console input:not([type="checkbox"]),
-.orders-console select {
+.orders-console select,
+.orders-console textarea {
   min-height: 44px;
   width: 100%;
   padding: 9px 12px;
@@ -141,7 +142,7 @@
   filter: brightness(0.95);
 }
 .orders-console
-  :is(button, input, select, summary, a, [tabindex]):focus-visible {
+  :is(button, input, select, textarea, summary, a, [tabindex]):focus-visible {
   outline: 3px solid #2563eb;
   outline-offset: 3px;
 }
@@ -378,4 +379,13 @@
   .orders-actions > button {
     width: 100%;
   }
+}
+
+.orders-console fieldset.orders-action-package {
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+.orders-action-form textarea {
+  resize: vertical;
 }

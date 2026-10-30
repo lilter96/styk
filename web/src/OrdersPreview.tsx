@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { OrdersActionSummary } from "./OrdersActionSummary";
 import {
   MoyOrderLink,
   orderActionLabel,
@@ -9,6 +10,7 @@ import {
   type OrdersMetadata,
   type OrdersPreviewData,
   type OrderNativeWrite,
+  type OrderActionOptions,
 } from "./OrdersTypes";
 
 function ProposedOrder({
@@ -105,12 +107,16 @@ export function OrdersPreview({
   blocked,
   busy,
   onApprove,
+  permittedActions = ["mirror_create", "mirror_update"],
+  actionOptions = [],
 }: {
   preview: OrdersPreviewData;
   metadata?: OrdersMetadata;
   blocked: boolean;
   busy: boolean;
   onApprove: (numbers: string[]) => void;
+  permittedActions?: string[];
+  actionOptions?: OrderActionOptions[];
 }) {
   const [chosen, setChosen] = useState<string[]>([]);
   const [consent, setConsent] = useState(false);
@@ -129,12 +135,18 @@ export function OrdersPreview({
       decision.ready &&
       !decision.validation?.length &&
       decision.commands?.length > 0 &&
-      decision.commands.every((command) =>
-        ["mirror_create", "mirror_update"].includes(command.action),
+      decision.commands.every(
+        (command) =>
+          permittedActions.includes(command.action) &&
+          (command.action.startsWith("mirror_") ||
+            !!command.posting_action?.parameters),
       ),
   );
   const eligible = ready.map((decision) => decision.posting.posting_number);
   const disabled = blocked || busy || expired;
+  const outgoing = permittedActions.some(
+    (action) => !action.startsWith("mirror_"),
+  );
   function select(numbers: string[]) {
     setChosen(numbers);
     setConsent(false);
@@ -144,7 +156,9 @@ export function OrdersPreview({
       className="orders-section"
       aria-labelledby="orders-preview-heading"
     >
-      <h2 id="orders-preview-heading">Проверка перед передачей</h2>
+      <h2 id="orders-preview-heading">
+        {outgoing ? "Проверка действия в Ozon" : "Проверка перед передачей"}
+      </h2>
       <p>
         Готово: {ready.length}. Требуют внимания:{" "}
         {preview.decisions.length - ready.length}. Проверка действует до{" "}
@@ -189,7 +203,9 @@ export function OrdersPreview({
                 {canSelect ? "Готово" : "Заблокировано"}
               </span>
             </label>
-            <MoyOrderLink id={decision.correlation?.customer_order_id} />
+            {!outgoing && (
+              <MoyOrderLink id={decision.correlation?.customer_order_id} />
+            )}
             {(decision.validation ?? []).map((issue, index) => (
               <div className="orders-warning" key={index}>
                 <p>{orderIssueLabel(issue.code)}</p>
@@ -217,6 +233,20 @@ export function OrdersPreview({
                     metadata={metadata}
                   />
                 )}
+                {!command.action.startsWith("mirror_") && (
+                  <OrdersActionSummary
+                    command={command}
+                    reasonLabel={
+                      actionOptions
+                        .find((options) => options.posting_number === number)
+                        ?.cancellation_reasons.find(
+                          (reason) =>
+                            reason.id ===
+                            command.posting_action?.parameters?.reason_id,
+                        )?.title
+                    }
+                  />
+                )}
               </details>
             ))}
           </article>
@@ -229,8 +259,9 @@ export function OrdersPreview({
           disabled={disabled || !chosen.length}
           onChange={(event) => setConsent(event.target.checked)}
         />
-        Я проверил состав и поля выбранных отправлений и подтверждаю создание
-        или обновление заказов в МойСклад.
+        {outgoing
+          ? "Я проверил параметры выбранного действия и подтверждаю отправку запроса в Ozon."
+          : "Я проверил состав и поля выбранных отправлений и подтверждаю создание или обновление заказов в МойСклад."}
       </label>
       <div className="orders-actions">
         <button
@@ -242,7 +273,9 @@ export function OrdersPreview({
         >
           {busy
             ? "Записываем подтверждение…"
-            : `Передать в МойСклад (${chosen.length})`}
+            : outgoing
+              ? `Подтвердить действие в Ozon (${chosen.length})`
+              : `Передать в МойСклад (${chosen.length})`}
         </button>
         <p className="orders-note">
           Результат передачи подтверждается отдельной сверкой в истории

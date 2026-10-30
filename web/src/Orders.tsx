@@ -15,6 +15,8 @@ import {
   type OrderOperation,
   type OrdersPreviewData,
   type OrdersMetadata,
+  type OrderActionProposal,
+  type OrderActionOptions,
 } from "./OrdersTypes";
 import "./Orders.css";
 
@@ -72,6 +74,11 @@ function OrdersAccount({
   const [selected, setSelected] = useState<string[]>([]);
   const [uncertain, setUncertain] = useState<string[]>([]);
   const [preview, setPreview] = useState<OrdersPreviewData | null>(null);
+  const [previewActions, setPreviewActions] = useState([
+    "mirror_create",
+    "mirror_update",
+  ]);
+  const [actionReset, setActionReset] = useState(0);
   const [busy, setBusy] = useState<"preview" | "approve" | "check" | null>(
     null,
   );
@@ -103,13 +110,21 @@ function OrdersAccount({
     setPreview(null);
     setMessage("Настройки заказов сохранены.");
   }
-  async function review() {
+  async function review(proposal?: OrderActionProposal) {
+    if (proposal && dirty) {
+      setError("Сохраните настройки перед проверкой действия в Ozon.");
+      return;
+    }
+    const numbers = proposal ? [proposal.posting_number] : selected;
+    const actions = proposal
+      ? [proposal.action]
+      : ["mirror_create", "mirror_update"];
     if (
       lock.current ||
       !config.data ||
       dirty ||
-      !selected.length ||
-      selected.some((number) => uncertain.includes(number))
+      !numbers.length ||
+      numbers.some((number) => uncertain.includes(number))
     )
       return;
     lock.current = true;
@@ -117,14 +132,16 @@ function OrdersAccount({
     setError("");
     setMessage("");
     setPreview(null);
+    setPreviewActions(actions);
     try {
       const value = await post<OrdersPreviewData>(
         "/api/orders/preview",
         {
           ...orderScopeBody(scope),
           expected_revision: config.data.revision,
-          posting_numbers: selected,
-          actions: ["mirror_create", "mirror_update"],
+          posting_numbers: numbers,
+          actions,
+          ...(proposal ? { proposals: [proposal] } : {}),
         },
         AbortSignal.timeout(30000),
       );
@@ -135,8 +152,9 @@ function OrdersAccount({
         !Number.isFinite(Date.parse(value.expires_at)) ||
         value.decisions.some(
           (item) =>
-            !selected.includes(item.posting.posting_number) ||
-            !sameOrderScope(item.posting.scope, scope),
+            !numbers.includes(item.posting.posting_number) ||
+            !sameOrderScope(item.posting.scope, scope) ||
+            item.commands.some((command) => !actions.includes(command.action)),
         )
       )
         throw new Error("invalid preview");
@@ -189,6 +207,7 @@ function OrdersAccount({
         throw new Error("invalid approval acknowledgement");
       setPreview(null);
       setSelected([]);
+      setActionReset((value) => value + 1);
       setMessage(
         "Подтверждение записано. Результат передачи и сверки показан в истории.",
       );
@@ -245,8 +264,8 @@ function OrdersAccount({
           <strong>{moyLabel}</strong>
         </p>
         <p>
-          Проверьте отправления Ozon и подтвердите создание или обновление
-          заказов в МойСклад.
+          Проверьте отправления, передавайте заказы в МойСклад и подтверждайте
+          действия в Ozon.
         </p>
       </header>
       {config.isLoading && <p role="status">Загружаем настройки заказов…</p>}
@@ -304,6 +323,9 @@ function OrdersAccount({
           <OrdersPostings
             scope={scope}
             freshnessSeconds={config.data.source_freshness_seconds}
+            actionReset={actionReset}
+            onActionPreview={(proposal) => void review(proposal)}
+            onActionDraftChange={() => setPreview(null)}
             selected={selected}
             disabled={busy !== null}
             uncertain={uncertain}
@@ -339,6 +361,12 @@ function OrdersAccount({
             <OrdersPreview
               key={preview.id}
               preview={preview}
+              permittedActions={previewActions}
+              actionOptions={client
+                .getQueriesData<OrderActionOptions>({
+                  queryKey: ["orders-action-options", scope],
+                })
+                .flatMap(([, options]) => (options ? [options] : []))}
               metadata={client.getQueryData<OrdersMetadata>([
                 "orders-metadata",
                 scope,

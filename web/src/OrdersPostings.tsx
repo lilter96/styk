@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./api";
 import { OrdersActionEligibility } from "./OrdersActionEligibility";
+import { OrdersActions } from "./OrdersActions";
 import {
   knownOrderField,
   orderDate,
@@ -15,6 +16,7 @@ import {
   type OrderScope,
   type OrderPosting,
   type OrdersPostingPage,
+  type OrderActionProposal,
 } from "./OrdersTypes";
 
 export function orderQuantity(lines: OrderPosting["lines"]): string {
@@ -65,6 +67,9 @@ export function OrdersPostings({
   links,
   onSelected,
   freshnessSeconds = 300,
+  onActionPreview,
+  onActionDraftChange,
+  actionReset = 0,
 }: {
   scope: OrderScope;
   selected: string[];
@@ -73,6 +78,9 @@ export function OrdersPostings({
   links: Record<string, string>;
   onSelected: (numbers: string[]) => void;
   freshnessSeconds?: number;
+  onActionPreview?: (proposal: OrderActionProposal) => void;
+  onActionDraftChange?: () => void;
+  actionReset?: number;
 }) {
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
@@ -243,6 +251,16 @@ export function OrdersPostings({
                   freshnessSeconds={freshnessSeconds}
                 />
               </details>
+              {onActionPreview && (
+                <OrdersActions
+                  key={`${posting.evidence.revision}:${actionReset}`}
+                  scope={scope}
+                  posting={posting}
+                  disabled={disabled || locked}
+                  onPreview={onActionPreview}
+                  onDraftChange={onActionDraftChange ?? (() => {})}
+                />
+              )}
               {(parent || posting.child_posting_numbers?.length > 0) && (
                 <div className="orders-split">
                   {parent && (

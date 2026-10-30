@@ -2,6 +2,10 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./api";
 import {
+  OrdersActionSummary,
+  safeOrderArtifactURL,
+} from "./OrdersActionSummary";
+import {
   MoyOrderLink,
   orderActionLabel,
   orderDate,
@@ -64,7 +68,9 @@ export function OrdersOperations({
       for (const work of operation.targets ?? []) {
         const id =
           work.command.correlation?.customer_order_id ||
-          work.receipt?.external_id;
+          (work.command.action.startsWith("mirror_")
+            ? work.receipt?.external_id
+            : undefined);
         if (id) links[work.command.posting_number] = id;
         states[work.command.posting_number] ??= work.state;
       }
@@ -88,7 +94,7 @@ export function OrdersOperations({
         </button>
       </div>
       <p className="orders-note">
-        Принятие запроса ещё не подтверждает изменения в МойСклад. Итог —
+        Принятие запроса ещё не подтверждает изменения в сервисах. Итог —
         «Подтверждено сверкой» для каждого отправления.
       </p>
       {history.isLoading && <p role="status">Читаем историю…</p>}
@@ -129,12 +135,37 @@ export function OrdersOperations({
                   ? "По разрешению автоматизации"
                   : "Подтверждено вручную"}
               </p>
-              <MoyOrderLink
-                id={
-                  work.command.correlation?.customer_order_id ||
-                  work.receipt?.external_id
-                }
-              />
+              {work.command.action.startsWith("mirror_") && (
+                <MoyOrderLink
+                  id={
+                    work.command.correlation?.customer_order_id ||
+                    work.receipt?.external_id
+                  }
+                />
+              )}
+              {work.command.posting_action && (
+                <details>
+                  <summary>Подтверждённые параметры действия</summary>
+                  <OrdersActionSummary command={work.command} />
+                </details>
+              )}
+              {(work.receipt?.task_ids ?? []).map((task, index) => (
+                <p className="orders-note" key={`${task.id}:${index}`}>
+                  Задача обработки Ozon: {task.id}
+                </p>
+              ))}
+              {work.state === "RECONCILED" &&
+                work.receipt?.artifact?.available &&
+                safeOrderArtifactURL(work.receipt.artifact.download_url) && (
+                  <a
+                    href={safeOrderArtifactURL(
+                      work.receipt.artifact.download_url,
+                    )}
+                    download
+                  >
+                    Скачать этикетку
+                  </a>
+                )}
               {work.state === "UNKNOWN" && (
                 <p className="orders-warning">
                   Запрос мог выполниться. STYK сверяет результат чтением;

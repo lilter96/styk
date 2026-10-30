@@ -116,6 +116,42 @@ export type OrderPositionWrite = {
   price: OrderField<OrderMoney>;
   mapping?: { moysklad_id: string; moysklad_kind: string };
 };
+export type OrderActionLine = {
+  identity: OrderLine["identity"];
+  quantity: string;
+};
+export type OrderActionParameters = {
+  packages?: { lines: OrderActionLine[] }[];
+  lines?: OrderActionLine[];
+  reason_id?: string;
+  reason_message?: string;
+  tracking_number?: string;
+  event_confirmed?: boolean;
+  event_reference?: string;
+  readiness_confirmed?: boolean;
+  label_type?: "big_label" | "small_label";
+  tracking_provided?: boolean;
+  reason_message_provided?: boolean;
+  event_reference_provided?: boolean;
+};
+export type OrderActionProposal = {
+  posting_number: string;
+  action: string;
+  parameters: OrderActionParameters;
+};
+export type OrderActionOptions = {
+  scope: NativeScope;
+  posting_number: string;
+  source_revision: string;
+  actions: {
+    action: string;
+    allowed: boolean;
+    blockers: { field?: string; code: string }[] | string[];
+    parameters_required: string[];
+  }[];
+  cancellation_reasons: { id: string; title: string }[];
+  label_types: ("big_label" | "small_label")[];
+};
 export type OrderNativeWrite = {
   organization_id: string;
   agent_id: string;
@@ -137,6 +173,13 @@ export type OrderCommand = {
   posting_number: string;
   correlation: { customer_order_id?: string };
   customer_order?: OrderNativeWrite;
+  posting_action?: {
+    capability?: OrderDeliveryCapability;
+    parameters?: OrderActionParameters;
+    lines?: OrderLine["identity"][];
+    reason_id?: OrderField<string>;
+    protected_input?: { reference: string; revision: number };
+  };
 };
 export type OrderDecision = {
   posting: OrderPosting;
@@ -158,7 +201,17 @@ export type OrderWork = {
   command: OrderCommand;
   code?: string;
   automatic: boolean;
-  receipt: { state: string; external_id?: string; code?: string };
+  receipt: {
+    state: string;
+    external_id?: string;
+    code?: string;
+    artifact?: {
+      available: boolean;
+      download_url?: string;
+      label_type?: string;
+    };
+    task_ids?: { id: string; type: string }[];
+  };
 };
 export type OrderOperation = {
   id: string;
@@ -264,8 +317,39 @@ export const orderActionLabel = (action: string) =>
   ({
     mirror_create: "Создать заказ в МойСклад",
     mirror_update: "Обновить заказ в МойСклад",
+    posting_pack: "Передать сборку в Ozon",
+    posting_split: "Разделить отправление в Ozon",
+    posting_cancel: "Отменить отправление в Ozon",
+    posting_partial_cancel: "Отменить часть товаров в Ozon",
+    posting_tracking: "Передать трек-номер в Ozon",
+    posting_ship: "Передать статус «В доставке» в Ozon",
+    posting_last_mile: "Передать статус последней мили в Ozon",
+    posting_deliver: "Передать статус «Доставлено» в Ozon",
+    posting_sent_by_seller: "Подтвердить отправку продавцом в Ozon",
+    posting_label_create: "Создать этикетку в Ozon",
   })[action] || action;
 const issueLabels: Record<string, string> = {
+  action_not_available:
+    "Ozon не разрешает это действие для текущего состояния отправления.",
+  posting_action_not_available:
+    "Ozon не разрешает это действие для текущего состояния отправления.",
+  status_not_allowed:
+    "Текущий статус отправления не допускает выбранное действие.",
+  capability_unverified:
+    "Для этого действия не подтверждены схема и условия доставки.",
+  delivery_capability_unverified:
+    "Для этого действия не подтверждены схема и условия доставки.",
+  delivery_profile_stale:
+    "Сведения о способе доставки устарели. Обновите источник.",
+  fbo_out_of_scope: "Эту операцию с отправлением FBO выполняет Ozon.",
+  event_confirmation_required: "Подтвердите, что событие фактически произошло.",
+  event_reference_required: "Укажите основание фактического события.",
+  readiness_confirmation_required:
+    "Подтвердите фактическую сборку указанных упаковок.",
+  cancellation_reason_required: "Выберите подтверждённую причину отмены Ozon.",
+  packaging_quantity_mismatch:
+    "Состав упаковок не совпадает с составом отправления.",
+  tracking_required: "Укажите фактический трек-номер отправления.",
   source_stale:
     "Данные Ozon устарели. Запросите проверку источника и создайте новый предпросмотр.",
   confirmed_warehouse_mapping_required:

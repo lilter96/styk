@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import type { OrderActionProposal, OrderCommand } from "../src/OrdersTypes";
 
 const origin = process.env.STYK_ORDERS_UI_ORIGIN || "http://127.0.0.1:5173";
 const scope = {
@@ -129,8 +130,29 @@ const fulfill = (route: Route, body: unknown) =>
     body: JSON.stringify(body),
   });
 
-async function openOrders(page: Page, lostApproval = false) {
+async function openOrders(
+  page: Page,
+  lostApproval = false,
+  actionMode = false,
+) {
   const approvals: unknown[] = [];
+  const previews: { proposals?: OrderActionProposal[] }[] = [];
+  let outgoing: OrderCommand | undefined;
+  const currentPosting = (number: string) =>
+    actionMode
+      ? {
+          ...posting(number),
+          scheme: known("rFBS"),
+          lines: posting(number).lines.map((line) => ({
+            ...line,
+            quantity: "2",
+          })),
+          evidence: {
+            ...posting(number).evidence,
+            checked_at: new Date().toISOString(),
+          },
+        }
+      : posting(number);
   const errors: string[] = [];
   let submitted = false;
   page.on("pageerror", (error) => errors.push(error.message));
@@ -156,17 +178,78 @@ async function openOrders(page: Page, lostApproval = false) {
     if (url.pathname.endsWith("/metadata")) return fulfill(route, metadata);
     if (url.pathname.endsWith("/metadata/registry"))
       return fulfill(route, { scope, revision: 0, attributes: [] });
+    if (url.pathname.endsWith("/action-options"))
+      return fulfill(route, {
+        scope,
+        posting_number: "SYNTHETIC-1",
+        source_revision: "synthetic-v1",
+        actions: [
+          "posting_pack",
+          "posting_deliver",
+          "posting_tracking",
+          "posting_label_create",
+        ].map((action) => ({
+          action,
+          allowed: true,
+          blockers: [],
+          parameters_required: [],
+        })),
+        cancellation_reasons: [],
+        label_types: ["big_label", "small_label"],
+      });
     if (url.pathname.endsWith("/postings"))
       return fulfill(
         route,
         url.searchParams.get("cursor") === "page-2"
-          ? { postings: [posting("SYNTHETIC-2")] }
-          : { postings: [posting("SYNTHETIC-1")], next_cursor: "page-2" },
+          ? { postings: [currentPosting("SYNTHETIC-2")] }
+          : {
+              postings: [currentPosting("SYNTHETIC-1")],
+              next_cursor: "page-2",
+            },
       );
     if (url.pathname.endsWith("/preview")) {
       const body = request.postDataJSON();
+      previews.push(body);
       expect(body.expected_revision).toBe(1);
       expect(body.tenant).toBe(scope.tenant);
+      if (body.proposals?.length) {
+        const proposal = body.proposals[0] as OrderActionProposal;
+        const parameters = { ...proposal.parameters };
+        if (parameters.tracking_number) {
+          delete parameters.tracking_number;
+          parameters.tracking_provided = true;
+        }
+        if (parameters.event_reference) {
+          delete parameters.event_reference;
+          parameters.event_reference_provided = true;
+        }
+        if (parameters.reason_message) {
+          delete parameters.reason_message;
+          parameters.reason_message_provided = true;
+        }
+        outgoing = {
+          id: "command-action-synthetic",
+          action: proposal.action,
+          posting_number: proposal.posting_number,
+          correlation: {},
+          posting_action: { parameters },
+        };
+        return fulfill(route, {
+          id: "preview-synthetic",
+          scope,
+          config_revision: 1,
+          expires_at: new Date(Date.now() + 60000).toISOString(),
+          decisions: [
+            {
+              posting: currentPosting(proposal.posting_number),
+              ready: true,
+              correlation: {},
+              validation: [],
+              commands: [outgoing],
+            },
+          ],
+        });
+      }
       return fulfill(route, {
         id: "preview-synthetic",
         scope,
@@ -200,7 +283,7 @@ async function openOrders(page: Page, lostApproval = false) {
                   {
                     id: "work-synthetic",
                     state: lostApproval ? "UNKNOWN" : "ACKNOWLEDGED",
-                    command: decision("SYNTHETIC-1").commands[0],
+                    command: outgoing ?? decision("SYNTHETIC-1").commands[0],
                     automatic: false,
                     receipt: {
                       state: "ACKNOWLEDGED",
@@ -227,7 +310,7 @@ async function openOrders(page: Page, lostApproval = false) {
   await expect(
     page.getByLabel("Выбрать отправление SYNTHETIC-1"),
   ).toBeVisible();
-  return { approvals, errors };
+  return { approvals, errors, previews };
 }
 
 test("orders desktop/mobile review uses keyboard and only explicitly approves eligible postings", async ({
@@ -311,5 +394,118 @@ test("unknown approval outcome shows read-only status refresh without another wr
   await expect(page.getByText(/Запрос мог выполниться/)).toBeVisible();
   await page.getByRole("button", { name: "Обновить статусы заказов" }).click();
   expect(approvals).toHaveLength(1);
+  expect(errors).toEqual([]);
+});
+
+test("rFBS event requires actual-event reference, keyboard confirmation, preview and separate Ozon approval", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const { approvals, previews, errors } = await openOrders(page, false, true);
+  await page
+    .getByText("Действия с отправлением в Ozon", { exact: true })
+    .click();
+  await page
+    .getByLabel("Действие для отправления SYNTHETIC-1")
+    .selectOption("posting_deliver");
+  await expect(
+    page.getByRole("button", { name: "Проверить действие в Ozon" }),
+  ).toBeDisabled();
+  await page
+    .getByLabel("Основание фактического события")
+    .fill("ACT-SYNTHETIC-1");
+  const actual = page.getByLabel(
+    "Подтверждаю, что покупатель фактически получил отправление.",
+  );
+  await expect(actual).not.toBeChecked();
+  await actual.focus();
+  await actual.press("Space");
+  await page.getByRole("button", { name: "Проверить действие в Ozon" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Проверка действия в Ozon" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Основание фактического события введено; скрыто в журнале."),
+  ).toBeVisible();
+  expect(approvals).toHaveLength(0);
+  expect(previews[0].proposals).toEqual([
+    {
+      posting_number: "SYNTHETIC-1",
+      action: "posting_deliver",
+      parameters: { event_reference: "ACT-SYNTHETIC-1", event_confirmed: true },
+    },
+  ]);
+  await page.screenshot({
+    path: testInfo.outputPath("orders-action-desktop.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("orders-action-mobile.png"),
+    fullPage: true,
+  });
+  await page.getByLabel("Подтвердить отправление SYNTHETIC-1").check();
+  await expect(
+    page.getByRole("button", { name: "Подтвердить действие в Ozon (1)" }),
+  ).toBeDisabled();
+  await page.getByLabel(/Я проверил параметры выбранного действия/).check();
+  await page
+    .getByRole("button", { name: "Подтвердить действие в Ozon (1)" })
+    .click();
+  await expect(page.getByText(/Подтверждение записано/)).toBeVisible();
+  expect(approvals).toHaveLength(1);
+  expect(errors).toEqual([]);
+});
+
+test("package allocation on mobile has no default factual readiness and only explicit quantities enter preview", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const { approvals, previews, errors } = await openOrders(page, false, true);
+  await page
+    .getByText("Действия с отправлением в Ozon", { exact: true })
+    .click();
+  await page
+    .getByLabel("Действие для отправления SYNTHETIC-1")
+    .selectOption("posting_pack");
+  await page.getByLabel("Количество SYNTHETIC-SKU в упаковке 1").fill("1");
+  await expect(
+    page.getByRole("button", { name: "Проверить действие в Ozon" }),
+  ).toBeDisabled();
+  await page.getByLabel("Количество SYNTHETIC-SKU в упаковке 1").fill("2");
+  const ready = page.getByLabel(
+    /Подтверждаю, что указанные товары фактически собраны/,
+  );
+  await expect(ready).not.toBeChecked();
+  await ready.check();
+  await page.getByRole("button", { name: "Проверить действие в Ozon" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Проверка действия в Ozon" }),
+  ).toBeVisible();
+  expect(previews[0].proposals).toEqual([
+    {
+      posting_number: "SYNTHETIC-1",
+      action: "posting_pack",
+      parameters: {
+        packages: [
+          {
+            lines: [
+              {
+                identity: { offer_id: "SYNTHETIC-SKU", sku: "123456" },
+                quantity: "2",
+              },
+            ],
+          },
+        ],
+        readiness_confirmed: true,
+      },
+    },
+  ]);
+  expect(approvals).toHaveLength(0);
   expect(errors).toEqual([]);
 });
