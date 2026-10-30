@@ -14,24 +14,6 @@ import (
 	"github.com/lilter96/styk/internal/postgres"
 )
 
-// Handler exposes scoped reads and explicit local mapping operations to an authenticated local operator.
-func Handler(db *postgres.Store, secret, origin string) (http.Handler, error) {
-	return handlerWithConnections(db, secret, origin, nil)
-}
-
-// Injection is used by package tests; the production handler always constructs
-// clients for the official provider hosts from local process configuration.
-func handlerWithConnections(db *postgres.Store, secret, origin string, connections *connections) (http.Handler, error) {
-	if db == nil {
-		return nil, errors.New("console database required")
-	}
-	a, e := newAuth(secret, origin)
-	if e != nil {
-		return nil, e
-	}
-	return handlerWithAuth(db, a, connections)
-}
-
 // MerchantHandler exposes the existing business routes behind persistent
 // identity, workspace membership and role checks. It requires private delivery
 // of email verification and password recovery links.
@@ -68,27 +50,18 @@ func handlerWithAuth(db *postgres.Store, a *auth, connections *connections) (htt
 	registerCatalogRoutes(mux, a, db, connections)
 	imports := newImportAPI(db)
 	mux.HandleFunc("GET /api/auth-mode", func(w http.ResponseWriter, r *http.Request) {
-		valid := a.merchant == nil && a.safe(r) || a.merchant != nil && a.merchant.safe(r)
+		valid := a.merchant != nil && a.merchant.safe(r)
 		if !valid {
 			writeError(w, http.StatusForbidden, "FORBIDDEN")
 			return
 		}
-		mode := "local"
-		if a.merchant != nil {
-			mode = "merchant"
-		}
+		mode := "merchant"
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, struct {
 			Mode string `json:"mode"`
 		}{mode})
 	})
-	if a.merchant == nil {
-		mux.HandleFunc("POST /api/session", a.login)
-		mux.HandleFunc("DELETE /api/session", a.authorized(a.logout))
-		mux.HandleFunc("GET /api/session", a.authorized(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
-	} else {
-		registerMerchantRoutes(mux, a)
-	}
+	registerMerchantRoutes(mux, a)
 	mux.HandleFunc("POST /api/imports", a.authorized(a.connectionMutation(imports.create)))
 	mux.HandleFunc("GET /api/imports", a.authorized(imports.list))
 	mux.HandleFunc("GET /api/imports/{id}", a.authorized(imports.get))

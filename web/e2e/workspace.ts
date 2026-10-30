@@ -17,21 +17,20 @@ export async function selectWorkspace(
   // Legacy loopback-operator fixtures keep their synthetic scope in test-only
   // browser state; the merchant UI never asks a seller for a tenant ID.
   await page.evaluate(
-    (scope) => sessionStorage.setItem("styk-selected-accounts", JSON.stringify(scope)),
+    (scope) =>
+      sessionStorage.setItem("styk-selected-accounts", JSON.stringify(scope)),
     { tenant, moy, ozon },
   );
   await page.reload();
-  const selector = page.locator(".workspace-selector");
-  if ((await selector.getAttribute("open")) === null)
-    await selector.locator("summary").first().click();
-  await page
-    .getByRole("combobox", { name: "МойСклад", exact: true })
-    .selectOption(moy);
+  const mobileMenu = page.getByRole("button", { name: "Открыть меню" });
+  if (await mobileMenu.isVisible()) await mobileMenu.click();
+  // MoySklad is fixed in the UI; the fixture's registered selection is restored
+  // from the saved scope above, with no source-account picker.
   await page
     .getByRole("combobox", { name: "Ozon", exact: true })
     .selectOption(ozon);
-  if ((await selector.getAttribute("open")) !== null)
-    await selector.locator("summary").first().click();
+  const navigation = page.getByRole("dialog", { name: "Разделы STYK" });
+  if (await navigation.isVisible()) await page.keyboard.press("Escape");
 }
 
 export async function navigate(page: Page, name: string) {

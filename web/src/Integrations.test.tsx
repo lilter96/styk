@@ -344,12 +344,12 @@ it("keeps identifiers behind technical disclosure and account selection in setti
   mockRegistered();
   const onSelect = vi.fn();
   mount({
-    accounts: [...accounts, { ...accounts[0], account: "second-moy" }],
+    accounts: [...accounts, { ...accounts[1], account: "second-ozon" }],
     selected,
     report,
     onSelect,
   });
-  const card = await moyCard();
+  const card = await screen.findByRole("article", { name: "Ozon" });
   expect(within(card).queryByRole("combobox")).toBeNull();
   expect(within(card).queryByRole("dialog")).toBeNull();
   expect(
@@ -357,10 +357,10 @@ it("keeps identifiers behind technical disclosure and account selection in setti
   ).toBeNull();
   settings(card);
   fireEvent.change(
-    within(card).getByRole("combobox", { name: "МойСклад: аккаунт" }),
-    { target: { value: "second-moy" } },
+    within(card).getByRole("combobox", { name: "Ozon: аккаунт" }),
+    { target: { value: "second-ozon" } },
   );
-  expect(onSelect).toHaveBeenCalledWith("moysklad", "second-moy");
+  expect(onSelect).toHaveBeenCalledWith("ozon", "second-ozon");
   const technical = screen
     .getByRole("dialog")
     .querySelector<HTMLDetailsElement>(".credential-details")!;
@@ -371,8 +371,8 @@ it("keeps identifiers behind technical disclosure and account selection in setti
   const accountList = technical.querySelector<HTMLElement>(
     ".technical-account-list",
   )!;
-  expect(within(accountList).getByText("moy-account")).toBeTruthy();
-  expect(within(accountList).getByText("second-moy")).toBeTruthy();
+  expect(within(accountList).getByText("ozon-account")).toBeTruthy();
+  expect(within(accountList).getByText("second-ozon")).toBeTruthy();
   expect(within(accountList).getByText(/^Аккаунт 2/)).toBeTruthy();
   expect(
     within(technical).getByRole("button", {
@@ -386,8 +386,56 @@ it("keeps identifiers behind technical disclosure and account selection in setti
   );
   await within(technical).findByRole("button", { name: "Скопировано" });
   expect(writeText).toHaveBeenCalledWith(
-    expect.stringContaining("account 2: second-moy"),
+    expect.stringContaining("account 2: second-ozon"),
   );
+});
+it("opens a new Ozon account from the workspace without replacing the selected account", async () => {
+  mockRegistered();
+  const onSelect = vi.fn();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={["/integrations?connect=ozon"]}>
+        <Integrations
+          tenant={tenant}
+          accounts={accounts}
+          selected={selected}
+          onSelect={onSelect}
+        />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const dialog = await screen.findByRole("dialog", {
+    name: "Подключение Ozon",
+  });
+  expect(
+    (within(dialog).getByLabelText("ID клиента Ozon") as HTMLInputElement)
+      .value,
+  ).toBe("");
+  expect(
+    (
+      within(dialog).getByRole("combobox", {
+        name: "Ozon: аккаунт",
+      }) as HTMLSelectElement
+    ).value,
+  ).toBe("");
+  expect(onSelect).not.toHaveBeenCalled();
+});
+it("keeps MoySklad fixed in the connection settings", async () => {
+  mockRegistered();
+  mount({
+    accounts: [...accounts, { ...accounts[0], account: "second-moy" }],
+    selected,
+    report,
+  });
+  const card = await moyCard();
+  settings(card);
+  expect(
+    screen.queryByRole("combobox", { name: "МойСклад: аккаунт" }),
+  ).toBeNull();
+  expect(screen.getByLabelText("Название подключения")).toBeTruthy();
 });
 it("blocks registration when the successful probe is stale or has a future timestamp", async () => {
   for (const checked_at of [

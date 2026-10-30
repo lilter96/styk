@@ -218,6 +218,7 @@ export function WarehouseReview({
     active.pending.scope.ozon === scope.ozon &&
     active.pending.product === `${moy} → ${ozon}`;
   const saved = !!reviewID && active.result?.review_id === reviewID;
+  const alreadyMapped = q.data?.status === "ALREADY_MAPPED";
   if (dismissed) return null;
   return (
     <IntegrationDialog
@@ -251,23 +252,45 @@ export function WarehouseReview({
                 {describe(q.data.moysklad, "МойСклад")}
                 {describe(q.data.ozon, "Ozon")}
               </div>
-              <p>
-                Подтвердите, что склады соответствуют друг другу в выбранной
-                интеграции. Совпадение названий не доказывает физическую
-                идентичность склада или принадлежность остатков.
-              </p>
-              <p>
-                Поддерживается одна пара: склад МойСклад и склад Ozon FBS.
-                Склады rFBS не поддерживаются. Подтверждение не включает
-                синхронизацию остатков.
-              </p>
-              <button
-                className="mapping-primary"
-                disabled={creating || !!active.pending || !eligible}
-                onClick={() => void createReview()}
-              >
-                {creating ? "Проверяем…" : "Проверить пару складов"}
-              </button>
+              {alreadyMapped ? (
+                <div className="warehouse-mapped-summary" role="status">
+                  <p>
+                    Соответствие этой пары складов уже подтверждено. Повторное
+                    сопоставление не требуется.
+                  </p>
+                  <p>
+                    Данные подтверждения доступны в состоянии выбранной пары и
+                    истории ниже. Сопоставление само по себе не включает
+                    синхронизацию остатков.
+                  </p>
+                  <button
+                    className="secondary"
+                    onClick={close ?? (() => setDismissed(true))}
+                  >
+                    Готово
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <p>
+                    Подтвердите, что склады соответствуют друг другу в выбранной
+                    интеграции. Совпадение названий не доказывает физическую
+                    идентичность склада или принадлежность остатков.
+                  </p>
+                  <p>
+                    Поддерживается одна пара: склад МойСклад и склад Ozon FBS.
+                    Склады rFBS не поддерживаются. Подтверждение не включает
+                    синхронизацию остатков.
+                  </p>
+                  <button
+                    className="mapping-primary"
+                    disabled={creating || !!active.pending || !eligible}
+                    onClick={() => void createReview()}
+                  >
+                    {creating ? "Проверяем…" : "Проверить пару складов"}
+                  </button>
+                </>
+              )}
               {error && <p role="alert">{error}</p>}
               {reviewID &&
                 (durable.isLoading ? (

@@ -26,7 +26,7 @@ Queued operations offer explicit cancellation via `POST /api/imports/{id}/cancel
 
 ## Security and limitations
 
-The existing authenticated local operator session, Origin checks and loopback boundary apply. External account identifiers are visible to the trusted local operator; they do not authorize marketplace access. API keys, bearer tokens and operator credentials remain server-side. The shared local operator secret does not provide production multi-tenant or individual-user authorization. No product or warehouse mappings, stock pools or publication tasks are created by this workflow. Ozon posting imports, customer-order jobs, scheduling and automatic recurring imports are outside this interface.
+The existing authenticated local operator session, Origin checks and loopback boundary apply. External account identifiers are visible to the trusted local operator; they do not authorize marketplace access. API keys, bearer tokens and operator credentials remain server-side. No product or warehouse mappings, stock pools or publication tasks are created by this workflow. Ozon posting imports, customer-order jobs, scheduling and automatic recurring imports are outside this interface.
 
 The browser regression test uses the real local Go API and worker, a disposable migrated PostgreSQL database named `styk_import_ui_e2e_v1` on `127.0.0.1`, and allowlisted synthetic Ozon and MoySklad HTTP servers. It checks cancellation, a lost submission response with identical replay, persistence, batch linkage and refresh. It does not contact live marketplace accounts. After creating and migrating that disposable database, installing the web dependencies and Playwright's Chromium, run:
 

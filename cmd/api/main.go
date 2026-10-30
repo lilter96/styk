@@ -89,14 +89,8 @@ func configuredHandler(db *postgres.Store, address string) (http.Handler, error)
 
 func apiForMode(db *postgres.Store, mode string) (http.Handler, error) {
 	origin := os.Getenv("STYK_CONSOLE_ORIGIN")
-	if mode == "local" {
-		if origin == "" {
-			origin = "http://127.0.0.1:5173"
-		}
-		return console.Handler(db, os.Getenv("STYK_OPERATOR_SECRET"), origin)
-	}
 	if mode != "merchant" {
-		return nil, errors.New("STYK_AUTH_MODE must be merchant, local or disabled")
+		return nil, errors.New("STYK_AUTH_MODE must be merchant or disabled")
 	}
 	vault, err := credentials.FromEnvironment()
 	if err != nil || vault == nil {

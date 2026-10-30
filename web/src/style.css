@@ -27,11 +27,11 @@ button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 a:focus-visible {
-  outline: 3px solid #78cdbd;
+  outline: 3px solid var(--styk-blue);
   outline-offset: 2px;
 }
 a {
-  color: #187d70;
+  color: var(--styk-primary);
   text-decoration: none;
 }
 .shell {
@@ -365,7 +365,7 @@ a {
 .stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  border-top: 1px solid #eef2f3;
+  border-top: 1px solid var(--styk-line);
   padding: 19px 0;
 }
 .stats div {
@@ -381,7 +381,7 @@ a {
   color: #869899;
 }
 .card-foot {
-  border-top: 1px solid #eef2f3;
+  border-top: 1px solid var(--styk-line);
   padding-top: 14px;
   font-size: 11px;
   color: #78908e;
@@ -480,8 +480,8 @@ td {
 .error {
   padding: 17px 19px;
   border-radius: 6px;
-  background: #f6faf9;
-  border: 1px solid #dfece8;
+  background: var(--styk-subtle);
+  border: 1px solid var(--styk-line);
   color: #67817d;
   font-size: 13px;
   line-height: 1.5;
@@ -500,7 +500,7 @@ td {
   justify-content: space-between;
   gap: 20px;
   padding: 17px 0;
-  border-top: 1px solid #eef2f3;
+  border-top: 1px solid var(--styk-line);
   font-size: 13px;
 }
 .warehouse-row strong {
@@ -550,7 +550,7 @@ td {
 }
 .check {
   padding: 18px 20px;
-  border-bottom: 1px solid #eef2f3;
+  border-bottom: 1px solid var(--styk-line);
   display: flex;
   justify-content: space-between;
   gap: 20px;
@@ -674,7 +674,7 @@ td {
 .link-button {
   border: 0;
   background: none;
-  color: #187d70;
+  color: var(--styk-primary);
   font-size: 12px;
   font-weight: 700;
   padding: 9px 0 0;
@@ -827,7 +827,7 @@ td {
 .review-history li {
   padding: 10px 12px;
   border-left: 2px solid #b9d8cf;
-  background: #f6faf9;
+  background: var(--styk-subtle);
   overflow-wrap: anywhere;
   line-height: 1.55;
   font-size: 13px;
@@ -846,8 +846,8 @@ td {
   margin: 18px 0 12px;
 }
 .review-primary {
-  border: 1px solid #1b7567;
-  background: #1b7567;
+  border: 1px solid var(--styk-primary);
+  background: var(--styk-primary);
   color: #fff;
   border-radius: 6px;
   padding: 11px 18px;
@@ -873,7 +873,7 @@ td {
 .review-acknowledge input {
   flex: none;
   margin: 2px 0 0;
-  accent-color: #1b7567;
+  accent-color: var(--styk-primary);
 }
 @media (max-width: 700px) {
   .product-review {
@@ -888,8 +888,8 @@ td {
 }
 .warehouse-review-evidence {
   padding: 14px 18px;
-  background: #f6faf9;
-  border: 1px solid #dfece8;
+  background: var(--styk-subtle);
+  border: 1px solid var(--styk-line);
   border-radius: 6px;
   overflow-wrap: anywhere;
 }
@@ -905,7 +905,7 @@ td {
 .import-panel {
   margin-top: 24px;
   padding: 24px;
-  border: 1px solid #dce8e5;
+  border: 1px solid var(--styk-line);
   border-radius: 10px;
   background: #fff;
   color: #304c48;
@@ -944,7 +944,7 @@ td {
   text-align: left;
   vertical-align: top;
   padding: 10px 12px;
-  border-bottom: 1px solid #e5efec;
+  border-bottom: 1px solid var(--styk-line);
 }
 .import-history th {
   color: #617a75;
@@ -956,17 +956,17 @@ td {
   padding: 18px;
   border: 1px solid #d6e9e1;
   border-radius: 7px;
-  background: #f6faf9;
+  background: var(--styk-subtle);
 }
 .import-confirm {
-  border-left: 4px solid #1b7567;
+  border-left: 4px solid var(--styk-primary);
 }
 .import-confirm label {
   display: block;
   margin: 12px 0;
 }
 .import-confirm input {
-  accent-color: #1b7567;
+  accent-color: var(--styk-primary);
 }
 @media (max-width: 700px) {
   .import-panel {
@@ -979,9 +979,9 @@ td {
 
 /* Integration and import actions share the console's control styling. */
 .source-card button, .import-panel button, .notice button {
-  border: 1px solid #177a69;
+  border: 1px solid var(--styk-primary);
   border-radius: 6px;
-  background: #177a69;
+  background: var(--styk-primary);
   color: #fff;
   font-weight: 700;
   font-size: 13px;
@@ -998,7 +998,7 @@ td {
 .import-panel { box-shadow: 0 4px 18px rgba(32, 73, 65, .05); }
 .import-panel h2 { font-size: 20px; letter-spacing: -.4px; color: #193b37; }
 .import-panel h3 { margin: 22px 0 10px; color: #284c47; font-size: 15px; }
-.import-panel-head { padding-bottom: 18px; border-bottom: 1px solid #e5efec; }
+.import-panel-head { padding-bottom: 18px; border-bottom: 1px solid var(--styk-line); }
 .import-panel .pagination { display: flex; justify-content: flex-end; gap: 8px; }
 .import-history td code { font-size: 11px; }
 .import-confirm label { color: #315a53; font-size: 13px; font-weight: 600; }
@@ -1015,16 +1015,16 @@ td {
 .shadow-values strong { font-size: 18px; overflow-wrap: anywhere; }
 .shadow-target details { overflow-wrap: anywhere; }
 .provider-settings-dialog.stock-shadow-dialog { width: min(650px, 100%); }
-.stock-shadow-dialog .shadow-intro { color: #475569; line-height: 1.5; margin-bottom: 20px; }
+.stock-shadow-dialog .shadow-intro { color: var(--styk-muted); line-height: 1.5; margin-bottom: 20px; }
 .stock-shadow-dialog .shadow-intro p { margin: 0 0 6px; }
 .stock-shadow-dialog .shadow-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .stock-shadow-dialog .shadow-heading h3 { margin: 0; font-size: 18px; }
-.stock-shadow-dialog .shadow-heading p { margin: 4px 0 0; color: #64748b; }
+.stock-shadow-dialog .shadow-heading p { margin: 4px 0 0; color: var(--styk-muted); }
 .stock-shadow-dialog .shadow-target > p { margin: 8px 0; line-height: 1.45; }
 .stock-shadow-dialog .shadow-values { margin: 18px 0; gap: 18px 24px; }
-.stock-shadow-dialog .shadow-values span { color: #64748b; }
-.stock-shadow-dialog .shadow-times { color: #64748b; font-size: 14px; }
-.stock-shadow-dialog .shadow-reason { color: #92400e; }
+.stock-shadow-dialog .shadow-values span { color: var(--styk-muted); }
+.stock-shadow-dialog .shadow-times { color: var(--styk-muted); font-size: 14px; }
+.stock-shadow-dialog .shadow-reason { color: var(--styk-warning-ink); }
 .stock-shadow-dialog details { margin-top: 14px; line-height: 1.5; }
 @media (max-width: 520px) { .stock-shadow-dialog .shadow-heading { flex-direction: column; gap: 8px; } }
 
@@ -1041,7 +1041,7 @@ td {
 }
 .login-panel .merchant-auth-links .text-action {
   background: transparent;
-  color: #2255c7;
+  color: var(--styk-primary);
   border: 0;
   padding: 0;
   margin: 0;

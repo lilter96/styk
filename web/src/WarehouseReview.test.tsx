@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WarehouseReview } from "./WarehouseReview";
 afterEach(() => {
@@ -102,6 +102,25 @@ it("reports a failed read", async () => {
     </QueryClientProvider>,
   );
   expect(await screen.findByRole("alert")).toBeTruthy();
+});
+it("explains an already confirmed pair without offering another review", async () => {
+  mount("ALREADY_MAPPED");
+  expect(
+    await screen.findByText(/Повторное сопоставление не требуется/),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Проверить пару складов" }),
+  ).toBeNull();
+  expect(
+    screen.queryByText(/Подтвердите, что склады соответствуют друг другу/),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Готово" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(
+    vi
+      .mocked(globalThis.fetch)
+      .mock.calls.every(([, init]) => !init?.method || init.method === "GET"),
+  ).toBe(true);
 });
 it("shows missing evidence and refetches for a different account", async () => {
   const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(

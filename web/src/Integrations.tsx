@@ -1,6 +1,13 @@
-import { useCallback, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import { PageHeader, ProviderBadge } from "./UI";
 import { ImportPanel } from "./ImportPanel";
 import { IntegrationDialog } from "./IntegrationDialog";
 import { IntegrationEvents } from "./IntegrationEvents";
@@ -95,6 +102,7 @@ export function Integrations({
   const imports = submission ?? localSubmission;
   const localCredentials = useCredentialSubmission();
   const credentials = credentialSubmission ?? localCredentials;
+  const [searchParams, setSearchParams] = useSearchParams();
   const client = useQueryClient();
   const [busy, setBusy] = useState("");
   const requestLock = useRef(false);
@@ -127,6 +135,14 @@ export function Integrations({
   >(undefined);
   const [settingsProvider, setSettingsProvider] =
     useState<ImportProvider | null>(null);
+  useEffect(() => {
+    if (searchParams.get("connect") !== "ozon") return;
+    setCreatingProvider("ozon");
+    setSettingsProvider("ozon");
+    const next = new URLSearchParams(searchParams);
+    next.delete("connect");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
   const [uncertain, setUncertain] = useState("");
   const [historyTarget, setHistoryTarget] = useState<HTMLElement | null>(null);
   const [operationStates, setOperationStates] = useState<
@@ -386,13 +402,10 @@ export function Integrations({
     );
   return (
     <div className="integration-console">
-      <div className="integrations-heading">
-        <h1>Интеграции</h1>
-        <p>
-          Свяжите МойСклад и Ozon, чтобы управлять загрузкой данных и отправкой
-          остатков.
-        </p>
-      </div>
+      <PageHeader
+        title="Интеграции"
+        description="Свяжите МойСклад и Ozon, чтобы управлять загрузкой данных и отправкой остатков."
+      />
       {eligibility.data?.state && (
         <p className="publication-eligibility" role="status">
           {eligibility.data.state === "CONTROLLED_TEST_AVAILABLE"
@@ -488,7 +501,9 @@ export function Integrations({
               </p>
               {bothReady && (
                 <Link to="/warehouses" className="step-link">
-                  Сопоставить склады
+                  {warehousesMapped
+                    ? "Посмотреть соответствие складов"
+                    : "Сопоставить склады"}
                 </Link>
               )}
             </div>
@@ -599,7 +614,21 @@ export function Integrations({
               aria-label={names[p.provider]}
             >
               <header className="provider-heading">
-                <h2>{names[p.provider]}</h2>
+                <div className="provider-identity">
+                  <ProviderBadge provider={p.provider} />
+                  <div>
+                    <h2>{names[p.provider]}</h2>
+                    <p>
+                      {registered
+                        ? registeredAccounts.find((a) => a.account === account)
+                            ?.name ||
+                          `Аккаунт ${registeredAccounts.findIndex((a) => a.account === account) + 1}`
+                        : p.provider === "moysklad"
+                          ? "Учётная система"
+                          : "Маркетплейс"}
+                    </p>
+                  </div>
+                </div>
                 <span
                   className={`connection-state ${state === "OUTCOME_UNKNOWN" ? "warning" : running ? "active" : needsAction ? "warning" : p.status === "VERIFIED" && registered ? "verified" : ""}`}
                 >
@@ -724,8 +753,8 @@ export function Integrations({
                           <div className="registration-form">
                             <p>
                               Добавьте настроенный на сервере аккаунт в STYK.
-                              Предыдущие загрузки не будут
-                              включены автоматически.
+                              Предыдущие загрузки не будут включены
+                              автоматически.
                             </p>
                             {p.status === "VERIFIED" && !recentProbe && (
                               <p>

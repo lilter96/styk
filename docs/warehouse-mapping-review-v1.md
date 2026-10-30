@@ -10,4 +10,4 @@ For an eligible pair, create a durable review, inspect its identity, source impo
 
 The browser retains the original request and cryptographically generated idempotency key in memory when a response is lost or the outcome is uncertain. Retry the same request in the original session and scope; switching accounts does not cancel a transaction. A successful replay is allowed after review expiration. Closing the page loses the in-memory retry context; session loss prevents replay from a new session. Sign in and inspect scoped mapping history instead. No key or session credential is stored in localStorage.
 
-The local shared-secret operator session is not production tenant authentication. Confirmation establishes neither stock ownership nor safe publication; it creates no stock pool, decision or publication task. Aggregation, splitting and allocation are not implemented.
+ Confirmation establishes neither stock ownership nor safe publication; it creates no stock pool, decision or publication task. Aggregation, splitting and allocation are not implemented.

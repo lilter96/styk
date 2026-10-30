@@ -160,30 +160,68 @@ it("opens an email link while another session is active", async () => {
   });
   fireEvent.click(screen.getByRole("button", { name: "Сохранить пароль" }));
   await screen.findByText(/Пароль изменён/);
-  expect(screen.getByRole("button", { name: "Вернуться в приложение" })).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Вернуться в приложение" }),
+  ).toBeTruthy();
 });
 
-it("automatically selects a sole connection once without overriding a later choice", async () => {
+it("fixes MoySklad and automatically selects Ozon without overriding a later marketplace choice", async () => {
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
     const path = String(input);
     if (path === "/api/session")
-      return new Response(JSON.stringify({
-        user: { id: "user", email: "seller@example.test" },
-        account_id: "merchant-account", csrf: "csrf", expires_at: "2099-01-01T00:00:00Z",
-      }), { status: 200 });
+      return new Response(
+        JSON.stringify({
+          user: { id: "user", email: "seller@example.test" },
+          account_id: "merchant-account",
+          csrf: "csrf",
+          expires_at: "2099-01-01T00:00:00Z",
+        }),
+        { status: 200 },
+      );
     if (path.startsWith("/api/registrations?"))
-      return new Response(JSON.stringify({ accounts: [
-        { source: "moysklad", account: "source", registered_at: "2026-01-01T00:00:00Z" },
-        { source: "ozon", account: "market", registered_at: "2026-01-01T00:00:00Z" },
-      ], truncated: false }), { status: 200 });
+      return new Response(
+        JSON.stringify({
+          accounts: [
+            {
+              source: "moysklad",
+              account: "source",
+              registered_at: "2026-01-01T00:00:00Z",
+            },
+            {
+              source: "ozon",
+              account: "market",
+              registered_at: "2026-01-01T00:00:00Z",
+            },
+          ],
+          truncated: false,
+        }),
+        { status: 200 },
+      );
     if (path.startsWith("/api/diagnostics?"))
-      return new Response(JSON.stringify({ checks: [], batches: {}, mapping_counts: {} }), { status: 200 });
+      return new Response(
+        JSON.stringify({ checks: [], batches: {}, mapping_counts: {} }),
+        { status: 200 },
+      );
     throw new Error("unexpected request");
   });
   mount();
-  fireEvent.click(await screen.findByText("Подключения"));
-  const source = await screen.findByRole("combobox", { name: "МойСклад" });
-  await waitFor(() => expect((source as HTMLSelectElement).value).toBe("source"));
-  fireEvent.change(source, { target: { value: "" } });
-  await waitFor(() => expect((source as HTMLSelectElement).value).toBe(""));
+  const market = await screen.findByRole("combobox", { name: "Ozon" });
+  await waitFor(() =>
+    expect((market as HTMLSelectElement).value).toBe("market"),
+  );
+  expect(screen.queryByRole("combobox", { name: "МойСклад" })).toBeNull();
+  expect(screen.getByText("Аккаунт подключён")).toBeTruthy();
+  fireEvent.change(market, { target: { value: "" } });
+  await waitFor(() => expect((market as HTMLSelectElement).value).toBe(""));
+});
+
+it("keeps the removed local login closed and displays no key form", async () => {
+ vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+  if (String(input) === "/api/auth-mode") return new Response(JSON.stringify({ mode: "local" }));
+  return new Response(null, { status: 401 });
+ });
+ mount();
+ await waitFor(() => expect(screen.getByRole("main").querySelector(".error")).not.toBeNull());
+ expect(screen.queryByRole("textbox")).toBeNull();
+ expect(screen.queryByRole("button")).toBeNull();
 });
