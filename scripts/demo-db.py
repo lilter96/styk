@@ -90,12 +90,22 @@ def reset():
     sql("BEGIN; LOCK TABLE " + tables + " IN ACCESS EXCLUSIVE MODE; " + guard + " TRUNCATE " + tables + " RESTART IDENTITY; COMMIT;", DATABASE)
 
 
+def verify():
+    statements = sql("SELECT format('ALTER TABLE %I.%I VALIDATE CONSTRAINT %I;',n.nspname,c.relname,k.conname) FROM pg_constraint k JOIN pg_class c ON c.oid=k.conrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND k.contype='f' AND NOT k.convalidated ORDER BY c.relname,k.conname", DATABASE)
+    if statements:
+        sql("BEGIN; " + statements + " COMMIT;", DATABASE)
+    remaining = sql("SELECT count(*) FROM pg_constraint k JOIN pg_class c ON c.oid=k.conrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND k.contype='f' AND NOT k.convalidated", DATABASE)
+    if remaining != "0":
+        raise RuntimeError("Foreign-key validation incomplete")
+    print(json.dumps({"database": DATABASE, "foreign_keys_validated": True, "unvalidated": 0}))
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=["prepare", "backup", "reset"])
+    parser.add_argument("action", choices=["prepare", "backup", "reset", "verify"])
     parser.add_argument("--confirm", default="")
     args = parser.parse_args()
-    if args.action == "reset" and (args.confirm != DATABASE or os.environ.get("APP_ENV") != "development"):
+    if args.action in {"reset", "verify"} and (args.confirm != DATABASE or os.environ.get("APP_ENV") != "development"):
         raise RuntimeError("Reset requires APP_ENV=development and --confirm styk_demo_dev")
     inspect()
     exists = sql("SELECT count(*) FROM pg_database WHERE datname='styk_demo_dev'") == "1"
@@ -105,6 +115,9 @@ def main():
         sql("CREATE DATABASE styk_demo_dev")
         sql("COMMENT ON DATABASE styk_demo_dev IS '" + MARKER + "'")
     safe_database()
+    if args.action == "verify":
+        verify()
+        return
     path, dump = backup()
     verify_restore(dump)
     if args.action == "reset":
