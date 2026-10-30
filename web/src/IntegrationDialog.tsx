@@ -36,12 +36,14 @@ export function IntegrationDialog({
   onClose,
   closeLabel = "Закрыть",
   className = "",
+  initialFocus,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   closeLabel?: string;
   className?: string;
+  initialFocus?: string;
 }) {
   const titleID = useId();
   const dialog = useRef<HTMLDivElement>(null);
@@ -64,7 +66,10 @@ export function IntegrationDialog({
     document.body.style.overflow = "hidden";
     const currentDialog = dialog.current;
     if (content.current && currentDialog) {
-      const firstControl = focusableElements(content.current)[0];
+      const firstControl =
+        (initialFocus
+          ? content.current.querySelector<HTMLElement>(initialFocus)
+          : null) || focusableElements(content.current)[0];
       (
         firstControl ||
         focusableElements(currentDialog)[0] ||

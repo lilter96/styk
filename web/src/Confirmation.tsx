@@ -47,6 +47,7 @@ export function useConfirmation() {
         [
           "products",
           "review-history",
+          "review-targets",
           "warehouses",
           "warehouse-review",
           "diagnostics",

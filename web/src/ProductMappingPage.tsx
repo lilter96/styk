@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, params, type Page, type Product, type Report } from "./api";
@@ -29,6 +29,10 @@ export function ProductMappingPage({
 }) {
   const localConfirmation = useConfirmation();
   const activeConfirmation = confirmation ?? localConfirmation;
+  const skipped = useRef(new Set<string>());
+  const [queueMessage, setQueueMessage] = useState("");
+  const queueLock = useRef(false);
+  const queueRequest = useRef<AbortController | null>(null);
   const [review, setReview] = useState<Product | null>(null);
   const [search, setSearch] = useState("");
   const [archived, setArchived] = useState("");
@@ -86,10 +90,16 @@ export function ProductMappingPage({
   );
   const reset = () => setOffset(0);
   useEffect(() => {
+    queueRequest.current?.abort();
+    skipped.current.clear();
+    setQueueMessage("");
     setSelectedProducts([]);
     setCompleted([]);
     setReview(null);
     setOffset(0);
+    return () => {
+      queueRequest.current?.abort();
+    };
   }, [scope.tenant, scope.moy, scope.ozon]);
 
   useEffect(() => {
@@ -117,6 +127,52 @@ export function ProductMappingPage({
     selectedProducts,
   ]);
 
+  async function nextProduct() {
+    if (queueLock.current || !review) return;
+    queueLock.current = true;
+    const request = new AbortController();
+    queueRequest.current = request;
+    skipped.current.add(review.product_id);
+    setQueueMessage("Загружаем следующий товар…");
+    try {
+      for (let start = 0; start <= 100000; start += 50) {
+        const page = await api<Page<Product>>(
+          "/api/products?" +
+            params({
+              ...base,
+              mapping: "unconfirmed",
+              archived: "false",
+              offset: start,
+            }),
+          request.signal,
+        );
+        if (request.signal.aborted) return;
+        const item = page.items.find(
+          (item) => !skipped.current.has(item.product_id),
+        );
+        if (item) {
+          setReview(item);
+          setQueueMessage("");
+          return;
+        }
+        if (!page.has_next) {
+          setReview(null);
+          setQueueMessage(
+            "Очередь завершена. Несопоставленных товаров больше нет.",
+          );
+          return;
+        }
+      }
+      setQueueMessage("Достигнут предел очереди. Уточните фильтры каталога.");
+    } catch {
+      if (request.signal.aborted) return;
+      setQueueMessage(
+        "Не удалось загрузить следующий товар. Попробуйте ещё раз.",
+      );
+    } finally {
+      queueLock.current = false;
+    }
+  }
   return (
     <div className="product-mapping-page">
       <Link className="mapping-back" to="/integrations">
@@ -475,6 +531,7 @@ export function ProductMappingPage({
           </footer>
         </section>
       )}
+      {queueMessage && <p role="status">{queueMessage}</p>}
       {review && (
         <ProductReview
           key={review.product_id}
@@ -508,6 +565,7 @@ export function ProductMappingPage({
             setReview(null);
           }}
           confirmation={activeConfirmation}
+          next={() => void nextProduct()}
         />
       )}
     </div>
