@@ -132,15 +132,26 @@ func New(o Options) (*Client, error) {
 		h := *hc
 		hc = &h
 	}
-	if o.AllowSyntheticStockWrites {
-		baseTransport, ok := http.DefaultTransport.(*http.Transport)
+	// Never route Ozon calls through an environment proxy (HTTP_PROXY,
+	// HTTPS_PROXY, ALL_PROXY). Connect directly to api-seller.ozon.ru.
+	// Only install a transport when the caller did not supply one, so tests
+	// can inject their own RoundTripper.
+	if hc.Transport == nil {
+		base, ok := http.DefaultTransport.(*http.Transport)
 		if !ok {
-			return nil, errors.New("standard synthetic HTTP transport unavailable")
+			return nil, errors.New("standard Ozon HTTP transport unavailable")
 		}
-		transport := baseTransport.Clone()
-		// Go's standard Transport can transparently retry requests on reused
-		// connections. Never reuse a connection for these writes.
+		transport := base.Clone()
+		transport.Proxy = nil
 		transport.DisableKeepAlives = true
+		transport.ForceAttemptHTTP2 = false
+		if transport.TLSClientConfig == nil {
+			transport.TLSClientConfig = &tls.Config{}
+		} else {
+			transport.TLSClientConfig = transport.TLSClientConfig.Clone()
+		}
+		transport.TLSClientConfig.NextProtos = []string{"http/1.1"}
+		transport.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
 		hc.Transport = transport
 	}
 	hc.Timeout = o.Timeout
