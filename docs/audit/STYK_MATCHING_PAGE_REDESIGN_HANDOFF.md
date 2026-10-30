@@ -86,11 +86,13 @@ trigger an inert bulk action. Save-and-next remains the existing modal workflow.
 ## Validation
 
 - Frontend typecheck/production build, ESLint and existing Vitest suite pass.
+- An isolated clean checkout of the committed branch also passes build, lint and
+  all 203 committed frontend tests, without the unrelated uncommitted overview.
 - Go: `make lint` (go vet and golangci-lint), `make test`, `go test -race ./...`,
   `make build`, `go build ./...` pass in the existing Go 1.27.3 Docker environment.
 - Four real local Playwright tests pass: general application access, anonymous
   denial, matching modal confirmation/save-next, and the new page scenario.
-- Page test covers exact total, 20/100 sizes, server page navigation, invalid
+- Page test covers positive name/offer/SKU/ID/article search, exact total, 20/100 sizes, server page navigation, invalid
   pagination, empty/deep pages, membership totals, archive filtering, foreign
   tenant rejection, clear/reset, current-page selection, clipboard copy, opening
   an existing link, bulk queue opening and console errors.

@@ -40,6 +40,18 @@ test("matching page uses server totals filters pagination and the existing modal
   const data = await first.json();
   expect(data.total).toBe(500);
   expect(data.items).toHaveLength(20);
+  for (const value of [
+    data.items[0].name,
+    data.items[0].offer_id,
+    data.items[0].sku,
+    data.items[0].product_id,
+    data.items[0].target_article,
+  ]) {
+    if (!value) continue;
+    const found = await get(`search=${encodeURIComponent(value)}&pageSize=20`);
+    expect(found.status()).toBe(200);
+    expect((await found.json()).total).toBeGreaterThan(0);
+  }
   const next = await (await get("page=2&pageSize=20")).json();
   expect(next.total).toBe(data.total);
   expect(next.items[0].product_id).not.toBe(data.items[0].product_id);
@@ -163,11 +175,18 @@ test("matching page uses server totals filters pagination and the existing modal
   await area
     .getByRole("checkbox", { name: "Выбрать все на странице" })
     .uncheck();
-  for (const [width,height] of [[820,1180],[390,844]]) {
-    await page.setViewportSize({width,height});
-    await expect(area.getByRole("textbox",{name:"Поиск",exact:true})).toBeVisible();
-    expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-    await page.screenshot({path:`../docs/audit/matching-page/${width}.png`});
+  for (const [width, height] of [
+    [820, 1180],
+    [390, 844],
+  ]) {
+    await page.setViewportSize({ width, height });
+    await expect(
+      area.getByRole("textbox", { name: "Поиск", exact: true }),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(width);
+    await page.screenshot({ path: `../docs/audit/matching-page/${width}.png` });
   }
   expect(errors).toEqual([]);
 });
