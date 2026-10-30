@@ -19,7 +19,7 @@ func TestAnonymousAndRetiredCookieRemainUnauthorized(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8080/api/integrations", nil)
 			req.RemoteAddr = "127.0.0.1:1234"
 			if tc.cookie != "" {
-				req.AddCookie(&http.Cookie{Name: cookieName, Value: tc.cookie})
+				req.AddCookie(&http.Cookie{Name: "styk_operator", Value: tc.cookie})
 			}
 			response := httptest.NewRecorder()
 			a.authorized(func(http.ResponseWriter, *http.Request) { t.Fatal("anonymous handler reached") })(response, req)

@@ -52,7 +52,7 @@ func newMerchantAuth(db *postgres.Store, origin string, sender identity.Sender) 
 	}
 	normalized := strings.TrimSuffix(origin, "/")
 	merchant := &merchantAuth{identity: store, db: db, sender: sender, origin: normalized, host: u.Host, local: local, secure: u.Scheme == "https", proxies: proxies}
-	return &auth{origin: normalized, merchant: merchant}, nil
+	return &auth{merchant: merchant}, nil
 }
 
 func (m *merchantAuth) safe(r *http.Request) bool {
