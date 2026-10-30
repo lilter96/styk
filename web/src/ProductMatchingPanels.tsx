@@ -2,7 +2,21 @@ import { useRef, useState } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { Page, Product } from "./api";
 import type { MappingTarget } from "./ProductReview";
-import { Icon, ProviderBadge } from "./UI";
+import { Icon } from "./UI";
+import ozonLogo from "./assets/brands/ozon.png";
+import moyskladLogo from "./assets/brands/moysklad.png";
+
+function ProviderLogo({ provider }: { provider: "ozon" | "moysklad" }) {
+  return (
+    <img
+      className={`matching-brand-logo ${provider}`}
+      src={provider === "ozon" ? ozonLogo : moyskladLogo}
+      alt={provider === "ozon" ? "Ozon" : "МойСклад"}
+      width="32"
+      height="32"
+    />
+  );
+}
 
 function CopyValue({ label, value }: { label: string; value: string }) {
   const [message, setMessage] = useState("");
@@ -22,7 +36,18 @@ function CopyValue({ label, value }: { label: string; value: string }) {
             }
           }}
         >
-          ⧉
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            aria-hidden="true"
+          >
+            <rect x="8" y="8" width="12" height="12" rx="2" />
+            <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" />
+          </svg>
         </button>
         <span role="status">{message}</span>
       </dd>
@@ -34,7 +59,7 @@ export function OzonProductPanel({ product }: { product: Product }) {
   return (
     <aside className="matching-ozon">
       <header>
-        <ProviderBadge provider="ozon" />
+        <ProviderLogo provider="ozon" />
         <b>Товар в Ozon</b>
         <span
           className={`mapping-chip ${product.match_status === "CONFIRMED" ? "ok" : "warning"}`}
@@ -111,11 +136,22 @@ export function TargetSearchPanel(p: SearchProps) {
   return (
     <section className="matching-search-panel">
       <h3>
-        <ProviderBadge provider="moysklad" /> Поиск товара в МойСклад
+        <ProviderLogo provider="moysklad" /> Поиск товара в МойСклад
       </h3>
       <div className="matching-search-line">
         <label>
-          <Icon name="diagnostics" />
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            aria-hidden="true"
+          >
+            <circle cx="10.5" cy="10.5" r="6.5" />
+            <path d="m16 16 5 5" />
+          </svg>
           <input
             ref={input}
             aria-label="Поиск товара МойСклад"

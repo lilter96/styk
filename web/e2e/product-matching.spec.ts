@@ -85,15 +85,39 @@ test("matching modal uses the local Go search and captures desktop states", asyn
     return;
   }
   await expect(dialog.locator(".matching-result").first()).toBeVisible();
+  for (const logo of await dialog.locator(".matching-brand-logo").all()) {
+    await expect(logo).toBeVisible();
+    expect(
+      await logo.evaluate(
+        (image: HTMLImageElement) => image.complete && image.naturalWidth > 0,
+      ),
+    ).toBe(true);
+  }
+  const additional = dialog.locator(".matching-additional");
+  await expect(additional).not.toHaveAttribute("open", "");
+  await expect(additional.locator(":scope > details")).toHaveCount(2);
   await page.screenshot({ path: "../docs/audit/product-matching/normal.png" });
   await page.screenshot({
     path: "../docs/audit/product-matching/existing.png",
   });
   await dialog.locator(".matching-result").first().click();
   await expect(dialog.locator(".matching-result.selected")).toHaveCount(1);
+  await expect(additional).not.toHaveAttribute("open", "");
   await page.screenshot({
     path: "../docs/audit/product-matching/selected.png",
   });
+  await additional.locator(":scope > summary").click();
+  await expect(additional.locator(":scope > details > summary")).toHaveText([
+    /Возможные соответствия/,
+    "История сопоставлений",
+  ]);
+  await expect(
+    additional.getByText(/Технические|Основание для подтверждения|Комментарий/),
+  ).toHaveCount(0);
+  await page.screenshot({
+    path: "../docs/audit/product-matching/additional.png",
+  });
+  await additional.locator(":scope > summary").click();
   const input = dialog.getByRole("textbox", { name: "Поиск товара МойСклад" });
   const searched = page.waitForResponse((response) => {
     const url = new URL(response.url());

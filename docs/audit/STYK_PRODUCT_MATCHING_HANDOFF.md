@@ -127,7 +127,39 @@ All screenshots contain isolated seeded data:
 Pixel comparison against the intended reference remains blocked by the missing
 attachment. The implementation follows the written dimensions and composition.
 
-## Review delivery
+## Second UI pass
+
+The follow-up keeps the existing search and confirmation APIs unchanged. Brand
+images are reused from the existing demo (`styk-demo/public/brands`) and bundled
+locally in `web/src/assets/brands`; there are no remote logo requests or invented
+brand symbols. Copy controls use a consistent inline SVG, and search now has a
+search glyph rather than a diagnostic icon.
+
+The dialog header, 32/68 workspace, metadata rows, current mapping card, search,
+filter controls, result grid, pagination and fixed action bar now share a scoped
+spacing system. Results use explicit columns for radio, thumbnail, identity,
+status and quantity. Buttons no longer stretch to fill the footer.
+
+`Additional` is closed by default and remains closed when a result is selected.
+It contains exactly two child disclosures: possible matches and mapping history.
+Technical product data, diagnostic disclosures and nested technical panels are
+removed from this UI. An empty suggestions section remains visible as an honest
+empty state. Confirmation/evidence/acknowledgement and uncertain-outcome retry
+remain available in a separate compact strip above the footer, implemented in
+`ProductMatchingConfirmation.tsx`. Footer confirmation still requires a current,
+unexpired, conflict-free review and explicit acknowledgement.
+
+Browser coverage now asserts both logo assets load, Additional has exactly two
+sections, no confirmation/diagnostic fields appear inside it, and selection does
+not open it. The existing API, confirmation and save-next checks remain in place.
+The refreshed screenshots were inspected at all three desktop sizes, including
+the [expanded Additional panel](product-matching/additional.png).
+
+The original visual reference is still absent from this conversation; spacing
+and composition were polished against the owner's written corrections and the
+actual first-pass screenshots, not an invented claim of pixel equivalence.
+
+## Pull request
 
 GitHub CLI initially reported no authenticated host. The existing Git credential
 helper successfully authorized pushing and PR creation, without exposing its

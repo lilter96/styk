@@ -1,3 +1,4 @@
+import { ProductMatchingConfirmation } from "./ProductMatchingConfirmation";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, post, params, ApiError, type Page, type Product } from "./api";
@@ -232,9 +233,9 @@ export function ProductReview({
                 setEvidence("OPERATOR_ATTESTED");
               }}
             />
-            <details className="matching-additional" open={!!selected}>
-              <summary>Дополнительно: проверка и история</summary>
-              {product.candidates.length > 0 && (
+            <details className="matching-additional">
+              <summary>Дополнительно</summary>
+              {
                 <details className="review-suggestions">
                   <summary>
                     Возможные соответствия ({product.candidates.length})
@@ -258,333 +259,25 @@ export function ProductReview({
                           {c.name || `Посмотреть предложение ${index + 1}`}{" "}
                           {c.kind === "variant" ? "· вариант" : "· товар"}
                         </button>
-                        <details className="mapping-technical">
-                          <summary>Данные предложения</summary>
-                          <p>
-                            <code>
-                              {c.kind} · {c.id}
-                            </code>
-                          </p>
-                          <p>Совпавшие поля: {c.evidence.join(", ")}</p>
-                        </details>
                       </li>
                     ))}
                   </ul>
+                  {!product.candidates.length && (
+                    <p>
+                      Возможные соответствия пока не найдены. Используйте поиск.
+                    </p>
+                  )}
+                  {product.candidates_truncated && (
+                    <p className="mapping-review-warning">
+                      Показана только часть предложений. Найденный вариант может
+                      быть не единственным.
+                    </p>
+                  )}
                 </details>
-              )}
-              {product.candidates_truncated && (
-                <p className="mapping-review-warning">
-                  Показана только часть предложений. Нельзя считать найденный
-                  вариант единственным.
-                </p>
-              )}
+              }
 
-              {selected && (
-                <div className="review-evidence">
-                  <h3>Проверьте выбранную пару</h3>
-                  <p>
-                    <strong>{product.offer_id}</strong> в Ozon →{" "}
-                    <strong>{selected.name || "Товар без названия"}</strong> в
-                    МойСклад
-                  </p>
-                  <p>
-                    {candidate
-                      ? "Артикул или код совпал. Убедитесь, что это один и тот же товар."
-                      : "Совпадения нет. Проверьте, что товары представляют одну и ту же позицию."}
-                  </p>
-                  <p>
-                    Артикул: {selected.article || "не указан"}; код:{" "}
-                    {selected.code || "не указан"}.
-                  </p>
-                  <label className="review-field">
-                    Основание для подтверждения
-                    <select
-                      disabled={creating}
-                      value={evidence}
-                      onChange={(e) => {
-                        setEvidence(e.target.value);
-                        setReviewID("");
-                      }}
-                    >
-                      <option value="OPERATOR_ATTESTED">
-                        Проверено мной вручную
-                      </option>
-                      {candidate && (
-                        <option value="DETERMINISTIC_CANDIDATE">
-                          Совпадение артикула или кода, проверенное мной
-                        </option>
-                      )}
-                    </select>
-                  </label>
-                  <button
-                    className="mapping-primary"
-                    disabled={creating || !!confirmation.pending}
-                    onClick={() => void createReview()}
-                  >
-                    {creating ? "Проверяем…" : "Проверить соответствие"}
-                  </button>
-                  {reviewError && <p role="alert">{reviewError}</p>}
-                  {reviewID &&
-                    (review.isLoading ? (
-                      <p role="status">Получаем результат проверки…</p>
-                    ) : review.error ? (
-                      <p role="alert">
-                        Проверка недоступна. Если сессия завершилась, войдите
-                        снова.
-                      </p>
-                    ) : (
-                      review.data && (
-                        <div className="review-confirmation">
-                          <h3>
-                            {saved
-                              ? "Соответствие подтверждено"
-                              : "Проверка готова к подтверждению"}
-                          </h3>
-                          {!saved && (
-                            <>
-                              <p>
-                                Вы подтверждаете, что выбранные товары
-                                обозначают одну и ту же позицию. Это ваше
-                                подтверждение, а не независимая проверка.
-                              </p>
-                              {review.data.MappingConflict && (
-                                <p
-                                  className="mapping-review-warning"
-                                  role="alert"
-                                >
-                                  Уже существует конфликтующее соответствие.
-                                  Подтверждение заблокировано.
-                                </p>
-                              )}
-                              {review.data.Status !== "CURRENT" && (
-                                <p
-                                  className="mapping-review-warning"
-                                  role="alert"
-                                >
-                                  Проверка устарела либо данные или соответствие
-                                  изменились. Создайте новую проверку; старая не
-                                  обновляется автоматически.
-                                </p>
-                              )}
-                              {rejected && (
-                                <p
-                                  className="mapping-review-warning"
-                                  role="alert"
-                                >
-                                  Подтверждение отклонено. Проверьте выбранную
-                                  пару и создайте новую проверку.
-                                </p>
-                              )}
-                              <label className="review-field">
-                                Комментарий, необязательно
-                                <input
-                                  value={explanation}
-                                  onChange={(e) =>
-                                    setExplanation(e.target.value)
-                                  }
-                                  maxLength={1000}
-                                  placeholder="Без ключей доступа и персональных данных"
-                                />
-                              </label>
-                              <label className="review-acknowledge">
-                                <input
-                                  type="checkbox"
-                                  checked={acknowledge}
-                                  onChange={(e) =>
-                                    setAcknowledge(e.target.checked)
-                                  }
-                                />
-                                Подтверждаю, что это один и тот же товар
-                              </label>
-                              <button
-                                className="mapping-primary"
-                                disabled={
-                                  !acknowledge ||
-                                  !!confirmation.pending ||
-                                  rejected ||
-                                  review.data.Status !== "CURRENT" ||
-                                  confirmation.result?.review_id === reviewID ||
-                                  review.data.MappingConflict ||
-                                  Date.now() >=
-                                    Date.parse(review.data.Review.ExpiresAt)
-                                }
-                                onClick={() => {
-                                  try {
-                                    confirmation.start(
-                                      scope,
-                                      product.product_id,
-                                      reviewID,
-                                      explanation,
-                                    );
-                                  } catch {
-                                    setReviewError(
-                                      "Комментарий содержит недопустимые символы или превышает 1000 байт UTF-8.",
-                                    );
-                                  }
-                                }}
-                              >
-                                Подтвердить соответствие
-                              </button>
-                            </>
-                          )}
-                          {saved && (
-                            <p className="mapping-save-success" role="status">
-                              Соответствие сохранено. Это подтверждение не
-                              включает публикацию остатков.
-                            </p>
-                          )}
-                          <details className="mapping-technical">
-                            <summary>Технические детали проверки</summary>
-                            <dl>
-                              <dt>Проверка</dt>
-                              <dd>
-                                <code>{reviewID}</code>
-                              </dd>
-                              <dt>Класс подтверждения</dt>
-                              <dd>{review.data.Review.EvidenceClass}</dd>
-                              <dt>Состояние</dt>
-                              <dd>{review.data.Status}</dd>
-                              <dt>Создана</dt>
-                              <dd>
-                                <time dateTime={review.data.Review.CreatedAt}>
-                                  {new Date(
-                                    review.data.Review.CreatedAt,
-                                  ).toLocaleString("ru-RU")}
-                                </time>
-                              </dd>
-                              <dt>Действует до</dt>
-                              <dd>
-                                <time dateTime={review.data.Review.ExpiresAt}>
-                                  {new Date(
-                                    review.data.Review.ExpiresAt,
-                                  ).toLocaleString("ru-RU")}
-                                </time>
-                              </dd>
-                              <dt>Загрузки</dt>
-                              <dd>
-                                Ozon {review.data.Review.OzonImportID}; МойСклад{" "}
-                                {review.data.Review.MoyskladImportID}
-                              </dd>
-                              <dt>Товар Ozon</dt>
-                              <dd>
-                                <code>{review.data.Review.Source.ID}</code>
-                              </dd>
-                              <dt>Товар МойСклад</dt>
-                              <dd>
-                                <code>
-                                  {review.data.Review.Target.Kind} ·{" "}
-                                  {review.data.Review.Target.ID}
-                                </code>
-                              </dd>
-                              {review.data.Review.ExistingMappingVersion !==
-                                null && (
-                                <>
-                                  <dt>Версия соответствия</dt>
-                                  <dd>
-                                    {review.data.Review.ExistingMappingVersion}
-                                  </dd>
-                                </>
-                              )}
-                            </dl>
-                          </details>
-                        </div>
-                      )
-                    ))}
-                </div>
-              )}
-              {samePending && (
-                <div
-                  className="mapping-request-state"
-                  role={pending.uncertain ? "alert" : "status"}
-                >
-                  <p>
-                    {confirmation.busy
-                      ? "Сохраняем соответствие… Смена аккаунта не отменяет запрос."
-                      : confirmation.sessionLost
-                        ? "Сессия завершилась. Войдите снова и проверьте историю исходной пары аккаунтов."
-                        : "Результат сохранения уточняется. Повторите тот же запрос, чтобы проверить результат без создания нового подтверждения."}
-                  </p>
-                  {!confirmation.busy && !confirmation.sessionLost && (
-                    <button
-                      className="mapping-primary"
-                      onClick={confirmation.retry}
-                    >
-                      Повторить тот же запрос
-                    </button>
-                  )}
-                </div>
-              )}
-              {pending && !samePending && (
-                <p className="mapping-review-warning" role="alert">
-                  Есть незавершённое подтверждение для другого товара или
-                  аккаунта. Закройте это окно и вернитесь к исходному запросу.
-                </p>
-              )}
-              <details className="mapping-technical">
-                <summary>Технические данные товаров</summary>
-                <dl>
-                  <dt>Аккаунт МойСклад</dt>
-                  <dd>
-                    <code>{scope.moy}</code>
-                  </dd>
-                  <dt>Аккаунт Ozon</dt>
-                  <dd>
-                    <code>{scope.ozon}</code>
-                  </dd>
-                  <dt>ID товара Ozon</dt>
-                  <dd>
-                    <code>{product.product_id}</code>
-                  </dd>
-                  <dt>SKU</dt>
-                  <dd>{product.sku ?? "Неизвестен"}</dd>
-                  <dt>Состояние товара</dt>
-                  <dd>
-                    {product.archived === null
-                      ? "Статус архива неизвестен"
-                      : product.archived
-                        ? "Архивный"
-                        : "Активный"}
-                  </dd>
-                  <dt>Результат сопоставления</dt>
-                  <dd>{product.match_status}</dd>
-                  {product.target_id && (
-                    <>
-                      <dt>Текущее соответствие</dt>
-                      <dd>
-                        <code>
-                          {product.target_kind} · {product.target_id}
-                        </code>
-                      </dd>
-                    </>
-                  )}
-                  {selected && (
-                    <>
-                      <dt>ID товара МойСклад</dt>
-                      <dd>
-                        <code>
-                          {selected.kind} · {selected.id}
-                        </code>
-                      </dd>
-                      {selected.parent_id && (
-                        <>
-                          <dt>Родительский товар</dt>
-                          <dd>
-                            <code>{selected.parent_id}</code>
-                          </dd>
-                        </>
-                      )}
-                      {candidate && (
-                        <>
-                          <dt>Поля совпадения</dt>
-                          <dd>{candidate.evidence.join(", ")}</dd>
-                        </>
-                      )}
-                    </>
-                  )}
-                </dl>
-              </details>
               <details className="mapping-history">
-                <summary>История соответствий</summary>
+                <summary>История сопоставлений</summary>
                 {history.isLoading ? (
                   <p role="status">Загружаем историю…</p>
                 ) : history.error ? (
@@ -603,26 +296,6 @@ export function ProductReview({
                         <time dateTime={h.confirmed_at}>
                           {new Date(h.confirmed_at).toLocaleString("ru-RU")}
                         </time>
-                        <details className="mapping-technical">
-                          <summary>Подробнее</summary>
-                          <p>
-                            {h.offer_id} →{" "}
-                            <code>
-                              {h.target_kind} {h.target_id}
-                            </code>
-                          </p>
-                          <p>
-                            Происхождение: {h.provenance}; загрузки{" "}
-                            {h.ozon_import_id} / {h.moysklad_import_id}
-                          </p>
-                          {h.evidence_class && (
-                            <p>Класс подтверждения: {h.evidence_class}</p>
-                          )}
-                          {h.principal_type && (
-                            <p>Подтвердил: {h.principal_type}</p>
-                          )}
-                          {h.explanation && <p>Комментарий: {h.explanation}</p>}
-                        </details>
                       </li>
                     ))}
                   </ul>
@@ -646,6 +319,63 @@ export function ProductReview({
               </details>
             </details>
           </div>
+        </div>
+        {selected && (
+          <ProductMatchingConfirmation
+            selected={selected}
+            offer={product.offer_id}
+            candidate={!!candidate}
+            evidence={evidence}
+            setEvidence={(value) => {
+              setEvidence(value);
+              setReviewID("");
+            }}
+            create={() => void createReview()}
+            creating={creating}
+            pending={!!pending}
+            reviewID={reviewID}
+            loading={review.isLoading}
+            error={!!review.error}
+            message={reviewError}
+            saved={saved}
+            conflict={!!review.data?.MappingConflict}
+            current={review.data?.Status === "CURRENT"}
+            rejected={rejected}
+            acknowledge={acknowledge}
+            setAcknowledge={setAcknowledge}
+            explanation={explanation}
+            setExplanation={setExplanation}
+          />
+        )}
+        <div className="matching-request-notice">
+          {samePending && (
+            <div
+              className="mapping-request-state"
+              role={pending.uncertain ? "alert" : "status"}
+            >
+              <p>
+                {confirmation.busy
+                  ? "Сохраняем соответствие… Смена аккаунта не отменяет запрос."
+                  : confirmation.sessionLost
+                    ? "Сессия завершилась. Войдите снова и проверьте историю исходной пары аккаунтов."
+                    : "Результат сохранения уточняется. Повторите тот же запрос, чтобы проверить результат без создания нового подтверждения."}
+              </p>
+              {!confirmation.busy && !confirmation.sessionLost && (
+                <button
+                  className="mapping-primary"
+                  onClick={confirmation.retry}
+                >
+                  Повторить тот же запрос
+                </button>
+              )}
+            </div>
+          )}
+          {pending && !samePending && (
+            <p className="mapping-review-warning" role="alert">
+              Есть незавершённое подтверждение для другого товара или аккаунта.
+              Закройте это окно и вернитесь к исходному запросу.
+            </p>
+          )}
         </div>
         <footer className="matching-footer">
           <span>
