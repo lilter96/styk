@@ -34,6 +34,11 @@ func products(db *postgres.Store) http.HandlerFunc {
 			}
 			offset = v
 		}
+		offset, pageSize, err := productPagination(r, offset)
+		if err != nil {
+			writeError(w, 400, "INVALID_PAGE")
+			return
+		}
 		search := q.Get("search")
 		if len(search) > 100 {
 			writeError(w, 400, "INVALID_SEARCH")
@@ -66,7 +71,12 @@ func products(db *postgres.Store) http.HandlerFunc {
 			writeError(w, 404, "SCOPE_NOT_REGISTERED")
 			return
 		}
-		rows, e := tx.Query(ctx, productPageQuery, tenant, account, moy, search, archived, offset, mappingFilter, matchTrimChars)
+		var total int
+		if e := tx.QueryRow(ctx, productCountQuery, tenant, account, moy, search, archived, offset, mappingFilter, matchTrimChars, pageSize+1).Scan(&total); e != nil {
+			writeError(w, 503, "PRODUCTS_UNAVAILABLE")
+			return
+		}
+		rows, e := tx.Query(ctx, productPageQuery, tenant, account, moy, search, archived, offset, mappingFilter, matchTrimChars, pageSize+1)
 		if e != nil {
 			writeError(w, 503, "PRODUCTS_UNAVAILABLE")
 			return
@@ -101,9 +111,9 @@ func products(db *postgres.Store) http.HandlerFunc {
 			return
 		}
 		rows.Close()
-		hasNext := len(items) > 50
+		hasNext := len(items) > pageSize
 		if hasNext {
-			items = items[:50]
+			items = items[:pageSize]
 		}
 		offers, productIDs := []string{}, []string{}
 		for _, item := range items {
@@ -148,17 +158,20 @@ func products(db *postgres.Store) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, struct {
-			Items   []item `json:"items"`
-			HasNext bool   `json:"has_next"`
-			Offset  int    `json:"offset"`
-		}{items, hasNext, offset})
+			Items    []item `json:"items"`
+			HasNext  bool   `json:"has_next"`
+			Offset   int    `json:"offset"`
+			Total    int    `json:"total"`
+			Page     int    `json:"page"`
+			PageSize int    `json:"pageSize"`
+		}{items, hasNext, offset, total, offset/pageSize + 1, pageSize})
 	}
 }
 
 // Materialize searched source records once per request. The membership tests
 // retain both confirmed-target and normalized candidate search semantics without
 // rescanning the source catalog for every Ozon product.
-const productPageQuery = `
+const productFilterQuery = `
 WITH latest AS (
   SELECT i.id FROM source_imports i
   JOIN ozon_import_batches b ON b.import_id=i.id AND b.traversal_status='completed'
@@ -175,7 +188,7 @@ WITH latest AS (
   FROM source_entities s JOIN source_latest sl ON sl.id=s.import_id
   WHERE $4<>'' AND s.kind IN ('product','variant')
     AND (s.name ILIKE '%'||$4||'%' OR s.article ILIKE '%'||$4||'%' OR s.code ILIKE '%'||$4||'%')
-), page AS (
+), filtered AS (
   SELECT p.product_id,p.offer_id,p.sku,p.archived,
     CASE WHEN m.moysklad_account=$3 THEN m.target_kind END AS target_kind,
     CASE WHEN m.moysklad_account=$3 THEN m.target_id END AS target_id,NULLIF(p.name,'') AS name
@@ -191,8 +204,9 @@ WITH latest AS (
   ) AND ($5='' OR p.archived::text=$5)
     AND ($7='' OR ($7='confirmed' AND m.moysklad_account=$3)
       OR ($7='unconfirmed' AND (m.ozon_product_id IS NULL OR m.moysklad_account<>$3)))
-  ORDER BY p.product_id LIMIT 51 OFFSET $6
-)
+)`
+const productCountQuery = productFilterQuery + ` SELECT count(*) FROM filtered WHERE $6::int>=0 AND $9::int>0`
+const productPageQuery = productFilterQuery + `, page AS (SELECT * FROM filtered ORDER BY product_id LIMIT $9 OFFSET $6)
 SELECT page.product_id,page.offer_id,page.sku,page.archived,page.target_kind,page.target_id,page.name,NULLIF(mapped.name,''),NULLIF(mapped.article,'')
 FROM page LEFT JOIN source_entities mapped ON mapped.import_id=(SELECT id FROM source_latest)
   AND mapped.kind=page.target_kind AND mapped.external_id=page.target_id
