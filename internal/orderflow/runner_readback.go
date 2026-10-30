@@ -3,6 +3,7 @@ package orderflow
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -99,7 +100,8 @@ func (r *Runner) readFulfillmentResult(ctx context.Context, work orders.Work) (o
 // reconcileFulfillment confirms a fulfillment work item only when the provider
 // posting status matches the expected status for the dispatched action. When the
 // status has not yet been applied, the work is deferred for the next polling
-// cycle instead of being marked reconciled.
+// cycle instead of being marked reconciled. After confirmation, the status is
+// written back to MoySklad to keep both providers in sync.
 func (r *Runner) reconcileFulfillment(ctx context.Context, work orders.Work, posting orders.Posting) error {
 	expected := orders.ExpectedPostingStatus(work.Command.Action)
 
@@ -117,7 +119,62 @@ func (r *Runner) reconcileFulfillment(ctx context.Context, work orders.Work, pos
 		return r.deferReadback(ctx, work, "STATUS_NOT_APPLIED")
 	}
 
+	// Write back confirmed status to MoySklad.
+	if err := r.writeOrderStatusToMoySklad(ctx, work, &posting); err != nil {
+		return r.deferReadback(ctx, work, "MOYSKLAD_WRITE_BACK_FAILED")
+	}
+
 	return r.complete(ctx, work, orders.Completion{State: orders.StateReconciled, Code: "FULFILLMENT_CONFIRMED", ObservedPosting: &posting, NextRunAt: r.now().Add(r.options.PollInterval)})
+}
+
+// writeOrderStatusToMoySklad updates the MoySklad customer order status to
+// match the confirmed Ozon fulfillment status. It resolves the MoySklad order
+// by correlation, finds the target state from config status mappings, and
+// issues an idempotent PUT. Unknown outcomes are reconciled on the next cycle.
+func (r *Runner) writeOrderStatusToMoySklad(ctx context.Context, work orders.Work, posting *orders.Posting) error {
+	config, err := r.options.Service.store.OrderConfig(ctx, work.Scope)
+	if err != nil {
+		return fmt.Errorf("read MoySklad config: %w", err)
+	}
+
+	// Find the MoySklad state ID from status mappings, fall back to config.StateID.
+	stateID := config.StateID
+	if posting.Status.Presence == orders.PresenceValue && posting.Status.Value != nil {
+		for _, mapping := range config.StatusMappings {
+			if mapping.Status == *posting.Status.Value && mapping.StateID != "" {
+				stateID = mapping.StateID
+				break
+			}
+		}
+	}
+
+	client, err := resolveOrderClient(ctx, r.resolver, work.Scope, "moysklad", work.Credentials.Moysklad)
+	if err != nil {
+		return fmt.Errorf("resolve MoySklad client: %w", err)
+	}
+
+	writer, ok := client.(orders.TargetStatusWriter)
+	if !ok {
+		return orders.ErrBlocked
+	}
+
+	// Resolve the MoySklad order ID from correlation if not already known.
+	orderID := work.Command.Correlation.CustomerOrderID
+	if orderID == "" {
+		correlation, err := client.ReadOrderCorrelation(ctx, work.Command.Correlation)
+		if err != nil {
+			return fmt.Errorf("resolve MoySklad order correlation: %w", err)
+		}
+		orderID = correlation.CustomerOrderID
+	}
+	if orderID == "" {
+		return orders.ErrInvalid
+	}
+
+	if err := writer.WriteOrderStatus(ctx, work.Scope, orderID, stateID); err != nil {
+		return fmt.Errorf("write order status to MoySklad: %w", err)
+	}
+	return nil
 }
 
 // pollLabelTask checks the Ozon label task until it completes or fails. It
@@ -138,6 +195,12 @@ func (r *Runner) pollLabelTask(ctx context.Context, work orders.Work, taskID str
 	if task.Code == "completed" || task.ErrorCode != "" {
 		if task.ErrorCode != "" {
 			return r.complete(ctx, work, orders.Completion{State: orders.StateRejected, Code: "LABEL_TASK_FAILED:" + ordersSafeCode(task.ErrorCode), ObservedPosting: nil})
+		}
+		// Download the label PDF after task completion for durable storage.
+		if task.FileURL != "" && r.options.LabelDownloader != nil {
+			if _, err := r.options.LabelDownloader(ctx, task.FileURL); err != nil {
+				return r.deferReadback(ctx, work, "LABEL_DOWNLOAD_FAILED")
+			}
 		}
 		return r.complete(ctx, work, orders.Completion{State: orders.StateReconciled, Code: "LABEL_TASK_COMPLETED", ObservedPosting: nil})
 	}

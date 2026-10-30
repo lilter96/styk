@@ -88,23 +88,39 @@ func (c *OrdersClient) ReadOrderLabelTask(ctx context.Context, scope orders.Scop
 	}
 	fields := newOrderFields(result)
 	task := orders.LabelTask{ID: taskID}
-	if code := fields.text("code"); code.Presence == orders.PresenceValue && code.Value != nil {
-		task.Code = *code.Value
+
+	// Ozon v2 package-label/get returns result without "result" wrapper:
+	// {file_url, status:{code, postings_count, printed_postings_count, unprinted_postings[]}, error:{code, message}}
+	resultObj := fields.object("result")
+	if resultObj.raw == nil || *resultObj.err != nil {
+		// Some responses may nest under "result" again; try both.
+		resultObj = fields
 	}
-	if ec := fields.text("error_code"); ec.Presence == orders.PresenceValue && ec.Value != nil {
-		task.ErrorCode = *ec.Value
+
+	if fileURL := resultObj.text("file_url"); fileURL.Presence == orders.PresenceValue && fileURL.Value != nil {
+		task.FileURL = *fileURL.Value
 	}
-	if em := fields.text("error_message"); em.Presence == orders.PresenceValue && em.Value != nil {
-		task.ErrorMessage = *em.Value
-	}
-	if pc := fields.text("postings_count"); pc.Presence == orders.PresenceValue && pc.Value != nil {
-		if n, e := strconv.Atoi(*pc.Value); e == nil {
-			task.PostingsCount = n
+	if status := resultObj.object("status"); status.raw != nil {
+		if code := status.text("code"); code.Presence == orders.PresenceValue && code.Value != nil {
+			task.Code = *code.Value
+		}
+		if pc := status.text("postings_count"); pc.Presence == orders.PresenceValue && pc.Value != nil {
+			if n, e := strconv.Atoi(*pc.Value); e == nil {
+				task.PostingsCount = n
+			}
+		}
+		if ppc := status.text("printed_postings_count"); ppc.Presence == orders.PresenceValue && ppc.Value != nil {
+			if n, e := strconv.Atoi(*ppc.Value); e == nil {
+				task.PrintedPostingsCount = n
+			}
 		}
 	}
-	if ppc := fields.text("printed_postings_count"); ppc.Presence == orders.PresenceValue && ppc.Value != nil {
-		if n, e := strconv.Atoi(*ppc.Value); e == nil {
-			task.PrintedPostingsCount = n
+	if errObj := fields.object("error"); errObj.raw != nil {
+		if ec := errObj.text("code"); ec.Presence == orders.PresenceValue && ec.Value != nil {
+			task.ErrorCode = *ec.Value
+		}
+		if em := errObj.text("message"); em.Presence == orders.PresenceValue && em.Value != nil {
+			task.ErrorMessage = *em.Value
 		}
 	}
 	if task.Code == "" {
@@ -122,4 +138,4 @@ func orderReadPath(path string) bool {
 	}
 }
 
-const labelTaskPath = "/v3/posting/fbs/package-label/task"
+const labelTaskPath = "/v2/posting/fbs/package-label/get"

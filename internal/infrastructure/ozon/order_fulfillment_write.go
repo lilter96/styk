@@ -302,11 +302,20 @@ func partialCancelPayload(command orders.Command) (map[string]any, error) {
 }
 
 func trackingPayload(command orders.Command) (map[string]any, error) {
-	return map[string]any{"tracking_numbers": []map[string]any{{"posting_number": command.PostingNumber, "tracking_number": ""}}}, nil
+	if command.PostingAction == nil || command.PostingAction.Parameters.TrackingNumber == "" {
+		return nil, orders.ErrInvalid
+	}
+	return map[string]any{"tracking_numbers": []map[string]any{
+		{"posting_number": command.PostingNumber, "tracking_number": command.PostingAction.Parameters.TrackingNumber, "delivery_service": "styk"},
+	}}, nil
 }
 
 func labelCreatePayload(command orders.Command) (map[string]any, error) {
-	return map[string]any{"posting_numbers": []string{command.PostingNumber}}, nil
+	body := map[string]any{"posting_numbers": []string{command.PostingNumber}}
+	if command.PostingAction != nil && command.PostingAction.Parameters.LabelType != "" {
+		body["label_type"] = command.PostingAction.Parameters.LabelType
+	}
+	return body, nil
 }
 
 func statusTransitionPayload(command orders.Command) (map[string]any, error) {

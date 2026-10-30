@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -213,4 +214,58 @@ func orderRejectedStatus(status int) bool {
 
 func orderReceipt(command orders.Command, state orders.State, status int, code string) orders.Receipt {
 	return orders.Receipt{CommandID: command.ID, State: state, HTTPStatus: status, Code: strings.ToUpper(code), ObservedAt: time.Now().UTC()}
+}
+
+// WriteOrderStatus updates the status of an existing MoySklad customer order.
+// It is used after Ozon fulfillment is confirmed to write the confirmed status
+// back to MoySklad. PUT is idempotent; callers must reconcile on unknown
+// outcomes by re-reading the order before retrying.
+func (c *OrderClient) WriteOrderStatus(ctx context.Context, scope orders.Scope, orderID string, stateID string) error {
+	if scope.MoyskladAccount == "" || orderID == "" || stateID == "" {
+		return orders.ErrInvalid
+	}
+	ctx, finish := c.boundedContext(ctx)
+	defer finish()
+	if err := c.verifyAccount(ctx); err != nil {
+		return err
+	}
+	body := map[string]any{
+		"state": map[string]any{
+			"meta": map[string]any{
+				"href":      "https://api.moysklad.ru/api/remap/1.2/entity/customerorder/metadata/states/" + stateID,
+				"type":      "state",
+				"mediaType": "application/json",
+			},
+		},
+	}
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshal order status: %w", err)
+	}
+	u := c.client.base.ResolveReference(&url.URL{Path: "entity/customerorder/" + orderID})
+	request, err := http.NewRequestWithContext(ctx, http.MethodPut, u.String(), bytes.NewReader(raw))
+	if err != nil {
+		return fmt.Errorf("build order status request: %w", err)
+	}
+	request.GetBody, request.Close = nil, true
+	request.Header.Set("Authorization", "Bearer "+c.client.token)
+	request.Header.Set("Accept", "application/json;charset=utf-8")
+	request.Header.Set("Content-Type", "application/json")
+	response, err := c.client.http.Do(request)
+	if err != nil {
+		return fmt.Errorf("dispatch order status to MoySklad: %w", err)
+	}
+	raw, readErr := io.ReadAll(io.LimitReader(response.Body, orderResponseLimit+1))
+	closeErr := response.Body.Close()
+	if readErr != nil || closeErr != nil || len(raw) > orderResponseLimit {
+		return fmt.Errorf("read order status response: %w", ErrOrderUnknown)
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("MoySklad rejected order status: HTTP %d", response.StatusCode)
+	}
+	var document orderNative
+	if json.Unmarshal(raw, &document) != nil || document.ID != orderID {
+		return ErrOrderUnknown
+	}
+	return nil
 }

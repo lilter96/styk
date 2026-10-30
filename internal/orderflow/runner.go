@@ -25,6 +25,10 @@ type RunnerOptions struct {
 	Service        *Service
 	Collector      Collector
 	CustomerReader orders.CustomerReader
+	// LabelDownloader downloads a provider label PDF from a validated URL.
+	// It is invoked after a label creation task completes. The caller is
+	// responsible for durable storage of the returned bytes.
+	LabelDownloader func(ctx context.Context, url string) ([]byte, error)
 }
 
 // Runner performs one claimed phase per call. Acknowledgements and uncertain

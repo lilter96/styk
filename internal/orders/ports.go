@@ -276,6 +276,13 @@ type Poller interface {
 	PollOrder(context.Context, Command, Receipt) (Receipt, error)
 }
 
+// TargetStatusWriter updates the status of an existing MoySklad customer order
+// after Ozon fulfillment is confirmed. PUT is idempotent; unknown outcomes are
+// reconciled by re-reading the order before retrying.
+type TargetStatusWriter interface {
+	WriteOrderStatus(ctx context.Context, scope Scope, orderID string, stateID string) error
+}
+
 type Provider interface {
 	Reader
 	Writer

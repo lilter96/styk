@@ -6,11 +6,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"log/slog"
+	"net/http"
 	"os"
 	"time"
 
 	"github.com/lilter96/styk/internal/application"
 	"github.com/lilter96/styk/internal/credentials"
+	"github.com/lilter96/styk/internal/infrastructure/ozon"
 	"github.com/lilter96/styk/internal/orderflow"
 	"github.com/lilter96/styk/internal/orderprivacy"
 	"github.com/lilter96/styk/internal/orderprovider"
@@ -92,7 +94,11 @@ func newOrdersWork(db *postgres.Store, resolver *credentials.Resolver) (applicat
 		return nil, err
 	}
 	collector := orderCollector{db: db, factory: factory, protector: orderprivacy.Protector{Vault: resolver.Vault, Store: db}, workerID: id}
-	runner, err := orderflow.NewRunner(db, factory, orderflow.RunnerOptions{WorkerID: id, AllowScope: orderAllowed, Service: service, Collector: collector})
+	labelDownloader, err := ozon.NewFBSLabelDownloader(&http.Client{Timeout: 20 * time.Second})
+	if err != nil {
+		return nil, err
+	}
+	runner, err := orderflow.NewRunner(db, factory, orderflow.RunnerOptions{WorkerID: id, AllowScope: orderAllowed, Service: service, Collector: collector, LabelDownloader: labelDownloader.Download})
 	if err != nil {
 		return nil, err
 	}
