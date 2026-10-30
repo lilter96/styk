@@ -671,7 +671,8 @@ export function App() {
   const credentialSubmission = useCredentialSubmission();
   const stockSyncSubmission = useStockSyncSubmission();
   const navigate = useNavigate();
-  const integrationPage = useLocation().pathname === "/integrations";
+  const pathname = useLocation().pathname;
+  const integrationPage = pathname === "/integrations";
   useEffect(() => {
     if (
       !confirmation.pending &&
@@ -1020,6 +1021,7 @@ export function App() {
       )}
     >
       <ConfirmationNotice
+        compact={pathname === "/products"}
         confirmation={confirmation}
         scope={scope}
         restore={(original) => {

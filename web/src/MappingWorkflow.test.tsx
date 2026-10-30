@@ -331,7 +331,10 @@ it("queues several suggestions for individual review without confirming them", a
   );
   fireEvent.click(await screen.findByLabelText("Выбрать one для проверки"));
   fireEvent.click(screen.getByLabelText("Выбрать two для проверки"));
-  expect(screen.queryByLabelText("Выбрать archived для проверки")).toBeNull();
+  expect(
+    (screen.getByLabelText("Выбрать archived для проверки") as HTMLInputElement)
+      .disabled,
+  ).toBe(true);
   fireEvent.click(screen.getByText("Выбрано для проверки: 2"));
   expect(screen.getByText(/Размер S \(вариант\)/)).toBeTruthy();
   expect(screen.getByRole("button", { name: "Проверить one" })).toBeTruthy();
@@ -368,8 +371,8 @@ it("keeps successful and remaining items visible after an individual confirmatio
     },
   ]);
   fireEvent.click(
-    await screen.findByRole("button", {
-      name: "Выбрать предложения на странице",
+    await screen.findByRole("checkbox", {
+      name: "Выбрать все на странице",
     }),
   );
   fireEvent.click(screen.getByText("Выбрано для проверки: 2"));
@@ -445,8 +448,8 @@ it("retains partial queue progress and retries an uncertain confirmation only on
     true,
   );
   fireEvent.click(
-    await screen.findByRole("button", {
-      name: "Выбрать предложения на странице",
+    await screen.findByRole("checkbox", {
+      name: "Выбрать все на странице",
     }),
   );
   fireEvent.click(screen.getByText("Выбрано для проверки: 2"));

@@ -144,10 +144,12 @@ export function ConfirmationNotice({
   confirmation,
   scope,
   restore,
+  compact = false,
 }: {
   confirmation: Confirmation;
   scope: Scope;
   restore: (scope: Scope) => void;
+  compact?: boolean;
 }) {
   const { pending, busy, message, sessionLost, result } = confirmation;
   const same =
@@ -156,6 +158,7 @@ export function ConfirmationNotice({
     pending.scope.moy === scope.moy &&
     pending.scope.ozon === scope.ozon;
   if (!pending && !message && !result) return null;
+  if (compact && !pending && !message) return null;
   const visibleMessage = message.replace(/^[A-Z_]+: /, "");
   const errorCode = message.match(/^([A-Z_]+): /)?.[1];
   return (
@@ -185,7 +188,7 @@ export function ConfirmationNotice({
           Проверю историю соответствий
         </button>
       )}
-      {result && (
+      {result && !compact && (
         <p role="status">
           Соответствие подтверждено ·{" "}
           {new Date(result.confirmed_at).toLocaleString("ru-RU")}
@@ -194,7 +197,7 @@ export function ConfirmationNotice({
             : "."}
         </p>
       )}
-      {(pending || result || errorCode) && (
+      {!compact && (pending || result || errorCode) && (
         <details className="technical-details">
           <summary>Технические детали</summary>
           {errorCode && (
