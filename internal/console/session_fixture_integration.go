@@ -11,8 +11,6 @@ import (
 	"net/http"
 )
 
-const cookieName = sessionfixture.CookieName
-
 func newAuth(_, origin string) (*auth, error) {
 	fixture, err := sessionfixture.New(origin, func(ctx context.Context, id string) context.Context {
 		return context.WithValue(ctx, auditContextKey{}, id)
