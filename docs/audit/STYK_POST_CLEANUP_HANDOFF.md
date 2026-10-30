@@ -126,3 +126,5 @@ Security review — статическая и локальная functional пр
 Фактический PR и статус: [PR](STYK_POST_CLEANUP_PR.md). Никакого merge не выполняется. Машиночитаемый результат — [REPORT.json](STYK_POST_CLEANUP_REPORT.json). Архив `STYK_POST_CLEANUP_AUDIT.zip` содержит только явно перечисленные отчёты и development guide, без исходников, credentials, dumps и logs.
 
 Краткая актуальная карта: [REPOSITORY](STYK_POST_CLEANUP_REPOSITORY.md).
+
+Actual review link: [GitHub PR #2](https://github.com/lilter96/styk/pull/2). Verified OPEN, not merged. GitHub-hosted CI runs separately from the completed local checks.

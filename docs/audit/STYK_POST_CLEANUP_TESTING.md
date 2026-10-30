@@ -46,3 +46,5 @@ All PASS entries below correspond to commands/actions actually executed in this 
 Demo builds emit existing third-party use-client and large-chunk warnings; builds return zero. These were not hidden by weakening settings. Source builds and HTTP reads do not prove all demo 3D/third-party map behavior on every device. Browser console-error assertions apply to the real working console.
 
 No integration tests used the working demo database. General regressions used the dedicated local _test DB; seed tests used an independently hosted, empty styk_demo_dev. Production APIs, marketplace mutations and actual customer data were not needed.
+
+The existing integration suite contains environment-gated browser/live scenarios. Its PASS is for the executed default configuration, not a claim that every gated provider/browser experiment ran. No live-provider switches were enabled. The new two-test local Playwright run and the separately configured seed integration/race test executed explicitly. Individual skipped-case counts were not collected from the non-verbose Go output.
