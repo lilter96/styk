@@ -1115,3 +1115,12 @@
 .mobile-app-bar {
   padding: 12px 16px 0;
 }
+
+/* Account settings entry is part of the shared shell. */
+.fixed-moy-status { display: block; margin-top: 4px; color: var(--styk-muted); font-size: 10px; line-height: 1.4; }
+.fixed-moy-account { gap: 8px; }
+.fixed-moy-account > div { min-width: 0; flex: 1; }
+.fixed-moy-account strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reference-shell .moy-settings-link { flex: 0 0 30px; display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--styk-line); border-radius: 8px; color: var(--styk-muted); background: #fff; }
+.moy-settings-link svg { width: 17px; height: 17px; }
+.reference-shell .moy-settings-link:hover, .moy-settings-link:focus-visible { color: var(--styk-primary); background: var(--styk-primary-soft); text-decoration: none; }

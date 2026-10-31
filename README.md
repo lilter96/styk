@@ -26,7 +26,7 @@ Running the demo again reuses the same operation key and does not create another
 
 Open `/catalog-sync` after connecting both providers and importing their catalogs. Existing confirmed product mappings are reused. Choose the source for each supported field, select products with server-side search, review the diff and explicitly confirm the changes. Unsupported updates remain visible as limitations rather than erasing destination data.
 
-Apply all migrations (currently 44) and upgrade both API and worker together. `STYK_TEST_ACCOUNT_CATALOG=true` enables catalog writes **only** for the fixed, registered owner-controlled account pair. It is independent of the stock publication flag and cannot activate arbitrary merchant accounts. Keep it disabled outside an authorized test. `STYK_CATALOG_REQUEST_AUDIT=true` records bounded, secret-free HTTP attempt metadata for diagnostics.
+Apply all migrations (currently 46) and upgrade both API and worker together. `STYK_TEST_ACCOUNT_CATALOG=true` enables catalog writes **only** for the fixed, registered owner-controlled account pair. It is independent of the stock publication flag and cannot activate arbitrary merchant accounts. Keep it disabled outside an authorized test. `STYK_CATALOG_REQUEST_AUDIT=true` records bounded, secret-free HTTP attempt metadata for diagnostics.
 
 Product creation is separately approved. MoySklad creation uses a durable unique marker and returns the actual provider ID; import the created product and confirm its correspondence before enrolling it for ordinary updates. Ozon creation requires actual category/type, mandatory attributes, VAT, dimensions and other factual declarations; STYK does not invent them. An Ozon task ID means acceptance, not completion.
 
@@ -191,6 +191,8 @@ Each registered source is assessed independently; cross-system checks require bo
 Run `go run ./cmd/doctor -tenant TENANT -moysklad-account MS_ACCOUNT -ozon-account OZ_ACCOUNT` to inspect registered local evidence, or add `-format json`. It reports import windows, ages, counts, mapping and correlation gaps, one sampled stock calculation and its missing proofs. Publication remains disabled. `-demo` seeds an isolated synthetic namespace in a disposable migrated database; `-live` explicitly opts into bounded read probes using locally configured credentials. See [usage, scope and limitations](docs/integration-doctor.md). Offline mode requires only `DATABASE_URL` and never contacts external APIs.
 
 ### Local operator web console
+
+The sidebar gear opens `/integrations/moysklad/settings` for the selected account. Name and description are saved independently of credentials, with tenant checks and optimistic revisions. Token replacement, connection probes, disconnection and manual imports reuse the existing protected endpoints. Saved tokens are never returned to the browser. Retired connections can be archived from active navigation while their registrations and import history remain intact. Apply migrations through 46 before running the updated API; rollback refuses to discard saved settings or reactivate archived connections.
 
 Merchant authentication is the default API mode. It requires a credential encryption key, a configured origin and SMTP verification delivery; see the [identity and migration guide](docs/saas-identity-plan.md). New merchant accounts can configure read-only synchronization drafts, but do not receive production publication permission automatically.
 

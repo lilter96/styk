@@ -7,7 +7,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Integrations } from "./Integrations";
 import type { Account, Report } from "./api";
@@ -45,6 +45,14 @@ const report: Report = {
   publication: "DISABLED",
   mapping_counts: {},
 };
+function RouteLocation() {
+  const location = useLocation();
+  return (
+    <output data-testid="settings-location">
+      {location.pathname + location.search}
+    </output>
+  );
+}
 function mount(props: Partial<React.ComponentProps<typeof Integrations>> = {}) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -52,6 +60,7 @@ function mount(props: Partial<React.ComponentProps<typeof Integrations>> = {}) {
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter>
+        <RouteLocation />
         <Integrations tenant={tenant} accounts={[]} {...props} />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -143,111 +152,18 @@ async function moyCard() {
     "article",
   )!;
 }
-async function verify(card: HTMLElement) {
-  fireEvent.click(
-    within(card).getByRole("button", { name: "Проверить подключение" }),
-  );
-  await within(card).findByText(/^Доступ проверен/);
-}
-it("keeps registration explicit and requires a recent connection check and ownership acknowledgement", async () => {
-  const fetcher = setup();
+it("opens MoySklad settings as an account-aware page without a dialog or mutation", async () => {
+  const fetcher = mockRegistered();
+  mount({ accounts, selected, report });
   const card = await moyCard();
-  expect(within(card).getByText("Не подключено")).toBeTruthy();
-  expect(
-    fetcher.mock.calls.some(
-      ([p, init]) => String(p).endsWith("/probe") || init?.method === "POST",
-    ),
-  ).toBe(false);
+  fireEvent.click(within(card).getByRole("button", { name: "Настройки" }));
+  expect(screen.getByTestId("settings-location").textContent).toBe(
+    "/integrations/moysklad/settings?account=moy-account",
+  );
   expect(screen.queryByRole("dialog")).toBeNull();
-  const legacy = settings(card);
-  const register = within(card).getByRole("button", {
-    name: "Добавить аккаунт",
-  }) as HTMLButtonElement;
-  expect(register.disabled).toBe(true);
-  fireEvent.click(
-    within(legacy).getByLabelText(/Подтверждаю, что этот аккаунт/),
+  expect(fetcher.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
+    false,
   );
-  expect(register.disabled).toBe(true);
-  await verify(legacy);
-  expect(
-    within(legacy).getByText(/Проверка доступа не заменяет подтверждение/),
-  ).toBeTruthy();
-  fireEvent.click(register);
-  await screen.findByText(/Аккаунт добавлен\./);
-  const calls = fetcher.mock.calls.filter(([p]) =>
-    String(p).endsWith("/register"),
-  );
-  expect(calls).toHaveLength(1);
-  expect(JSON.parse(String(calls[0][1]?.body))).toEqual({
-    tenant,
-    acknowledge: true,
-  });
-  expect(
-    within(card).getByRole("link", { name: "Товары" }).getAttribute("href"),
-  ).toBe("/products");
-  expect(
-    within(card).getByRole("link", { name: "Склады" }).getAttribute("href"),
-  ).toBe("/warehouses");
-  expect(
-    within(card)
-      .getByRole("link", { name: "Диагностика" })
-      .getAttribute("href"),
-  ).toBe("/diagnostics");
-  fireEvent.click(screen.getByRole("button", { name: "Закрыть настройки" }));
-  const ozon = screen
-    .getByRole("heading", { name: "Ozon" })
-    .closest("article")!;
-  const ozonLegacy = settings(ozon);
-  expect(
-    (
-      within(ozonLegacy).getByRole("button", {
-        name: "Проверить подключение",
-      }) as HTMLButtonElement
-    ).disabled,
-  ).toBe(true);
-});
-it("reconciles an unknown registration outcome before allowing another attempt", async () => {
-  const fetcher = setup("REGISTRATION_OUTCOME_UNKNOWN");
-  const card = await moyCard();
-  const legacy = settings(card);
-  await verify(legacy);
-  fireEvent.click(
-    within(legacy).getByLabelText(/Подтверждаю, что этот аккаунт/),
-  );
-  fireEvent.click(
-    within(card).getByRole("button", { name: "Добавить аккаунт" }),
-  );
-  await screen.findByText(/Результат добавления неизвестен/);
-  expect(
-    (
-      within(card).getByRole("button", {
-        name: "Добавить аккаунт",
-      }) as HTMLButtonElement
-    ).disabled,
-  ).toBe(true);
-  expect(
-    fetcher.mock.calls.filter(([p]) => String(p).endsWith("/register")),
-  ).toHaveLength(1);
-  fireEvent.click(
-    screen.getByRole("button", { name: "Проверить результат добавления" }),
-  );
-  await screen.findByText(/Статус добавления проверен/);
-});
-it("shows conflicting registration without transferring ownership", async () => {
-  const fetcher = setup("OWNERSHIP_CONFLICT");
-  const card = await moyCard();
-  const legacy = settings(card);
-  await verify(legacy);
-  fireEvent.click(
-    within(legacy).getByLabelText(/Подтверждаю, что этот аккаунт/),
-  );
-  fireEvent.click(
-    within(card).getByRole("button", { name: "Добавить аккаунт" }),
-  );
-  await screen.findByText(/Перенос недоступен/);
-  expect(
-    fetcher.mock.calls.filter(([p]) => String(p).endsWith("/register")),
-  ).toHaveLength(1);
 });
 type ProviderFixture = {
   provider: string;
@@ -423,52 +339,6 @@ it("opens a new Ozon account from the workspace without replacing the selected a
   ).toBe("");
   expect(onSelect).not.toHaveBeenCalled();
 });
-it("keeps MoySklad fixed in the connection settings", async () => {
-  mockRegistered();
-  mount({
-    accounts: [...accounts, { ...accounts[0], account: "second-moy" }],
-    selected,
-    report,
-  });
-  const card = await moyCard();
-  settings(card);
-  expect(
-    screen.queryByRole("combobox", { name: "МойСклад: аккаунт" }),
-  ).toBeNull();
-  expect(screen.getByLabelText("Название подключения")).toBeTruthy();
-});
-it("blocks registration when the successful probe is stale or has a future timestamp", async () => {
-  for (const checked_at of [
-    new Date(Date.now() - 6 * 60 * 1000).toISOString(),
-    new Date(Date.now() + 60 * 1000).toISOString(),
-  ]) {
-    mockRegistered([
-      {
-        provider: "moysklad",
-        account: "moy-account",
-        status: "VERIFIED",
-        registration: "NOT_REGISTERED",
-        import: batch,
-        check: { checked_at, identity: "NOT_ESTABLISHED" },
-      },
-    ]);
-    mount();
-    const card = await moyCard();
-    const legacy = settings(card);
-    fireEvent.click(
-      within(legacy).getByLabelText(/Подтверждаю, что этот аккаунт/),
-    );
-    expect(
-      (
-        within(card).getByRole("button", {
-          name: "Добавить аккаунт",
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(true);
-    cleanup();
-    vi.restoreAllMocks();
-  }
-});
 it("keeps setup contextual and opens missing-provider settings without a submission", async () => {
   const fetcher = setup();
   const card = await moyCard();
@@ -479,10 +349,9 @@ it("keeps setup contextual and opens missing-provider settings without a submiss
   expect(
     within(setupPanel).getByText("Проверено подключений: 0 из 2"),
   ).toBeTruthy();
-  settings(card);
-  expect(
-    screen.getByRole("dialog", { name: "Подключение МойСклад" }),
-  ).toBeTruthy();
+  fireEvent.click(within(card).getByRole("button", { name: "Подключить" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.getByTestId("settings-location").textContent).toContain("/integrations/moysklad/settings");
   expect(screen.queryByRole("link", { name: "Сопоставить товары" })).toBeNull();
   expect(fetcher.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
     false,

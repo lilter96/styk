@@ -77,9 +77,9 @@ func handlerWithAuth(db *postgres.Store, a *auth, connections *connections) (htt
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), db.Timeout)
 		defer cancel()
-		query := `SELECT source,account_id,registered_at FROM stock_connections WHERE tenant_id=$1 ORDER BY source,account_id LIMIT 101`
+		query := `SELECT c.source,c.account_id,c.registered_at FROM stock_connections c LEFT JOIN connection_settings p ON p.tenant_id=c.tenant_id AND p.source=c.source AND p.account_id=c.account_id WHERE c.tenant_id=$1 AND NOT COALESCE(p.archived,false) ORDER BY c.source,c.account_id LIMIT 101`
 		if connections.vault != nil {
-			query = `SELECT c.source,c.account_id,c.registered_at,COALESCE(k.name,'') FROM stock_connections c LEFT JOIN connection_credentials k ON k.tenant_id=c.tenant_id AND k.provider=c.source AND k.account_id=c.account_id WHERE c.tenant_id=$1 ORDER BY c.source,c.account_id LIMIT 101`
+			query = `SELECT c.source,c.account_id,c.registered_at,COALESCE(p.name,k.name,'') FROM stock_connections c LEFT JOIN connection_credentials k ON k.tenant_id=c.tenant_id AND k.provider=c.source AND k.account_id=c.account_id LEFT JOIN connection_settings p ON p.tenant_id=c.tenant_id AND p.source=c.source AND p.account_id=c.account_id WHERE c.tenant_id=$1 AND NOT COALESCE(p.archived,false) ORDER BY c.source,c.account_id LIMIT 101`
 		}
 		rows, e := db.Pool.Query(ctx, query, tenant)
 		if e != nil {

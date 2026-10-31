@@ -8,8 +8,15 @@ export type IconName =
   | "integrations"
   | "diagnostics"
   | "menu"
+  | "settings"
   | "arrow";
 const paths: Record<IconName, ReactNode> = {
+  settings: (
+    <>
+      <path d="m9.5 3-.7 2.2-2 .9-2.1-.5-2.2 3.8L4 11v2l-1.5 1.6 2.2 3.8 2.1-.5 2 .9.7 2.2h5l.7-2.2 2-.9 2.1.5 2.2-3.8L20 13v-2l1.5-1.6-2.2-3.8-2.1.5-2-.9L14.5 3h-5Z" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
   overview: (
     <>
       <rect x="3" y="3" width="7" height="7" rx="1.5" />
