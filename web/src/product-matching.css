@@ -1,0 +1,901 @@
+﻿.provider-settings-overlay:has(.product-matching-dialog) {
+  padding: 32px;
+  background: #14203f80;
+  backdrop-filter: blur(4px);
+}
+.reference-shell .provider-settings-dialog.product-matching-dialog {
+  width: min(1420px, calc(100vw - 64px));
+  max-width: 1420px;
+  height: min(940px, calc(100dvh - 64px));
+  max-height: calc(100dvh - 64px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #e4e8f3;
+  border-radius: 18px;
+  box-shadow: 0 32px 100px #11193640;
+}
+.reference-shell .product-matching-dialog .provider-settings-dialog-header {
+  padding: 24px 28px 0;
+  border: 0;
+  flex: none;
+  align-items: center;
+}
+.reference-shell .product-matching-dialog .provider-settings-dialog-header h2 {
+  font-size: 24px;
+  line-height: 30px;
+  letter-spacing: -0.035em;
+  margin: 0;
+}
+.reference-shell
+  .product-matching-dialog
+  .provider-settings-dialog-header
+  button.secondary {
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: #f3f5fb;
+  color: #7d89a2;
+}
+.reference-shell .product-matching-dialog .provider-settings-dialog-content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  scrollbar-gutter: auto;
+}
+.reference-shell .product-matching-dialog .mapping-review {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+  gap: 0;
+}
+.reference-shell .product-matching-dialog button {
+  box-shadow: none;
+}
+.reference-shell .product-matching-dialog button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.reference-shell .product-matching-dialog button:not(.mapping-primary) {
+  background: #fff;
+  color: #687590;
+}
+.reference-shell .product-matching-dialog .matching-subtitle {
+  font-size: 14px;
+  line-height: 21px;
+  margin: 6px 28px 22px !important;
+  color: #77839c;
+}
+.reference-shell .product-matching-dialog .matching-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 32fr) minmax(0, 68fr);
+  gap: 16px;
+  padding: 0 28px 20px;
+  flex: 1;
+  min-height: 0;
+}
+.reference-shell .product-matching-dialog .matching-ozon,
+.reference-shell .product-matching-dialog .matching-right {
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid #e5eaf4;
+  border-radius: 12px;
+  background: #fff;
+}
+.reference-shell .product-matching-dialog .matching-ozon {
+  padding: 22px;
+  background: #fafbfe;
+  overflow: auto;
+}
+.reference-shell .product-matching-dialog .matching-ozon > header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+.reference-shell .product-matching-dialog .matching-brand-logo {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  border-radius: 8px;
+  flex: none;
+  display: block;
+}
+.reference-shell .product-matching-dialog .matching-brand-logo.moysklad {
+  border-radius: 0;
+  width: 30px;
+  height: 30px;
+}
+.reference-shell
+  .product-matching-dialog
+  .matching-ozon
+  > header
+  .mapping-chip {
+  margin-left: auto;
+  font-size: 10px;
+  line-height: 16px;
+  padding: 4px 8px;
+}
+.reference-shell .product-matching-dialog .matching-source-title {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin: 26px 0 28px;
+}
+.reference-shell .product-matching-dialog .matching-image-placeholder {
+  width: 96px;
+  height: 96px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #e3e8f3;
+  background: #f0f3f9;
+  border-radius: 10px;
+  flex: none;
+  color: #9faec7;
+}
+.reference-shell .product-matching-dialog .matching-image-placeholder svg {
+  width: 34px;
+  height: 34px;
+}
+.reference-shell .product-matching-dialog .matching-source-title h3 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.reference-shell .product-matching-dialog .matching-ozon dl {
+  margin: 0;
+  display: grid;
+  gap: 0;
+  border-top: 1px solid #e7ebf4;
+}
+.reference-shell .product-matching-dialog .matching-identifier {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid #e7ebf4;
+}
+.reference-shell .product-matching-dialog .matching-identifier dt {
+  font-size: 12px;
+  color: #8792a7;
+}
+.reference-shell .product-matching-dialog .matching-identifier dd {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  min-width: 0;
+  color: #34425f;
+  position: relative;
+}
+.reference-shell .product-matching-dialog .matching-identifier button {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 5px;
+  border: 0;
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+  margin-left: auto;
+  flex: none;
+}
+.reference-shell .product-matching-dialog .matching-identifier [role="status"] {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  font-size: 10px;
+  white-space: nowrap;
+  color: #693cff;
+}
+.reference-shell .product-matching-dialog .matching-muted {
+  font-size: 11px;
+  line-height: 18px;
+  color: #8792a7;
+  margin: 16px 0 !important;
+}
+.reference-shell .product-matching-dialog .matching-current {
+  margin-top: 24px;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid #e7ebf4;
+  border-radius: 9px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.reference-shell .product-matching-dialog .matching-current h4 {
+  margin: 0 0 10px;
+  font-size: 11px;
+  color: #8792a7;
+  font-weight: 500;
+}
+.reference-shell .product-matching-dialog .matching-current b {
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
+}
+.reference-shell .product-matching-dialog .matching-current p {
+  font-size: 11px;
+  line-height: 18px;
+  margin: 6px 0 0 !important;
+  color: #8792a7;
+}
+.reference-shell .product-matching-dialog .matching-current p:last-child {
+  padding-top: 10px;
+  margin-top: 12px !important;
+  border-top: 1px solid #eef1f7;
+}
+.reference-shell .product-matching-dialog .matching-right {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+.reference-shell .product-matching-dialog .matching-search-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.reference-shell .product-matching-dialog .matching-search-panel h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 20px 16px;
+  font-size: 15px;
+  line-height: 24px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.reference-shell .product-matching-dialog .matching-search-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px;
+}
+.reference-shell .product-matching-dialog .matching-search-line > label {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border: 1px solid #dfe5f0;
+  border-radius: 8px;
+  color: #8c99b1;
+  background: #fff;
+}
+.reference-shell
+  .product-matching-dialog
+  .matching-search-line
+  > label:focus-within {
+  border-color: #7847ff;
+  box-shadow: 0 0 0 3px #7847ff0c;
+}
+.reference-shell .product-matching-dialog .matching-search-line input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  height: 42px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-size: 12px;
+  padding: 0;
+  color: #34425f;
+}
+.reference-shell
+  .product-matching-dialog
+  .matching-search-line
+  input::placeholder {
+  color: #98a3b7;
+}
+.reference-shell
+  .product-matching-dialog
+  .matching-search-line
+  input:focus-visible {
+  outline: none;
+}
+.reference-shell .product-matching-dialog .matching-search-line > label > svg {
+  flex: none;
+}
+.reference-shell .product-matching-dialog .matching-search-line button {
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  border: 0;
+  font-size: 18px;
+}
+.reference-shell .product-matching-dialog .matching-search-line > span {
+  white-space: nowrap;
+  font-size: 11px;
+  color: #8a96ac;
+}
+.reference-shell .product-matching-dialog .matching-search-filters {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 20px 16px;
+  border-bottom: 1px solid #edf0f6;
+}
+.reference-shell .product-matching-dialog .matching-search-filters > div {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.reference-shell .product-matching-dialog .matching-search-filters span {
+  font-size: 11px;
+  color: #8792a7;
+  margin-right: 5px;
+}
+.reference-shell .product-matching-dialog .matching-search-filters button {
+  border: 1px solid transparent;
+  padding: 5px 7px;
+  min-height: 28px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 5px;
+}
+.reference-shell
+  .product-matching-dialog
+  .matching-search-filters
+  button[aria-pressed="true"] {
+  color: #693cff;
+  background: #f0eaff;
+}
+.reference-shell .product-matching-dialog .matching-search-filters select,
+.reference-shell .product-matching-dialog .matching-pagination select {
+  border: 1px solid #e3e8f2;
+  background: white;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 18px;
+  color: #7b88a1;
+  min-height: 30px;
+}
+.reference-shell .product-matching-dialog .matching-results {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+  scrollbar-gutter: stable;
+}
+.reference-shell .product-matching-dialog .matching-result {
+  display: grid;
+  grid-template-columns: 16px 44px minmax(0, 1fr) 90px 78px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 72px;
+  margin: 6px 0;
+  padding: 10px 12px;
+  text-align: left;
+  border: 1px solid #e8ecf5;
+  border-radius: 8px;
+  color: #34425f;
+  font-weight: 400;
+  flex: none;
+}
+.reference-shell
+  .product-matching-dialog
+  .matching-result:hover:not(:disabled) {
+  background: #fcfbff;
+  border-color: #cfc0ff;
+}
+.reference-shell .product-matching-dialog .matching-result.selected {
+  background: #f9f6ff;
+  border-color: #7847ff;
+  box-shadow: 0 0 0 1px #7847ff;
+}
+.reference-shell .product-matching-dialog .matching-radio {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 1px solid #ccd4e4;
+}
+.reference-shell
+  .product-matching-dialog
+  .matching-result.selected
+  .matching-radio {
+  border: 4px solid #7847ff;
+  background: #fff;
+}
+.reference-shell .product-matching-dialog .matching-thumb {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: #f3f5fa;
+  color: #a2afc6;
+  border-radius: 7px;
+}
+.reference-shell .product-matching-dialog .matching-row-copy {
+  min-width: 0;
+}
+.reference-shell .product-matching-dialog .matching-row-copy b {
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 600;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #34425f;
+}
+.reference-shell .product-matching-dialog .matching-row-copy small {
+  display: block;
+  font-size: 10px;
+  line-height: 15px;
+  color: #96a0b4;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reference-shell .product-matching-dialog .matching-row-status {
+  justify-self: start;
+  font-size: 10px;
+  line-height: 15px;
+  color: #8792a7;
+}
+.reference-shell .product-matching-dialog .matching-quantity {
+  justify-self: end;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 600;
+  color: #4d5b75;
+  line-height: 18px;
+}
+.reference-shell .product-matching-dialog .matching-quantity small {
+  display: block;
+  font-size: 9px;
+  line-height: 14px;
+  color: #96a0b4;
+  font-weight: 400;
+}
+.reference-shell .product-matching-dialog .matching-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  border-top: 1px solid #edf0f6;
+  padding: 12px 16px;
+  font-size: 11px;
+  color: #8792a7;
+  background: #fff;
+}
+.reference-shell .product-matching-dialog .matching-pagination > div {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.reference-shell .product-matching-dialog .matching-pagination button {
+  min-width: 28px;
+  min-height: 28px;
+  height: 28px;
+  padding: 0 7px;
+  font-size: 11px;
+  border: 1px solid #e5eaf4;
+  border-radius: 5px;
+}
+.reference-shell
+  .product-matching-dialog
+  .matching-pagination
+  button[aria-current] {
+  color: #fff;
+  background: #693cff;
+  border-color: #693cff;
+}
+.reference-shell .product-matching-dialog .matching-additional {
+  flex: none;
+  padding: 12px 20px;
+  border-top: 1px solid #edf0f6;
+  font-size: 12px;
+  color: #6f7c95;
+  background: #fff;
+}
+.reference-shell .product-matching-dialog .matching-additional > summary {
+  color: #7b88a1;
+  cursor: pointer;
+  font-size: 12px;
+  min-height: 20px;
+  padding: 0;
+}
+.reference-shell .product-matching-dialog .matching-additional[open] {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  max-height: 65%;
+  overflow: auto;
+  box-shadow: 0 -12px 30px #1c2d4f12;
+}
+.reference-shell .product-matching-dialog .matching-additional > details {
+  margin-top: 14px;
+  border-top: 1px solid #edf0f6;
+  padding-top: 10px;
+}
+.reference-shell
+  .product-matching-dialog
+  .matching-additional
+  > details
+  > summary {
+  color: #34425f;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 12px;
+}
+.reference-shell .product-matching-dialog .matching-additional ul {
+  padding: 0;
+  list-style: none;
+  margin: 10px 0;
+}
+.reference-shell .product-matching-dialog .matching-additional li {
+  padding: 10px 0;
+  border-top: 1px solid #edf0f6;
+  font-size: 12px;
+}
+.reference-shell .product-matching-dialog .matching-additional li button {
+  background: #f7f5ff;
+  border: 1px solid #e8e1ff;
+  border-radius: 6px;
+  font-size: 12px;
+  padding: 8px 10px;
+}
+.reference-shell .product-matching-dialog .matching-additional p {
+  font-size: 11px;
+  line-height: 18px;
+  margin: 10px 0;
+  color: #8792a7;
+}
+.reference-shell .product-matching-dialog .matching-additional time {
+  display: block;
+  color: #8792a7;
+  font-size: 11px;
+  margin-top: 6px;
+}
+.reference-shell .product-matching-dialog .matching-review-strip {
+  flex: none;
+  margin: 0 28px 16px;
+  padding: 12px 16px;
+  border: 1px solid #e7e1f7;
+  background: #fcfaff;
+  border-radius: 9px;
+  font-size: 12px;
+  max-height: 190px;
+  overflow: auto;
+}
+.reference-shell .product-matching-dialog .matching-review-choice {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.reference-shell .product-matching-dialog .matching-review-choice > div {
+  flex: 1;
+  min-width: 0;
+}
+.reference-shell .product-matching-dialog .matching-review-choice h3 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 600;
+}
+.reference-shell .product-matching-dialog .matching-review-choice p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.reference-shell .product-matching-dialog .matching-review-choice > label {
+  display: grid;
+  gap: 4px;
+  font-size: 10px;
+  color: #8792a7;
+  max-width: 270px;
+  width: 250px;
+  min-width: 0;
+  flex: none;
+}
+.reference-shell .product-matching-dialog .matching-review-choice select {
+  font-size: 11px;
+  padding: 6px 8px;
+  border: 1px solid #e0e5ef;
+  border-radius: 6px;
+  color: #63718b;
+  background: #fff;
+  min-height: 30px;
+  max-width: 100%;
+  width: 100%;
+  min-width: 0;
+}
+.reference-shell .product-matching-dialog .matching-review-button {
+  flex: none;
+  font-size: 11px;
+  padding: 7px 12px;
+  border: 1px solid #dacffc;
+  border-radius: 6px;
+  min-height: 32px;
+  color: #693cff;
+}
+.reference-shell .product-matching-dialog .matching-review-hint {
+  font-size: 11px;
+  margin: 7px 0 0 !important;
+  color: #8792a7;
+}
+.reference-shell .product-matching-dialog .matching-review-ack {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  margin-top: 10px;
+}
+.reference-shell
+  .product-matching-dialog
+  .matching-review-ack
+  > label:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.reference-shell
+  .product-matching-dialog
+  .matching-review-ack
+  > label:last-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  color: #8792a7;
+  margin-left: auto;
+}
+.reference-shell
+  .product-matching-dialog
+  .matching-review-ack
+  input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #693cff;
+}
+.reference-shell
+  .product-matching-dialog
+  .matching-review-ack
+  input:not([type="checkbox"]) {
+  font-size: 11px;
+  padding: 6px 8px;
+  background: #fff;
+  border: 1px solid #e0e5ef;
+  border-radius: 6px;
+  min-height: 30px;
+  width: 190px;
+}
+.reference-shell .product-matching-dialog .matching-review-ready {
+  display: block;
+  font-size: 10px;
+  color: #8792a7;
+  margin-top: 6px;
+}
+.reference-shell
+  .product-matching-dialog
+  .matching-review-strip
+  [role="alert"] {
+  font-size: 11px;
+  line-height: 18px;
+  color: #bd2949;
+  margin: 8px 0 0;
+}
+.reference-shell .product-matching-dialog .matching-request-notice:empty {
+  display: none;
+}
+.reference-shell .product-matching-dialog .matching-request-notice:not(:empty) {
+  margin: 0 28px 12px;
+  font-size: 12px;
+  max-height: 120px;
+  overflow: auto;
+}
+.reference-shell .product-matching-dialog .matching-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 28px;
+  border-top: 1px solid #e8ecf5;
+  background: #fff;
+  flex: none;
+}
+.reference-shell .product-matching-dialog .matching-footer > span {
+  flex: 1;
+  min-width: 0;
+  margin-right: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: #8792a7;
+}
+.reference-shell .product-matching-dialog .matching-footer button {
+  flex: none;
+  width: auto;
+  white-space: nowrap;
+  min-height: 38px;
+  height: 38px;
+  padding: 0 15px;
+  border: 1px solid #e0e5ef;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 600;
+}
+.reference-shell
+  .product-matching-dialog
+  .matching-footer
+  button.mapping-primary {
+  background: #693cff;
+  color: #fff;
+  border-color: #693cff;
+}
+.reference-shell
+  .product-matching-dialog
+  .matching-footer
+  button.mapping-primary:hover:not(:disabled) {
+  background: #5930e8;
+}
+.reference-shell .product-matching-dialog .matching-empty {
+  padding: 36px 20px;
+  text-align: center;
+  font-size: 12px;
+  color: #8792a7;
+}
+.reference-shell .product-matching-dialog .matching-skeleton {
+  height: 72px;
+  margin: 6px 0;
+  border-radius: 8px;
+  background: #f3f5fa;
+}
+@media (max-width: 1450px) {
+  .reference-shell .product-matching-dialog .matching-workspace {
+    grid-template-columns: minmax(0, 31fr) minmax(0, 69fr);
+  }
+  .reference-shell .product-matching-dialog .matching-search-filters {
+    gap: 10px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+  .reference-shell .product-matching-dialog .matching-result {
+    grid-template-columns: 16px 40px minmax(0, 1fr) 82px 65px;
+    gap: 10px;
+    min-height: 66px;
+    padding: 8px 10px;
+  }
+  .reference-shell .product-matching-dialog .matching-thumb {
+    width: 40px;
+    height: 40px;
+  }
+  .reference-shell .product-matching-dialog .matching-ozon {
+    padding: 18px;
+  }
+  .reference-shell .product-matching-dialog .matching-identifier {
+    grid-template-columns: 90px minmax(0, 1fr);
+    padding: 12px 0;
+  }
+  .reference-shell .product-matching-dialog .matching-source-title {
+    gap: 12px;
+    margin: 22px 0;
+  }
+  .reference-shell .product-matching-dialog .matching-image-placeholder {
+    width: 80px;
+    height: 80px;
+  }
+  .reference-shell .product-matching-dialog .matching-review-strip {
+    padding: 10px 14px;
+    max-height: 150px;
+    margin-bottom: 12px;
+  }
+}
+@media (max-width: 1050px) {
+  .reference-shell .product-matching-dialog .matching-workspace {
+    grid-template-columns: minmax(220px, 30fr) minmax(0, 70fr);
+    padding-inline: 20px;
+  }
+  .reference-shell .product-matching-dialog .matching-source-title {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .reference-shell .product-matching-dialog .matching-search-line {
+    flex-wrap: wrap;
+  }
+  .reference-shell .product-matching-dialog .matching-search-line > span {
+    width: 100%;
+  }
+  .reference-shell .product-matching-dialog .matching-search-filters {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .reference-shell .product-matching-dialog .matching-row-status {
+    display: none;
+  }
+  .reference-shell .product-matching-dialog .matching-result {
+    grid-template-columns: 16px 36px minmax(0, 1fr) 65px;
+    gap: 8px;
+  }
+  .reference-shell .product-matching-dialog .matching-footer {
+    flex-wrap: wrap;
+    padding: 12px 20px;
+  }
+  .reference-shell .product-matching-dialog .matching-footer > span {
+    flex-basis: 100%;
+  }
+  .reference-shell .product-matching-dialog .matching-review-choice,
+  .reference-shell .product-matching-dialog .matching-review-ack {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .reference-shell .product-matching-dialog .matching-review-strip {
+    margin-inline: 20px;
+  }
+}
+@media (max-width: 650px) {
+  .provider-settings-overlay:has(.product-matching-dialog) {
+    padding: 8px;
+  }
+  .reference-shell .provider-settings-dialog.product-matching-dialog {
+    width: calc(100vw - 16px);
+    height: calc(100dvh - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+  .reference-shell .product-matching-dialog .matching-workspace {
+    grid-template-columns: 1fr;
+    overflow: auto;
+    gap: 12px;
+    padding-inline: 16px;
+  }
+  .reference-shell .product-matching-dialog .matching-right {
+    min-height: 480px;
+  }
+  .reference-shell .product-matching-dialog .matching-ozon {
+    overflow: visible;
+  }
+  .reference-shell .product-matching-dialog .matching-source-title {
+    flex-direction: row;
+  }
+  .reference-shell .product-matching-dialog .matching-footer button {
+    font-size: 10px;
+    padding-inline: 9px;
+  }
+  .reference-shell .product-matching-dialog .matching-review-strip {
+    margin-inline: 16px;
+  }
+  .reference-shell
+    .product-matching-dialog
+    .matching-review-ack
+    > label:last-child {
+    margin-left: 0;
+  }
+}

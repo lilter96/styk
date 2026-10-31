@@ -159,8 +159,7 @@ async function createReview() {
     }),
   );
   expect(screen.getAllByText("Synthetic variant").length).toBeGreaterThan(1);
-  fireEvent.click(screen.getByText("Технические данные товаров"));
-  expect(screen.getAllByText("Родительский товар").length).toBeGreaterThan(0);
+  expect(screen.queryByText("Технические данные товаров")).toBeNull();
   fireEvent.click(
     screen.getByRole("button", { name: "Проверить соответствие" }),
   );
@@ -170,7 +169,7 @@ it("creates a manual variant review, requires acknowledgement and refreshes hist
   const mock = setup();
   await createReview();
   const button = screen.getByRole("button", {
-    name: "Подтвердить соответствие",
+    name: "Сопоставить",
   }) as HTMLButtonElement;
   expect(button.disabled).toBe(true);
   expect(
@@ -194,7 +193,8 @@ it("creates a manual variant review, requires acknowledgement and refreshes hist
   );
   fireEvent.click(button);
   fireEvent.click(button);
-  fireEvent.click(screen.getByText("История соответствий"));
+  fireEvent.click(screen.getByText("Дополнительно"));
+  fireEvent.click(screen.getByText("История сопоставлений"));
   await screen.findByText(/Соответствие 7, версия 1/);
   expect(
     mock.mock.calls.filter(([p]) => String(p).endsWith("/confirm")),
@@ -210,7 +210,7 @@ for (const status of ["EXPIRED", "STALE_SOURCE", "STALE_MAPPING"])
     expect(
       (
         screen.getByRole("button", {
-          name: "Подтвердить соответствие",
+          name: "Сопоставить",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
@@ -224,7 +224,7 @@ it("mapping conflict prevents confirmation", async () => {
   expect(
     (
       screen.getByRole("button", {
-        name: "Подтвердить соответствие",
+        name: "Сопоставить",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
@@ -236,16 +236,14 @@ it("retries the exact scoped confirmation after a lost response from inside the 
   fireEvent.click(
     screen.getByLabelText(/Подтверждаю, что это один и тот же товар/),
   );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Подтвердить соответствие" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Сопоставить" }));
   const retry = await screen.findByRole("button", {
     name: "Повторить тот же запрос",
   });
   expect(
     (
       screen.getByRole("button", {
-        name: "Подтвердить соответствие",
+        name: "Сопоставить",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
@@ -333,7 +331,10 @@ it("queues several suggestions for individual review without confirming them", a
   );
   fireEvent.click(await screen.findByLabelText("Выбрать one для проверки"));
   fireEvent.click(screen.getByLabelText("Выбрать two для проверки"));
-  expect(screen.queryByLabelText("Выбрать archived для проверки")).toBeNull();
+  expect(
+    (screen.getByLabelText("Выбрать archived для проверки") as HTMLInputElement)
+      .disabled,
+  ).toBe(true);
   fireEvent.click(screen.getByText("Выбрано для проверки: 2"));
   expect(screen.getByText(/Размер S \(вариант\)/)).toBeTruthy();
   expect(screen.getByRole("button", { name: "Проверить one" })).toBeTruthy();
@@ -370,8 +371,8 @@ it("keeps successful and remaining items visible after an individual confirmatio
     },
   ]);
   fireEvent.click(
-    await screen.findByRole("button", {
-      name: "Выбрать предложения на странице",
+    await screen.findByRole("checkbox", {
+      name: "Выбрать все на странице",
     }),
   );
   fireEvent.click(screen.getByText("Выбрано для проверки: 2"));
@@ -379,9 +380,7 @@ it("keeps successful and remaining items visible after an individual confirmatio
   fireEvent.click(
     screen.getByLabelText(/Подтверждаю, что это один и тот же товар/),
   );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Подтвердить соответствие" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Сопоставить" }));
   await screen.findByText(
     "Соответствие сохранено. Это подтверждение не включает публикацию остатков.",
   );
@@ -449,8 +448,8 @@ it("retains partial queue progress and retries an uncertain confirmation only on
     true,
   );
   fireEvent.click(
-    await screen.findByRole("button", {
-      name: "Выбрать предложения на странице",
+    await screen.findByRole("checkbox", {
+      name: "Выбрать все на странице",
     }),
   );
   fireEvent.click(screen.getByText("Выбрано для проверки: 2"));
@@ -458,9 +457,7 @@ it("retains partial queue progress and retries an uncertain confirmation only on
   fireEvent.click(
     screen.getByLabelText(/Подтверждаю, что это один и тот же товар/),
   );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Подтвердить соответствие" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Сопоставить" }));
   await screen.findByRole("button", { name: "Повторить тот же запрос" });
   fireEvent.click(
     screen.getByRole("button", { name: "Закрыть сопоставление" }),

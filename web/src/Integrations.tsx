@@ -6,7 +6,7 @@ import {
   type ReactNode,
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { PageHeader, ProviderBadge } from "./UI";
 import { ImportPanel } from "./ImportPanel";
 import { IntegrationDialog } from "./IntegrationDialog";
@@ -104,6 +104,7 @@ export function Integrations({
   const credentials = credentialSubmission ?? localCredentials;
   const [searchParams, setSearchParams] = useSearchParams();
   const client = useQueryClient();
+  const navigate = useNavigate();
   const [busy, setBusy] = useState("");
   const requestLock = useRef(false);
   const [acks, setAcks] = useState<Record<string, boolean>>({});
@@ -205,6 +206,15 @@ export function Integrations({
     retry: false,
   });
   function openSettings(provider: ImportProvider) {
+    if (provider === "moysklad") {
+      const account =
+        selected?.moy ||
+        query.data?.providers.find((p) => p.provider === provider)?.account;
+      navigate(
+        `/integrations/moysklad/settings${account ? `?account=${encodeURIComponent(account)}` : ""}`,
+      );
+      return;
+    }
     if (!uncertain) setMessage("");
     setSettingsProvider(provider);
   }
@@ -611,6 +621,7 @@ export function Integrations({
             <article
               className={`integration-card ${needsAction ? "needs-action" : ""}`}
               key={p.provider}
+              data-provider={p.provider}
               aria-label={names[p.provider]}
             >
               <header className="provider-heading">
@@ -700,7 +711,7 @@ export function Integrations({
                   </p>
                 </div>
               )}
-              {settingsProvider === p.provider && (
+              {p.provider === "ozon" && settingsProvider === p.provider && (
                 <IntegrationDialog
                   title={`Подключение ${names[p.provider]}`}
                   closeLabel="Закрыть настройки"

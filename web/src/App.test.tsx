@@ -155,10 +155,12 @@ describe("read-only views", () => {
       }),
     );
     mount(<Products scope={scope} />);
-    expect(await screen.findByText("Нужно выбрать товар")).toBeTruthy();
+    expect(await screen.findByText("Не сопоставлен")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Сопоставить sample" }));
     fireEvent.click(screen.getByText(/Возможные соответствия/));
-    expect(screen.getByText(/variant · b/)).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /Посмотреть предложение 2/ }),
+    ).toBeTruthy();
     fireEvent.click(
       screen.getByRole("button", { name: "Закрыть сопоставление" }),
     );

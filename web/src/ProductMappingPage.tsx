@@ -1,24 +1,14 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import {
+  ProductMappingTable,
+  MappingPagination,
+  eligibleForQueue,
+} from "./ProductMappingTable";
+import "./matching-page.css";
 import { useQuery } from "@tanstack/react-query";
 import { api, params, type Page, type Product, type Report } from "./api";
 import { useConfirmation, type Confirmation, type Scope } from "./Confirmation";
-import { ProductReview, type MappingTarget } from "./ProductReview";
-
-const eligibleForQueue = (product: Product) =>
-  product.archived === false &&
-  product.target_id === null &&
-  product.candidates.length > 0 &&
-  !product.candidates_truncated;
-
-const statuses: Record<string, { label: string; tone: string }> = {
-  CONFIRMED: { label: "Подтверждено", tone: "ok" },
-  ONE_CANDIDATE: { label: "Проверьте и подтвердите", tone: "blue" },
-  AMBIGUOUS: { label: "Нужно выбрать товар", tone: "warning" },
-  NO_CANDIDATE: { label: "Не найдено", tone: "warning" },
-  CONFLICT: { label: "Есть конфликт", tone: "warning" },
-  INSUFFICIENT_DATA: { label: "Недостаточно данных", tone: "neutral" },
-};
+import { ProductReview } from "./ProductReview";
 
 export function ProductMappingPage({
   scope,
@@ -29,8 +19,22 @@ export function ProductMappingPage({
 }) {
   const localConfirmation = useConfirmation();
   const activeConfirmation = confirmation ?? localConfirmation;
+  const skipped = useRef(new Set<string>());
+  const [queueMessage, setQueueMessage] = useState("");
+  const queueLock = useRef(false);
+  const queueRequest = useRef<AbortController | null>(null);
   const [review, setReview] = useState<Product | null>(null);
   const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  const [pageSize, setPageSize] = useState(20);
+  useEffect(() => {
+    if (search === query) return;
+    const timer = setTimeout(() => {
+      setQuery(search);
+      setOffset(0);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [search, query]);
   const [archived, setArchived] = useState("");
   const [mapping, setMapping] = useState("");
   const [offset, setOffset] = useState(0);
@@ -43,20 +47,18 @@ export function ProductMappingPage({
     ozon_account: scope.ozon,
   };
   const products = useQuery({
-    queryKey: ["products", scope, search, archived, mapping, offset],
+    queryKey: ["products", scope, query, archived, mapping, offset, pageSize],
     queryFn: ({ signal }) =>
-      api<Page<Product>>(
+      api<Page<Product> & { total?: number }>(
         "/api/products?" +
-          params({ ...base, search, archived, mapping, offset }),
-        signal,
-      ),
-    enabled: ready,
-  });
-  const targets = useQuery({
-    queryKey: ["review-targets", scope, "", 0],
-    queryFn: ({ signal }) =>
-      api<Page<MappingTarget>>(
-        "/api/moysklad-products?" + params({ ...base, search: "", offset: 0 }),
+          params({
+            ...base,
+            search: query,
+            archived,
+            mapping,
+            offset,
+            pageSize,
+          }),
         signal,
       ),
     enabled: ready,
@@ -81,15 +83,18 @@ export function ProductMappingPage({
     catalogTotal >= 0 &&
     catalogConfirmed >= 0 &&
     catalogConfirmed <= catalogTotal;
-  const targetNames = new Map(
-    (targets.data?.items ?? []).map((t) => [t.kind + ":" + t.id, t]),
-  );
   const reset = () => setOffset(0);
   useEffect(() => {
+    queueRequest.current?.abort();
+    skipped.current.clear();
+    setQueueMessage("");
     setSelectedProducts([]);
     setCompleted([]);
     setReview(null);
     setOffset(0);
+    return () => {
+      queueRequest.current?.abort();
+    };
   }, [scope.tenant, scope.moy, scope.ozon]);
 
   useEffect(() => {
@@ -117,11 +122,54 @@ export function ProductMappingPage({
     selectedProducts,
   ]);
 
+  async function nextProduct() {
+    if (queueLock.current || !review) return;
+    queueLock.current = true;
+    const request = new AbortController();
+    queueRequest.current = request;
+    skipped.current.add(review.product_id);
+    setQueueMessage("Загружаем следующий товар…");
+    try {
+      for (let start = 0; start <= 100000; start += 50) {
+        const page = await api<Page<Product>>(
+          "/api/products?" +
+            params({
+              ...base,
+              mapping: "unconfirmed",
+              archived: "false",
+              offset: start,
+            }),
+          request.signal,
+        );
+        if (request.signal.aborted) return;
+        const item = page.items.find(
+          (item) => !skipped.current.has(item.product_id),
+        );
+        if (item) {
+          setReview(item);
+          setQueueMessage("");
+          return;
+        }
+        if (!page.has_next) {
+          setReview(null);
+          setQueueMessage(
+            "Очередь завершена. Несопоставленных товаров больше нет.",
+          );
+          return;
+        }
+      }
+      setQueueMessage("Достигнут предел очереди. Уточните фильтры каталога.");
+    } catch {
+      if (request.signal.aborted) return;
+      setQueueMessage(
+        "Не удалось загрузить следующий товар. Попробуйте ещё раз.",
+      );
+    } finally {
+      queueLock.current = false;
+    }
+  }
   return (
     <div className="product-mapping-page">
-      <Link className="mapping-back" to="/integrations">
-        ← Интеграции
-      </Link>
       <header className="mapping-heading">
         <h1>Сопоставление товаров</h1>
         <p>
@@ -158,37 +206,88 @@ export function ProductMappingPage({
             )}
             <p>
               {hasCatalogCounts
-                ? "По последней завершённой загрузке Ozon"
+                ? `Осталось сопоставить ${catalogTotal - catalogConfirmed} товаров`
                 : `Без соответствия в последней загрузке: ${unconfirmed}`}
             </p>
           </div>
-          <button
-            className="mapping-filter-action"
-            disabled={
-              hasCatalogCounts
-                ? catalogConfirmed === catalogTotal
-                : unconfirmed === 0
-            }
-            onClick={() => {
-              setMapping("unconfirmed");
-              reset();
-            }}
-          >
-            Проверить несопоставленные
-          </button>
+          {hasCatalogCounts && (
+            <span className="matching-page-percent">
+              {catalogTotal
+                ? Math.round((catalogConfirmed / catalogTotal) * 100)
+                : 0}
+              %
+            </span>
+          )}
+          <div className="matching-page-progress-action">
+            <button
+              className="mapping-filter-action"
+              disabled={
+                hasCatalogCounts
+                  ? catalogConfirmed === catalogTotal
+                  : unconfirmed === 0
+              }
+              onClick={() => {
+                setMapping("unconfirmed");
+                reset();
+              }}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                aria-hidden="true"
+              >
+                <circle cx="10.5" cy="10.5" r="6.5" />
+                <path d="m16 16 5 5" />
+              </svg>
+              Проверить несопоставленные
+            </button>
+            <small>Найдите и подтвердите соответствия</small>
+          </div>
         </section>
       )}
       <div className="mapping-filters">
-        <label>
-          Поиск
-          <input
-            placeholder="Название, артикул, offer ID или SKU"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              reset();
-            }}
-          />
+        <label className="matching-page-search">
+          <span className="matching-page-sr">Поиск</span>
+          <div>
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              aria-hidden="true"
+            >
+              <circle cx="10.5" cy="10.5" r="6.5" />
+              <path d="m16 16 5 5" />
+            </svg>
+            <input
+              placeholder="Название, артикул, offer ID или SKU"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                reset();
+              }}
+            />
+            {(products.isFetching || search !== query) && (
+              <span className="matching-page-spinner" aria-label="Поиск" />
+            )}
+            {search && (
+              <button
+                aria-label="Очистить поиск"
+                onClick={() => {
+                  setSearch("");
+                  reset();
+                }}
+              >
+                ×
+              </button>
+            )}
+          </div>
         </label>
         <label>
           Товары
@@ -214,10 +313,23 @@ export function ProductMappingPage({
             }}
           >
             <option value="">Все соответствия</option>
-            <option value="confirmed">Подтверждённые</option>
-            <option value="unconfirmed">Требуют проверки</option>
+            <option value="confirmed">Подтверждено</option>
+            <option value="unconfirmed">Не сопоставлено</option>
           </select>
         </label>
+        <button
+          className="matching-page-reset"
+          disabled={!search && !archived && !mapping}
+          onClick={() => {
+            setSearch("");
+            setQuery("");
+            setArchived("");
+            setMapping("");
+            reset();
+          }}
+        >
+          Сбросить
+        </button>
       </div>
       {selectedProducts.length > 0 && (
         <details className="mapping-queue">
@@ -283,8 +395,14 @@ export function ProductMappingPage({
           Выберите оба подключённых аккаунта, чтобы сопоставить товары.
         </div>
       ) : products.isLoading ? (
-        <div className="mapping-empty" role="status">
-          Загружаем товары…
+        <div
+          className="matching-page-skeleton"
+          role="status"
+          aria-label="Загружаем товары"
+        >
+          {Array.from({ length: 5 }, (_, i) => (
+            <div key={i} />
+          ))}
         </div>
       ) : products.error ? (
         <div className="mapping-empty mapping-error" role="alert">
@@ -295,186 +413,88 @@ export function ProductMappingPage({
         <div className="mapping-empty">
           {mapping === "confirmed" && !search && !archived && offset === 0
             ? "Для этих аккаунтов пока нет подтверждённых соответствий. Выберите товар и проверьте его перед подтверждением."
-            : "По этим условиям товары не найдены."}
+            : mapping === "unconfirmed" && !search && !archived
+              ? "Все товары сопоставлены. Несопоставленных товаров нет."
+              : !search && !archived && !mapping
+                ? "Каталог пока пуст. Загрузите товары в разделе интеграций."
+                : "По этим условиям товары не найдены."}
           {offset > 0 && (
             <p>
-              <button onClick={() => setOffset(Math.max(0, offset - 50))}>
+              <button onClick={() => setOffset(Math.max(0, offset - pageSize))}>
                 Назад к предыдущим товарам
               </button>
             </p>
           )}
         </div>
       ) : (
-        <section
-          className="mapping-table-card"
-          aria-label="Товары для сопоставления"
-        >
-          <div className="mapping-queue-actions">
-            <button
-              disabled={
-                selectedProducts.length >= 100 ||
-                !products.data.items.some(
-                  (product) =>
-                    eligibleForQueue(product) &&
-                    !selectedProducts.some(
-                      (item) => item.product_id === product.product_id,
-                    ),
+        <ProductMappingTable
+          items={products.data.items}
+          selected={selectedProducts}
+          pending={!!activeConfirmation.pending}
+          open={setReview}
+          toggle={(product, checked) => {
+            setSelectedProducts((items) =>
+              checked
+                ? [...items, product]
+                : items.filter(
+                    (item) => item.product_id !== product.product_id,
+                  ),
+            );
+            if (!checked)
+              setCompleted((items) =>
+                items.filter((id) => id !== product.product_id),
+              );
+          }}
+          selectPage={(checked) => {
+            const pageIds = new Set(
+              products.data.items
+                .filter(eligibleForQueue)
+                .map((p) => p.product_id),
+            );
+            if (!checked) {
+              setSelectedProducts((items) =>
+                items.filter((p) => !pageIds.has(p.product_id)),
+              );
+              setCompleted((items) => items.filter((id) => !pageIds.has(id)));
+              return;
+            }
+            setSelectedProducts((items) => [
+              ...items,
+              ...products.data.items
+                .filter(
+                  (p) =>
+                    eligibleForQueue(p) &&
+                    !items.some((item) => item.product_id === p.product_id),
                 )
-              }
-              onClick={() =>
-                setSelectedProducts((items) => {
-                  const additions = products.data.items.filter(
-                    (product) =>
-                      eligibleForQueue(product) &&
-                      !items.some(
-                        (item) => item.product_id === product.product_id,
-                      ),
-                  );
-                  return [...items, ...additions.slice(0, 100 - items.length)];
-                })
-              }
-            >
-              Выбрать предложения на странице
-            </button>
-            <span>До 100 товаров в очереди</span>
-          </div>
-          <div
-            className="mapping-table-scroll"
-            tabIndex={0}
-            role="region"
-            aria-label="Список товаров"
-          >
-            <table className="mapping-table">
-              <thead>
-                <tr>
-                  <th>Проверить</th>
-                  <th>Товар в МойСклад</th>
-                  <th>Артикул</th>
-                  <th>Товар в Ozon</th>
-                  <th>Статус</th>
-                </tr>
-              </thead>
-              <tbody>
-                {products.data.items.map((product) => {
-                  const target = product.target_id
-                    ? targetNames.get(
-                        product.target_kind + ":" + product.target_id,
-                      )
-                    : undefined;
-                  const state =
-                    statuses[product.match_status] ??
-                    statuses.INSUFFICIENT_DATA;
-                  return (
-                    <tr key={product.product_id}>
-                      <td data-label="Проверить">
-                        {eligibleForQueue(product) ? (
-                          <input
-                            type="checkbox"
-                            aria-label={`Выбрать ${product.offer_id || product.product_id} для проверки`}
-                            checked={selectedProducts.some(
-                              (item) => item.product_id === product.product_id,
-                            )}
-                            disabled={
-                              selectedProducts.length >= 100 &&
-                              !selectedProducts.some(
-                                (item) =>
-                                  item.product_id === product.product_id,
-                              )
-                            }
-                            onChange={(e) => {
-                              setSelectedProducts((items) =>
-                                e.target.checked
-                                  ? [...items, product]
-                                  : items.filter(
-                                      (item) =>
-                                        item.product_id !== product.product_id,
-                                    ),
-                              );
-                              if (!e.target.checked) {
-                                setCompleted((items) =>
-                                  items.filter(
-                                    (id) => id !== product.product_id,
-                                  ),
-                                );
-                              }
-                            }}
-                          />
-                        ) : (
-                          <span aria-label="Нет предложений для групповой проверки">
-                            —
-                          </span>
-                        )}
-                      </td>
-                      <td data-label="Товар в МойСклад">
-                        <button
-                          className="mapping-select"
-                          aria-label={`Сопоставить ${product.offer_id || product.product_id}`}
-                          onClick={() => setReview(product)}
-                        >
-                          <span>
-                            {product.target_name ||
-                              target?.name ||
-                              (product.target_id
-                                ? `Товар МойСклад: ${product.target_id}`
-                                : "Выберите товар МойСклад")}
-                          </span>
-                          <span aria-hidden="true">⌄</span>
-                        </button>
-                        {product.candidate_count > 0 && !product.target_id && (
-                          <small>Предложений: {product.candidate_count}</small>
-                        )}
-                      </td>
-                      <td className="mapping-article" data-label="Артикул">
-                        {product.target_article || target?.article || "—"}
-                      </td>
-                      <td data-label="Товар в Ozon">
-                        <strong>
-                          {product.name ||
-                            product.offer_id ||
-                            `Товар ${product.product_id}`}
-                        </strong>
-                        {product.name && product.offer_id && (
-                          <small>Offer ID: {product.offer_id}</small>
-                        )}
-                        <small>ID товара: {product.product_id}</small>
-                        {product.sku && <small>SKU: {product.sku}</small>}
-                        {product.archived === true && <small>В архиве</small>}
-                      </td>
-                      <td data-label="Статус">
-                        <span className={`mapping-chip ${state.tone}`}>
-                          {state.label}
-                        </span>
-                        {product.candidates_truncated && (
-                          <small>Часть предложений недоступна</small>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <footer className="mapping-table-footer">
-            <span>
-              Показаны {offset + 1}–{offset + products.data.items.length}
-            </span>
-            <div>
-              <button
-                disabled={offset === 0}
-                onClick={() => setOffset(Math.max(0, offset - 50))}
-              >
-                Назад
-              </button>
-              <button
-                disabled={!products.data.has_next}
-                onClick={() => setOffset(offset + 50)}
-              >
-                Далее
-              </button>
-            </div>
-          </footer>
-        </section>
+                .slice(0, 100 - items.length),
+            ]);
+          }}
+          startQueue={() => {
+            const product = selectedProducts.find(
+              (p) => !completed.includes(p.product_id),
+            );
+            if (product) setReview(product);
+          }}
+          canStartQueue={selectedProducts.some(
+            (p) => !completed.includes(p.product_id),
+          )}
+        >
+          <MappingPagination
+            offset={offset}
+            size={pageSize}
+            total={products.data.total}
+            length={products.data.items.length}
+            hasNext={products.data.has_next}
+            busy={products.isFetching}
+            setOffset={setOffset}
+            setSize={(size) => {
+              setPageSize(size);
+              reset();
+            }}
+          />
+        </ProductMappingTable>
       )}
+      {queueMessage && <p role="status">{queueMessage}</p>}
       {review && (
         <ProductReview
           key={review.product_id}
@@ -508,6 +528,7 @@ export function ProductMappingPage({
             setReview(null);
           }}
           confirmation={activeConfirmation}
+          next={() => void nextProduct()}
         />
       )}
     </div>

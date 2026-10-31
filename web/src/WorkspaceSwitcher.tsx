@@ -1,4 +1,6 @@
 import type { Account } from "./api";
+import { Link } from "react-router-dom";
+import { Icon } from "./UI";
 
 export type Marketplace = "wildberries" | "ozon" | "yandex";
 export const marketplaceNames: Record<Marketplace, string> = {
@@ -19,6 +21,9 @@ export function WorkspaceSwitcher({
   onAccountChange,
   onAdd,
   moyLabel,
+  moyStatus,
+  moyAccount,
+  onNavigate,
   loading,
   error,
   addDisabled,
@@ -30,6 +35,9 @@ export function WorkspaceSwitcher({
   onAccountChange: (account: string) => void;
   onAdd: () => void;
   moyLabel: string;
+  moyStatus?: string;
+  moyAccount?: string;
+  onNavigate?: () => void;
   loading: boolean;
   error: boolean;
   addDisabled: boolean;
@@ -45,7 +53,19 @@ export function WorkspaceSwitcher({
         <div>
           <span>МойСклад</span>
           <strong>{moyLabel}</strong>
+          {moyStatus && moyStatus !== moyLabel && (
+            <small className="fixed-moy-status">{moyStatus}</small>
+          )}
         </div>
+        <Link
+          className="moy-settings-link"
+          to={`/integrations/moysklad/settings${moyAccount ? `?account=${encodeURIComponent(moyAccount)}` : ""}`}
+          title="Настройки аккаунта МойСклад"
+          aria-label="Настройки аккаунта МойСклад"
+          onClick={onNavigate}
+        >
+          <Icon name="settings" />
+        </Link>
       </div>
       <div
         className="marketplace-options"

@@ -827,6 +827,42 @@
   padding: 0;
   box-shadow: none;
 }
+/* Keep the source connection compact without changing marketplace cards. */
+.reference-shell .integration-card[data-provider="moysklad"] {
+  min-height: 0;
+  gap: 12px;
+  padding: 20px;
+}
+.reference-shell .integration-card[data-provider="moysklad"] .provider-heading {
+  padding-bottom: 12px;
+}
+.reference-shell .integration-card[data-provider="moysklad"] .provider-identity p {
+  margin: 3px 0 0;
+}
+.reference-shell .integration-card[data-provider="moysklad"] .import-panel,
+.reference-shell .integration-card[data-provider="moysklad"] .provider-empty {
+  flex: 0 1 auto;
+  gap: 12px;
+}
+.reference-shell .integration-card[data-provider="moysklad"] .import-baseline {
+  margin: 0;
+}
+.reference-shell .integration-card[data-provider="moysklad"] .provider-actions {
+  gap: 8px;
+}
+.reference-shell .integration-card[data-provider="moysklad"] .provider-footnote {
+  margin: 0;
+  padding-top: 12px;
+  line-height: 1.5;
+}
+.reference-shell .integration-card[data-provider="moysklad"] .catalog-counts {
+  display: flex;
+  margin: 6px 0 0;
+  gap: 4px 12px;
+}
+.reference-shell .integration-card[data-provider="moysklad"] .catalog-counts :is(dt, dd) {
+  font-size: 12px;
+}
 .reference-shell
   :is(
     .import-panel p,
@@ -1115,3 +1151,12 @@
 .mobile-app-bar {
   padding: 12px 16px 0;
 }
+
+/* Account settings entry is part of the shared shell. */
+.fixed-moy-status { display: block; margin-top: 4px; color: var(--styk-muted); font-size: 10px; line-height: 1.4; }
+.fixed-moy-account { gap: 8px; }
+.fixed-moy-account > div { min-width: 0; flex: 1; }
+.fixed-moy-account strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reference-shell .moy-settings-link { flex: 0 0 30px; display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--styk-line); border-radius: 8px; color: var(--styk-muted); background: #fff; }
+.moy-settings-link svg { width: 17px; height: 17px; }
+.reference-shell .moy-settings-link:hover, .moy-settings-link:focus-visible { color: var(--styk-primary); background: var(--styk-primary-soft); text-decoration: none; }

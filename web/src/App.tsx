@@ -1,4 +1,5 @@
 import { AppShell } from "./AppShell";
+import { connectionState, type MoyProvider } from "./MoySkladSettingsData";
 import { StatePanel, ProviderBadge, PageHeader } from "./UI";
 import {
   WorkspaceSwitcher,
@@ -22,13 +23,7 @@ import {
   useConfirmation,
   type Confirmation,
 } from "./Confirmation";
-import {
-  lazy,
-  Suspense,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   NavLink,
@@ -57,6 +52,11 @@ const CatalogSync = lazy(() =>
 );
 const Integrations = lazy(() =>
   import("./Integrations").then((module) => ({ default: module.Integrations })),
+);
+const MoySkladAccountSettingsPage = lazy(() =>
+  import("./MoySkladAccountSettingsPage").then((module) => ({
+    default: module.MoySkladAccountSettingsPage,
+  })),
 );
 type MerchantSession = {
   user: { id: string; email: string };
@@ -671,7 +671,8 @@ export function App() {
   const credentialSubmission = useCredentialSubmission();
   const stockSyncSubmission = useStockSyncSubmission();
   const navigate = useNavigate();
-  const integrationPage = useLocation().pathname === "/integrations";
+  const pathname = useLocation().pathname;
+  const integrationPage = pathname === "/integrations";
   useEffect(() => {
     if (
       !confirmation.pending &&
@@ -806,6 +807,16 @@ export function App() {
     enabled: session.isSuccess && !!chosen && identityReady,
   });
   const scope = { tenant: chosen, moy, ozon };
+  const moyConnection = useQuery({
+    queryKey: ["integrations", chosen, "moysklad", moy],
+    queryFn: ({ signal }) =>
+      api<{ providers: MoyProvider[] }>(
+        `/api/integrations?${params({ tenant: chosen, moysklad_account: moy })}`,
+        signal,
+      ),
+    enabled: session.isSuccess && !!chosen && !!moy && identityReady,
+    retry: false,
+  });
   useEffect(() => {
     if (!accounts.data) return;
     const moyAccounts = accounts.data.accounts.filter(
@@ -955,6 +966,21 @@ export function App() {
               (a) => a.source === "moysklad" && a.account === moy,
             )?.name || (moy ? "Аккаунт подключён" : "Не подключён")
           }
+          moyAccount={moy}
+          moyStatus={
+            !moy
+              ? "Не подключён"
+              : moyConnection.isError
+                ? "Статус недоступен"
+                : moyConnection.isLoading
+                  ? "Проверяем состояние…"
+                  : connectionState(
+                      moyConnection.data?.providers.find(
+                        (p) => p.provider === "moysklad",
+                      ),
+                    ).text
+          }
+          onNavigate={onNavigate}
           loading={accounts.isLoading}
           error={!!accounts.error}
           addDisabled={!!credentialSubmission.pending}
@@ -1020,6 +1046,7 @@ export function App() {
       )}
     >
       <ConfirmationNotice
+        compact={pathname === "/products"}
         confirmation={confirmation}
         scope={scope}
         restore={(original) => {
@@ -1057,7 +1084,18 @@ export function App() {
         }}
       />
       {!integrationPage && importNotice}
-      {marketplace === "ozon" ? (
+      {pathname === "/integrations/moysklad/settings" ? (
+        <Suspense fallback={<Loading />}>
+          <MoySkladAccountSettingsPage
+            tenant={chosen}
+            account={moy}
+            accounts={accounts.data?.accounts || []}
+            accountsLoading={accounts.isLoading}
+            credentials={credentialSubmission}
+            imports={importSubmission}
+          />
+        </Suspense>
+      ) : marketplace === "ozon" ? (
         <Routes>
           <Route
             path="/catalog-sync"
