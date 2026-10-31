@@ -1,6 +1,7 @@
 import type { Account } from "./api";
 import { Link } from "react-router-dom";
 import { Icon } from "./UI";
+import moyskladLogo from "./assets/brands/moysklad.png";
 
 export type Marketplace = "wildberries" | "ozon" | "yandex";
 export const marketplaceNames: Record<Marketplace, string> = {
@@ -48,13 +49,18 @@ export function WorkspaceSwitcher({
     <section className="workspace-switcher" aria-label="Рабочее пространство">
       <div className="fixed-moy-account">
         <span className="fixed-moy-mark" aria-hidden="true">
-          МС
+          <img src={moyskladLogo} alt="" />
         </span>
         <div>
           <span>МойСклад</span>
-          <strong>{moyLabel}</strong>
-          {moyStatus && moyStatus !== moyLabel && (
-            <small className="fixed-moy-status">{moyStatus}</small>
+          {moyLabel !== moyStatus && <strong>{moyLabel}</strong>}
+          {moyStatus && (
+            <small
+              className={`fixed-moy-status ${moyStatus === "Подключён" ? "connected" : ["Не подключён", "Отключён", "Ошибка авторизации", "Требует подключения"].includes(moyStatus) ? "disconnected" : "pending"}`}
+            >
+              <span className="moy-status-light" aria-hidden="true" />
+              {moyStatus}
+            </small>
           )}
         </div>
         <Link

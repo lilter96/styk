@@ -1153,7 +1153,13 @@
 }
 
 /* Account settings entry is part of the shared shell. */
-.fixed-moy-status { display: block; margin-top: 4px; color: var(--styk-muted); font-size: 10px; line-height: 1.4; }
+.fixed-moy-status { display: flex; align-items: center; gap: 5px; margin-top: 4px; color: var(--styk-muted); font-size: 10px; line-height: 1.4; }
+.fixed-moy-mark img { width: 28px; height: 28px; object-fit: contain; }
+.fixed-moy-status .moy-status-light { flex: 0 0 6px; width: 6px; height: 6px; border-radius: 50%; background: #a2acc2; }
+.fixed-moy-status.connected { color: var(--styk-success-ink); }
+.fixed-moy-status.connected .moy-status-light { background: var(--styk-success); box-shadow: 0 0 0 2px var(--styk-success-soft); }
+.fixed-moy-status.disconnected { color: var(--styk-danger-ink); }
+.fixed-moy-status.disconnected .moy-status-light { background: var(--styk-danger); box-shadow: 0 0 0 2px var(--styk-danger-soft); }
 .fixed-moy-account { gap: 8px; }
 .fixed-moy-account > div { min-width: 0; flex: 1; }
 .fixed-moy-account strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
