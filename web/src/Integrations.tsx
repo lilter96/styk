@@ -621,6 +621,7 @@ export function Integrations({
             <article
               className={`integration-card ${needsAction ? "needs-action" : ""}`}
               key={p.provider}
+              data-provider={p.provider}
               aria-label={names[p.provider]}
             >
               <header className="provider-heading">

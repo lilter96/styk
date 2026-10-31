@@ -827,6 +827,42 @@
   padding: 0;
   box-shadow: none;
 }
+/* Keep the source connection compact without changing marketplace cards. */
+.reference-shell .integration-card[data-provider="moysklad"] {
+  min-height: 0;
+  gap: 12px;
+  padding: 20px;
+}
+.reference-shell .integration-card[data-provider="moysklad"] .provider-heading {
+  padding-bottom: 12px;
+}
+.reference-shell .integration-card[data-provider="moysklad"] .provider-identity p {
+  margin: 3px 0 0;
+}
+.reference-shell .integration-card[data-provider="moysklad"] .import-panel,
+.reference-shell .integration-card[data-provider="moysklad"] .provider-empty {
+  flex: 0 1 auto;
+  gap: 12px;
+}
+.reference-shell .integration-card[data-provider="moysklad"] .import-baseline {
+  margin: 0;
+}
+.reference-shell .integration-card[data-provider="moysklad"] .provider-actions {
+  gap: 8px;
+}
+.reference-shell .integration-card[data-provider="moysklad"] .provider-footnote {
+  margin: 0;
+  padding-top: 12px;
+  line-height: 1.5;
+}
+.reference-shell .integration-card[data-provider="moysklad"] .catalog-counts {
+  display: flex;
+  margin: 6px 0 0;
+  gap: 4px 12px;
+}
+.reference-shell .integration-card[data-provider="moysklad"] .catalog-counts :is(dt, dd) {
+  font-size: 12px;
+}
 .reference-shell
   :is(
     .import-panel p,
