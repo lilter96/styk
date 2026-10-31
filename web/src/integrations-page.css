@@ -210,6 +210,36 @@
   font-size: 11px;
   font-weight: 500;
 }
+.integration-card[data-provider="moysklad"] .integration-metric > svg {
+  width: 26px;
+  height: 26px;
+}
+.integration-card[data-provider="moysklad"] .integration-metric > div {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 7px;
+}
+.integration-card[data-provider="moysklad"] .integration-metric dt {
+  margin-bottom: 0;
+  font-size: 12px;
+}
+.integration-card[data-provider="moysklad"] .integration-metric dd {
+  font-size: 15px;
+}
+.integration-card[data-provider="moysklad"] .integration-metric:first-child dd {
+  font-size: 13px;
+}
+.integration-card[data-provider="moysklad"]
+  .integration-metric:not(:first-child)
+  > div {
+  flex-wrap: nowrap;
+}
+@media (min-width: 1251px) {
+  .integration-card[data-provider="moysklad"] .integration-metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
 .integration-import-info:empty,
 .integration-import-info:has(> .import-baseline:only-child),
 .integration-import-info > .import-baseline {
