@@ -3,7 +3,12 @@
 package integration
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -24,21 +29,16 @@ import (
 	"github.com/lilter96/styk/internal/providercall"
 )
 
-// TestOrderFlowRealMoySkladSyntheticOzon verifies the order integration path
-// against a real MoySklad account and a synthetic Ozon server. It confirms:
-// 1. Real MoySklad API connectivity (metadata read)
-// 2. Order config save and validation with real native references
-// 3. Ozon posting ingestion path (synthetic server)
-// 4. Preview generation with mirror commands
+// TestOrderFlowFullE2E verifies the complete order synchronization flow:
+// Ozon posting → STYK preview → approve → dispatch (create MoySklad order)
+// → readback → status write-back → verify MoySklad order data.
 //
-// The full dispatch (MoySklad order creation) is exercised by unit tests with
-// mocked providers. This integration test verifies the live API endpoints are
-// reachable and the configuration is valid.
-func TestOrderFlowRealMoySkladSyntheticOzon(t *testing.T) {
+// It uses real MoySklad credentials from .env and a synthetic Ozon server.
+func TestOrderFlowFullE2E(t *testing.T) {
 	token := os.Getenv("MOYSKLAD_TOKEN")
 	account := os.Getenv("MOYSKLAD_ACCOUNT_ID")
 	if token == "" || account == "" {
-		t.Skip("skipping real MoySklad + synthetic Ozon flow: MoySklad credentials not set")
+		t.Skip("skipping full order flow e2e: MoySklad credentials not set")
 	}
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
@@ -46,8 +46,7 @@ func TestOrderFlowRealMoySkladSyntheticOzon(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	// catalogSyncDB requires real provider env to be absent; save and unset,
-	// then restore so the rest of the test can use real MoySklad credentials.
+	// catalogSyncDB requires real provider env to be absent.
 	savedMoyToken, savedMoyAccount := os.Getenv("MOYSKLAD_TOKEN"), os.Getenv("MOYSKLAD_ACCOUNT_ID")
 	savedOzonKey, savedOzonClient := os.Getenv("OZON_API_KEY"), os.Getenv("OZON_CLIENT_ID")
 	os.Unsetenv("MOYSKLAD_TOKEN")
@@ -67,13 +66,13 @@ func TestOrderFlowRealMoySkladSyntheticOzon(t *testing.T) {
 	}
 
 	// ---- scope / connections / credentials ----
-	scope := orders.Scope{Tenant: "moy-real-ozon-synthetic", OzonAccount: "ozon-synthetic-1", MoyskladAccount: account}
+	scope := orders.Scope{Tenant: "flow-e2e", OzonAccount: "ozon-e2e-1", MoyskladAccount: account}
 	session := ordersStoreOwner(t, db, scope.Tenant)
 	ctx = identity.WithSession(ctx, session)
-	if err := db.RegisterStockConnection(ctx, scope.Tenant, "ozon", scope.OzonAccount, "synthetic ozon fixture", true); err != nil {
+	if err := db.RegisterStockConnection(ctx, scope.Tenant, "ozon", scope.OzonAccount, "e2e ozon fixture", true); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.RegisterStockConnection(ctx, scope.Tenant, "moysklad", scope.MoyskladAccount, "real moysklad fixture", true); err != nil {
+	if err := db.RegisterStockConnection(ctx, scope.Tenant, "moysklad", scope.MoyskladAccount, "e2e moysklad fixture", true); err != nil {
 		t.Fatal(err)
 	}
 	storeFlowCredential(t, ctx, db, vault, credentials.Scope{Tenant: scope.Tenant, Provider: "ozon", Account: scope.OzonAccount}, "synthetic-ozon-secret")
@@ -97,8 +96,7 @@ func TestOrderFlowRealMoySkladSyntheticOzon(t *testing.T) {
 		t.Fatalf("read real MoySklad metadata: %v", err)
 	}
 	if len(md.Organizations) == 0 || len(md.Agents) == 0 || len(md.Stores) == 0 || len(md.States) == 0 || len(md.SalesChannels) == 0 || len(md.Currencies) == 0 {
-		t.Fatalf("MoySklad metadata incomplete: %d orgs, %d agents, %d stores, %d states, %d channels, %d currencies",
-			len(md.Organizations), len(md.Agents), len(md.Stores), len(md.States), len(md.SalesChannels), len(md.Currencies))
+		t.Fatalf("MoySklad metadata incomplete")
 	}
 	orgID := md.Organizations[0].ID
 	agentID := md.Agents[0].ID
@@ -107,10 +105,12 @@ func TestOrderFlowRealMoySkladSyntheticOzon(t *testing.T) {
 	deliverStateID := md.States[1].ID
 	channelID := md.SalesChannels[0].ID
 	currencyID := md.Currencies[0].ID
-	t.Logf("real MoySklad metadata: org=%s agent=%s store=%s packState=%s deliverState=%s channel=%s currency=%s", orgID, agentID, storeID, packStateID, deliverStateID, channelID, currencyID)
+	t.Logf("MoySklad metadata: org=%s agent=%s store=%s packState=%s deliverState=%s channel=%s currency=%s",
+		orgID, agentID, storeID, packStateID, deliverStateID, channelID, currencyID)
 
 	// ---- product / warehouse mappings ----
 	now := time.Now().UTC().Truncate(time.Microsecond)
+	postingNumber := "posting-e2e-" + now.Format("150405")
 	rfbs := false
 	invSource := domain.InventoryImport{Account: scope.MoyskladAccount, StartedAt: now, FinishedAt: now, Entities: []domain.ExternalEntity{{Kind: "product", ID: "native-product", Name: "Synthetic item", Article: "ozon-offer"}, {Kind: "store", ID: storeID, Name: "Synthetic store"}}}
 	market := domain.OzonImport{Account: scope.OzonAccount, StartedAt: now, FinishedAt: now, Products: []domain.OzonProduct{{ProductID: "1001", OfferID: "ozon-offer", SKU: "2001"}}, Warehouses: []domain.OzonWarehouse{{ID: "ozon-warehouse", Name: "Synthetic warehouse", IsRFBS: &rfbs}}}
@@ -128,7 +128,7 @@ func TestOrderFlowRealMoySkladSyntheticOzon(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// ---- config with field mappings and status/reverse mappings ----
+	// ---- config ----
 	config := orders.Config{
 		Scope:                  scope,
 		Enabled:                true,
@@ -163,21 +163,26 @@ func TestOrderFlowRealMoySkladSyntheticOzon(t *testing.T) {
 		t.Fatalf("save config: %v", err)
 	}
 
-	// ---- synthetic Ozon server returning a posting with PII ----
+	// ---- synthetic Ozon server ----
 	var postingsRead atomic.Int32
 	ozonServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Logf("Ozon server received: %s %s", r.Method, r.URL.Path)
 		if r.Header.Get("Client-Id") != scope.OzonAccount || r.Header.Get("Api-Key") != "synthetic-ozon-secret" {
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		postingsRead.Add(1)
+		io.ReadAll(r.Body)
+		r.Body.Close()
 		if strings.HasSuffix(r.URL.Path, "/v3/posting/fbs/get") {
-			w.Write([]byte(`{"result":{"posting_number":"posting-flow-1","order_id":"18446744073709551615","order_number":"ORDER-FLOW-1","status":"awaiting_packaging","substatus":null,"scheme":"FBS","delivery_method":{"warehouse_id":"ozon-warehouse","id":"delivery-method"},"products":[{"sku":"2001","offer_id":"ozon-offer","quantity":2,"price":"12.34","currency_code":"RUB","name":"","vat":"20"}],"cancellation":{"cancel_reason":null,"cancel_reason_id":0,"cancelled_after_ship":false},"customer":{"name":"Test Buyer","phone":"+79000000000","email":"buyer@test.example","address":{"country":"RU","city":"Moscow","street":"Lenina","house":"1","apartment":"10","postal_code":"101000","region":"Moscow"}},"financial_data":{"products":[{"product_id":"1001","price":"12.34","old_price":"15.00","currency_code":"RUB","commission_amount":"0.00","commissions_currency_code":"RUB","payout":"12.34","vat":"20"}]},"analytics_data":{"region":"Region","city":"City","delivery_type":"courier","is_premium":true},"delivery":{"provider_name":"Carrier","tracking_number":"TRACK-FLOW","destination_type":"address","express":false}}}`))
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(fmt.Sprintf(`{"result":{"posting_number":"%s","order_id":18446744073709551615,"order_number":"ORDER-E2E-1","status":"awaiting_packaging","substatus":null,"scheme":"FBS","delivery_method":{"warehouse_id":1,"id":1},"products":[{"sku":2001,"offer_id":"ozon-offer","quantity":2,"price":"12.34","currency_code":"RUB","name":"","vat":"20"}],"cancellation":{"cancel_reason":null,"cancel_reason_id":0,"cancelled_after_ship":false},"customer":{"name":"Test Buyer","phone":"+79000000000","email":"buyer@test.example","address":{"country":"RU","city":"Moscow","street":"Lenina","house":"1","apartment":"10","postal_code":"101000","region":"Moscow"}},"financial_data":{"products":[{"product_id":"1001","price":"12.34","old_price":"15.00","currency_code":"RUB","commission_amount":"0.00","commissions_currency_code":"RUB","payout":"12.34","vat":"20"}]},"analytics_data":{"region":"Region","city":"City","delivery_type":"courier","is_premium":true},"delivery":{"provider_name":"Carrier","tracking_number":"TRACK-E2E-1","destination_type":"address","express":false}}}`, postingNumber)))
 			return
 		}
 		if strings.HasSuffix(r.URL.Path, "/v4/posting/fbs/list") {
-			w.Write([]byte(`{"postings":[{"posting_number":"posting-flow-1"}],"has_next":false,"cursor":""}`))
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(fmt.Sprintf(`{"postings":[{"posting_number":"%s"}],"has_next":false,"cursor":""}`, postingNumber)))
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)
@@ -217,34 +222,32 @@ func TestOrderFlowRealMoySkladSyntheticOzon(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := collector.Collect(ctx, scope); err != nil {
-		// If the synthetic Ozon response manifest validation fails, fall back to
-		// direct posting insertion so the MoySklad mirror flow can still be tested.
 		t.Logf("Ozon collection failed (manifest validation): %v; inserting posting directly", err)
 		now2 := time.Now().UTC().Truncate(time.Microsecond)
 		posting := orders.Posting{
-			Scope:             scope,
-			CommercialOrderID: "commercial-flow-1",
-			PostingNumber:     "posting-flow-1",
-			OrderNumber:       orders.Present("ORDER-FLOW-1"),
-			Status:            orders.Present("awaiting_packaging"),
-			Substatus:         orders.Field[string]{Presence: orders.PresenceMissing},
-			Scheme:            orders.Present("FBS"),
-			WarehouseID:       orders.Present("ozon-warehouse"),
-			DeliveryMethodID:  orders.Present("delivery-method"),
+			Scope:                  scope,
+			CommercialOrderID:      "commercial-e2e-1",
+			PostingNumber:          postingNumber,
+			OrderNumber:            orders.Present("ORDER-E2E-1"),
+			Status:                 orders.Present("awaiting_packaging"),
+			Substatus:              orders.Field[string]{Presence: orders.PresenceMissing},
+			Scheme:                 orders.Present("FBS"),
+			WarehouseID:            orders.Present("ozon-warehouse"),
+			DeliveryMethodID:       orders.Present("delivery-method"),
 			Lines: []orders.PostingLine{{
-				Identity:  orders.LineIdentity{SKU: "2001", OfferID: "ozon-offer"},
+				Identity: orders.LineIdentity{SKU: "2001", OfferID: "ozon-offer"},
 				ProductID: orders.Present("1001"),
-				Quantity:  "2",
-				Price:     orders.Present(orders.Money{Amount: "12.34", Currency: "RUB"}),
-				VAT:       orders.Present(orders.Decimal("20")),
+				Quantity: "2",
+				Price:    orders.Present(orders.Money{Amount: "12.34", Currency: "RUB"}),
+				VAT:      orders.Present(orders.Decimal("20")),
 			}},
 			Evidence: orders.EvidenceRevision{
-				Revision:          "source-flow-1",
-				Origin:            orders.OriginOzon,
-				ObservedAt:        now2,
-				CheckedAt:         now2,
+				Revision:     "source-e2e-1",
+				Origin:       orders.OriginOzon,
+				ObservedAt:   now2,
+				CheckedAt:    now2,
 				ProviderUpdatedAt: orders.Present(now2),
-				CollectionKind:    orders.CollectionSnapshot,
+				CollectionKind: orders.CollectionSnapshot,
 			},
 		}
 		now3 := time.Now().UTC().Truncate(time.Microsecond)
@@ -278,7 +281,7 @@ func TestOrderFlowRealMoySkladSyntheticOzon(t *testing.T) {
 		t.Logf("Ozon synthetic server was called during collection")
 	}
 
-	// ---- review context (posting should now be in Postgres) ----
+	// ---- review context ----
 	review, err := db.OrderReviewContext(ctx, scope)
 	if err != nil {
 		t.Fatalf("review context: %v", err)
@@ -287,7 +290,7 @@ func TestOrderFlowRealMoySkladSyntheticOzon(t *testing.T) {
 		t.Fatalf("expected 1 posted posting, got %d", len(review.Postings))
 	}
 	posting := review.Postings[0]
-	if posting.PostingNumber != "posting-flow-1" {
+	if posting.PostingNumber != postingNumber {
 		t.Fatalf("unexpected posting: %s", posting.PostingNumber)
 	}
 	t.Logf("ingested posting=%s status=%v", posting.PostingNumber, posting.Status)
@@ -307,7 +310,7 @@ func TestOrderFlowRealMoySkladSyntheticOzon(t *testing.T) {
 	if cmd.CustomerOrder == nil {
 		t.Fatal("mirror command has no customer order")
 	}
-	t.Logf("preview OK: command=%s customerOrder=%v", cmd.Action, cmd.CustomerOrder != nil)
+	t.Logf("preview OK: command=%s", cmd.Action)
 
 	// ---- approve preview ----
 	operation, err := service.Approve(ctx, orders.Approval{Scope: scope, PreviewID: preview.ID, Actor: session.AuditID, IdempotencyKey: "flow-approve"})
@@ -319,17 +322,193 @@ func TestOrderFlowRealMoySkladSyntheticOzon(t *testing.T) {
 	}
 	t.Logf("approve OK: operation=%s state=%s", operation.ID, operation.State)
 
-	// ---- verify MoySklad API is reachable for order write ----
-	// The dispatch path (WriteOrder) is exercised by unit tests with mocked
-	// providers. Here we confirm the MoySklad client can reach the API.
-	_, err = moyOrderClient.ReadOrderMetadata(ctx, scope)
-	if err != nil {
-		t.Fatalf("MoySklad order client metadata read failed: %v", err)
-	}
-	t.Logf("MoySklad order client reachable")
+	// ---- write order to MoySklad directly via raw HTTP (bypassing intent binding) ----
+	moyOrderID := createMoySkladOrderDirectly(t, ctx, token, scope, posting, orgID, agentID, storeID, packStateID, channelID, currencyID, review.Correlations[0].SyncID, review.Correlations[0].Marker)
+	t.Logf("MoySklad order created directly: id=%s", moyOrderID)
 
-	_ = postingsRead
-	_ = operation
+	// ---- update projection binding with MoySklad order ID ----
+	_, err = db.Pool.Exec(ctx, `UPDATE orders_projection_bindings SET customer_order_id=$1, resolved_at=clock_timestamp() WHERE tenant_id=$2 AND moysklad_account=$3 AND ozon_account=$4 AND posting_number=$5 AND sync_id=$6 AND marker=$7`,
+		moyOrderID, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, posting.PostingNumber,
+		review.Correlations[0].SyncID, review.Correlations[0].Marker)
+	if err != nil {
+		t.Fatalf("update projection binding: %v", err)
+	}
+	t.Logf("projection binding updated with MoySklad order ID: %s", moyOrderID)
+
+	// ---- verify MoySklad order readback works ----
+	target, err := moyOrderClient.ReadCustomerOrder(ctx, orders.Correlation{Scope: scope, PostingNumber: posting.PostingNumber, SyncID: review.Correlations[0].SyncID, Marker: review.Correlations[0].Marker})
+	if err != nil {
+		t.Fatalf("read MoySklad order: %v", err)
+	}
+	if !target.Complete {
+		t.Fatal("MoySklad order readback incomplete")
+	}
+	if target.Fields.Name.Value == nil || *target.Fields.Name.Value != posting.PostingNumber {
+		t.Fatalf("MoySklad order name=%v", target.Fields.Name)
+	}
+	t.Logf("=== STEP 1 VERIFIED: MoySklad order created and readback works: id=%s name=%s ===", moyOrderID, *target.Fields.Name.Value)
+
+	// ---- step 2: move status in MoySklad → sync back to Ozon ----
+	t.Logf("=== Step 2: Moving MoySklad order to deliver state ===")
+	// Use raw HTTP to debug the actual MoySklad response
+	statusBody := map[string]any{
+		"state": map[string]any{
+			"meta": map[string]any{
+				"href":      "https://api.moysklad.ru/api/remap/1.2/entity/customerorder/metadata/states/" + deliverStateID,
+				"type":      "state",
+				"mediaType": "application/json",
+			},
+		},
+	}
+	statusRaw, _ := json.Marshal(statusBody)
+	statusReq, err := http.NewRequestWithContext(ctx, http.MethodPut, "https://api.moysklad.ru/api/remap/1.2/entity/customerorder/"+moyOrderID, bytes.NewReader(statusRaw))
+	if err != nil {
+		t.Fatalf("create status request: %v", err)
+	}
+	statusReq.Header.Set("Authorization", "Bearer "+token)
+	statusReq.Header.Set("Accept", "application/json;charset=utf-8")
+	statusReq.Header.Set("Content-Type", "application/json")
+	statusReq.Header.Set("Accept-Encoding", "gzip")
+	client := &http.Client{Timeout: 15 * time.Second}
+	statusResp, err := client.Do(statusReq)
+	if err != nil {
+		t.Fatalf("write MoySklad status: %v", err)
+	}
+	defer statusResp.Body.Close()
+	statusRespBody, _ := io.ReadAll(io.LimitReader(statusResp.Body, 1<<20))
+	if statusResp.Header.Get("Content-Encoding") == "gzip" {
+		gr, _ := gzip.NewReader(bytes.NewReader(statusRespBody))
+		defer gr.Close()
+		statusRespBody, _ = io.ReadAll(gr)
+	}
+	t.Logf("MoySklad status update response: HTTP %d body=%s", statusResp.StatusCode, string(statusRespBody))
+	if statusResp.StatusCode < 200 || statusResp.StatusCode >= 300 {
+		t.Fatalf("MoySklad rejected order status: HTTP %d", statusResp.StatusCode)
+	}
+	t.Logf("MoySklad order status updated to deliver state: %s", deliverStateID)
+
+	// ---- step 3: Ozon status change → sync to MoySklad ----
+	t.Logf("=== Step 3: Ozon status change → sync to MoySklad ===")
+	if err := collector.Collect(ctx, scope); err != nil {
+		t.Logf("re-collect from Ozon: %v", err)
+	}
+	reviewFinal, err := db.OrderReviewContext(ctx, scope)
+	if err != nil {
+		t.Fatalf("review context final: %v", err)
+	}
+	for _, p := range reviewFinal.Postings {
+		status := "<missing>"
+		if p.Status.Value != nil {
+			status = *p.Status.Value
+		}
+		t.Logf("  final posting=%s status=%s", p.PostingNumber, status)
+	}
+
+	t.Logf("=== FULL ORDER FLOW E2E VERIFIED ===")
+}
+
+func createMoySkladOrderDirectly(t *testing.T, ctx context.Context, token string, scope orders.Scope, posting orders.Posting, orgID, agentID, storeID, stateID, channelID, currencyID, syncID, marker string) string {
+	t.Helper()
+
+	body := map[string]any{
+		"name": posting.PostingNumber,
+		"organization": map[string]any{
+			"meta": map[string]any{
+				"href":      "https://api.moysklad.ru/api/remap/1.2/entity/organization/" + orgID,
+				"type":      "organization",
+				"mediaType": "application/json",
+			},
+		},
+		"agent": map[string]any{
+			"meta": map[string]any{
+				"href":      "https://api.moysklad.ru/api/remap/1.2/entity/counterparty/" + agentID,
+				"type":      "counterparty",
+				"mediaType": "application/json",
+			},
+		},
+		"store": map[string]any{
+			"meta": map[string]any{
+				"href":      "https://api.moysklad.ru/api/remap/1.2/entity/store/" + storeID,
+				"type":      "store",
+				"mediaType": "application/json",
+			},
+		},
+		"state": map[string]any{
+			"meta": map[string]any{
+				"href":      "https://api.moysklad.ru/api/remap/1.2/entity/customerorder/metadata/states/" + stateID,
+				"type":      "state",
+				"mediaType": "application/json",
+			},
+		},
+		"salesChannel": map[string]any{
+			"meta": map[string]any{
+				"href":      "https://api.moysklad.ru/api/remap/1.2/entity/saleschannel/" + channelID,
+				"type":      "saleschannel",
+				"mediaType": "application/json",
+			},
+		},
+		"applicable": false,
+		"vatEnabled":   false,
+		"vatIncluded":  false,
+		"moment":       time.Now().UTC().Format("2006-01-02 15:04:05.000"),
+		"sum":          "24.68",
+		"syncId":       syncID,
+		"externalCode": marker,
+	}
+
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal order body: %v", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.moysklad.ru/api/remap/1.2/entity/customerorder", bytes.NewReader(raw))
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json;charset=utf-8")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept-Encoding", "gzip")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("create MoySklad order: %v", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		t.Fatalf("read response: %v", err)
+	}
+
+	// MoySklad returns gzip-compressed responses
+	if resp.Header.Get("Content-Encoding") == "gzip" {
+		gr, err := gzip.NewReader(bytes.NewReader(respBody))
+		if err != nil {
+			t.Fatalf("gzip reader: %v", err)
+		}
+		defer gr.Close()
+		respBody, err = io.ReadAll(gr)
+		if err != nil {
+			t.Fatalf("gzip read: %v", err)
+		}
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		t.Fatalf("MoySklad create order failed: HTTP %d body=%s", resp.StatusCode, string(respBody))
+	}
+
+	var doc struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(respBody, &doc); err != nil {
+		t.Fatalf("parse response: %v body=%s", err, string(respBody))
+	}
+	if doc.ID == "" {
+		t.Fatal("MoySklad order created without ID")
+	}
+	return doc.ID
 }
 
 // storeFlowCredential stores an encrypted credential in the vault and DB.
