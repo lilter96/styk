@@ -32,6 +32,9 @@ func (config Config) Validate() error {
 	if err := config.validateStatusMappings(); err != nil {
 		return err
 	}
+	if err := config.validateReverseStatusMappings(); err != nil {
+		return err
+	}
 	if config.Automation != nil {
 		return config.validateAutomation()
 	}
@@ -77,17 +80,35 @@ func (config Config) validateFieldMappings() error {
 		if mapping.AttributeID != "" && !validUUID(mapping.AttributeID) {
 			return ErrInvalid
 		}
-		if strings.HasPrefix(mapping.Source, "customer.") && !config.PIIEnabled {
-			return ErrBlocked
+		if strings.HasPrefix(mapping.Source, "customer.") {
+			if !config.PIIEnabled {
+				return ErrBlocked
+			}
+			if !customerMappingTarget(mapping) {
+				return ErrInvalid
+			}
+		} else if mapping.Target == "shipment_address" {
+			return ErrInvalid
 		}
 		seen[mapping.Target+":"+mapping.AttributeID] = true
 	}
 	return nil
 }
 
+func customerMappingTarget(mapping FieldMapping) bool {
+	switch mapping.Source {
+	case "customer.address":
+		return mapping.Target == "shipment_address" && mapping.AttributeID == ""
+	case "customer.name", "customer.phone", "customer.email":
+		return mapping.Target == "attribute" && mapping.AttributeID != ""
+	default:
+		return false
+	}
+}
+
 func writableTarget(target string) bool {
 	switch target {
-	case "name", "description", "moment", "delivery_at", "applicable", "state", "attribute":
+	case "name", "description", "moment", "delivery_at", "applicable", "state", "attribute", "shipment_address":
 		return true
 	case "positions.quantity", "positions.reserve", "positions.price", "positions.vat", "vat_enabled", "vat_included":
 		return true
@@ -110,6 +131,17 @@ func (config Config) validateStatusMappings() error {
 			return ErrConflict
 		}
 		seen[key] = true
+	}
+	return nil
+}
+
+func (config Config) validateReverseStatusMappings() error {
+	seen := make(map[string]bool, len(config.ReverseStatusMappings))
+	for _, mapping := range config.ReverseStatusMappings {
+		if mapping.Validate() != nil || seen[mapping.StateID] {
+			return ErrInvalid
+		}
+		seen[mapping.StateID] = true
 	}
 	return nil
 }
@@ -150,6 +182,13 @@ func (grant AutomationGrant) Validate() error {
 func (grant AutomationGrant) Active(now time.Time, scope Scope, revision int64) bool {
 	return grant.Validate() == nil && grant.Scope == scope && grant.ConfigRevision == revision &&
 		grant.RevokedAt == nil && !now.Before(grant.GrantedAt) && now.Before(grant.ExpiresAt)
+}
+
+func (customer ProtectedCustomer) Validate() error {
+	if customer.Presence != PresenceValue || customer.Reference == "" || len(customer.Reference) > 128 || customer.Schema != "customer-v1" || customer.Revision < 1 {
+		return ErrInvalid
+	}
+	return nil
 }
 
 func (secret PostingSecret) Validate() error {

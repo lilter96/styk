@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "./api";
+import { ApiError, api } from "./api";
 import {
   orderActionLabel,
   knownOrderField,
@@ -14,6 +14,7 @@ import {
   type OrderActionOptions,
   type OrderActionProposal,
   type OrderActionParameters,
+  type OrderReverseSuggestion,
 } from "./OrdersTypes";
 
 export const ozonOrderActions = [
@@ -154,6 +155,38 @@ export function OrdersActions({
     refetchOnWindowFocus: false,
   });
   const option = options.data?.actions.find((item) => item.action === action);
+  const reverse = useQuery({
+    queryKey: [
+      "orders-reverse-suggestion",
+      scope,
+      posting.posting_number,
+      posting.evidence.revision,
+    ],
+    enabled: open,
+    queryFn: async ({ signal }) => {
+      try {
+        const value = await api<OrderReverseSuggestion>(
+          ordersURL("reverse-suggestion", scope, {
+            posting_number: posting.posting_number,
+          }),
+          signal,
+        );
+        if (
+          !sameOrderScope(value.scope, scope) ||
+          value.posting_number !== posting.posting_number
+        )
+          throw new Error("reverse suggestion evidence mismatch");
+        return value;
+      } catch (error) {
+        // An unlinked posting has no reverse proposal; that is not an error.
+        if (error instanceof ApiError && error.status === 404) return null;
+        throw error;
+      }
+    },
+    retry: false,
+    staleTime: 0,
+    refetchOnWindowFocus: false,
+  });
   const packaging = packageActions.includes(action);
   const event = eventActions.includes(action);
   const cancellation = cancelActions.includes(action);
@@ -239,6 +272,10 @@ export function OrdersActions({
       parameters.label_type = labelType as "big_label" | "small_label";
     onPreview({ posting_number: posting.posting_number, action, parameters });
   }
+  const suggested = reverse.data?.proposed_action ?? "";
+  const reverseBlockers = (reverse.data?.blockers ?? []).filter(
+    (blocker) => blocker.code !== "order_workflow_disabled",
+  );
   return (
     <details
       className="orders-action-form"
@@ -254,6 +291,33 @@ export function OrdersActions({
           Отгрузку FBS обрабатывает Ozon. Статус «В доставке» здесь передаётся
           только для rFBS и фактически произошедшего события.
         </p>
+        {suggested && (
+          <div className="orders-note">
+            <p>
+              МойСклад: состояние связано с действием «
+              {orderActionLabel(suggested)}».
+              {reverse.data?.ready
+                ? " Его можно выбрать ниже; отправка по-прежнему требует предпросмотра и подтверждения."
+                : ""}
+            </p>
+            {reverse.data?.ready ? (
+              <button
+                type="button"
+                className="secondary"
+                disabled={disabled}
+                onClick={() => choose(suggested)}
+              >
+                Выбрать предложенное действие
+              </button>
+            ) : (
+              <ul>
+                {reverseBlockers.map((blocker, index) => (
+                  <li key={index}>{orderIssueLabel(blocker.code)}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
         {options.isFetching && (
           <p role="status">Проверяем доступность действий…</p>
         )}

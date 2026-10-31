@@ -58,6 +58,72 @@ func TestOrderCreateUsesNativeReferencesAndExactMinorUnits(t *testing.T) {
 	}
 }
 
+func TestOrderCreateWritesOnlyReviewedCustomerProjection(t *testing.T) {
+	t.Parallel()
+	simulator, client := newOrderSimulator(t, "ok")
+	attribute := simulator.reference("entity/customerorder/metadata/attributes", "attributemetadata", 12)
+	attribute["id"], attribute["name"], attribute["type"] = orderTestID(12), "Customer name", "string"
+	simulator.attributes = []any{attribute}
+	command := simulator.command
+	command.CustomerOrder.PIIMappings = []orders.PIIAttributeMapping{
+		{Source: "customer.name", AttributeID: orderTestID(12)},
+		{Source: "customer.address"},
+	}
+	protected := orders.ProtectedCustomer{Reference: "protected-reference", Schema: "customer-v1", Revision: 1, Presence: orders.PresenceValue}
+	command.ProtectedCustomer = &protected
+	command.PII = &orders.Customer{
+		Name:  orders.Present("Buyer Name"),
+		Phone: orders.Present("unmapped-private-phone"),
+		Address: orders.Present(orders.Address{
+			Country: orders.Present("RU"), City: orders.Present("City"), Street: orders.Present("Street"),
+		}),
+	}
+	durable, err := json.Marshal(command)
+	if err != nil || strings.Contains(string(durable), "Buyer Name") || strings.Contains(string(durable), "unmapped-private-phone") || strings.Contains(string(durable), "City") {
+		t.Fatalf("durable command leaked customer values: %s err=%v", durable, err)
+	}
+	if err = client.BindOrderIntent(command, func(context.Context) (bool, error) { return true, nil }); err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := client.WriteOrder(context.Background(), command)
+	if err != nil || receipt.State != orders.StateAcknowledged {
+		t.Fatalf("receipt=%+v err=%v", receipt, err)
+	}
+	body := <-simulator.captured
+	if body["shipmentAddress"] != "RU, City, Street" {
+		t.Fatalf("shipmentAddress=%v", body["shipmentAddress"])
+	}
+	attributes, ok := body["attributes"].([]any)
+	if !ok || len(attributes) != 1 {
+		t.Fatalf("attributes=%v", body["attributes"])
+	}
+	if attributes[0].(map[string]any)["value"] != "Buyer Name" {
+		t.Fatalf("projected attribute=%v", attributes[0])
+	}
+	raw, err := json.Marshal(body)
+	if err != nil || strings.Contains(string(raw), "unmapped-private-phone") {
+		t.Fatalf("unmapped phone was written: %s err=%v", raw, err)
+	}
+}
+
+func TestOrderCreateIgnoresCustomerValuesWithoutMappings(t *testing.T) {
+	t.Parallel()
+	simulator, client := newOrderSimulator(t, "ok")
+	command := simulator.command
+	command.PII = &orders.Customer{Name: orders.Present("Buyer Name"), Address: orders.Present(orders.Address{City: orders.Present("City")})}
+	if err := client.BindOrderIntent(command, func(context.Context) (bool, error) { return true, nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.WriteOrder(context.Background(), command); err != nil {
+		t.Fatal(err)
+	}
+	body := <-simulator.captured
+	raw, err := json.Marshal(body)
+	if err != nil || body["shipmentAddress"] != nil || body["attributes"] != nil || strings.Contains(string(raw), "Buyer Name") || strings.Contains(string(raw), "City") {
+		t.Fatalf("customer values written without a reviewed mapping: %s err=%v", raw, err)
+	}
+}
+
 func TestOrderLostResponseIsUnknownAndCannotBeResent(t *testing.T) {
 	t.Parallel()
 	simulator, client := newOrderSimulator(t, "lost")
@@ -265,7 +331,7 @@ func TestOrderWriteHTTPRejectsRedirectAndReplay(t *testing.T) {
 	}
 }
 
-func TestOrderReadbackOmitsUnmanagedTextAttributes(t *testing.T) {
+func TestOrderReadbackDecodesReviewedTextAttributesAndRedactsValues(t *testing.T) {
 	t.Parallel()
 	simulator, client := newOrderSimulator(t, "ok")
 	managed := simulator.reference("entity/customerorder/metadata/attributes", "attributemetadata", 12)
@@ -277,8 +343,13 @@ func TestOrderReadbackOmitsUnmanagedTextAttributes(t *testing.T) {
 		t.Fatal(err)
 	}
 	attributes, err := client.decodeOrderAttributes(raw)
-	if err != nil || len(attributes) != 1 || attributes[0].AttributeID != orderTestID(12) {
+	if err != nil || len(attributes) != 2 || attributes[0].AttributeID != orderTestID(12) || attributes[1].AttributeID != orderTestID(14) {
 		t.Fatalf("attributes=%+v err=%v", attributes, err)
+	}
+	target := orders.TargetObservation{Scope: simulator.command.Scope, Complete: true, Fields: orders.CustomerOrderWrite{Attributes: attributes, ShipmentAddress: orders.Present("private address")}}
+	projected, err := json.Marshal(target)
+	if err != nil || strings.Contains(string(projected), "private") || !strings.Contains(string(projected), "fields.attributes") || !strings.Contains(string(projected), "fields.shipment_address") {
+		t.Fatalf("target JSON leaked protected values: %s err=%v", projected, err)
 	}
 }
 

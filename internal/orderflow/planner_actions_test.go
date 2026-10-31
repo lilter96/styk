@@ -36,9 +36,15 @@ func TestActionOptionsDoNotAdvertiseUnimplementedDispatch(t *testing.T) {
 
 func TestCustomerMappingWithoutProtectorBlocks(t *testing.T) {
 	t.Parallel()
-	validation := applyCustomerMapping(&orders.CustomerOrderWrite{}, orders.Posting{}, orders.FieldMapping{Source: "customer.address"}, nil)
-	if validation.Code != "protected_customer_projection_unavailable" {
-		t.Fatalf("unavailable PII mapping silently accepted: %+v", validation)
+	write := orders.CustomerOrderWrite{}
+	posting := orders.Posting{Customer: orders.ProtectedCustomer{Reference: "reference", Schema: "customer-v1", Revision: 1, Presence: orders.PresenceValue}}
+	review := orders.ReviewContext{Config: orders.Config{PIIEnabled: true}}
+	if validation := applyCustomerMapping(&write, posting, review, orders.FieldMapping{Source: "customer.address", Target: "shipment_address"}); validation.Code != "" {
+		t.Fatalf("reviewed PII mapping rejected: %+v", validation)
+	}
+	validations := resolveCustomerProjection(context.Background(), &write, posting, nil)
+	if len(validations) != 1 || validations[0].Code != "protected_customer_projection_unavailable" {
+		t.Fatalf("unavailable PII projection silently accepted: %+v", validations)
 	}
 }
 

@@ -37,7 +37,7 @@ func registerOrdersRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c *co
 	}
 	factory.NewOzon = c.ozonFactory
 	api := &ordersAPI{db: db, factory: factory, simulated: c.catalogSimulator}
-	api.service, err = orderflow.NewService(db, factory, orderflow.ServiceOptions{AllowScope: api.allowed, ActionProtector: orderprivacy.ActionProtector{Vault: c.vault, Store: db}})
+	api.service, err = orderflow.NewService(db, factory, orderflow.ServiceOptions{AllowScope: api.allowed, CustomerReader: orderprivacy.Protector{Vault: c.vault, Store: db}, ActionProtector: orderprivacy.ActionProtector{Vault: c.vault, Store: db}})
 	if err != nil {
 		return err
 	}
@@ -53,6 +53,7 @@ func registerOrdersRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c *co
 		{"GET /api/orders/config", api.config, false}, {"POST /api/orders/config", api.saveConfig, true},
 		{"GET /api/orders/postings", api.postings, false}, {"GET /api/orders/operations", api.history, false},
 		{"GET /api/orders/action-options", api.actionOptions, false},
+		{"GET /api/orders/reverse-suggestion", api.reverseSuggestion, false},
 		{"GET /api/orders/metadata", api.metadata, false}, {"POST /api/orders/preview", api.preview, true},
 		{"GET /api/orders/metadata/registry", api.metadataRegistry, false}, {"POST /api/orders/metadata/attributes", api.createMetadata, true},
 		{"POST /api/orders/metadata/reconcile", api.reconcileMetadata, true},
@@ -137,6 +138,15 @@ func (a *ordersAPI) history(w http.ResponseWriter, r *http.Request) {
 
 func (a *ordersAPI) actionOptions(w http.ResponseWriter, r *http.Request) {
 	result, err := a.service.ActionOptions(r.Context(), orders.ActionOptionsRequest{Scope: orderScope(r), PostingNumber: r.URL.Query().Get("posting_number")})
+	if err != nil {
+		ordersHTTPError(w, err)
+		return
+	}
+	writeJSON(w, result)
+}
+
+func (a *ordersAPI) reverseSuggestion(w http.ResponseWriter, r *http.Request) {
+	result, err := a.service.ReverseSuggestion(r.Context(), orders.ReverseSuggestionRequest{Scope: orderScope(r), PostingNumber: r.URL.Query().Get("posting_number")})
 	if err != nil {
 		ordersHTTPError(w, err)
 		return

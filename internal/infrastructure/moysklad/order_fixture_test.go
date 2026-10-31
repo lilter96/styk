@@ -24,6 +24,7 @@ type orderSimulator struct {
 	mode          string
 	drift         bool
 	wrongAccount  bool
+	attributes    []any
 	captured      chan map[string]any
 }
 
@@ -157,7 +158,11 @@ func (s *orderSimulator) dictionary(writer http.ResponseWriter, path string) {
 func (s *orderSimulator) metadata(writer http.ResponseWriter) {
 	state := s.reference("entity/customerorder/metadata/states", "state", 5)
 	state["id"], state["accountId"], state["entityType"], state["name"], state["stateType"] = orderTestID(5), s.command.Scope.MoyskladAccount, "customerorder", "state-name", "Regular"
-	s.reply(writer, map[string]any{"states": []any{state}, "attributes": []any{}})
+	attributes := s.attributes
+	if attributes == nil {
+		attributes = []any{}
+	}
+	s.reply(writer, map[string]any{"states": []any{state}, "attributes": attributes})
 }
 
 func (s *orderSimulator) write(writer http.ResponseWriter, request *http.Request) {

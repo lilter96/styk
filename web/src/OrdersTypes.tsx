@@ -70,6 +70,27 @@ export type OrderStatusMapping = {
   substatus: OrderField<string>;
   state_id: string;
 };
+export type OrderReverseStatusMapping = {
+  state_id: string;
+  action: string;
+};
+export type OrderReverseSuggestion = {
+  scope: NativeScope;
+  posting_number: string;
+  commercial_order_id: string;
+  customer_order_id: string;
+  moysklad_state_id: string;
+  proposed_action?: string;
+  parameters_required: string[];
+  expected_status?: string;
+  posting_status: OrderField<string>;
+  substatus: OrderField<string>;
+  source_revision: string;
+  target_revision: string;
+  config_revision: number;
+  blockers: { field?: string; code: string }[];
+  ready: boolean;
+};
 export type OrderAutomation = {
   expires_at: string;
   actions: string[];
@@ -95,6 +116,7 @@ export type OrdersConfigData = {
   currency_id?: string;
   field_mappings: OrderMapping[];
   status_mappings: OrderStatusMapping[];
+  reverse_status_mappings?: OrderReverseStatusMapping[];
   automation?: OrderAutomation | null;
   updated_at?: string;
 };
@@ -375,6 +397,14 @@ const issueLabels: Record<string, string> = {
     "Для отменённого отправления явно выберите нулевой резерв.",
   field_not_authorized: "Поле не разрешено настройками передачи.",
   native_attribute_unverified: "Дополнительное поле МойСклад не подтверждено.",
+  reverse_mapping_missing:
+    "Для состояния заказа МойСклад не настроено обратное предложение.",
+  reverse_action_already_applied:
+    "Ozon уже находится в целевом статусе этого действия.",
+  reverse_transition_not_available:
+    "Текущий статус Ozon не допускает это действие из состояния МойСклад.",
+  reverse_source_status_unknown:
+    "Не удалось подтвердить текущий статус отправления Ozon.",
 };
 export const orderIssueLabel = (code: string) =>
   issueLabels[code] ||

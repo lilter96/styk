@@ -21,6 +21,13 @@ func (c *OrderClient) orderPayload(command orders.Command) (map[string]any, erro
 	if err := orderWriteReferences(*write); err != nil {
 		return nil, err
 	}
+	projected, err := c.orderCustomerValues(command)
+	if err != nil {
+		return nil, err
+	}
+	if projected != nil {
+		write = projected
+	}
 	owned, err := orderOwnedFields(command)
 	if err != nil {
 		return nil, err
@@ -30,7 +37,7 @@ func (c *OrderClient) orderPayload(command orders.Command) (map[string]any, erro
 	if err = addOrderFields(body, *write, owned); err != nil {
 		return nil, err
 	}
-	if err = c.addOrderCollections(body, command, owned); err != nil {
+	if err = c.addOrderCollections(body, command, *write, owned); err != nil {
 		return nil, err
 	}
 	if command.Action == orders.ActionMirrorCreate {
@@ -69,7 +76,7 @@ func orderOwnedFields(command orders.Command) (map[string]bool, error) {
 		owned[field] = true
 	}
 	if command.Action == orders.ActionMirrorCreate {
-		for _, field := range []string{"organization", "agent", "store", "state", "sales_channel", "rate", "name", "description", "moment", "delivery_at", "applicable", "vat_enabled", "vat_included", "positions", "attributes"} {
+		for _, field := range []string{"organization", "agent", "store", "state", "sales_channel", "rate", "name", "description", "moment", "delivery_at", "applicable", "vat_enabled", "vat_included", "positions", "attributes", "shipment_address"} {
 			owned[field] = true
 		}
 		return owned, nil
@@ -84,7 +91,7 @@ func orderOwnedFields(command orders.Command) (map[string]bool, error) {
 
 func orderWritableField(field string) bool {
 	switch field {
-	case "organization", "agent", "store", "state", "sales_channel", "rate", "name", "description", "moment", "delivery_at", "applicable", "vat_enabled", "vat_included", "positions", "attributes", "attribute":
+	case "organization", "agent", "store", "state", "sales_channel", "rate", "name", "description", "moment", "delivery_at", "applicable", "vat_enabled", "vat_included", "positions", "attributes", "attribute", "shipment_address":
 		return true
 	case "positions.quantity", "positions.reserve", "positions.price", "positions.vat":
 		return true
@@ -128,6 +135,10 @@ func addOrderFields(body map[string]any, write orders.CustomerOrderWrite, owned 
 	}
 	orderAddMoment(body, "moment", write.Moment, owned["moment"])
 	orderAddMoment(body, "deliveryPlannedMoment", write.DeliveryAt, owned["delivery_at"])
+	orderAddField(body, "shipmentAddress", write.ShipmentAddress, owned["shipment_address"])
+	if write.ShipmentAddress.IsKnown() && len(*write.ShipmentAddress.Value) > 1024 {
+		return orders.ErrInvalid
+	}
 	return nil
 }
 
@@ -143,20 +154,23 @@ func orderAddMoment(body map[string]any, key string, field orders.Field[time.Tim
 	}
 }
 
-func (c *OrderClient) addOrderCollections(body map[string]any, command orders.Command, owned map[string]bool) error {
+func (c *OrderClient) addOrderCollections(body map[string]any, command orders.Command, write orders.CustomerOrderWrite, owned map[string]bool) error {
 	if owned["positions"] {
 		if command.Action == orders.ActionMirrorUpdate {
 			// The reviewed collection-write contract has no retained position ID.
 			// Recreating native lines would lose identity and unmanaged fields.
 			return orders.ErrBlocked
 		}
-		positions, err := c.orderPositions(command.CustomerOrder.Positions)
+		positions, err := c.orderPositions(write.Positions)
 		if err != nil {
 			return err
 		}
 		body["positions"] = positions
 	}
-	attributes := c.orderAttributes(command.CustomerOrder.Attributes, owned)
+	attributes, err := c.orderAttributes(write.CombinedAttributes(), owned)
+	if err != nil {
+		return err
+	}
 	if len(attributes) > 0 {
 		body["attributes"] = attributes
 	}
@@ -198,14 +212,20 @@ func orderAddPositionValues(row map[string]any, position orders.PositionWrite) e
 	return nil
 }
 
-func (c *OrderClient) orderAttributes(attributes []orders.AttributeWrite, owned map[string]bool) []map[string]any {
+func (c *OrderClient) orderAttributes(attributes []orders.AttributeWrite, owned map[string]bool) ([]map[string]any, error) {
 	result := make([]map[string]any, 0, len(attributes))
+	seen := make(map[string]bool, len(attributes))
 	for _, attribute := range attributes {
-		if attribute.Value.IsKnown() && (owned["attribute"] || owned["attributes"] || owned["attribute:"+attribute.AttributeID]) {
-			result = append(result, map[string]any{"meta": c.reference("entity/customerorder/metadata/attributes", "attributemetadata", attribute.AttributeID).Meta, "value": *attribute.Value.Value})
+		if !attribute.Value.IsKnown() || !owned["attribute"] && !owned["attributes"] && !owned["attribute:"+attribute.AttributeID] {
+			continue
 		}
+		if seen[attribute.AttributeID] {
+			return nil, orders.ErrInvalid
+		}
+		seen[attribute.AttributeID] = true
+		result = append(result, map[string]any{"meta": c.reference("entity/customerorder/metadata/attributes", "attributemetadata", attribute.AttributeID).Meta, "value": *attribute.Value.Value})
 	}
-	return result
+	return result, nil
 }
 
 func (c *OrderClient) validateOrderPayload(command orders.Command, body map[string]any) (map[string]any, error) {

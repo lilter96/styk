@@ -28,9 +28,15 @@ func (r *Runner) dispatchMirror(ctx context.Context, work orders.Work) error {
 	if err != nil {
 		return r.stop(ctx, work, "REVIEWED_FACTS_UNAVAILABLE")
 	}
-	if err = r.freshSource(ctx, work, decision.Posting); err != nil {
+	fresh, err := r.freshSource(ctx, work, decision.Posting)
+	if err != nil {
 		return r.stop(ctx, work, "FRESH_SOURCE_CHANGED_OR_UNAVAILABLE")
 	}
+	command, err := r.withCustomerProjection(ctx, work.Command, fresh.Customer)
+	if err != nil {
+		return r.stop(ctx, work, "PROTECTED_CUSTOMER_PROJECTION_UNAVAILABLE")
+	}
+	work.Command = command
 	client, err := resolveOrderClient(ctx, r.resolver, work.Scope, "moysklad", work.Credentials.Moysklad)
 	if err != nil {
 		return r.stop(ctx, work, "SCOPED_TARGET_CREDENTIALS_UNAVAILABLE")
@@ -55,7 +61,7 @@ func (r *Runner) dispatchFulfillment(ctx context.Context, work orders.Work) erro
 	}
 	decision, sourceErr := r.reviewedDecision(ctx, work)
 	if sourceErr == nil {
-		sourceErr = r.freshSource(ctx, work, decision.Posting)
+		_, sourceErr = r.freshSource(ctx, work, decision.Posting)
 	}
 	if sourceErr != nil {
 		return r.stop(ctx, work, "FRESH_SOURCE_CHANGED_OR_UNAVAILABLE")
@@ -106,27 +112,51 @@ func (r *Runner) reviewedDecision(ctx context.Context, work orders.Work) (orders
 	return orders.Decision{}, orders.ErrNotFound
 }
 
-func (r *Runner) freshSource(ctx context.Context, work orders.Work, reviewed orders.Posting) error {
+func (r *Runner) freshSource(ctx context.Context, work orders.Work, reviewed orders.Posting) (orders.Posting, error) {
 	client, err := resolveOrderClient(ctx, r.resolver, work.Scope, "ozon", work.Credentials.Ozon)
 	if err != nil {
-		return err
+		return orders.Posting{}, err
 	}
 	fresh, err := client.ReadOrderPosting(ctx, work.Scope, work.Command.PostingNumber)
 	if err != nil {
-		return fmt.Errorf("read current source posting before order dispatch: %w", err)
+		return orders.Posting{}, fmt.Errorf("read current source posting before order dispatch: %w", err)
 	}
 	if fresh.Scope != reviewed.Scope || fresh.PostingNumber != reviewed.PostingNumber || fresh.CommercialOrderID != reviewed.CommercialOrderID {
-		return orders.ErrStale
+		return orders.Posting{}, orders.ErrStale
+	}
+	if work.Command.CustomerOrder != nil && work.Command.CustomerOrder.HasPIIMappings() && work.Command.ProtectedCustomer != nil && fresh.Customer != *work.Command.ProtectedCustomer {
+		return orders.Posting{}, orders.ErrStale
 	}
 	before, err := orders.PostingFingerprint(withoutCustomerProjection(reviewed))
 	if err != nil {
-		return err
+		return orders.Posting{}, err
 	}
 	after, err := orders.PostingFingerprint(withoutCustomerProjection(fresh))
 	if err != nil || before != after {
-		return orders.ErrStale
+		return orders.Posting{}, orders.ErrStale
 	}
-	return nil
+	return fresh, nil
+}
+
+func (r *Runner) withCustomerProjection(ctx context.Context, command orders.Command, customer orders.ProtectedCustomer) (orders.Command, error) {
+	if command.CustomerOrder == nil || !command.CustomerOrder.HasPIIMappings() {
+		return command, nil
+	}
+	if r.options.CustomerReader == nil || command.ProtectedCustomer == nil || *command.ProtectedCustomer != customer {
+		return command, orders.ErrBlocked
+	}
+	value, err := r.options.CustomerReader.Customer(ctx, command.Scope, command.PostingNumber, customer)
+	if err != nil || value == nil {
+		return command, orders.ErrBlocked
+	}
+	attributes, address, err := orders.ProjectCustomer(*value, command.CustomerOrder.PIIMappings)
+	if err != nil {
+		return command, err
+	}
+	write := *command.CustomerOrder
+	write.TransientAttributes, write.ShipmentAddress = attributes, address
+	command.CustomerOrder, command.PII = &write, value
+	return command, nil
 }
 
 func withoutCustomerProjection(posting orders.Posting) orders.Posting {

@@ -72,7 +72,7 @@ func prepareMirrorUpdate(command *orders.Command, target orders.TargetObservatio
 }
 
 func changedScalarFields(wanted, actual orders.CustomerOrderWrite) []string {
-	fields := make([]string, 0, 9)
+	fields := make([]string, 0, 10)
 	fields = appendChanged(fields, "name", !fieldRepresented(wanted.Name, actual.Name))
 	fields = appendChanged(fields, "description", !fieldRepresented(wanted.Description, actual.Description))
 	fields = appendChanged(fields, "moment", !timeRepresented(wanted.Moment, actual.Moment))
@@ -81,7 +81,8 @@ func changedScalarFields(wanted, actual orders.CustomerOrderWrite) []string {
 	fields = appendChanged(fields, "vat_enabled", !fieldRepresented(wanted.VATEnabled, actual.VATEnabled))
 	fields = appendChanged(fields, "vat_included", !fieldRepresented(wanted.VATIncluded, actual.VATIncluded))
 	fields = appendChanged(fields, "state", wanted.StateID != actual.StateID)
-	return appendChanged(fields, "attribute", !attributesRepresented(wanted.Attributes, actual.Attributes))
+	fields = appendChanged(fields, "shipment_address", wanted.HasShipmentAddressMapping() && !fieldRepresented(wanted.ShipmentAddress, actual.ShipmentAddress))
+	return appendChanged(fields, "attribute", !attributesRepresented(wanted.CombinedAttributes(), actual.Attributes))
 }
 
 func appendChanged(fields []string, field string, changed bool) []string {
@@ -120,6 +121,9 @@ func validTargetFields(fields orders.CustomerOrderWrite) bool {
 		return false
 	}
 	if fields.Applicable.Validate() != nil || fields.VATEnabled.Validate() != nil || fields.VATIncluded.Validate() != nil || fields.RateValue.Validate() != nil {
+		return false
+	}
+	if fields.ShipmentAddress.Validate() != nil {
 		return false
 	}
 	seen := make(map[string]bool, len(fields.Attributes))

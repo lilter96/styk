@@ -57,9 +57,6 @@ func (c *OrderClient) decodeOrderAttributes(raw json.RawMessage) ([]orders.Attri
 	result := make([]orders.AttributeWrite, 0, len(attributes))
 	seen := make(map[string]bool, len(attributes))
 	for _, attribute := range attributes {
-		if !validOrderAttributeMarker(attribute.Name) {
-			continue
-		}
 		if attribute.Type != "string" && attribute.Type != "text" {
 			continue
 		}
@@ -133,6 +130,9 @@ func decodeOrderScalarFields(raw map[string]json.RawMessage, write *orders.Custo
 		return err
 	}
 	if write.DeliveryAt, err = orderReadMoment(raw, "deliveryPlannedMoment"); err != nil {
+		return err
+	}
+	if write.ShipmentAddress, err = orderReadField[string](raw, "shipmentAddress"); err != nil {
 		return err
 	}
 	return nil

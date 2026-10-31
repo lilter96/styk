@@ -102,6 +102,7 @@ function mockAPI(
     if (response) return response;
     if (url.pathname.endsWith("/action-options")) return json(options());
     if (url.pathname.endsWith("/config")) return json(config);
+    if (url.pathname.endsWith("/reverse-suggestion")) return json(null);
     if (url.pathname.endsWith("/metadata/registry"))
       return json({
         scope: orderScopeBody(scope),
@@ -201,8 +202,12 @@ it("reads action options only when opened and never posts while inputs change", 
   fireEvent.change(screen.getByLabelText("Трек-номер"), {
     target: { value: "TRACK-SYNTHETIC" },
   });
-  expect(fetcher.mock.calls).toHaveLength(1);
-  expect(fetcher.mock.calls[0][1]?.method).toBeUndefined();
+  expect(fetcher.mock.calls).toHaveLength(2);
+  const actionsCall = fetcher.mock.calls.find(([path]) =>
+    new URL(path, "http://localhost").pathname.endsWith("/action-options"),
+  );
+  expect(actionsCall).toBeDefined();
+  expect(actionsCall![1]?.method).toBeUndefined();
   expect(sessionStorage.length).toBe(0);
 });
 it("requires exact package allocation and explicit actual readiness without filling claims", async () => {

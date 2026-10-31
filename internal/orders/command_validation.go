@@ -54,6 +54,11 @@ func (command Command) validateMirror() error {
 	if command.CustomerOrder.StoreID != command.Warehouse.MoyskladStoreID {
 		return ErrStale
 	}
+	if command.CustomerOrder.HasPIIMappings() {
+		if command.ProtectedCustomer == nil || command.ProtectedCustomer.Validate() != nil {
+			return ErrInvalid
+		}
+	}
 	return command.CustomerOrder.Validate(command.Scope)
 }
 
@@ -119,6 +124,47 @@ func (write CustomerOrderWrite) validateFields() error {
 			return ErrInvalid
 		}
 		seen[attribute.AttributeID] = true
+	}
+	if err := write.validatePIIMappings(seen); err != nil {
+		return err
+	}
+	return write.validateTransientProjection(seen)
+}
+
+func (write CustomerOrderWrite) validatePIIMappings(seen map[string]bool) error {
+	seenSources := make(map[string]bool, len(write.PIIMappings))
+	for _, mapping := range write.PIIMappings {
+		if err := mapping.Validate(); err != nil || seenSources[mapping.Source] {
+			return ErrInvalid
+		}
+		seenSources[mapping.Source] = true
+		if mapping.AttributeID == "" {
+			continue
+		}
+		if seen[mapping.AttributeID] {
+			return ErrConflict
+		}
+		seen[mapping.AttributeID] = true
+	}
+	return nil
+}
+
+func (write CustomerOrderWrite) validateTransientProjection(seen map[string]bool) error {
+	if len(write.TransientAttributes) == 0 && !write.ShipmentAddress.IsSpecified() {
+		return nil
+	}
+	if !write.HasPIIMappings() || write.ShipmentAddress.Validate() != nil {
+		return ErrInvalid
+	}
+	allowed := write.customerAttributeIDs()
+	for _, attribute := range write.TransientAttributes {
+		if !allowed[attribute.AttributeID] || seen[attribute.AttributeID] || attribute.Value.Validate() != nil {
+			return ErrInvalid
+		}
+		seen[attribute.AttributeID] = true
+	}
+	if write.ShipmentAddress.IsSpecified() && !write.HasShipmentAddressMapping() {
+		return ErrInvalid
 	}
 	return nil
 }

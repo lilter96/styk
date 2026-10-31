@@ -279,25 +279,26 @@ type AutomationGrant struct {
 }
 
 type Config struct {
-	Scope                  Scope            `json:"scope"`
-	Revision               int64            `json:"revision"`
-	Enabled                bool             `json:"enabled"`
-	TestEnabled            bool             `json:"test_enabled"`
-	IntervalSeconds        int64            `json:"interval_seconds"`
-	SourceFreshnessSeconds int64            `json:"source_freshness_seconds"`
-	PreviewTTLSeconds      int64            `json:"preview_ttl_seconds"`
-	PIIEnabled             bool             `json:"pii_enabled"`
-	PIIRetentionSeconds    int64            `json:"pii_retention_seconds"`
-	CurrencyID             string           `json:"currency_id,omitempty"`
-	OrganizationID         string           `json:"organization_id"`
-	AgentID                string           `json:"agent_id"`
-	StoreID                string           `json:"store_id"`
-	StateID                string           `json:"state_id"`
-	SalesChannelID         string           `json:"sales_channel_id"`
-	FieldMappings          []FieldMapping   `json:"field_mappings"`
-	StatusMappings         []StatusMapping  `json:"status_mappings"`
-	Automation             *AutomationGrant `json:"automation,omitempty"`
-	UpdatedAt              time.Time        `json:"updated_at"`
+	Scope                  Scope                  `json:"scope"`
+	Revision               int64                  `json:"revision"`
+	Enabled                bool                   `json:"enabled"`
+	TestEnabled            bool                   `json:"test_enabled"`
+	IntervalSeconds        int64                  `json:"interval_seconds"`
+	SourceFreshnessSeconds int64                  `json:"source_freshness_seconds"`
+	PreviewTTLSeconds      int64                  `json:"preview_ttl_seconds"`
+	PIIEnabled             bool                   `json:"pii_enabled"`
+	PIIRetentionSeconds    int64                  `json:"pii_retention_seconds"`
+	CurrencyID             string                 `json:"currency_id,omitempty"`
+	OrganizationID         string                 `json:"organization_id"`
+	AgentID                string                 `json:"agent_id"`
+	StoreID                string                 `json:"store_id"`
+	StateID                string                 `json:"state_id"`
+	SalesChannelID         string                 `json:"sales_channel_id"`
+	FieldMappings          []FieldMapping         `json:"field_mappings"`
+	StatusMappings         []StatusMapping        `json:"status_mappings"`
+	ReverseStatusMappings  []ReverseStatusMapping `json:"reverse_status_mappings,omitempty"`
+	Automation             *AutomationGrant       `json:"automation,omitempty"`
+	UpdatedAt              time.Time              `json:"updated_at"`
 }
 
 type Correlation struct {
@@ -339,25 +340,26 @@ type PositionWrite struct {
 // CustomerOrderWrite deliberately has no sum, paid or shipped fields: those
 // values are computed provider facts. No payment or shipment document is implied.
 type CustomerOrderWrite struct {
-	OwnedFields         []string         `json:"owned_fields,omitempty"`
-	CurrencyID          string           `json:"currency_id,omitempty"`
-	RateValue           Field[Decimal]   `json:"rate_value"`
-	OrganizationID      string           `json:"organization_id"`
-	AgentID             string           `json:"agent_id"`
-	StoreID             string           `json:"store_id"`
-	StateID             string           `json:"state_id"`
-	SalesChannelID      string           `json:"sales_channel_id"`
-	Name                Field[string]    `json:"name"`
-	Description         Field[string]    `json:"description"`
-	Moment              Field[time.Time] `json:"moment"`
-	DeliveryAt          Field[time.Time] `json:"delivery_at"`
-	Applicable          Field[bool]      `json:"applicable"`
-	VATEnabled          Field[bool]      `json:"vat_enabled"`
-	VATIncluded         Field[bool]      `json:"vat_included"`
-	Positions           []PositionWrite  `json:"positions"`
-	Attributes          []AttributeWrite `json:"attributes"`
-	ShipmentAddress     Field[string]    `json:"-"`
-	TransientAttributes []AttributeWrite `json:"-"`
+	OwnedFields         []string              `json:"owned_fields,omitempty"`
+	CurrencyID          string                `json:"currency_id,omitempty"`
+	RateValue           Field[Decimal]        `json:"rate_value"`
+	OrganizationID      string                `json:"organization_id"`
+	AgentID             string                `json:"agent_id"`
+	StoreID             string                `json:"store_id"`
+	StateID             string                `json:"state_id"`
+	SalesChannelID      string                `json:"sales_channel_id"`
+	Name                Field[string]         `json:"name"`
+	Description         Field[string]         `json:"description"`
+	Moment              Field[time.Time]      `json:"moment"`
+	DeliveryAt          Field[time.Time]      `json:"delivery_at"`
+	Applicable          Field[bool]           `json:"applicable"`
+	VATEnabled          Field[bool]           `json:"vat_enabled"`
+	VATIncluded         Field[bool]           `json:"vat_included"`
+	Positions           []PositionWrite       `json:"positions"`
+	Attributes          []AttributeWrite      `json:"attributes"`
+	PIIMappings         []PIIAttributeMapping `json:"pii_mappings,omitempty"`
+	ShipmentAddress     Field[string]         `json:"-"`
+	TransientAttributes []AttributeWrite      `json:"-"`
 }
 
 // PostingAction is an explicit command with reviewed capability evidence.

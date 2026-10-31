@@ -24,6 +24,12 @@ func ExecutionActions() []orders.Action {
 		orders.ActionPostingLastMile, orders.ActionPostingDeliver, orders.ActionPostingSentBySeller, orders.ActionPostingLabelCreate}
 }
 
+// RequiredParameters returns the reviewed inputs a fulfillment action needs
+// before it can be proposed. It never infers provider evidence.
+func RequiredParameters(action orders.Action) []string {
+	return slices.Clone(executionEdge(action).ParametersRequired)
+}
+
 func PlanExecution(posting orders.Posting, cap orders.CapabilityRef, action orders.Action, now time.Time) orders.ActionOption {
 	plan := executionEdge(action)
 	plan.Blockers = append(plan.Blockers, executionFacts(posting, cap, now)...)

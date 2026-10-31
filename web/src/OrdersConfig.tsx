@@ -48,6 +48,43 @@ const mappings: (OrderMapping & { label: string })[] = [
     label: "Не проводить заказ в МойСклад",
   },
 ];
+const extraSources: { source: string; label: string; name?: boolean }[] = [
+  { source: "order_number", label: "Номер заказа Ozon", name: true },
+  { source: "substatus", label: "Подстатус Ozon" },
+  {
+    source: "parent_posting_number",
+    label: "Номер родительского отправления",
+  },
+  {
+    source: "child_posting_numbers",
+    label: "Номера дочерних отправлений",
+  },
+  { source: "financial.order_total", label: "Стоимость заказа Ozon" },
+  { source: "financial.seller_discount", label: "Скидка продавца" },
+  { source: "financial.marketplace_discount", label: "Скидка маркетплейса" },
+  { source: "financial.commission", label: "Комиссия Ozon" },
+  { source: "financial.payout", label: "Выплата Ozon" },
+  { source: "analytics.region", label: "Регион доставки" },
+  { source: "analytics.city", label: "Город доставки" },
+  { source: "analytics.delivery_type", label: "Тип доставки" },
+  { source: "delivery.provider_name", label: "Служба доставки" },
+  { source: "delivery.tracking_number", label: "Трек-номер" },
+  { source: "delivery.destination_type", label: "Тип пункта назначения" },
+  { source: "delivery.pickup_point_id", label: "ID пункта выдачи" },
+  { source: "delivery.window_from", label: "Начало интервала доставки" },
+  { source: "delivery.window_to", label: "Конец интервала доставки" },
+];
+const piiSources = [
+  { source: "customer.name", label: "Имя покупателя" },
+  { source: "customer.phone", label: "Телефон покупателя" },
+  { source: "customer.email", label: "Электронная почта покупателя" },
+] as const;
+const reverseActions: { action: string; label: string }[] = [
+  { action: "posting_pack", label: "Передать сборку в Ozon" },
+  { action: "posting_ship", label: "Передать статус «В доставке»" },
+  { action: "posting_deliver", label: "Передать статус «Доставлено»" },
+  { action: "posting_cancel", label: "Отменить отправление" },
+];
 type ReferenceKey =
   | "organization_id"
   | "agent_id"
@@ -115,6 +152,47 @@ export function OrdersConfig({
     onDirty(true);
     setAutomationConsent(false);
   }
+  const mappingFor = (source: string) =>
+    draft.field_mappings.find((item) => item.source === source);
+  function setSourceMapping(source: string, target: string, attributeId = "") {
+    const rest = draft.field_mappings.filter((item) => item.source !== source);
+    change({
+      ...draft,
+      field_mappings:
+        target === ""
+          ? rest
+          : [
+              ...rest,
+              {
+                source,
+                target,
+                ...(target === "attribute"
+                  ? { attribute_id: attributeId }
+                  : {}),
+              },
+            ],
+    });
+  }
+  const textAttributes = (metadata.data?.attributes ?? []).filter(
+    (item) => item.type === "string" || item.type === "text",
+  );
+  const piiRetentionValid =
+    !draft.pii_enabled ||
+    (draft.pii_retention_seconds >= 60 &&
+      draft.pii_retention_seconds <= 30 * 86400);
+  const mappingsValid = draft.field_mappings.every(
+    (item) =>
+      item.source !== "" &&
+      item.target !== "" &&
+      (item.target !== "attribute" || !!item.attribute_id),
+  );
+  const reverseStates = (draft.reverse_status_mappings ?? []).map(
+    (item) => item.state_id,
+  );
+  const reverseValid =
+    (draft.reverse_status_mappings ?? []).every(
+      (item) => item.state_id !== "" && item.action !== "",
+    ) && new Set(reverseStates).size === reverseStates.length;
   const references: {
     key: ReferenceKey;
     label: string;
@@ -175,6 +253,9 @@ export function OrdersConfig({
     !dirty ||
     (enabledNeedsConsent && !consent) ||
     (draft.enabled && (!referencesValid || !draft.field_mappings.length)) ||
+    !mappingsValid ||
+    !piiRetentionValid ||
+    !reverseValid ||
     (automatic &&
       (!automaticAllowed ||
         !automationConsent ||
@@ -340,6 +421,98 @@ export function OrdersConfig({
             </label>
           ))}
         </fieldset>
+        <fieldset>
+          <legend>Персональные данные покупателя</legend>
+          <p className="orders-note">
+            Значения не сохраняются в предпросмотре, журнале и снимках. Они
+            запрашиваются заново на момент отправки и сверки.
+          </p>
+          <label className="orders-check">
+            <input
+              type="checkbox"
+              checked={draft.pii_enabled}
+              disabled={busy}
+              onChange={(event) => {
+                const enabled = event.target.checked;
+                change({
+                  ...draft,
+                  pii_enabled: enabled,
+                  pii_retention_seconds: enabled
+                    ? draft.pii_retention_seconds || 86400
+                    : 0,
+                  field_mappings: enabled
+                    ? draft.field_mappings
+                    : draft.field_mappings.filter(
+                        (item) => !item.source.startsWith("customer."),
+                      ),
+                });
+              }}
+            />
+            Передавать персональные данные покупателя
+          </label>
+          {draft.pii_enabled && (
+            <>
+              <label>
+                Срок хранения защищённой копии
+                <select
+                  value={draft.pii_retention_seconds || 86400}
+                  disabled={busy}
+                  onChange={(event) =>
+                    change({
+                      ...draft,
+                      pii_retention_seconds: Number(event.target.value),
+                    })
+                  }
+                >
+                  <option value={3600}>1 час</option>
+                  <option value={86400}>1 сутки</option>
+                  <option value={604800}>7 суток</option>
+                  <option value={2592000}>30 суток</option>
+                </select>
+              </label>
+              {piiSources.map((item) => (
+                <label key={item.source}>
+                  {item.label} → дополнительное поле МойСклад
+                  <select
+                    value={mappingFor(item.source)?.attribute_id ?? ""}
+                    disabled={!metadata.data || busy}
+                    onChange={(event) =>
+                      setSourceMapping(
+                        item.source,
+                        event.target.value ? "attribute" : "",
+                        event.target.value,
+                      )
+                    }
+                  >
+                    <option value="">Не передавать</option>
+                    {textAttributes.map((attribute) => (
+                      <option key={attribute.id} value={attribute.id}>
+                        {attribute.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+              <label className="orders-check">
+                <input
+                  type="checkbox"
+                  checked={
+                    mappingFor("customer.address")?.target ===
+                    "shipment_address"
+                  }
+                  disabled={busy}
+                  onChange={(event) =>
+                    setSourceMapping(
+                      "customer.address",
+                      event.target.checked ? "shipment_address" : "",
+                    )
+                  }
+                />
+                Адрес доставки → нативное поле «Адрес отгрузки»
+              </label>
+            </>
+          )}
+        </fieldset>
         <OrdersMetadataSetup
           key={JSON.stringify(scope)}
           scope={scope}
@@ -400,6 +573,48 @@ export function OrdersConfig({
                   ))}
               </select>
             </label>
+            <p>
+              Дополнительные поля Ozon можно передать в название, описание или
+              дополнительное поле МойСклад. Значения не объединяются в описание
+              автоматически.
+            </p>
+            {extraSources.map((item) => (
+              <div className="orders-status-mapping" key={item.source}>
+                <span>{item.label}</span>
+                <select
+                  value={mappingFor(item.source)?.target ?? ""}
+                  disabled={busy}
+                  onChange={(event) =>
+                    setSourceMapping(item.source, event.target.value)
+                  }
+                >
+                  <option value="">Не передавать</option>
+                  {item.name && <option value="name">Название заказа</option>}
+                  <option value="description">Описание</option>
+                  <option value="attribute">Дополнительное поле</option>
+                </select>
+                {mappingFor(item.source)?.target === "attribute" && (
+                  <select
+                    value={mappingFor(item.source)?.attribute_id ?? ""}
+                    disabled={!metadata.data || busy}
+                    onChange={(event) =>
+                      setSourceMapping(
+                        item.source,
+                        "attribute",
+                        event.target.value,
+                      )
+                    }
+                  >
+                    <option value="">Выберите поле</option>
+                    {textAttributes.map((attribute) => (
+                      <option key={attribute.id} value={attribute.id}>
+                        {attribute.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            ))}
             <p>
               Каждый статус Ozon сопоставляется отдельно. Отмена, доставка и
               споры не образуют последовательную шкалу.
@@ -512,6 +727,96 @@ export function OrdersConfig({
               }
             >
               Добавить соответствие статуса
+            </button>
+            <p>
+              Обратное предложение: состояние заказа МойСклад → предлагаемое
+              действие Ozon. Оно только показывает предложение и никогда не
+              отправляет его автоматически: действие проходит обычный
+              предпросмотр и подтверждение.
+            </p>
+            {(draft.reverse_status_mappings ?? []).map((mapping, index) => (
+              <div className="orders-status-mapping" key={index}>
+                <label>
+                  Состояние МойСклад
+                  <select
+                    value={mapping.state_id}
+                    onChange={(event) =>
+                      change({
+                        ...draft,
+                        reverse_status_mappings: (
+                          draft.reverse_status_mappings ?? []
+                        ).map((item, i) =>
+                          i === index
+                            ? { ...item, state_id: event.target.value }
+                            : item,
+                        ),
+                      })
+                    }
+                  >
+                    <option value="">Выберите состояние</option>
+                    {(metadata.data?.states ?? []).map((item) => (
+                      <option value={item.id} key={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Предлагаемое действие Ozon
+                  <select
+                    value={mapping.action}
+                    onChange={(event) =>
+                      change({
+                        ...draft,
+                        reverse_status_mappings: (
+                          draft.reverse_status_mappings ?? []
+                        ).map((item, i) =>
+                          i === index
+                            ? { ...item, action: event.target.value }
+                            : item,
+                        ),
+                      })
+                    }
+                  >
+                    <option value="">Выберите действие</option>
+                    {reverseActions.map((item) => (
+                      <option value={item.action} key={item.action}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="secondary"
+                  aria-label={`Удалить обратное предложение ${index + 1}`}
+                  onClick={() =>
+                    change({
+                      ...draft,
+                      reverse_status_mappings: (
+                        draft.reverse_status_mappings ?? []
+                      ).filter((_, i) => i !== index),
+                    })
+                  }
+                >
+                  Удалить
+                </button>
+              </div>
+            ))}
+            <button
+              className="secondary"
+              type="button"
+              onClick={() =>
+                change({
+                  ...draft,
+                  reverse_status_mappings: [
+                    ...(draft.reverse_status_mappings ?? []),
+                    { state_id: "", action: "" },
+                  ],
+                })
+              }
+            >
+              Добавить обратное предложение
             </button>
           </div>
         </details>

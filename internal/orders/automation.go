@@ -59,6 +59,13 @@ func (write CustomerOrderWrite) collectFields(fields map[string]bool) {
 	fields["applicable"] = write.Applicable.IsSpecified()
 	fields["vat_enabled"], fields["vat_included"] = write.VATEnabled.IsSpecified(), write.VATIncluded.IsSpecified()
 	fields["state"], fields["attribute"] = write.StateID != "", len(write.Attributes) > 0
+	for _, mapping := range write.PIIMappings {
+		if mapping.Source == "customer.address" {
+			fields["shipment_address"] = true
+			continue
+		}
+		fields["attribute"] = true
+	}
 	for _, position := range write.Positions {
 		fields["positions.quantity"] = true
 		fields["positions.reserve"] = fields["positions.reserve"] || position.Reserve.IsSpecified()

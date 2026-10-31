@@ -127,6 +127,8 @@ func canonicalCommand(command Command) Command {
 		slices.SortFunc(write.Positions, func(a, b PositionWrite) int { return strings.Compare(a.Identity.Key(), b.Identity.Key()) })
 		write.Attributes = slices.Clone(write.Attributes)
 		slices.SortFunc(write.Attributes, func(a, b AttributeWrite) int { return strings.Compare(a.AttributeID, b.AttributeID) })
+		write.PIIMappings = slices.Clone(write.PIIMappings)
+		slices.SortFunc(write.PIIMappings, func(a, b PIIAttributeMapping) int { return strings.Compare(a.Source, b.Source) })
 		command.CustomerOrder = &write
 	}
 	if command.PostingAction != nil {

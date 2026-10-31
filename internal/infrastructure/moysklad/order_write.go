@@ -89,6 +89,11 @@ func validateOrderMetadata(command orders.Command, metadata OrderMetadata) error
 			return orders.ErrBlocked
 		}
 	}
+	for _, mapping := range write.PIIMappings {
+		if mapping.AttributeID != "" && !orderHasTextAttribute(metadata.Attributes, mapping.AttributeID) {
+			return orders.ErrBlocked
+		}
+	}
 	return nil
 }
 

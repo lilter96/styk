@@ -155,7 +155,7 @@ func (s *Service) planMirror(ctx context.Context, review orders.ReviewContext, d
 	}
 	positions, validations := ordermoney.ProjectLines(decision.Posting, review.ProductMappings)
 	decision.Validation = append(decision.Validation, validations...)
-	write, validations := mirrorWrite(decision.Posting, review, positions, s.options.CustomerReader)
+	write, validations := mirrorWrite(ctx, decision.Posting, review, positions, s.options.CustomerReader)
 	decision.Validation = append(decision.Validation, validations...)
 	if len(decision.Validation) > 0 {
 		return decision, nil
@@ -201,6 +201,10 @@ func mirrorCommand(review orders.ReviewContext, decision orders.Decision, wareho
 		PostingNumber: decision.Posting.PostingNumber, Correlation: decision.Correlation, ConfigRevision: review.Config.Revision,
 		Credentials: review.Credentials, ExpectedSourceRevision: decision.Posting.Evidence.Revision, SourceOrigin: decision.Posting.Evidence.Origin,
 		SourceCommandID: decision.Posting.Evidence.SourceCommandID, Warehouse: warehouse, CustomerOrder: &write, IdempotencyKey: id, CreatedAt: now}
+	if write.HasPIIMappings() {
+		protected := decision.Posting.Customer
+		command.ProtectedCustomer = &protected
+	}
 	if automatic && review.Config.Automation != nil {
 		command.AutomationGrantRevision = review.Config.Automation.Revision
 	}

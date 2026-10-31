@@ -89,16 +89,17 @@ func newOrdersWork(db *postgres.Store, resolver *credentials.Resolver) (applicat
 		return nil, err
 	}
 	factory := orderprovider.Factory{Credentials: resolver, Gate: gate, DeliveryObserver: db}
-	service, err := orderflow.NewService(db, factory, orderflow.ServiceOptions{AllowScope: orderAllowed})
+	protector := orderprivacy.Protector{Vault: resolver.Vault, Store: db}
+	service, err := orderflow.NewService(db, factory, orderflow.ServiceOptions{AllowScope: orderAllowed, CustomerReader: protector})
 	if err != nil {
 		return nil, err
 	}
-	collector := orderCollector{db: db, factory: factory, protector: orderprivacy.Protector{Vault: resolver.Vault, Store: db}, workerID: id}
+	collector := orderCollector{db: db, factory: factory, protector: protector, workerID: id}
 	labelDownloader, err := ozon.NewFBSLabelDownloader(&http.Client{Timeout: 20 * time.Second})
 	if err != nil {
 		return nil, err
 	}
-	runner, err := orderflow.NewRunner(db, factory, orderflow.RunnerOptions{WorkerID: id, AllowScope: orderAllowed, Service: service, Collector: collector, LabelDownloader: labelDownloader.Download})
+	runner, err := orderflow.NewRunner(db, factory, orderflow.RunnerOptions{WorkerID: id, AllowScope: orderAllowed, Service: service, Collector: collector, CustomerReader: protector, LabelDownloader: labelDownloader.Download})
 	if err != nil {
 		return nil, err
 	}

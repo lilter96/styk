@@ -23,8 +23,9 @@ func (r *Runner) readback(ctx context.Context, work orders.Work) error {
 		return r.readbackFulfillment(ctx, work)
 	}
 	decision, sourceErr := r.reviewedDecision(ctx, work)
+	fresh := decision.Posting
 	if sourceErr == nil {
-		sourceErr = r.freshSource(ctx, work, decision.Posting)
+		fresh, sourceErr = r.freshSource(ctx, work, decision.Posting)
 	}
 	target, err := r.readWorkTarget(ctx, work)
 	if err != nil {
@@ -33,7 +34,11 @@ func (r *Runner) readback(ctx context.Context, work orders.Work) error {
 	if sourceErr != nil {
 		return r.deferReadback(ctx, work, "SOURCE_CHANGED_REQUIRES_REVIEW")
 	}
-	if !targetRepresents(work.Command, target) {
+	command, err := r.withCustomerProjection(ctx, work.Command, fresh.Customer)
+	if err != nil {
+		return r.deferReadback(ctx, work, "PROTECTED_CUSTOMER_PROJECTION_UNAVAILABLE")
+	}
+	if !targetRepresents(command, target) {
 		return r.deferReadback(ctx, work, "TARGET_FACTS_NOT_CONFIRMED")
 	}
 	return r.reconcileTarget(ctx, work, target)
@@ -136,45 +141,42 @@ func (r *Runner) writeOrderStatusToMoySklad(ctx context.Context, work orders.Wor
 	if err != nil {
 		return fmt.Errorf("read MoySklad config: %w", err)
 	}
-
-	// Find the MoySklad state ID from status mappings, fall back to config.StateID.
-	stateID := config.StateID
-	if posting.Status.Presence == orders.PresenceValue && posting.Status.Value != nil {
-		for _, mapping := range config.StatusMappings {
-			if mapping.Status == *posting.Status.Value && mapping.StateID != "" {
-				stateID = mapping.StateID
-				break
-			}
-		}
+	stateID, mapped := mappedStateID(*posting, config)
+	if !mapped {
+		// No reviewed status/substatus mapping exists. Never reset the target to
+		// the configuration default state on an unverified provider status.
+		return nil
 	}
-
 	client, err := resolveOrderClient(ctx, r.resolver, work.Scope, "moysklad", work.Credentials.Moysklad)
 	if err != nil {
 		return fmt.Errorf("resolve MoySklad client: %w", err)
 	}
-
 	writer, ok := client.(orders.TargetStatusWriter)
 	if !ok {
 		return orders.ErrBlocked
 	}
-
-	// Resolve the MoySklad order ID from correlation if not already known.
-	orderID := work.Command.Correlation.CustomerOrderID
-	if orderID == "" {
-		correlation, err := client.ReadOrderCorrelation(ctx, work.Command.Correlation)
-		if err != nil {
-			return fmt.Errorf("resolve MoySklad order correlation: %w", err)
-		}
-		orderID = correlation.CustomerOrderID
+	orderID, err := r.moyskladOrderID(ctx, client, work)
+	if err != nil {
+		return err
 	}
-	if orderID == "" {
-		return orders.ErrInvalid
-	}
-
 	if err := writer.WriteOrderStatus(ctx, work.Scope, orderID, stateID); err != nil {
 		return fmt.Errorf("write order status to MoySklad: %w", err)
 	}
 	return nil
+}
+
+func (r *Runner) moyskladOrderID(ctx context.Context, client orders.Provider, work orders.Work) (string, error) {
+	if work.Command.Correlation.CustomerOrderID != "" {
+		return work.Command.Correlation.CustomerOrderID, nil
+	}
+	correlation, err := client.ReadOrderCorrelation(ctx, work.Command.Correlation)
+	if err != nil {
+		return "", fmt.Errorf("resolve MoySklad order correlation: %w", err)
+	}
+	if correlation.CustomerOrderID == "" {
+		return "", orders.ErrInvalid
+	}
+	return correlation.CustomerOrderID, nil
 }
 
 // pollLabelTask checks the Ozon label task until it completes or fails. It

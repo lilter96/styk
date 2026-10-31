@@ -1,22 +1,27 @@
 package orderflow
 
 import (
+	"context"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/lilter96/styk/internal/orders"
 )
 
-func mirrorWrite(posting orders.Posting, review orders.ReviewContext, positions []orders.PositionWrite, customerReader orders.CustomerReader) (orders.CustomerOrderWrite, []orders.Validation) {
+func mirrorWrite(ctx context.Context, posting orders.Posting, review orders.ReviewContext, positions []orders.PositionWrite, customerReader orders.CustomerReader) (orders.CustomerOrderWrite, []orders.Validation) {
 	config := review.Config
 	write := orders.CustomerOrderWrite{CurrencyID: config.CurrencyID, OrganizationID: config.OrganizationID, AgentID: config.AgentID,
 		StoreID: config.StoreID, StateID: postingState(posting, config), SalesChannelID: config.SalesChannelID, Positions: positions}
 	validations := make([]orders.Validation, 0)
 	for _, mapping := range config.FieldMappings {
-		if validation := applyMirrorMapping(&write, posting, review.Metadata, mapping, customerReader); validation.Code != "" {
+		if validation := applyMirrorMapping(&write, posting, review, mapping, customerReader); validation.Code != "" {
 			validations = append(validations, validation)
 		}
+	}
+	if len(validations) == 0 {
+		validations = append(validations, resolveCustomerProjection(ctx, &write, posting, customerReader)...)
 	}
 	if !mappedTarget(config, "positions.vat") {
 		for index := range write.Positions {
@@ -32,13 +37,13 @@ func mirrorWrite(posting orders.Posting, review orders.ReviewContext, positions 
 	return write, validations
 }
 
-func applyMirrorMapping(write *orders.CustomerOrderWrite, posting orders.Posting, metadata orders.MetadataRegistry, mapping orders.FieldMapping, customerReader orders.CustomerReader) orders.Validation {
+func applyMirrorMapping(write *orders.CustomerOrderWrite, posting orders.Posting, review orders.ReviewContext, mapping orders.FieldMapping, customerReader orders.CustomerReader) orders.Validation {
 	if strings.HasPrefix(mapping.Source, "customer.") {
-		return applyCustomerMapping(write, posting, mapping, customerReader)
+		return applyCustomerMapping(write, posting, review, mapping)
 	}
 	switch mapping.Target {
 	case "name", "description", "attribute":
-		return applyTextMapping(write, posting, metadata, mapping)
+		return applyTextMapping(write, posting, review.Metadata, mapping)
 	case "moment", "delivery_at":
 		return applyTimeMapping(write, posting, mapping)
 	case "applicable", "vat_enabled", "vat_included":
@@ -75,29 +80,6 @@ func applyTextMapping(write *orders.CustomerOrderWrite, posting orders.Posting, 
 		write.Attributes = append(write.Attributes, orders.AttributeWrite{AttributeID: mapping.AttributeID, Value: value})
 	}
 	return orders.Validation{}
-}
-
-func postingText(posting orders.Posting, source string) (orders.Field[string], bool) {
-	switch strings.TrimPrefix(source, "posting.") {
-	case "posting_number", "number":
-		return orders.Present(posting.PostingNumber), true
-	case "commercial_order_id", "order_id":
-		return orders.Present(posting.CommercialOrderID), true
-	case "order_number":
-		return posting.OrderNumber, true
-	case "status":
-		return posting.Status, true
-	case "substatus":
-		return posting.Substatus, true
-	case "scheme":
-		return posting.Scheme, true
-	case "warehouse_id":
-		return posting.WarehouseID, true
-	case "delivery_method_id":
-		return posting.DeliveryMethodID, true
-	default:
-		return orders.Field[string]{}, false
-	}
 }
 
 func applyTimeMapping(write *orders.CustomerOrderWrite, posting orders.Posting, mapping orders.FieldMapping) orders.Validation {
@@ -193,27 +175,199 @@ func historicalCancellationValidation(write orders.CustomerOrderWrite) []orders.
 	return result
 }
 
-func applyCustomerMapping(_ *orders.CustomerOrderWrite, _ orders.Posting, mapping orders.FieldMapping, _ orders.CustomerReader) orders.Validation {
-	// A transient value must not be reported as projected until dispatch and
-	// readback both bind it to the protected customer revision.
-	return orders.Validation{Field: mapping.Source, Code: "protected_customer_projection_unavailable"}
+func applyCustomerMapping(write *orders.CustomerOrderWrite, posting orders.Posting, review orders.ReviewContext, mapping orders.FieldMapping) orders.Validation {
+	if !review.Config.PIIEnabled {
+		return orders.Validation{Field: mapping.Source, Code: "customer_pii_disabled"}
+	}
+	if posting.Customer.Presence != orders.PresenceValue {
+		// No protected reference exists, so the reviewed mapping has no value
+		// to project. The mirror may still proceed without customer details.
+		return orders.Validation{}
+	}
+	if mapping.Target == "attribute" && !metadataAttributePresent(review.Metadata, mapping.AttributeID, posting.Scope) {
+		return orders.Validation{Field: mapping.Source, Code: "native_attribute_unverified"}
+	}
+	projection := orders.PIIAttributeMapping{Source: mapping.Source}
+	if mapping.Target == "attribute" {
+		projection.AttributeID = mapping.AttributeID
+	}
+	if projection.Validate() != nil {
+		return unsupportedMapping(mapping)
+	}
+	write.PIIMappings = append(write.PIIMappings, projection)
+	return orders.Validation{}
+}
+
+func resolveCustomerProjection(ctx context.Context, write *orders.CustomerOrderWrite, posting orders.Posting, reader orders.CustomerReader) []orders.Validation {
+	if !write.HasPIIMappings() {
+		return nil
+	}
+	if reader == nil {
+		return []orders.Validation{{Field: "customer", Code: "protected_customer_projection_unavailable"}}
+	}
+	customer, err := reader.Customer(ctx, posting.Scope, posting.PostingNumber, posting.Customer)
+	if err != nil || customer == nil {
+		return []orders.Validation{{Field: "customer", Code: "protected_customer_projection_unavailable"}}
+	}
+	attributes, address, err := orders.ProjectCustomer(*customer, write.PIIMappings)
+	if err != nil {
+		return []orders.Validation{{Field: "customer", Code: "protected_customer_projection_invalid"}}
+	}
+	write.TransientAttributes, write.ShipmentAddress = attributes, address
+	return nil
+}
+
+func postingText(posting orders.Posting, source string) (orders.Field[string], bool) {
+	switch strings.TrimPrefix(source, "posting.") {
+	case "posting_number", "number":
+		return orders.Present(posting.PostingNumber), true
+	case "commercial_order_id", "order_id":
+		return orders.Present(posting.CommercialOrderID), true
+	case "order_number":
+		return posting.OrderNumber, true
+	case "parent_posting_number":
+		return posting.ParentPostingNumber, true
+	case "child_posting_numbers":
+		if len(posting.ChildPostingNumbers) == 0 {
+			return orders.Field[string]{Presence: orders.PresenceEmpty}, true
+		}
+		return orders.Present(strings.Join(posting.ChildPostingNumbers, ", ")), true
+	case "status":
+		return posting.Status, true
+	case "substatus":
+		return posting.Substatus, true
+	case "scheme":
+		return posting.Scheme, true
+	case "warehouse_id":
+		return posting.WarehouseID, true
+	case "delivery_method_id":
+		return posting.DeliveryMethodID, true
+	}
+	if strings.HasPrefix(source, "financial.") {
+		return financialText(posting.Financial, strings.TrimPrefix(source, "financial."))
+	}
+	if strings.HasPrefix(source, "analytics.") {
+		return analyticsText(posting.Analytics, strings.TrimPrefix(source, "analytics."))
+	}
+	if strings.HasPrefix(source, "delivery.") {
+		return deliveryText(posting.Delivery, strings.TrimPrefix(source, "delivery."))
+	}
+	return orders.Field[string]{}, false
+}
+
+func financialText(financial orders.FinancialFacts, field string) (orders.Field[string], bool) {
+	switch field {
+	case "currency", "currency_code":
+		return financial.Currency, true
+	case "order_total":
+		return moneyText(financial.OrderTotal), true
+	case "order_total_amount":
+		return decimalText(financial.OrderTotalAmount), true
+	case "seller_discount":
+		return moneyText(financial.SellerDiscount), true
+	case "marketplace_discount":
+		return moneyText(financial.MarketplaceDiscount), true
+	case "commission":
+		return moneyText(financial.Commission), true
+	case "payout":
+		return moneyText(financial.Payout), true
+	default:
+		return orders.Field[string]{}, false
+	}
+}
+
+func analyticsText(analytics orders.AnalyticsFacts, field string) (orders.Field[string], bool) {
+	switch field {
+	case "region":
+		return analytics.Region, true
+	case "city":
+		return analytics.City, true
+	case "delivery_type":
+		return analytics.DeliveryType, true
+	case "premium":
+		return boolText(analytics.Premium), true
+	default:
+		return orders.Field[string]{}, false
+	}
+}
+
+func deliveryText(delivery orders.DeliveryFacts, field string) (orders.Field[string], bool) {
+	switch field {
+	case "provider_name":
+		return delivery.ProviderName, true
+	case "provider_id":
+		return delivery.ProviderID, true
+	case "tpl_provider_id":
+		return delivery.TPLProviderID, true
+	case "integration_type":
+		return delivery.IntegrationType, true
+	case "tracking_number":
+		return delivery.TrackingNumber, true
+	case "destination_type":
+		return delivery.DestinationType, true
+	case "pickup_point_id":
+		return delivery.PickupPointID, true
+	case "express":
+		return boolText(delivery.Express), true
+	case "window_from":
+		return timeText(delivery.WindowFrom), true
+	case "window_to":
+		return timeText(delivery.WindowTo), true
+	default:
+		return orders.Field[string]{}, false
+	}
+}
+
+func moneyText(value orders.Field[orders.Money]) orders.Field[string] {
+	if !value.IsKnown() {
+		return orders.Field[string]{Presence: value.Presence}
+	}
+	return orders.Present(string(value.Value.Amount) + " " + value.Value.Currency)
+}
+
+func decimalText(value orders.Field[orders.Decimal]) orders.Field[string] {
+	if !value.IsKnown() {
+		return orders.Field[string]{Presence: value.Presence}
+	}
+	return orders.Present(string(*value.Value))
+}
+
+func boolText(value orders.Field[bool]) orders.Field[string] {
+	if !value.IsKnown() {
+		return orders.Field[string]{Presence: value.Presence}
+	}
+	return orders.Present(strconv.FormatBool(*value.Value))
+}
+
+func timeText(value orders.Field[time.Time]) orders.Field[string] {
+	if !value.IsKnown() {
+		return orders.Field[string]{Presence: value.Presence}
+	}
+	return orders.Present(value.Value.UTC().Format(time.RFC3339))
 }
 
 func postingState(posting orders.Posting, config orders.Config) string {
+	if stateID, ok := mappedStateID(posting, config); ok {
+		return stateID
+	}
+	return config.StateID
+}
+
+func mappedStateID(posting orders.Posting, config orders.Config) (string, bool) {
 	if !posting.Status.IsKnown() {
-		return config.StateID
+		return "", false
 	}
 	for _, mapping := range config.StatusMappings {
 		if mapping.Status == *posting.Status.Value && sameField(mapping.Substatus, posting.Substatus) {
-			return mapping.StateID
+			return mapping.StateID, true
 		}
 	}
 	for _, mapping := range config.StatusMappings {
 		if mapping.Status == *posting.Status.Value && mapping.Substatus.IsMissing() {
-			return mapping.StateID
+			return mapping.StateID, true
 		}
 	}
-	return config.StateID
+	return "", false
 }
 
 func mappedTarget(config orders.Config, target string) bool {

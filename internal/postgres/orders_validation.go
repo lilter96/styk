@@ -78,6 +78,9 @@ func validateOrderCommandCurrent(command orders.Command, posting orders.Posting,
 			return err
 		}
 	}
+	if err := validateOrderPIIProjection(command, posting, current); err != nil {
+		return err
+	}
 	if err := validateOrderPolicyFields(command, current.Config); err != nil {
 		return err
 	}
@@ -87,6 +90,41 @@ func validateOrderCommandCurrent(command orders.Command, posting orders.Posting,
 	return nil
 }
 
+func validateOrderPIIProjection(command orders.Command, posting orders.Posting, current orders.ReviewContext) error {
+	write := command.CustomerOrder
+	if write == nil || !write.HasPIIMappings() {
+		if command.ProtectedCustomer != nil {
+			return orders.ErrBlocked
+		}
+		return nil
+	}
+	config := current.Config
+	if !config.PIIEnabled || command.ProtectedCustomer == nil || *command.ProtectedCustomer != posting.Customer {
+		return orders.ErrStale
+	}
+	for _, mapping := range write.PIIMappings {
+		if !orderPIIMappingConfigured(mapping, current) {
+			return orders.ErrStale
+		}
+	}
+	return nil
+}
+
+func orderPIIMappingConfigured(mapping orders.PIIAttributeMapping, current orders.ReviewContext) bool {
+	for _, configured := range current.Config.FieldMappings {
+		if configured.Source != mapping.Source {
+			continue
+		}
+		if mapping.Source == "customer.address" && configured.Target == "shipment_address" {
+			return true
+		}
+		if configured.Target == "attribute" && configured.AttributeID == mapping.AttributeID && orderAttributeAllowed(mapping.AttributeID, current) {
+			return true
+		}
+	}
+	return false
+}
+
 func validateOrderPolicyFields(command orders.Command, config orders.Config) error {
 	if !command.Action.IsMirror() {
 		return nil
@@ -94,7 +132,7 @@ func validateOrderPolicyFields(command orders.Command, config orders.Config) err
 	allowed := make(map[string]bool, len(config.FieldMappings)+1)
 	allowed["state"] = true
 	for _, mapping := range config.FieldMappings {
-		if strings.HasPrefix(mapping.Source, "customer.") {
+		if strings.HasPrefix(mapping.Source, "customer.") && !config.PIIEnabled {
 			return orders.ErrBlocked
 		}
 		allowed[mapping.Target] = true
