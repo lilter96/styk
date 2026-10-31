@@ -183,6 +183,7 @@ func (c *OrderClient) orderWriteRequest(ctx context.Context, command orders.Comm
 	request.GetBody, request.Close = nil, true
 	request.Header.Set("Authorization", "Bearer "+c.client.token)
 	request.Header.Set("Accept", "application/json;charset=utf-8")
+	request.Header.Set("Accept-Encoding", "gzip")
 	request.Header.Set("Content-Type", "application/json")
 	return request, nil
 }
@@ -255,6 +256,7 @@ func (c *OrderClient) WriteOrderStatus(ctx context.Context, scope orders.Scope, 
 	request.GetBody, request.Close = nil, true
 	request.Header.Set("Authorization", "Bearer "+c.client.token)
 	request.Header.Set("Accept", "application/json;charset=utf-8")
+	request.Header.Set("Accept-Encoding", "gzip")
 	request.Header.Set("Content-Type", "application/json")
 	response, err := c.client.http.Do(request)
 	if err != nil {

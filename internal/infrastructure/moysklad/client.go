@@ -1,7 +1,10 @@
 package moysklad
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -71,11 +74,33 @@ func New(o Options) (*Client, error) {
 	}
 	hc := o.HTTPClient
 	if hc == nil {
-		hc = &http.Client{Timeout: o.Timeout}
+		hc = &http.Client{}
 	} else {
 		clone := *hc
 		hc = &clone
-		hc.Timeout = o.Timeout
+	}
+	hc.Timeout = o.Timeout
+	// Never route MoySklad calls through an environment proxy
+	// (HTTP_PROXY, HTTPS_PROXY, ALL_PROXY). Connect directly to
+	// api.moysklad.ru. Only install a transport when the caller did not
+	// supply one, so tests can inject their own RoundTripper.
+	if hc.Transport == nil {
+		base, ok := http.DefaultTransport.(*http.Transport)
+		if !ok {
+			return nil, errors.New("standard MoySklad HTTP transport unavailable")
+		}
+		transport := base.Clone()
+		transport.Proxy = nil
+		transport.DisableKeepAlives = true
+		transport.ForceAttemptHTTP2 = false
+		if transport.TLSClientConfig == nil {
+			transport.TLSClientConfig = &tls.Config{}
+		} else {
+			transport.TLSClientConfig = transport.TLSClientConfig.Clone()
+		}
+		transport.TLSClientConfig.NextProtos = []string{"http/1.1"}
+		transport.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
+		hc.Transport = transport
 	}
 	hc.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return &Client{base: u, token: o.Token, http: hc, interval: o.Interval, backoff: o.Backoff, maxRetryAfter: o.MaxRetryAfter, attempts: o.Attempts, pageSize: o.PageSize}, nil
@@ -185,6 +210,7 @@ func (c *Client) get(ctx context.Context, path string, q url.Values) ([]byte, er
 		}
 		req.Header.Set("Authorization", "Bearer "+c.token)
 		req.Header.Set("Accept", "application/json;charset=utf-8")
+		req.Header.Set("Accept-Encoding", "gzip")
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -213,8 +239,17 @@ func (c *Client) get(ctx context.Context, path string, q url.Values) ([]byte, er
 			data, readErr := io.ReadAll(io.LimitReader(resp.Body, bodyLimit+1))
 			closeErr := resp.Body.Close()
 			if readErr != nil || closeErr != nil {
-				last = ErrTransport
 				retry = true
+				continue
+			} else {
+				data, err = decompressResponse(resp.Header, data)
+				if err != nil {
+					retry = true
+					continue
+				}
+			}
+			if err != nil {
+				continue
 			} else if int64(len(data)) > bodyLimit {
 				return nil, &LimitError{"response_bytes"}
 			} else if resp.StatusCode >= 200 && resp.StatusCode < 300 {
@@ -264,6 +299,31 @@ func (c *Client) get(ctx context.Context, path string, q url.Values) ([]byte, er
 		}
 	}
 	return nil, errors.New("retry limit reached")
+}
+
+// decompressResponse decompresses a gzip-encoded response body. MoySklad
+// requires Accept-Encoding: gzip and returns gzip-compressed bodies; the
+// standard http.Client does not decompress automatically.
+func decompressResponse(headers http.Header, data []byte) ([]byte, error) {
+	if headers.Get("Content-Encoding") != "gzip" {
+		return data, nil
+	}
+	if len(data) == 0 {
+		return data, nil
+	}
+	gr, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("gzip reader: %w", err)
+	}
+	out, readErr := io.ReadAll(gr)
+	closeErr := gr.Close()
+	if readErr != nil {
+		return nil, fmt.Errorf("gzip read: %w", readErr)
+	}
+	if closeErr != nil {
+		return nil, fmt.Errorf("gzip close: %w", closeErr)
+	}
+	return out, nil
 }
 
 type meta struct {
