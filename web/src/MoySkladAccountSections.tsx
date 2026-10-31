@@ -1,4 +1,4 @@
-import moyskladLogo from "./assets/brands/moysklad.png";
+import { BrandLogo } from "./BrandLogo";
 import { Link } from "react-router-dom";
 import { Icon, type IconName } from "./UI";
 import {
@@ -116,7 +116,7 @@ export function MoySkladConnectionSummary({
   return (
     <aside className="moy-settings-card moy-connection-summary">
       <div className="moy-summary-brand">
-        <img src={moyskladLogo} alt="" />
+        <BrandLogo provider="moysklad" size="lg" decorative />
         <div>
           <h2>МойСклад</h2>
           <p>{name}</p>

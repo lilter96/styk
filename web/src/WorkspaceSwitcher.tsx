@@ -1,13 +1,14 @@
 import type { Account } from "./api";
 import { Link } from "react-router-dom";
 import { Icon } from "./UI";
-import moyskladLogo from "./assets/brands/moysklad.png";
+import { ProviderLogo } from "./ProviderLogo";
+import { brandRegistry } from "./brands";
 
 export type Marketplace = "wildberries" | "ozon" | "yandex";
 export const marketplaceNames: Record<Marketplace, string> = {
-  wildberries: "Wildberries",
-  ozon: "Ozon",
-  yandex: "Яндекс Маркет",
+  wildberries: brandRegistry.wildberries.label,
+  ozon: brandRegistry.ozon.label,
+  yandex: brandRegistry["yandex-market"].label,
 };
 const marketplaces: { id: Marketplace; label: string }[] = [
   { id: "wildberries", label: "WB" },
@@ -48,9 +49,7 @@ export function WorkspaceSwitcher({
   return (
     <section className="workspace-switcher" aria-label="Рабочее пространство">
       <div className="fixed-moy-account">
-        <span className="fixed-moy-mark" aria-hidden="true">
-          <img src={moyskladLogo} alt="" />
-        </span>
+        <ProviderLogo provider="moysklad" size="md" />
         <div>
           <span>МойСклад</span>
           {moyLabel !== moyStatus && <strong>{moyLabel}</strong>}
@@ -83,10 +82,12 @@ export function WorkspaceSwitcher({
             key={item.id}
             type="button"
             className={`marketplace-option ${item.id}`}
+            aria-label={marketplaceNames[item.id]}
             aria-pressed={marketplace === item.id}
             onClick={() => onMarketplaceChange(item.id)}
           >
-            {item.label}
+            <ProviderLogo provider={item.id} size="sm" />
+            <span>{item.label}</span>
           </button>
         ))}
       </div>
@@ -122,7 +123,7 @@ export function WorkspaceSwitcher({
         disabled={!supported || loading || error || addDisabled}
         onClick={onAdd}
       >
-        <span aria-hidden="true">+</span> Добавить аккаунт
+        <Icon name="plus" size="button" /> Добавить аккаунт
       </button>
       {!supported && (
         <p className="marketplace-unavailable">

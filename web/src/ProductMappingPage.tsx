@@ -1,3 +1,4 @@
+import { Icon } from "./UI";
 import { useEffect, useRef, useState } from "react";
 import {
   ProductMappingTable,
@@ -231,18 +232,7 @@ export function ProductMappingPage({
                 reset();
               }}
             >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.7"
-                aria-hidden="true"
-              >
-                <circle cx="10.5" cy="10.5" r="6.5" />
-                <path d="m16 16 5 5" />
-              </svg>
+              <Icon name="search" size="button" />
               Проверить несопоставленные
             </button>
             <small>Найдите и подтвердите соответствия</small>
@@ -253,18 +243,7 @@ export function ProductMappingPage({
         <label className="matching-page-search">
           <span className="matching-page-sr">Поиск</span>
           <div>
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              aria-hidden="true"
-            >
-              <circle cx="10.5" cy="10.5" r="6.5" />
-              <path d="m16 16 5 5" />
-            </svg>
+            <Icon name="search" size="button" />
             <input
               placeholder="Название, артикул, offer ID или SKU"
               value={search}
@@ -284,7 +263,7 @@ export function ProductMappingPage({
                   reset();
                 }}
               >
-                ×
+                <Icon name="close" size="button" />
               </button>
             )}
           </div>

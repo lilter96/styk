@@ -101,19 +101,6 @@
   font-size: 13px;
   flex-wrap: wrap;
 }
-.reference-shell .product-matching-dialog .matching-brand-logo {
-  width: 32px;
-  height: 32px;
-  object-fit: contain;
-  border-radius: 8px;
-  flex: none;
-  display: block;
-}
-.reference-shell .product-matching-dialog .matching-brand-logo.moysklad {
-  border-radius: 0;
-  width: 30px;
-  height: 30px;
-}
 .reference-shell
   .product-matching-dialog
   .matching-ozon

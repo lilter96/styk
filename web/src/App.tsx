@@ -1,6 +1,6 @@
 import { AppShell } from "./AppShell";
 import { connectionState, type MoyProvider } from "./MoySkladSettingsData";
-import { StatePanel, ProviderBadge, PageHeader } from "./UI";
+import { StatePanel, ProviderBadge, PageHeader, Icon } from "./UI";
 import {
   WorkspaceSwitcher,
   marketplaceNames,
@@ -998,7 +998,7 @@ export function App() {
               {session.data?.user.email.slice(0, 1).toUpperCase() || "S"}
             </span>
             <span className="user-menu-label">Профиль</span>
-            <span aria-hidden="true">⌄</span>
+            <Icon name="chevron-down" size="button" />
           </summary>
           <div className="workspace-popover">
             {session.data && (

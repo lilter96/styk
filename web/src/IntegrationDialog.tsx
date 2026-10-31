@@ -1,3 +1,6 @@
+import { Icon } from "./UI";
+import { BrandLogo } from "./BrandLogo";
+import type { BrandProvider } from "./brands";
 import { useEffect, useId, useRef, type ReactNode } from "react";
 
 const focusableSelector =
@@ -37,6 +40,7 @@ export function IntegrationDialog({
   closeLabel = "Закрыть",
   className = "",
   initialFocus,
+  brand,
 }: {
   title: string;
   children: ReactNode;
@@ -44,6 +48,7 @@ export function IntegrationDialog({
   closeLabel?: string;
   className?: string;
   initialFocus?: string;
+  brand?: BrandProvider;
 }) {
   const titleID = useId();
   const dialog = useRef<HTMLDivElement>(null);
@@ -132,13 +137,14 @@ export function IntegrationDialog({
         tabIndex={-1}
       >
         <header className="provider-settings-dialog-header">
+          {brand && <BrandLogo provider={brand} decorative />}
           <h2 id={titleID}>{title}</h2>
           <button
             className="secondary"
             aria-label={closeLabel}
             onClick={() => close.current()}
           >
-            <span aria-hidden="true">×</span>
+            <Icon name="close" size="button" />
           </button>
         </header>
         <div ref={content} className="provider-settings-dialog-content">

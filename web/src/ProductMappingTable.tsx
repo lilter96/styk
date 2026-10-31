@@ -33,18 +33,7 @@ function CopyArticle({ value }: { value?: string }) {
             }
           }}
         >
-          <svg
-            width="15"
-            height="15"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.6"
-            aria-hidden="true"
-          >
-            <rect x="8" y="8" width="12" height="12" rx="2" />
-            <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" />
-          </svg>
+          <Icon name="copy" size="button" />
         </button>
       )}
       <span role="status">{message}</span>
@@ -95,7 +84,7 @@ function MappingRow({
                 {p.target_name ||
                   (p.target_id ? "Товар МойСклад" : "Выберите товар МойСклад")}
               </span>
-              <span aria-hidden="true">⌄</span>
+              <Icon name="chevron-down" size="button" />
             </button>
             {p.target_id ? (
               <small title={p.target_id}>ID: {p.target_id}</small>
@@ -305,7 +294,7 @@ export function MappingPagination({
           disabled={offset === 0 || busy}
           onClick={() => setOffset(Math.max(0, offset - size))}
         >
-          ‹
+          <Icon name="chevron-left" size="button" />
         </button>
         {pages.map((n, i) => (
           <span key={n}>
@@ -329,7 +318,7 @@ export function MappingPagination({
           disabled={!hasNext || busy}
           onClick={() => setOffset(offset + size)}
         >
-          ›
+          <Icon name="chevron-right" size="button" />
         </button>
       </nav>
       <span>

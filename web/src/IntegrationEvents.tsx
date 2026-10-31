@@ -5,6 +5,7 @@ import {
   params,
   type ImportOperation,
   type ImportProvider,
+  type Account,
 } from "./api";
 
 type Probe = {
@@ -24,6 +25,7 @@ const results: Record<ImportOperation["state"], string> = {
 export function IntegrationEvents({
   tenant,
   accounts,
+  accountList,
   providers,
   onSupport,
   onRepair,
@@ -31,16 +33,28 @@ export function IntegrationEvents({
 }: {
   tenant: string;
   accounts: Partial<Record<ImportProvider, string>>;
+  accountList?: Account[];
   providers: Probe[];
   onSupport: (operation?: ImportOperation) => void;
   onRepair: (provider: ImportProvider) => void;
   onHistory: () => void;
 }) {
-  const scopes = (["moysklad", "ozon"] as const).map((provider) => ({
-    tenant,
-    provider,
-    account: accounts[provider] || "",
-  }));
+  const scopes = accountList
+    ? accountList
+        .filter(
+          (account) =>
+            account.source === "moysklad" || account.source === "ozon",
+        )
+        .map((account) => ({
+          tenant,
+          provider: account.source as ImportProvider,
+          account: account.account,
+        }))
+    : (["moysklad", "ozon"] as const).map((provider) => ({
+        tenant,
+        provider,
+        account: accounts[provider] || "",
+      }));
   const queries = useQueries({
     queries: scopes.map((scope) => ({
       queryKey: ["import-history", tenant, scope.provider, scope.account, 0],
@@ -64,6 +78,7 @@ export function IntegrationEvents({
     operation?: ImportOperation;
     repair?: boolean;
     status: string;
+    accountName?: string;
   }[] = operations.map((op) => ({
     id: op.id,
     at: op.finished_at || op.started_at || op.created_at,
@@ -81,6 +96,10 @@ export function IntegrationEvents({
             ? "active"
             : "",
     operation: op,
+    accountName: accountList?.find(
+      (account) =>
+        account.source === op.provider && account.account === op.account,
+    )?.name,
     status:
       op.state === "SUCCEEDED"
         ? "Успешно"
@@ -157,7 +176,14 @@ export function IntegrationEvents({
                     {names[event.provider]}
                   </span>
                 </td>
-                <td>{event.text}</td>
+                <td>
+                  {event.accountName && (
+                    <small className="event-account-name">
+                      {event.accountName}
+                    </small>
+                  )}
+                  {event.text}
+                </td>
                 <td>
                   <span className={`integration-event-status ${event.tone}`}>
                     {event.status}

@@ -85,7 +85,7 @@ test("matching modal uses the local Go search and captures desktop states", asyn
     return;
   }
   await expect(dialog.locator(".matching-result").first()).toBeVisible();
-  for (const logo of await dialog.locator(".matching-brand-logo").all()) {
+  for (const logo of await dialog.locator(".brand-logo img").all()) {
     await expect(logo).toBeVisible();
     expect(
       await logo.evaluate(

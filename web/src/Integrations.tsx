@@ -8,14 +8,17 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { PageHeader } from "./UI";
-import { ImportPanel } from "./ImportPanel";
 import { IntegrationDialog } from "./IntegrationDialog";
 import { IntegrationEvents } from "./IntegrationEvents";
 import { SupportDiagnostics } from "./SupportDiagnostics";
 import { CredentialEditor } from "./CredentialEditor";
 import { StockShadow } from "./StockShadow";
 import { Icon } from "./UI";
-import { IntegrationBrand, IntegrationMetrics } from "./IntegrationCardParts";
+import { IntegrationAccountCard } from "./IntegrationAccountCard";
+import {
+  IntegrationProviderSection,
+  type ProviderName,
+} from "./IntegrationProviderSection";
 import "./integrations-page.css";
 import {
   useCredentialSubmission,
@@ -108,6 +111,8 @@ export function Integrations({
   const [searchParams, setSearchParams] = useSearchParams();
   const client = useQueryClient();
   const navigate = useNavigate();
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [settingsAccount, setSettingsAccount] = useState<string | undefined>();
   const [busy, setBusy] = useState("");
   const requestLock = useRef(false);
   const [acks, setAcks] = useState<Record<string, boolean>>({});
@@ -141,6 +146,7 @@ export function Integrations({
     useState<ImportProvider | null>(null);
   useEffect(() => {
     if (searchParams.get("connect") !== "ozon") return;
+    setSettingsAccount("");
     setCreatingProvider("ozon");
     setSettingsProvider("ozon");
     const next = new URLSearchParams(searchParams);
@@ -188,6 +194,16 @@ export function Integrations({
     enabled: !!tenant,
     retry: false,
   });
+  const settingsQuery = useQuery({
+    queryKey: ["integrations", tenant, "ozon", settingsAccount || ""],
+    queryFn: ({ signal }) =>
+      api<{ providers: Provider[] }>(
+        `/api/integrations?${params({ tenant, ozon_account: settingsAccount || "" })}`,
+        signal,
+      ),
+    enabled: settingsProvider === "ozon" && !!settingsAccount,
+    retry: false,
+  });
   const eligibility = useQuery({
     queryKey: [
       "publication-eligibility",
@@ -208,9 +224,10 @@ export function Integrations({
     enabled: !!tenant && !!selected?.moy && !!selected?.ozon,
     retry: false,
   });
-  function openSettings(provider: ImportProvider) {
+  function openSettings(provider: ImportProvider, explicitAccount?: string) {
     if (provider === "moysklad") {
       const account =
+        explicitAccount ||
         selected?.moy ||
         query.data?.providers.find((p) => p.provider === provider)?.account;
       navigate(
@@ -219,6 +236,8 @@ export function Integrations({
       return;
     }
     if (!uncertain) setMessage("");
+    setCreatingProvider(null);
+    setSettingsAccount(explicitAccount ?? selected?.ozon ?? "");
     setSettingsProvider(provider);
   }
   async function probe(provider: string) {
@@ -230,7 +249,9 @@ export function Integrations({
       await post(`/api/integrations/${provider}/probe`, {
         tenant,
         account:
-          (provider === "moysklad" ? selected?.moy : selected?.ozon) ||
+          (provider === "moysklad"
+            ? selected?.moy
+            : (settingsAccount ?? selected?.ozon)) ||
           query.data?.providers.find((p) => p.provider === provider)?.account ||
           "",
       });
@@ -417,8 +438,17 @@ export function Integrations({
     <div className="integration-console">
       <PageHeader
         title="Интеграции"
-        description="Свяжите МойСклад и Ozon, чтобы управлять загрузкой данных и отправкой остатков."
-      />
+        description="Свяжите МойСклад и маркетплейсы, чтобы управлять загрузкой данных и отправкой остатков."
+      >
+        <button
+          className="secondary setup-toggle"
+          aria-expanded={setupOpen}
+          onClick={() => setSetupOpen(!setupOpen)}
+        >
+          <Icon name="settings" />
+          Настройка синхронизации
+        </button>
+      </PageHeader>
       {
         <p className="publication-eligibility" role="status">
           {eligibility.data?.state === "CONTROLLED_TEST_AVAILABLE"
@@ -439,7 +469,11 @@ export function Integrations({
           </button>
         </p>
       )}
-      <section className="setup-card" aria-label="Настройка синхронизации">
+      <section
+        hidden={!setupOpen}
+        className="setup-card"
+        aria-label="Настройка синхронизации"
+      >
         <div className="setup-heading">
           <h2>Настройка синхронизации</h2>
           <span>
@@ -460,7 +494,7 @@ export function Integrations({
               className={`step-symbol ${connected.length === 2 ? "done" : "warning"}`}
               aria-hidden="true"
             >
-              {connected.length === 2 ? "✓" : "!"}
+              {connected.length === 2 ? <Icon name="check" size="button" /> : <Icon name="error" size="button" />}
             </span>
             <div>
               <strong>Подключить магазины</strong>
@@ -476,7 +510,7 @@ export function Integrations({
               className={`step-symbol ${bothReady ? "done" : setupStep === 2 ? "current" : ""}`}
               aria-hidden="true"
             >
-              {bothReady ? "✓" : "2"}
+              {bothReady ? <Icon name="check" size="button" /> : "2"}
             </span>
             <div>
               <strong>Загрузить данные</strong>
@@ -494,7 +528,7 @@ export function Integrations({
               className={`step-symbol ${productsMapped && warehousesMapped ? "done" : setupStep === 3 ? "current" : ""}`}
               aria-hidden="true"
             >
-              {productsMapped && warehousesMapped ? "✓" : "3"}
+              {productsMapped && warehousesMapped ? <Icon name="check" size="button" /> : "3"}
             </span>
             <div>
               <strong>
@@ -526,7 +560,7 @@ export function Integrations({
               className={`step-symbol ${syncEnabled ? "done" : setupStep === 4 ? "current" : ""}`}
               aria-hidden="true"
             >
-              {syncEnabled ? "✓" : "4"}
+              {syncEnabled ? <Icon name="check" size="button" /> : "4"}
             </span>
             <div>
               <strong>Настроить и включить</strong>
@@ -540,7 +574,7 @@ export function Integrations({
               className={`step-symbol ${firstCheckCompleted ? "done" : setupStep === 5 ? "current" : ""}`}
               aria-hidden="true"
             >
-              {firstCheckCompleted ? "✓" : "5"}
+              {firstCheckCompleted ? <Icon name="check" size="button" /> : "5"}
             </span>
             <div>
               <strong>Проверить результат</strong>
@@ -570,309 +604,213 @@ export function Integrations({
           />
         </div>
       </section>
-      <div className="integration-cards">
-        {providers.map((p) => {
+      <div className="integration-provider-groups">
+        {(["moysklad", "ozon", "wildberries", "yandex"] as ProviderName[]).map(
+          (provider) => {
+            const supported = provider === "moysklad" || provider === "ozon";
+            const entries = supported
+              ? accounts.filter((entry) => entry.source === provider)
+              : [];
+            return (
+              <IntegrationProviderSection
+                key={provider}
+                provider={provider}
+                unavailable={!supported}
+                addingDisabled={!!credentials.pending}
+                onAdd={() => {
+                  if (provider === "moysklad")
+                    navigate("/integrations/moysklad/settings?connect=new");
+                  if (provider === "ozon") {
+                    setCreatingProvider("ozon");
+                    setSettingsAccount("");
+                    setSettingsProvider("ozon");
+                  }
+                }}
+                items={entries.map((entry, index) => ({
+                  id: entry.account,
+                  name: entry.name || `Аккаунт ${index + 1}`,
+                  content: (
+                    <IntegrationAccountCard
+                      tenant={tenant}
+                      provider={provider as ImportProvider}
+                      account={{
+                        ...entry,
+                        name: entry.name || `Аккаунт ${index + 1}`,
+                      }}
+                      imports={imports}
+                      onSettings={() =>
+                        openSettings(provider as ImportProvider, entry.account)
+                      }
+                      historyTarget={
+                        entry.account ===
+                        selectedAccount(provider as ImportProvider)
+                          ? historyTarget
+                          : undefined
+                      }
+                      onStateChange={
+                        entry.account ===
+                        selectedAccount(provider as ImportProvider)
+                          ? onOperationState
+                          : undefined
+                      }
+                    />
+                  ),
+                }))}
+              />
+            );
+          },
+        )}
+      </div>
+      {settingsProvider === "ozon" &&
+        (() => {
+          const p = settingsQuery.data?.providers.find(
+            (entry) =>
+              entry.provider === "ozon" && entry.account === settingsAccount,
+          ) || {
+            provider: "ozon" as const,
+            status: "NOT_CONFIGURED",
+            registration: "NOT_CHECKED",
+            account: settingsAccount,
+            name: undefined,
+            check: undefined,
+          };
+          const account = settingsAccount || "";
           const registeredAccounts = accounts.filter(
-            (a) => a.source === p.provider,
+            (entry) => entry.source === "ozon",
           );
-          const account = selectedAccount(p.provider);
-          const registered =
-            !!account && registeredAccounts.some((a) => a.account === account);
-          const configured =
-            p.account === account && p.status !== "NOT_CONFIGURED";
-          const state =
-            operationStates[p.provider]?.account === account
-              ? operationStates[p.provider]?.state
-              : undefined;
-          const running =
-            state === "RUNNING" ||
-            state === "QUEUED" ||
-            state === "OUTCOME_UNKNOWN";
-          const connectionFailed =
-            p.status === "VERIFICATION_FAILED" ||
-            p.registration === "OWNERSHIP_CONFLICT";
-          const needsAction = connectionFailed || state === "FAILED";
-          const checkAge = p.check
-            ? Date.now() - Date.parse(p.check.checked_at)
-            : NaN;
           const recentProbe =
             p.status === "VERIFIED" &&
-            Number.isFinite(checkAge) &&
-            checkAge >= 0 &&
-            checkAge <= 5 * 60 * 1000;
-          const status =
-            state === "OUTCOME_UNKNOWN"
-              ? "Результат уточняется"
-              : state === "RUNNING"
-                ? "Загружаем…"
-                : state === "QUEUED"
-                  ? "В очереди"
-                  : needsAction
-                    ? "Нужно действие"
-                    : registered && configured && p.status === "VERIFIED"
-                      ? "Работает"
-                      : registered
-                        ? "Доступ не проверен"
-                        : "Не подключено";
-          const problem =
-            p.registration === "OWNERSHIP_CONFLICT"
-              ? "Аккаунт подключён к другой учётной записи STYK. Выберите другой аккаунт."
-              : p.status === "VERIFICATION_FAILED"
-                ? p.check?.reason === "INVALID_CREDENTIALS"
-                  ? `${names[p.provider]} не принял ключ доступа. Возможно, он истёк или был отозван.`
-                  : "Не удалось проверить доступ к сервису. Проверьте настройки и повторите проверку."
-                : undefined;
+            !!p.check &&
+            Date.now() - Date.parse(p.check.checked_at) >= 0 &&
+            Date.now() - Date.parse(p.check.checked_at) <= 300000;
           return (
-            <article
-              className={`integration-card ${needsAction ? "needs-action" : ""}`}
-              key={p.provider}
-              data-provider={p.provider}
-              aria-label={names[p.provider]}
+            <IntegrationDialog
+                className="integration-settings-drawer"
+              title={`Подключение ${names[p.provider]}`}
+              brand={p.provider}
+              closeLabel="Закрыть настройки"
+              onClose={() => setSettingsProvider(null)}
             >
-              <header className="provider-heading">
-                <div className="provider-identity">
-                  <IntegrationBrand provider={p.provider} />
-                  <div>
-                    <h2>{names[p.provider]}</h2>
-                    <p>
-                      {registered
-                        ? registeredAccounts.find((a) => a.account === account)
-                            ?.name ||
-                          `Аккаунт ${registeredAccounts.findIndex((a) => a.account === account) + 1}`
-                        : p.provider === "moysklad"
-                          ? "Учётная система"
-                          : "Маркетплейс"}
-                    </p>
-                  </div>
-                </div>
-                <span
-                  className={`connection-state ${state === "OUTCOME_UNKNOWN" ? "warning" : running ? "active" : needsAction ? "warning" : p.status === "VERIFIED" && registered ? "verified" : ""}`}
-                >
-                  <span aria-hidden="true">
-                    {state === "OUTCOME_UNKNOWN"
-                      ? "?"
-                      : running
-                        ? "↻"
-                        : needsAction
-                          ? "△"
-                          : p.status === "VERIFIED" && registered
-                            ? "✓"
-                            : ""}
-                  </span>
-                  {status}
-                </span>
-                <button
-                  className="integration-settings-gear secondary"
-                  aria-label={`Настройки ${names[p.provider]}`}
-                  title={`Настройки ${names[p.provider]}`}
-                  onClick={() => openSettings(p.provider)}
-                >
-                  <Icon name="settings" />
-                </button>
-              </header>
-              {registered ? (
-                <ImportPanel
-                  key={`${tenant}:${p.provider}:${account}`}
-                  scope={{ tenant, provider: p.provider, account: account! }}
-                  submission={imports}
-                  latestBatch={batchFor(p.provider)}
-                  configured={configured}
-                  historyTarget={historyTarget}
-                  historyManaged
-                  compact
-                  onSettings={() => openSettings(p.provider)}
-                  onProbe={() => void probe(p.provider)}
-                  probeBusy={!!busy}
-                  connectionProblem={problem}
-                  repairCredentials={
-                    p.status === "VERIFICATION_FAILED" &&
-                    p.check?.reason === "INVALID_CREDENTIALS"
-                  }
-                  accountLabel={
-                    registeredAccounts.find((a) => a.account === account)
-                      ?.name ||
-                    `Аккаунт ${registeredAccounts.findIndex((a) => a.account === account) + 1}`
-                  }
-                  onStateChange={onOperationState}
-                />
-              ) : (
-                <div className="provider-empty">
-                  <IntegrationMetrics
-                    provider={p.provider}
-                    batch={batchFor(p.provider)}
-                  />
-                  <p
-                    className={
-                      registeredAccounts.length
-                        ? "integration-empty-warning"
-                        : undefined
-                    }
-                  >
-                    {problem ||
-                      (registeredAccounts.length
-                        ? "Выберите подключение, чтобы загрузить данные и увидеть его историю."
-                        : `Подключите ${names[p.provider]}, чтобы загрузить товары, склады и остатки.`)}
-                  </p>
-                  <div className="provider-actions">
-                    {registeredAccounts.length > 0 && (
-                      <button
-                        className="import-primary"
-                        disabled
-                        title="Сначала выберите настроенный аккаунт"
-                      >
-                        <Icon name="refresh" />
-                        Обновить данные
-                      </button>
-                    )}
-                    <button onClick={() => openSettings(p.provider)}>
-                      {registeredAccounts.length ? "Настройки" : "Подключить"}
-                    </button>
-                    {p.status !== "NOT_CONFIGURED" && (
-                      <button
-                        className="text-action"
-                        disabled={!!busy}
-                        onClick={() => void probe(p.provider)}
-                      >
-                        Проверить доступ
-                      </button>
-                    )}
-                  </div>
-                  <p className="provider-footnote">
-                    Мы только читаем данные. Загрузка не меняет товары и остатки
-                    в сервисе.
-                  </p>
-                </div>
-              )}
-              {p.provider === "ozon" && settingsProvider === p.provider && (
-                <IntegrationDialog
-                  title={`Подключение ${names[p.provider]}`}
-                  closeLabel="Закрыть настройки"
+              <div className="provider-settings-body">
+                {settingsFeedback}
+                <CredentialEditor
+                  key={`${tenant}:${p.provider}:${creatingProvider === p.provider ? "new" : account || p.account || "new"}`}
+                  scope={{
+                    tenant,
+                    provider: p.provider,
+                    account:
+                      creatingProvider === p.provider
+                        ? ""
+                        : account || p.account || "",
+                  }}
+                  name={p.name}
+                  registration={p.status}
+                  reason={p.check?.reason}
+                  accounts={registeredAccounts}
+                  onSelect={(a) => {
+                    setCreatingProvider(a ? null : p.provider);
+                    setSettingsAccount(a);
+                    onSelect?.(p.provider, a);
+                  }}
+                  submission={credentials}
                   onClose={() => setSettingsProvider(null)}
-                >
+                />
+                <details className="legacy-connection-settings">
+                  <summary>Проверка доступа и настройки сервера</summary>
                   <div className="provider-settings-body">
-                    {settingsFeedback}
-                    <CredentialEditor
-                      key={`${tenant}:${p.provider}:${creatingProvider === p.provider ? "new" : account || p.account || "new"}`}
-                      scope={{
-                        tenant,
-                        provider: p.provider,
-                        account:
-                          creatingProvider === p.provider
-                            ? ""
-                            : account || p.account || "",
-                      }}
-                      name={p.name}
-                      registration={p.status}
-                      reason={p.check?.reason}
-                      accounts={registeredAccounts}
-                      onSelect={(a) => {
-                        setCreatingProvider(a ? null : p.provider);
-                        onSelect?.(p.provider, a);
-                      }}
-                      submission={credentials}
-                      onClose={() => setSettingsProvider(null)}
-                    />
-                    <details className="legacy-connection-settings">
-                      <summary>Проверка доступа и настройки сервера</summary>
-                      <div className="provider-settings-body">
+                    <p>
+                      {p.status === "VERIFIED" && p.check
+                        ? `Доступ проверен ${date(p.check.checked_at)}.`
+                        : "Доступ пока не подтверждён."}{" "}
+                      Проверка подключения не запускает загрузку каталога.
+                      Проверка доступа не заменяет подтверждение принадлежности
+                      аккаунта.
+                    </p>
+                    <button
+                      className="secondary"
+                      disabled={!!busy || p.status === "NOT_CONFIGURED"}
+                      onClick={() => void probe(p.provider)}
+                    >
+                      {busy === p.provider
+                        ? "Подождите…"
+                        : "Проверить подключение"}
+                    </button>
+                    {p.registration === "NOT_REGISTERED" && (
+                      <div className="registration-form">
                         <p>
-                          {p.status === "VERIFIED" && p.check
-                            ? `Доступ проверен ${date(p.check.checked_at)}.`
-                            : "Доступ пока не подтверждён."}{" "}
-                          Проверка подключения не запускает загрузку каталога.
-                          Проверка доступа не заменяет подтверждение
-                          принадлежности аккаунта.
+                          Добавьте настроенный на сервере аккаунт в STYK.
+                          Предыдущие загрузки не будут включены автоматически.
                         </p>
+                        {p.status === "VERIFIED" && !recentProbe && (
+                          <p>
+                            Перед добавлением аккаунта повторите проверку:
+                            прошло больше пяти минут.
+                          </p>
+                        )}
+                        <label className="integration-ack">
+                          <input
+                            type="checkbox"
+                            checked={!!acks[p.provider]}
+                            onChange={(e) =>
+                              setAcks((old) => ({
+                                ...old,
+                                [p.provider]: e.target.checked,
+                              }))
+                            }
+                          />
+                          Подтверждаю, что этот аккаунт принадлежит мне.
+                        </label>
                         <button
-                          className="secondary"
-                          disabled={!!busy || p.status === "NOT_CONFIGURED"}
-                          onClick={() => void probe(p.provider)}
+                          disabled={
+                            !!busy ||
+                            !!uncertain ||
+                            !acks[p.provider] ||
+                            !recentProbe
+                          }
+                          onClick={() => void register(p.provider)}
                         >
-                          {busy === p.provider
-                            ? "Подождите…"
-                            : "Проверить подключение"}
+                          Добавить аккаунт
                         </button>
-                        {p.registration === "NOT_REGISTERED" && (
-                          <div className="registration-form">
-                            <p>
-                              Добавьте настроенный на сервере аккаунт в STYK.
-                              Предыдущие загрузки не будут включены
-                              автоматически.
-                            </p>
-                            {p.status === "VERIFIED" && !recentProbe && (
-                              <p>
-                                Перед добавлением аккаунта повторите проверку:
-                                прошло больше пяти минут.
-                              </p>
-                            )}
-                            <label className="integration-ack">
-                              <input
-                                type="checkbox"
-                                checked={!!acks[p.provider]}
-                                onChange={(e) =>
-                                  setAcks((old) => ({
-                                    ...old,
-                                    [p.provider]: e.target.checked,
-                                  }))
-                                }
-                              />
-                              Подтверждаю, что этот аккаунт принадлежит мне.
-                            </label>
-                            <button
-                              disabled={
-                                !!busy ||
-                                !!uncertain ||
-                                !acks[p.provider] ||
-                                !recentProbe
-                              }
-                              onClick={() => void register(p.provider)}
-                            >
-                              Добавить аккаунт
-                            </button>
+                      </div>
+                    )}
+                    <details className="technical-details">
+                      <summary>Технические детали</summary>
+                      <dl>
+                        <div>
+                          <dt>Настроенный аккаунт</dt>
+                          <dd>
+                            <code>{p.account || "Не задан"}</code>
+                          </dd>
+                        </div>
+                        {p.check && (
+                          <div>
+                            <dt>Результат проверки</dt>
+                            <dd>
+                              <code>{p.check.reason || p.check.identity}</code>
+                            </dd>
                           </div>
                         )}
-                        <details className="technical-details">
-                          <summary>Технические детали</summary>
-                          <dl>
-                            <div>
-                              <dt>Настроенный аккаунт</dt>
-                              <dd>
-                                <code>{p.account || "Не задан"}</code>
-                              </dd>
-                            </div>
-                            {p.check && (
-                              <div>
-                                <dt>Результат проверки</dt>
-                                <dd>
-                                  <code>
-                                    {p.check.reason || p.check.identity}
-                                  </code>
-                                </dd>
-                              </div>
-                            )}
-                          </dl>
-                          <p>
-                            Проверка чтения данных не подтверждает готовность
-                            публикации остатков.
-                          </p>
-                        </details>
-                        <nav aria-label={`${names[p.provider]}: разделы`}>
-                          <Link to="/products">Товары</Link>
-                          <Link to="/warehouses">Склады</Link>
-                          <Link to="/diagnostics">Диагностика</Link>
-                        </nav>
-                      </div>
+                      </dl>
+                      <p>
+                        Проверка чтения данных не подтверждает готовность
+                        публикации остатков.
+                      </p>
                     </details>
+                    <nav aria-label={`${names[p.provider]}: разделы`}>
+                      <Link to="/products">Товары</Link>
+                      <Link to="/warehouses">Склады</Link>
+                      <Link to="/diagnostics">Диагностика</Link>
+                    </nav>
                   </div>
-                </IntegrationDialog>
-              )}
-            </article>
+                </details>
+              </div>
+            </IntegrationDialog>
           );
-        })}
-      </div>
+        })()}
       <IntegrationEvents
         tenant={tenant}
         accounts={historyAccounts}
+        accountList={accounts}
         providers={providers}
         onSupport={(operation) => {
           setDiagnosticOperation(operation);

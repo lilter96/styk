@@ -1,5 +1,3 @@
-import moyLogo from "./assets/brands/moysklad.png";
-import ozonLogo from "./assets/brands/ozon.png";
 import { Icon, type IconName } from "./UI";
 import type { Batch, ImportProvider } from "./api";
 
@@ -19,13 +17,6 @@ function updatedAt(value?: string) {
         hour: "2-digit",
         minute: "2-digit",
       });
-}
-export function IntegrationBrand({ provider }: { provider: ImportProvider }) {
-  return (
-    <span className={`integration-brand ${provider}`}>
-      <img src={provider === "moysklad" ? moyLogo : ozonLogo} alt="" />
-    </span>
-  );
 }
 export function IntegrationMetrics({
   provider,
@@ -53,7 +44,7 @@ export function IntegrationMetrics({
     metrics.push({
       label: "Вариантов",
       value: counts?.variants?.toLocaleString("ru-RU") ?? "—",
-      icon: "catalog",
+      icon: "variants",
     });
   metrics.push({
     label: "Складов",
@@ -64,7 +55,7 @@ export function IntegrationMetrics({
     <dl className="integration-metrics">
       {metrics.map((metric) => (
         <div className="integration-metric" key={metric.label}>
-          <Icon name={metric.icon} />
+          <Icon name={metric.icon} size="metric" />
           <div>
             <dt>{metric.label}</dt>
             <dd>{metric.value}</dd>

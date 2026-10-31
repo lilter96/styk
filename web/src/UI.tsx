@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import "./icons.css";
+import { BrandLogo } from "./BrandLogo";
 
 export type IconName =
   | "overview"
@@ -10,8 +12,62 @@ export type IconName =
   | "menu"
   | "settings"
   | "refresh"
-  | "arrow";
+  | "arrow"
+  | "copy"
+  | "plus"
+  | "chevron-left"
+  | "chevron-right"
+  | "chevron-down"
+  | "close"
+  | "search"
+  | "history"
+  | "more"
+  | "error"
+  | "variants"
+  | "check";
 const paths: Record<IconName, ReactNode> = {
+  copy: (
+    <>
+      <rect x="8" y="8" width="12" height="12" rx="2" />
+      <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" />
+    </>
+  ),
+  plus: <path d="M12 5v14M5 12h14" />,
+  "chevron-left": <path d="m15 6-6 6 6 6" />,
+  "chevron-right": <path d="m9 6 6 6-6 6" />,
+  "chevron-down": <path d="m6 9 6 6 6-6" />,
+  check: <path d="m5 12 4 4L19 6" />,
+  close: <path d="m6 6 12 12M6 18 18 6" />,
+  search: (
+    <>
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="m16 16 5 5" />
+    </>
+  ),
+  history: (
+    <>
+      <path d="M3 4v5h5M3 9a9 9 0 1 1 1 8M12 7v5l3 2" />
+    </>
+  ),
+  more: (
+    <>
+      <circle cx="5" cy="12" r="1" />
+      <circle cx="12" cy="12" r="1" />
+      <circle cx="19" cy="12" r="1" />
+    </>
+  ),
+  error: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v6M12 17h.01" />
+    </>
+  ),
+  variants: (
+    <>
+      <rect x="3" y="3" width="12" height="12" rx="2" />
+      <path d="M8 18v3h13V8h-3" />
+    </>
+  ),
   refresh: (
     <path d="M20 7v5h-5M4 17v-5h5M6 6a8 8 0 0 1 13 3M5 15a8 8 0 0 0 13 3" />
   ),
@@ -59,9 +115,21 @@ const paths: Record<IconName, ReactNode> = {
   menu: <path d="M4 6h16M4 12h16M4 18h16" />,
   arrow: <path d="M5 12h14m-5-5 5 5-5 5" />,
 };
-export function Icon({ name }: { name: IconName }) {
+export type IconSize = "metric" | "button" | "navigation" | "service";
+export function Icon({
+  name,
+  size = "navigation",
+  className = "",
+}: {
+  name: IconName;
+  size?: IconSize;
+  className?: string;
+}) {
   return (
     <svg
+      className={`styk-icon ${className}`.trim()}
+      data-size={size}
+      focusable="false"
       width="20"
       height="20"
       viewBox="0 0 24 24"
@@ -79,7 +147,7 @@ export function Icon({ name }: { name: IconName }) {
 export function Brand() {
   return (
     <div className="app-brand" aria-label="STYK">
-      <span aria-hidden="true">S</span>
+      <BrandLogo provider="styk" decorative />
       <b aria-hidden="true">TYK</b>
     </div>
   );
@@ -125,9 +193,5 @@ export function StatePanel({
   );
 }
 export function ProviderBadge({ provider }: { provider: "moysklad" | "ozon" }) {
-  return (
-    <span className={`provider-badge ${provider}`} aria-hidden="true">
-      {provider === "ozon" ? "O" : "МС"}
-    </span>
-  );
+  return <BrandLogo provider={provider} decorative />;
 }

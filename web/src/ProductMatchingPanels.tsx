@@ -3,20 +3,7 @@ import type { UseQueryResult } from "@tanstack/react-query";
 import type { Page, Product } from "./api";
 import type { MappingTarget } from "./ProductReview";
 import { Icon } from "./UI";
-import ozonLogo from "./assets/brands/ozon.png";
-import moyskladLogo from "./assets/brands/moysklad.png";
-
-function ProviderLogo({ provider }: { provider: "ozon" | "moysklad" }) {
-  return (
-    <img
-      className={`matching-brand-logo ${provider}`}
-      src={provider === "ozon" ? ozonLogo : moyskladLogo}
-      alt={provider === "ozon" ? "Ozon" : "МойСклад"}
-      width="32"
-      height="32"
-    />
-  );
-}
+import { BrandLogo } from "./BrandLogo";
 
 function CopyValue({ label, value }: { label: string; value: string }) {
   const [message, setMessage] = useState("");
@@ -36,18 +23,7 @@ function CopyValue({ label, value }: { label: string; value: string }) {
             }
           }}
         >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.6"
-            aria-hidden="true"
-          >
-            <rect x="8" y="8" width="12" height="12" rx="2" />
-            <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" />
-          </svg>
+          <Icon name="copy" size="button" />
         </button>
         <span role="status">{message}</span>
       </dd>
@@ -59,7 +35,7 @@ export function OzonProductPanel({ product }: { product: Product }) {
   return (
     <aside className="matching-ozon">
       <header>
-        <ProviderLogo provider="ozon" />
+        <BrandLogo provider="ozon" decorative />
         <b>Товар в Ozon</b>
         <span
           className={`mapping-chip ${product.match_status === "CONFIRMED" ? "ok" : "warning"}`}
@@ -136,22 +112,11 @@ export function TargetSearchPanel(p: SearchProps) {
   return (
     <section className="matching-search-panel">
       <h3>
-        <ProviderLogo provider="moysklad" /> Поиск товара в МойСклад
+        <BrandLogo provider="moysklad" decorative /> Поиск товара в МойСклад
       </h3>
       <div className="matching-search-line">
         <label>
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            aria-hidden="true"
-          >
-            <circle cx="10.5" cy="10.5" r="6.5" />
-            <path d="m16 16 5 5" />
-          </svg>
+          <Icon name="search" size="button" />
           <input
             ref={input}
             aria-label="Поиск товара МойСклад"
@@ -177,7 +142,7 @@ export function TargetSearchPanel(p: SearchProps) {
                 input.current?.focus();
               }}
             >
-              ×
+              <Icon name="close" size="button" />
             </button>
           )}
         </label>
@@ -298,7 +263,7 @@ export function TargetSearchPanel(p: SearchProps) {
             disabled={p.offset === 0 || p.query.isFetching}
             onClick={() => p.setOffset(Math.max(0, p.offset - p.pageSize))}
           >
-            ‹
+            <Icon name="chevron-left" size="button" />
           </button>
           {pages.map((n, i) => (
             <span key={n}>
@@ -318,7 +283,7 @@ export function TargetSearchPanel(p: SearchProps) {
             disabled={!p.query.data?.has_next || p.query.isFetching}
             onClick={() => p.setOffset(p.offset + p.pageSize)}
           >
-            ›
+            <Icon name="chevron-right" size="button" />
           </button>
         </div>
         <select

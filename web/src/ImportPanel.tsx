@@ -571,6 +571,7 @@ export function ImportPanel({
       aria-label={`${name}: история обновлений`}
     >
       <summary>
+        <Icon name="chevron-right" size="button" />
         <span>{name}</span>
         <span className="history-preview">
           {latest.error
@@ -679,7 +680,7 @@ export function ImportPanel({
         {connectionProblem ? (
           <p className="provider-summary">{connectionProblem}</p>
         ) : (
-          !(current && active(current.state)) &&
+          !compact && !(current && active(current.state)) &&
           current?.state !== "FAILED" && (
             <p className="import-baseline">
               {completed && latestBatch.observed_at ? (
@@ -804,7 +805,7 @@ export function ImportPanel({
               }}
             >
               {compact && <Icon name="refresh" />}
-              {completed ? "Обновить данные" : "Загрузить данные"}
+                {compact ? "Обновить" : completed ? "Обновить данные" : "Загрузить данные"}
             </button>
             {onSettings && (
               <button className="text-action" onClick={onSettings}>
@@ -815,7 +816,7 @@ export function ImportPanel({
           </>
         )}
       </div>
-      <div
+      {!compact && <div
         className={`provider-footnote ${compact ? "integration-import-footnote" : ""}`}
       >
         {connectionProblem && completed && latestBatch.observed_at ? (
@@ -878,7 +879,7 @@ export function ImportPanel({
             )}
           </dl>
         )}
-      </div>
+      </div>}
       {confirm && (
         <Confirm
           title={`Загрузить данные ${name}?`}

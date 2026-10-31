@@ -1,0 +1,27 @@
+.styk-icon {
+  --icon-size: var(--styk-icon-navigation, 20px);
+  display: inline-block;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+.styk-icon[data-size="metric"] {
+  --icon-size: var(--styk-icon-metric, 16px);
+}
+.styk-icon[data-size="button"],
+:is(button, a) > .styk-icon,
+.moy-settings-link > .styk-icon {
+  --icon-size: var(--styk-icon-button, 16px);
+}
+.styk-icon[data-size="service"] {
+  --icon-size: var(--styk-icon-service, 24px);
+}
+.app-tabs a > .styk-icon,
+.moy-settings-nav button > .styk-icon {
+  --icon-size: var(--styk-icon-navigation, 20px);
+}
+/* Restrict size rules to UI icons, never provider artwork. */
+svg.styk-icon,
+.reference-shell svg.styk-icon {
+  width: var(--icon-size);
+  height: var(--icon-size);
+}

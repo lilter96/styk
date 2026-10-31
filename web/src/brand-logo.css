@@ -1,0 +1,51 @@
+.brand-logo {
+  --brand-size: 32px;
+  display: inline-grid;
+  place-items: center;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  width: var(--brand-size);
+  height: var(--brand-size);
+  padding: calc(var(--brand-size) * 0.085);
+  border: 1px solid var(--styk-line, #e9edf8);
+  border-radius: var(--styk-brand-radius, 9px);
+  background: #fff;
+  vertical-align: middle;
+  overflow: hidden;
+}
+.brand-logo[data-size="xs"] {
+  --brand-size: 20px;
+}
+.brand-logo[data-size="sm"] {
+  --brand-size: 24px;
+}
+.brand-logo[data-size="lg"] {
+  --brand-size: 36px;
+}
+.brand-logo[data-size="xl"] {
+  --brand-size: 40px;
+}
+.brand-logo > img {
+  display: block;
+  width: calc(100% * var(--brand-optical-scale, 1));
+  height: calc(100% * var(--brand-optical-scale, 1));
+  min-width: 0;
+  object-fit: contain;
+  border-radius: calc(var(--styk-brand-radius, 9px) - 4px);
+}
+.brand-logo-mark {
+  font-size: calc(var(--brand-size) * 0.62);
+  font-weight: 800;
+  line-height: 1;
+}
+.brand-logo[data-artwork="fallback"] {
+  color: var(--styk-muted, #667394);
+  background: var(--styk-subtle, #f8f9fd);
+}
+/* Preserve STYK's existing code-native monogram, rather than invent new artwork. */
+.brand-logo[data-brand="styk"] {
+  padding: 0;
+  border: 0;
+  color: white;
+  background: linear-gradient(135deg, #693cff, #b800f8);
+}

@@ -176,12 +176,6 @@
   gap: 11px;
   margin-bottom: 17px;
 }
-.moy-summary-brand img {
-  width: 38px;
-  height: 38px;
-  object-fit: contain;
-  border-radius: 8px;
-}
 .moy-summary-brand > div {
   min-width: 0;
 }

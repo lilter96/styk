@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { CredentialEditor } from "./CredentialEditor";
-import { PageHeader, StatePanel } from "./UI";
+import { PageHeader, StatePanel, Icon } from "./UI";
 import type { Account } from "./api";
 import type { CredentialSubmissionState } from "./CredentialSubmission";
 import type { ImportSubmissionState } from "./ImportSubmission";
@@ -40,7 +40,7 @@ export function MoySkladAccountSettingsPage(props: Props) {
     return (
       <div className="moy-settings-page">
         <Link className="moy-settings-back" to="/integrations">
-          ← Назад к интеграциям
+          <Icon name="chevron-left" size="button" /> Назад к интеграциям
         </Link>
         <PageHeader
           title="Настройки аккаунта МойСклад"
@@ -107,7 +107,7 @@ function MoySkladSettingsContent({
   return (
     <div className="moy-settings-page">
       <Link to="/integrations" className="moy-settings-back">
-        <span aria-hidden="true">←</span> Назад к интеграциям
+        <Icon name="chevron-left" size="button" /> Назад к интеграциям
       </Link>
       <PageHeader
         title="Настройки аккаунта МойСклад"

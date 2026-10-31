@@ -412,7 +412,7 @@ for (const width of [1440, 390]) {
     await workspace
       .getByRole("combobox", { name: "Ozon", exact: true })
       .selectOption("visual-ozon-2");
-    await workspace.getByRole("button", { name: "WB", exact: true }).click();
+    await workspace.getByRole("button", { name: "Wildberries", exact: true }).click();
     await expect(
       workspace.getByRole("button", { name: "Добавить аккаунт", exact: true }),
     ).toBeDisabled();
@@ -422,11 +422,11 @@ for (const width of [1440, 390]) {
     await expect(
       page.getByRole("heading", { name: "Сопоставление товаров" }),
     ).toHaveCount(0);
-    await workspace.getByRole("button", { name: "ЯМ", exact: true }).click();
+    await workspace.getByRole("button", { name: "Яндекс Маркет", exact: true }).click();
     await expect(
       page.getByRole("heading", { name: "Яндекс Маркет", exact: true }),
     ).toBeVisible();
-    await workspace.getByRole("button", { name: "OZON", exact: true }).click();
+    await workspace.getByRole("button", { name: "Ozon", exact: true }).click();
     await expect(
       workspace.getByRole("combobox", { name: "Ozon", exact: true }),
     ).toHaveValue("visual-ozon-2");
