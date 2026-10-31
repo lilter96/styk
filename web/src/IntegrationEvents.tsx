@@ -63,6 +63,7 @@ export function IntegrationEvents({
     tone: string;
     operation?: ImportOperation;
     repair?: boolean;
+    status: string;
   }[] = operations.map((op) => ({
     id: op.id,
     at: op.finished_at || op.started_at || op.created_at,
@@ -74,10 +75,24 @@ export function IntegrationEvents({
     tone:
       op.state === "FAILED" || op.state === "OUTCOME_UNKNOWN"
         ? "warning"
-        : op.state === "RUNNING" || op.state === "QUEUED"
-          ? "active"
-          : "",
+        : op.state === "CANCELLED"
+          ? "neutral"
+          : op.state === "RUNNING" || op.state === "QUEUED"
+            ? "active"
+            : "",
     operation: op,
+    status:
+      op.state === "SUCCEEDED"
+        ? "Успешно"
+        : op.state === "FAILED"
+          ? "Ошибка"
+          : op.state === "RUNNING"
+            ? "В процессе"
+            : op.state === "OUTCOME_UNKNOWN"
+              ? "Уточняется"
+              : op.state === "CANCELLED"
+                ? "Отменено"
+                : "Ожидает",
   }));
   for (const p of providers)
     if (p.check)
@@ -93,6 +108,7 @@ export function IntegrationEvents({
               : "Не удалось проверить доступ",
         tone: p.status === "VERIFIED" ? "" : "warning",
         repair: p.status !== "VERIFIED",
+        status: p.status === "VERIFIED" ? "Успешно" : "Ошибка",
       });
   events.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
   const shown = events.slice(0, 3);
@@ -107,37 +123,63 @@ export function IntegrationEvents({
           Диагностика для поддержки
         </button>
       </div>
-      {shown.map((event) => (
-        <div className="recent-event" key={event.id}>
-          <time
-            dateTime={event.at}
-            title={new Date(event.at).toLocaleString("ru-RU")}
-          >
-            {new Date(event.at).toLocaleString("ru-RU", {
-              ...(new Date(event.at).toDateString() !==
-              new Date().toDateString()
-                ? { day: "numeric" as const, month: "short" as const }
-                : {}),
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          </time>
-          <span className={`event-provider ${event.tone}`}>
-            {names[event.provider]}
-          </span>
-          <p>{event.text}</p>
-          <button
-            className="text-action"
-            onClick={() =>
-              event.repair
-                ? onRepair(event.provider)
-                : onSupport(event.operation)
-            }
-          >
-            {event.repair ? "Что делать" : "Подробнее"}
-          </button>
-        </div>
-      ))}
+      <div className="integration-events-scroll">
+        <table className="integration-events-table">
+          <thead>
+            <tr>
+              <th>Время</th>
+              <th>Сервис</th>
+              <th>Событие</th>
+              <th>Статус</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((event) => (
+              <tr key={event.id}>
+                <td>
+                  <time
+                    dateTime={event.at}
+                    title={new Date(event.at).toLocaleString("ru-RU")}
+                  >
+                    {new Date(event.at).toLocaleString("ru-RU", {
+                      ...(new Date(event.at).toDateString() !==
+                      new Date().toDateString()
+                        ? { day: "numeric" as const, month: "short" as const }
+                        : {}),
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </time>
+                </td>
+                <td>
+                  <span className={`event-provider ${event.tone}`}>
+                    {names[event.provider]}
+                  </span>
+                </td>
+                <td>{event.text}</td>
+                <td>
+                  <span className={`integration-event-status ${event.tone}`}>
+                    {event.status}
+                  </span>
+                </td>
+                <td>
+                  <button
+                    className="text-action"
+                    onClick={() =>
+                      event.repair
+                        ? onRepair(event.provider)
+                        : onSupport(event.operation)
+                    }
+                  >
+                    {event.repair ? "Что делать" : "Подробнее"}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       {shown.length === 0 && (
         <p className="history-empty">
           {queries.some((q) => q.isError)

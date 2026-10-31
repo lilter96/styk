@@ -9,8 +9,12 @@ export type IconName =
   | "diagnostics"
   | "menu"
   | "settings"
+  | "refresh"
   | "arrow";
 const paths: Record<IconName, ReactNode> = {
+  refresh: (
+    <path d="M20 7v5h-5M4 17v-5h5M6 6a8 8 0 0 1 13 3M5 15a8 8 0 0 0 13 3" />
+  ),
   settings: (
     <>
       <path d="m9.5 3-.7 2.2-2 .9-2.1-.5-2.2 3.8L4 11v2l-1.5 1.6 2.2 3.8 2.1-.5 2 .9.7 2.2h5l.7-2.2 2-.9 2.1.5 2.2-3.8L20 13v-2l1.5-1.6-2.2-3.8-2.1.5-2-.9L14.5 3h-5Z" />

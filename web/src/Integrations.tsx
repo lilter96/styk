@@ -7,13 +7,16 @@ import {
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
-import { PageHeader, ProviderBadge } from "./UI";
+import { PageHeader } from "./UI";
 import { ImportPanel } from "./ImportPanel";
 import { IntegrationDialog } from "./IntegrationDialog";
 import { IntegrationEvents } from "./IntegrationEvents";
 import { SupportDiagnostics } from "./SupportDiagnostics";
 import { CredentialEditor } from "./CredentialEditor";
 import { StockShadow } from "./StockShadow";
+import { Icon } from "./UI";
+import { IntegrationBrand, IntegrationMetrics } from "./IntegrationCardParts";
+import "./integrations-page.css";
 import {
   useCredentialSubmission,
   type CredentialSubmissionState,
@@ -416,15 +419,15 @@ export function Integrations({
         title="Интеграции"
         description="Свяжите МойСклад и Ozon, чтобы управлять загрузкой данных и отправкой остатков."
       />
-      {eligibility.data?.state && (
+      {
         <p className="publication-eligibility" role="status">
-          {eligibility.data.state === "CONTROLLED_TEST_AVAILABLE"
+          {eligibility.data?.state === "CONTROLLED_TEST_AVAILABLE"
             ? "Тестовая публикация разрешена для этой пары аккаунтов."
-            : eligibility.data.state === "CONTROLLED_TEST_DISABLED"
+            : eligibility.data?.state === "CONTROLLED_TEST_DISABLED"
               ? "Тестовая публикация выключена. Чтение данных доступно."
               : "Доступно чтение данных. Публикация остатков ожидает отдельной активации."}
         </p>
-      )}
+      }
       {notice}
       {!settingsProvider && settingsFeedback}
       {query.isLoading && <p role="status">Загружаем интеграции…</p>}
@@ -549,22 +552,24 @@ export function Integrations({
             </div>
           </li>
         </ol>
+        <div className="integration-context-actions">
+          <StockSyncControls
+            tenant={tenant}
+            moy={selected?.moy || ""}
+            ozon={selected?.ozon || ""}
+            eligible={bothReady && productsMapped && warehousesMapped}
+            submission={stockSyncSubmission}
+            onAutomaticProgress={onAutomaticProgress}
+          />
+          <StockShadow
+            tenant={tenant}
+            moy={selected?.moy || ""}
+            ozon={selected?.ozon || ""}
+            moyLabel={accountLabel("moysklad", accounts, selected?.moy)}
+            ozonLabel={accountLabel("ozon", accounts, selected?.ozon)}
+          />
+        </div>
       </section>
-      <StockSyncControls
-        tenant={tenant}
-        moy={selected?.moy || ""}
-        ozon={selected?.ozon || ""}
-        eligible={bothReady && productsMapped && warehousesMapped}
-        submission={stockSyncSubmission}
-        onAutomaticProgress={onAutomaticProgress}
-      />
-      <StockShadow
-        tenant={tenant}
-        moy={selected?.moy || ""}
-        ozon={selected?.ozon || ""}
-        moyLabel={accountLabel("moysklad", accounts, selected?.moy)}
-        ozonLabel={accountLabel("ozon", accounts, selected?.ozon)}
-      />
       <div className="integration-cards">
         {providers.map((p) => {
           const registeredAccounts = accounts.filter(
@@ -626,7 +631,7 @@ export function Integrations({
             >
               <header className="provider-heading">
                 <div className="provider-identity">
-                  <ProviderBadge provider={p.provider} />
+                  <IntegrationBrand provider={p.provider} />
                   <div>
                     <h2>{names[p.provider]}</h2>
                     <p>
@@ -656,6 +661,14 @@ export function Integrations({
                   </span>
                   {status}
                 </span>
+                <button
+                  className="integration-settings-gear secondary"
+                  aria-label={`Настройки ${names[p.provider]}`}
+                  title={`Настройки ${names[p.provider]}`}
+                  onClick={() => openSettings(p.provider)}
+                >
+                  <Icon name="settings" />
+                </button>
               </header>
               {registered ? (
                 <ImportPanel
@@ -666,6 +679,7 @@ export function Integrations({
                   configured={configured}
                   historyTarget={historyTarget}
                   historyManaged
+                  compact
                   onSettings={() => openSettings(p.provider)}
                   onProbe={() => void probe(p.provider)}
                   probeBusy={!!busy}
@@ -683,17 +697,35 @@ export function Integrations({
                 />
               ) : (
                 <div className="provider-empty">
-                  <p>
+                  <IntegrationMetrics
+                    provider={p.provider}
+                    batch={batchFor(p.provider)}
+                  />
+                  <p
+                    className={
+                      registeredAccounts.length
+                        ? "integration-empty-warning"
+                        : undefined
+                    }
+                  >
                     {problem ||
                       (registeredAccounts.length
                         ? "Выберите подключение, чтобы загрузить данные и увидеть его историю."
                         : `Подключите ${names[p.provider]}, чтобы загрузить товары, склады и остатки.`)}
                   </p>
                   <div className="provider-actions">
+                    {registeredAccounts.length > 0 && (
+                      <button
+                        className="import-primary"
+                        disabled
+                        title="Сначала выберите настроенный аккаунт"
+                      >
+                        <Icon name="refresh" />
+                        Обновить данные
+                      </button>
+                    )}
                     <button onClick={() => openSettings(p.provider)}>
-                      {registeredAccounts.length
-                        ? "Выбрать аккаунт"
-                        : "Подключить"}
+                      {registeredAccounts.length ? "Настройки" : "Подключить"}
                     </button>
                     {p.status !== "NOT_CONFIGURED" && (
                       <button

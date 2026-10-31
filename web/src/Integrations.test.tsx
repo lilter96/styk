@@ -442,8 +442,10 @@ for (const [state, heading] of [
     await within(
       await screen.findByRole("article", { name: "Ozon" }),
     ).findAllByText(heading);
-    expect(within(next).queryByRole("button")).toBeNull();
-    expect(within(next).queryByRole("link")).toBeNull();
+    const steps = next.querySelector(".setup-steps") as HTMLElement;
+    expect(within(steps).queryByRole("button")).toBeNull();
+    expect(within(steps).queryByRole("link")).toBeNull();
+    expect(within(next).getByRole("button", { name: "Проверить остатки" })).toBeTruthy();
     expect(within(next).queryByText("Загрузите первый каталог")).toBeNull();
     const ozon = await screen.findByRole("article", { name: "Ozon" });
     expect(
