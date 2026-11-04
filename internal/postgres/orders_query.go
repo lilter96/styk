@@ -71,8 +71,11 @@ func (s *Store) OrderPostings(ctx context.Context, scope orders.Scope, page orde
 	return result, nil
 }
 
-// ActiveOrderPostings refreshes old active postings independently of their
-// original creation window. after is an opaque provider posting identifier.
+// ActiveOrderPostings refreshes active keys and retained terminal corrections,
+// independently of order creation time. Terminal status must be present in the
+// immutable latest observation; retained projection values are not evidence.
+// Unknown schemes remain classification reads; known FBO is excluded. This
+// does not authorize mirroring or commands. after is the same lexical cursor.
 func (s *Store) ActiveOrderPostings(ctx context.Context, scope orders.Scope, limit int, after string) (orders.PostingPage, error) {
 	result := orders.PostingPage{Postings: []orders.Posting{}}
 	if scope.Validate() != nil || limit < 1 || limit > 100 || len(after) > 256 {
@@ -81,7 +84,12 @@ func (s *Store) ActiveOrderPostings(ctx context.Context, scope orders.Scope, lim
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
 	args := append(ordersScopeArgs(scope), after, limit+1)
-	rows, err := s.Pool.Query(ctx, `SELECT h.projection,h.checked_at,h.quarantined FROM orders_posting_heads h JOIN orders_posting_observations o ON o.id=h.observation_id AND o.tenant_id=h.tenant_id AND o.moysklad_account=h.moysklad_account AND o.ozon_account=h.ozon_account AND o.posting_number=h.posting_number WHERE h.tenant_id=$1 AND h.moysklad_account=$2 AND h.ozon_account=$3 AND h.active AND h.posting_number>$4 ORDER BY h.posting_number LIMIT $5`, args...)
+	rows, err := s.Pool.Query(ctx, `SELECT h.projection,h.checked_at,h.quarantined FROM orders_posting_heads h JOIN orders_posting_observations o ON o.id=h.observation_id AND o.tenant_id=h.tenant_id AND o.moysklad_account=h.moysklad_account AND o.ozon_account=h.ozon_account AND o.posting_number=h.posting_number WHERE h.tenant_id=$1 AND h.moysklad_account=$2 AND h.ozon_account=$3 AND h.projection#>>'{scheme,value}' IS DISTINCT FROM 'FBO' AND o.posting#>>'{scheme,value}' IS DISTINCT FROM 'FBO'
+ AND ((h.active AND NOT COALESCE(o.posting#>>'{status,presence}'='value' AND o.posting#>>'{status,value}' IN ('delivered','cancelled'),false))
+ OR (o.posting#>>'{status,presence}'='value' AND o.posting#>>'{status,value}' IN ('delivered','cancelled')
+ AND h.checked_at<=clock_timestamp()-interval '6 hours'
+ AND o.observed_at>=clock_timestamp()-interval '31 days' AND o.observed_at<=clock_timestamp()+interval '1 minute'))
+ AND h.posting_number>$4 ORDER BY h.posting_number LIMIT $5`, args...)
 	if err != nil {
 		return result, ordersError("select active order postings", err)
 	}
