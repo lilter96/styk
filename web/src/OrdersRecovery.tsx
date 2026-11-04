@@ -7,6 +7,8 @@ import {
   orderActionLabel,
   orderDate,
   orderFieldText,
+  knownOrderField,
+  postingStatusLabels,
   orderRequestError,
   orderScopeBody,
   ordersURL,
@@ -249,7 +251,11 @@ export function OrdersRecovery({
             </p>
             <p>
               Источник проверен: {orderDate(evidence.source?.observed_at)}.
-              Статус: {orderFieldText(evidence.source?.status)}.
+              Статус:{" "}
+              {postingStatusLabels[
+                knownOrderField(evidence.source?.status) ?? ""
+              ] ?? orderFieldText(evidence.source?.status)}
+              .
             </p>
             <p>
               МойСклад проверен: {orderDate(evidence.target?.observed_at)}.{" "}
