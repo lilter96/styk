@@ -32,6 +32,21 @@ func (s *Store) GuardOrderDispatch(ctx context.Context, guard orders.DispatchGua
 		return false, err
 	}
 	if guard.Begin {
+		if work.Command.Action == orders.ActionExemplarSet && guard.ExemplarSecret == nil {
+			return false, orders.ErrBlocked
+		}
+		if guard.ExemplarSecret != nil {
+			if work.Command.Action != orders.ActionExemplarSet {
+				return false, orders.ErrInvalid
+			}
+			now, e := ordersClock(ctx, tx)
+			if e != nil {
+				return false, e
+			}
+			if e = saveOrderExemplarSecret(ctx, tx, work, orders.Completion{ExemplarSecret: guard.ExemplarSecret}, now); e != nil {
+				return false, e
+			}
+		}
 		if err = beginOrderDispatch(ctx, tx, work); err != nil {
 			return false, err
 		}
@@ -76,6 +91,12 @@ func orderDispatchCurrent(ctx context.Context, tx pgx.Tx, work orders.Work, guar
 		}
 	}
 	if len(current.Postings) == 1 {
+		if err = validateOrderExemplarCommand(ctx, tx, current.Postings[0], work.Command); err != nil {
+			if errors.Is(err, orders.ErrStale) || errors.Is(err, orders.ErrBlocked) || errors.Is(err, orders.ErrNotFound) {
+				return false, nil
+			}
+			return false, err
+		}
 		if err = validateOrderHybridLabel(ctx, tx, current.Postings[0], work.Command); err != nil {
 			if errors.Is(err, orders.ErrStale) || errors.Is(err, orders.ErrBlocked) {
 				return false, nil
@@ -121,6 +142,9 @@ func readOrderWorkContext(ctx context.Context, q ordersQuerier, work orders.Work
 	err = enrichOrderPositionBaselines(ctx, q, &result)
 	if err == nil {
 		err = enrichNativePreviewContext(ctx, q, orders.Preview{Scope: work.Scope, Decisions: []orders.Decision{{Commands: []orders.Command{work.Command}}}}, &result)
+	}
+	if err == nil {
+		err = enrichOrderExemplarProofs(ctx, q, &result)
 	}
 	return result, err
 }

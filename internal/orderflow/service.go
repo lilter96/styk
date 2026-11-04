@@ -10,6 +10,7 @@ import (
 )
 
 type ServiceOptions struct {
+	ExemplarReader  orders.ExemplarReader
 	AllowScope      func(orders.Scope) bool
 	Now             func() time.Time
 	CustomerReader  orders.CustomerReader

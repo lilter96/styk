@@ -88,12 +88,13 @@ func newOrdersWork(db *postgres.Store, resolver *credentials.Resolver) (applicat
 	}
 	factory := orderprovider.Factory{Credentials: resolver, Gate: gate, DeliveryObserver: db, Configs: db}
 	protector := orderprivacy.Protector{Vault: resolver.Vault, Store: db}
-	service, err := orderflow.NewService(db, factory, orderflow.ServiceOptions{AllowScope: orderAllowed, CustomerReader: protector})
+	exemplars := orderprivacy.ExemplarProtector{Vault: resolver.Vault, Store: db}
+	service, err := orderflow.NewService(db, factory, orderflow.ServiceOptions{AllowScope: orderAllowed, CustomerReader: protector, ExemplarReader: exemplars})
 	if err != nil {
 		return nil, err
 	}
 	collector := orderCollector{db: db, factory: factory, protector: protector, workerID: id}
-	runner, err := orderflow.NewRunner(db, factory, orderflow.RunnerOptions{WorkerID: id, AllowScope: orderAllowed, Service: service, Collector: collector, CustomerReader: protector, ActionReader: orderprivacy.ActionProtector{Vault: resolver.Vault, Store: db}, LabelSealer: orderprivacy.LabelProtector{Vault: resolver.Vault}})
+	runner, err := orderflow.NewRunner(db, factory, orderflow.RunnerOptions{WorkerID: id, AllowScope: orderAllowed, Service: service, Collector: collector, CustomerReader: protector, ActionReader: orderprivacy.ActionProtector{Vault: resolver.Vault, Store: db}, LabelSealer: orderprivacy.LabelProtector{Vault: resolver.Vault}, ExemplarReader: exemplars, ExemplarSealer: exemplars})
 	if err != nil {
 		return nil, err
 	}

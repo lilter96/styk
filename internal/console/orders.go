@@ -38,7 +38,7 @@ func registerOrdersRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c *co
 	}
 	factory.NewOzon = c.ozonFactory
 	api := &ordersAPI{db: db, factory: factory, simulated: c.catalogSimulator, labels: orderprivacy.LabelProtector{Vault: c.vault}}
-	api.service, err = orderflow.NewService(db, factory, orderflow.ServiceOptions{AllowScope: api.allowed, CustomerReader: orderprivacy.Protector{Vault: c.vault, Store: db}, ActionProtector: orderprivacy.ActionProtector{Vault: c.vault, Store: db}})
+	api.service, err = orderflow.NewService(db, factory, orderflow.ServiceOptions{AllowScope: api.allowed, CustomerReader: orderprivacy.Protector{Vault: c.vault, Store: db}, ActionProtector: orderprivacy.ActionProtector{Vault: c.vault, Store: db}, ExemplarReader: orderprivacy.ExemplarProtector{Vault: c.vault, Store: db}})
 	if err != nil {
 		return err
 	}
@@ -54,6 +54,7 @@ func registerOrdersRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c *co
 		{"GET /api/orders/config", api.config, false}, {"POST /api/orders/config", api.saveConfig, true},
 		{"GET /api/orders/postings", api.postings, false}, {"GET /api/orders/operations", api.history, false},
 		{"GET /api/orders/action-options", api.actionOptions, false},
+		{"GET /api/orders/exemplars", api.exemplarSnapshot, false},
 		{"GET /api/orders/reverse-suggestion", api.reverseSuggestion, false},
 		{"GET /api/orders/artifacts/{workid}", api.labelArtifact, false},
 		{"GET /api/orders/metadata", api.metadata, false}, {"POST /api/orders/preview", api.preview, true},

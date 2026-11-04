@@ -59,8 +59,9 @@ func (s *Service) planAction(ctx context.Context, review orders.ReviewContext, p
 	if err != nil {
 		decision.Validation = append(decision.Validation, orders.Validation{Field: "reason_id", Code: "provider_reasons_unavailable"})
 	}
-	decision.Validation = append(decision.Validation, orderactions.ValidateExecution(posting, warehouse.Capability, proposal, reasons, now)...)
+	decision.Validation = append(decision.Validation, orderactions.ValidateExecutionWithProof(posting, warehouse.Capability, proposal, reasons, review.ExemplarProofs[posting.PostingNumber], now)...)
 	decision.Validation = append(decision.Validation, s.validateHybridLabel(ctx, posting, proposal, now)...)
+	decision.Validation = append(decision.Validation, s.validateExemplarProposal(ctx, posting, proposal, review.Credentials, now)...)
 	if len(decision.Validation) > 0 {
 		return decision, nil
 	}
@@ -84,6 +85,10 @@ func (s *Service) freezeAction(ctx context.Context, review orders.ReviewContext,
 		PostingNumber: proposal.PostingNumber, Correlation: correlation, ConfigRevision: review.Config.Revision, Credentials: review.Credentials,
 		ExpectedSourceRevision: decision.Posting.Evidence.Revision, SourceOrigin: orders.OriginOzon, Warehouse: warehouse, IdempotencyKey: id, CreatedAt: now,
 		PostingAction: &orders.PostingAction{Capability: warehouse.Capability, Parameters: public, ProtectedInput: ref, ContractHash: orderactions.ExecutionContractHash()}}
+	command.PostingAction.PackingTargetFingerprint, err = orders.PackingTargetFingerprint(decision.Posting)
+	if err != nil {
+		return decision, err
+	}
 	if err = command.Validate(); err != nil {
 		return decision, err
 	}
@@ -137,7 +142,7 @@ func (s *Service) postingActionOptions(ctx context.Context, review orders.Review
 		result.CancellationReasons = reasons
 	}
 	for _, action := range orderactions.ExecutionActions() {
-		plan := orderactions.PlanExecution(posting, warehouse.Capability, action, s.now())
+		plan := orderactions.PlanExecutionWithProof(posting, warehouse.Capability, action, review.ExemplarProofs[posting.PostingNumber], s.now())
 		plan.Blockers = append(plan.Blockers, sourceValidation(posting, review, s.now())...)
 		if validation.Code != "" {
 			plan.Blockers = append(plan.Blockers, validation)

@@ -74,6 +74,10 @@ func (r *Runner) dispatchFulfillment(ctx context.Context, work orders.Work) erro
 	if err != nil {
 		return r.stop(ctx, work, "PROTECTED_ACTION_INPUT_UNAVAILABLE")
 	}
+	command, exemplarSecret, err := r.prepareExemplarDispatch(ctx, work, command)
+	if err != nil {
+		return r.stop(ctx, work, "EXEMPLAR_DISPATCH_PREREQUISITE_CHANGED")
+	}
 	work.Command = command
 	client, err := resolveOrderClient(ctx, r.resolver, work.Scope, "ozon", work.Credentials.Ozon)
 	if err != nil {
@@ -81,7 +85,7 @@ func (r *Runner) dispatchFulfillment(ctx context.Context, work orders.Work) erro
 	}
 	var began atomic.Bool
 	authorize := func(check context.Context) (bool, error) {
-		allowed, err := r.store.GuardOrderDispatch(check, orders.DispatchGuard{Work: work, Now: r.now(), Begin: true})
+		allowed, err := r.store.GuardOrderDispatch(check, orders.DispatchGuard{Work: work, Now: r.now(), Begin: true, ExemplarSecret: exemplarSecret})
 		if allowed && err == nil {
 			began.Store(true)
 		}
@@ -97,6 +101,9 @@ func (r *Runner) dispatchFulfillment(ctx context.Context, work orders.Work) erro
 		return r.stop(ctx, work, "FINAL_DISPATCH_GUARD_NOT_ENTERED")
 	}
 	work.State, work.DispatchCount = orders.StateDispatching, 1
+	if command.Action == orders.ActionExemplarPrepare {
+		return r.recordPreparedExemplars(ctx, work, receipt, writeErr)
+	}
 	return r.recordWrite(ctx, work, receipt, writeErr)
 }
 

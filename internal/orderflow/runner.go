@@ -17,6 +17,8 @@ type previewReader interface {
 }
 
 type RunnerOptions struct {
+	ExemplarReader orders.ExemplarReader
+	ExemplarSealer orders.ExemplarSealer
 	WorkerID       string
 	LeaseDuration  time.Duration
 	PollInterval   time.Duration

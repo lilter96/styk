@@ -57,6 +57,9 @@ func readOrderPreviewContext(ctx context.Context, q ordersQuerier, preview order
 	if err == nil {
 		err = enrichNativePreviewContext(ctx, q, preview, &review)
 	}
+	if err == nil {
+		err = validateOrderPreviewExemplars(ctx, q, preview, review)
+	}
 	return review, err
 }
 
@@ -108,7 +111,10 @@ func readOrderSelectionReferences(ctx context.Context, q ordersQuerier, result *
 	if err != nil {
 		return err
 	}
-	return enrichOrderPositionBaselines(ctx, q, result)
+	if err = enrichOrderPositionBaselines(ctx, q, result); err != nil {
+		return err
+	}
+	return enrichOrderExemplarProofs(ctx, q, result)
 }
 
 func validateOrderSelection(numbers []string) error {

@@ -50,6 +50,14 @@ func completeOrderLocked(ctx context.Context, tx pgx.Tx, work orders.Work, compl
 	if err != nil {
 		return err
 	}
+	if err = saveOrderExemplarSecret(ctx, tx, work, completion, now); err != nil {
+		return err
+	}
+	if completion.State == orders.StateReconciled && work.Command.Action.IsExemplar() {
+		if err := validateExemplarReconciliation(ctx, tx, work, completion); err != nil {
+			return err
+		}
+	}
 	completion.Code = ordersSafeCode(completion.Code)
 	completion.Receipt.Code = ordersSafeCode(completion.Receipt.Code)
 	if err = saveOrderCompletionEvidence(ctx, tx, work, completion, now); err != nil {

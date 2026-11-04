@@ -68,8 +68,11 @@ func validateOrderCommandCurrent(command orders.Command, posting orders.Posting,
 	if !command.Action.IsMirror() && !command.Action.IsNativeMovement() && command.PostingAction.ContractHash != orderactions.ExecutionContractHash() {
 		return orders.ErrStale
 	}
-	if !command.Action.IsMirror() && !command.Action.IsNativeMovement() && len(orderactions.PackingRequirementValidation(posting, command.Action)) > 0 {
+	if !command.Action.IsMirror() && !command.Action.IsNativeMovement() && len(orderactions.PackingRequirementValidationWithProof(posting, command.Action, current.ExemplarProofs[posting.PostingNumber], now)) > 0 {
 		return orders.ErrBlocked
+	}
+	if !orderPackingProofSelected(command, current.ExemplarProofs[posting.PostingNumber]) {
+		return orders.ErrStale
 	}
 	if command.Scope != current.Config.Scope || command.ConfigRevision != current.Config.Revision || command.Credentials != current.Credentials || command.PostingNumber != posting.PostingNumber || command.CommercialOrderID != posting.CommercialOrderID || command.ExpectedSourceRevision != posting.Evidence.Revision || command.SourceOrigin != posting.Evidence.Origin {
 		return orders.ErrStale
@@ -255,4 +258,11 @@ func ordersQuarantined(posting orders.Posting) bool {
 		}
 	}
 	return false
+}
+
+func orderPackingProofSelected(command orders.Command, proof orders.ExemplarEvidence) bool {
+	if !proof.Verified || (command.Action != orders.ActionPostingPack && command.Action != orders.ActionPostingSplit) {
+		return true
+	}
+	return command.PostingAction.Parameters.ExemplarWorkID == proof.SnapshotID && proof.CredentialRevision == command.Credentials.Ozon
 }

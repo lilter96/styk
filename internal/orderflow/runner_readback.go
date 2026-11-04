@@ -47,6 +47,9 @@ func (r *Runner) readback(ctx context.Context, work orders.Work) error {
 }
 
 func (r *Runner) readbackFulfillment(ctx context.Context, work orders.Work) error {
+	if work.Command.Action.IsExemplar() {
+		return r.pollExemplars(ctx, work)
+	}
 	if work.Command.Action == orders.ActionPostingLabelCreate {
 		return r.pollLabelTask(ctx, work, work.Receipt.TaskID)
 	}

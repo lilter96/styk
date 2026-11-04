@@ -66,6 +66,9 @@ func readOrderReviewContext(ctx context.Context, q ordersQuerier, scope orders.S
 		return result, err
 	}
 	err = enrichOrderPositionBaselines(ctx, q, &result)
+	if err == nil {
+		err = enrichOrderExemplarProofs(ctx, q, &result)
+	}
 	return result, err
 }
 
