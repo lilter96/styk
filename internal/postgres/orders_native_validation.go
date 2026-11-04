@@ -39,7 +39,7 @@ func validateNativeMovementCurrent(command orders.Command, current orders.Review
 
 func validateNativeDocumentCompletion(work orders.Work, completion orders.Completion) error {
 	observation, target := completion.ObservedNativeDocument, completion.ObservedTarget
-	if observation == nil || target == nil || !orders.NativeDocumentMatches(work.Command, *observation) || !orders.NativeParentReadback(work.Command, *target) || ordermoney.NativeDocumentTotal(work.Command, *observation).Code != "" {
+	if observation == nil || target == nil || !orders.NativeDocumentMatches(work.Command, *observation) || !orders.NativeParentReadback(work.Command, *target) || !ordermoney.NativeParentEffectObserved(work.Command, *target) || ordermoney.NativeDocumentTotal(work.Command, *observation).Code != "" {
 		return orders.ErrStale
 	}
 	if work.Receipt.ExternalID != "" && work.Receipt.ExternalID != observation.Correlation.DocumentID {

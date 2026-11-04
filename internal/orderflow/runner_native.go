@@ -90,7 +90,7 @@ func (r *Runner) reconcileNative(ctx context.Context, work orders.Work, client o
 		return r.deferReadback(ctx, work, "NATIVE_PARENT_READBACK_UNAVAILABLE")
 	}
 	target, err := reader.ReadCustomerOrder(ctx, work.Command.Correlation)
-	if err != nil || !orders.NativeParentReadback(work.Command, target) {
+	if err != nil || !orders.NativeParentReadback(work.Command, target) || !ordermoney.NativeParentEffectObserved(work.Command, target) {
 		return r.deferReadback(ctx, work, "NATIVE_PARENT_FACTS_NOT_CONFIRMED")
 	}
 	return r.complete(ctx, work, orders.Completion{State: orders.StateReconciled, Code: "NATIVE_DOCUMENT_FACTS_CONFIRMED", ObservedTarget: &target, ObservedNativeDocument: &actual})

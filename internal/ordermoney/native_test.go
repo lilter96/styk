@@ -23,3 +23,20 @@ func TestNativeSumMismatchNeverBecomesReconciled(t *testing.T) {
 		t.Fatal(result)
 	}
 }
+
+func TestNativePostedDemandWaitsForExactParentShipment(t *testing.T) {
+	t.Parallel()
+	command := orders.Command{Action: orders.ActionDemandCreate, NativeMovement: &orders.NativeMovement{Applicable: orders.Present(true), Lines: []orders.NativeMovementLine{{OrderPositionID: "native-line", Quantity: "1.000000000000000001"}}}, TargetPositions: []orders.TargetPosition{{ID: "native-line", Shipped: orders.Present(orders.Decimal("2"))}}}
+	target := orders.TargetObservation{Positions: []orders.TargetPosition{{ID: "native-line", Shipped: orders.Present(orders.Decimal("3.000000000000000001"))}}}
+	if !NativeParentEffectObserved(command, target) {
+		t.Fatal("exact native effect lost decimal precision")
+	}
+	target.Positions[0].Shipped = orders.Present(orders.Decimal("2"))
+	if NativeParentEffectObserved(command, target) {
+		t.Fatal("stale native parent was confirmed")
+	}
+	target.Positions[0].Shipped = orders.Present(orders.Decimal("4"))
+	if NativeParentEffectObserved(command, target) {
+		t.Fatal("contradictory extra movement hidden")
+	}
+}
