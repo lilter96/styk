@@ -228,5 +228,5 @@ func finishOrderPosting(posting orders.Posting) (orders.Posting, error) {
 }
 
 func knownOrderStatus(status string) bool {
-	return slices.Contains([]string{"awaiting_registration", "acceptance_in_progress", "awaiting_approve", "awaiting_packaging", "awaiting_deliver", "delivering", "driver_pickup", "delivered", "cancelled", "not_accepted", "arbitration", "client_arbitration"}, status)
+	return slices.Contains([]string{"awaiting_registration", "acceptance_in_progress", "awaiting_approve", "awaiting_packaging", "awaiting_deliver", "delivering", "driver_pickup", "delivered", "cancelled", "cancelled_from_split_pending", "not_accepted", "arbitration", "client_arbitration"}, status)
 }
