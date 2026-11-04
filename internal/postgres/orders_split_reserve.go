@@ -32,7 +32,8 @@ JOIN LATERAL (
     AND original.moysklad_account=split.moysklad_account AND original.ozon_account=split.ozon_account
     AND decision#>>'{posting,posting_number}'=split.posting_number
     AND decision#>>'{posting,evidence,revision}'=split.work#>>'{command,expected_source_revision}'
-    AND decision#>>'{posting,parent_posting_number,presence}' IN ('missing','null'))
+    AND decision#>>'{posting,parent_posting_number,presence}' IN ('missing','null')
+    AND COALESCE(decision#>>'{correlation,customer_order_id}','')='')
   AND NOT EXISTS (SELECT 1 FROM orders_work ancestor
    JOIN orders_posting_identities parent_identity ON parent_identity.tenant_id=ancestor.tenant_id
     AND parent_identity.ozon_account=ancestor.ozon_account AND parent_identity.posting_number=split.posting_number
