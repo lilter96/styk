@@ -512,3 +512,27 @@ The separate normal stock regression reconciled **0 → 1 → 0**. Final source 
 Ozon stock are zero, order configuration revision 8 is disabled, all temporary
 stock/catalog automation is off and no new external outcome is unresolved.
 Unapproved production accounts remain unable to publish.
+
+### 2026-11-04 continuation: order workflow and rFBS/Express
+
+The former blanket statement that fulfillment cannot run because a complete
+Swagger was unavailable is superseded by operation-specific reviewed contracts,
+typed validation, durable worker execution and readback. Merchant controls now
+include owned line/composition changes, explicit reserve rules, native drafts and
+factual posted documents, structured addresses, exemplar/country operations and
+read-only UNKNOWN recovery after pausing. Missing facts still block only the
+affected action; provider-managed transitions are not fabricated seller commands.
+
+Real regular rFBS and Express stock targets each completed **0 → 1 → 0**, six
+normal publications total, all acknowledged and RECONCILED; final source and
+marketplace quantities are zero. A real unposted MoySklad demand was created by
+one normal-worker POST, then reconciled without replay after gzip handling,
+read-only pause recovery and the documented minute precision of accounting dates
+were corrected. Its original UNKNOWN receipt remains unchanged. No paid purchase,
+physical shipment, refund or invented buyer event was generated.
+
+Full sanitized operation IDs, request budgets/counts, retained fixtures, exact
+verification scopes and remaining restrictions are in
+[the order evidence report](orders-live-evidence.md). All temporary automation is
+OFF; runtime stock/catalog publication flags are unset; existing credentials,
+encryption key and historical records were preserved through migration 59.

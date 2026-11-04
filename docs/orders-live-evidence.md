@@ -327,3 +327,162 @@ This checkpoint does not establish live ship/delivery/marking behavior or native
 shipment/return processing. Native movement, exemplar and operator recovery work
 continues on isolated implementation branches and is not credited as integrated
 functionality here.
+
+### 2026-11-04: integrated continuation through migration 58
+
+This supersedes the earlier checkpoint's statement that native movements,
+exemplar operations and recovery were still on unintegrated branches. They now
+use the normal merchant preview, approval, outbox and worker:
+
+- Separate draft/posted MoySklad demand and linked salesreturn intents. Posted
+  documents need an expiring explicit policy and a factual warehouse event; Ozon
+  status is not shipment/return evidence. Independent document and parent-counter
+  readback are required. A verified native document can be displayed without
+  rewriting an original lost-acknowledgment receipt as successful.
+- Typed exemplar preparation/set operations, durable asynchronous status checks,
+  explicit optional-field clear semantics and expiring merchant review. Unowned
+  weight/multibox metadata is not erased by an incomplete set request.
+- Country dictionary/set operations use SKU identity despite the provider's
+  `product_id` parameter name. Acknowledgment plus removal of the requirement is
+  not observation of the stored country value; the UI states that limitation.
+- Audited operator supersession of UNKNOWN updates to a known customerorder.
+  The original work and receipt remain UNKNOWN. Recovery authorizes a separate
+  fresh review, never replay or automatic compensation.
+- Structured native shipment-address fields preserve independent existing
+  country/region references. Buyer identity remains separate from accounting
+  counterparty; protected values are not serialized in previews/audit payloads.
+- Retained delivered/cancelled postings are checked every six hours within the
+  configured retained horizon, in addition to active postings. One failed detail
+  read no longer discards successful independent observations or falsely marks
+  partial coverage complete. Missing status is not borrowed from older evidence.
+
+The 54→57 and 57→58 local upgrades preserved all pre-existing table columns and
+rows (117 tables/4,410 rows and 127 tables/4,433 rows respectively), credentials,
+the original encryption key and publication history, following encrypted backups.
+The prepared full PostgreSQL/race checkpoint at migration 57 passed **682 test
+events / 64 skipped / 0 failed**; it predates later focused country, attribution
+and ingestion fixes and must not be described as final-HEAD full verification.
+Those changes have their own focused HTTP/PostgreSQL/race regressions.
+
+Fresh normal imports on the retained real accounts completed through two API
+processes and two workers: MoySklad operation `da693213a01bde1a15ffbc9f5d7810f3`
+and Ozon operation `0b8ce8865133cfefe041188fccedd203`, five HTTP reads each. Both reused immutable content
+batches while recording new successful database-admitted traversals. This does
+not refresh historical source timestamps or prove an atomic provider snapshot.
+The earlier bounded read continuation also returned HTTP 200 for one Ozon
+unfulfilled request and eight MoySklad metadata requests, without writes.
+
+Live native shipment/return events and live fulfillment transitions are not
+claimed here: no actionable buyer event is fabricated to obtain coverage. The
+regular rFBS controlled stock transition is tracked separately and is not counted
+as successful before normal-worker acknowledgment and readback. General
+production publication remains restricted.
+
+### Completed regular rFBS and Express stock validation
+
+Both controlled targets used the existing zero product mapping **4/v1**:
+MoySklad `e8f82883-d389-11f1-0a80-1d6400282a1d` → Ozon
+`3531908963` / `ATEST-897900` / SKU `3468089643`. Warehouse mappings were
+confirmed through the application as OPERATOR_ATTESTED; source physical pools
+were distinct. No existing FBS mapping or history was replaced.
+
+| Profile | MoySklad store | Ozon warehouse | Normal publication operations (0 → 1 → 0) | Final result |
+| --- | --- | --- | --- | --- |
+| Regular rFBS, mapping 2/v1 | `296ef417-d30a-11f1-0a80-18aa0000de3e` | `1020001344839000` | `1e93e737d545d58dd7e616ca30cf550e`, `231cf7511a21b531db3178197dc3051c`, `d482c37143aa28f734cfcb93c1ef6d5b` | Three RECONCILED |
+| Express, mapping 3/v1 | `7bffba7a-d31c-11f1-0a80-10b20006b039` | `1020001795665000` | `682837a9c938870221890b31f6111c58`, `b0762d1b5ba57b4b2aad449d92247588`, `66d3a36b1c51e91c9ec62eb8c5a867af` | Three RECONCILED |
+
+All six writes received HTTP 200, `updated=true`, no per-target errors and
+independent readback. Four real stock-entry/loss documents established and
+restored the two source quantities; all were independently read back. Both
+marketplace warehouses ended present/reserved/free **0/0/0**, source stock/reserve
+**0/0**. Final Ozon import `e87a7d240fb7b7eba15104487f2b67de` completed normally.
+The provider interval was checked using the database clock before each decision.
+Regular cycles stopped by the deliberate configuration change are not reported
+as COMPLETE; Express positive/restoration cycles completed before disabling.
+
+The two stock phases made Ozon **88 reads / 6 writes**, MoySklad **66 reads /
+4 writes**, all 164 responses HTTP 200. Private journals are
+`.local/orders-v8/rfbs-live-20261104.json` and
+`.local/orders-v8/express-live-20261104.json`. A refused local source-entry intent
+made no POST and remains recorded; its exact-reference parser was corrected for
+the official `expand=supplier` query suffix before a new intent was created.
+Two historical cancelled postings were also freshly reread; no ship, tracking,
+label, cancel, payment or genuine delivery action was invented.
+
+### Real native draft, UNKNOWN and read-only recovery
+
+A separate manual draft-only policy admitted one known mapped line, quantity 1,
+150 RUB, actual observed zero line VAT and an unposted demand. Operation
+`8370acb04fa7b6b32657891dd5541ac6`, work `702739b87ff61869dbbec4c684cb06a0`
+made exactly **one** normal-worker POST. HTTP 200 could not initially be verified;
+the original receipt remains UNKNOWN / HTTP 200 with no fabricated external ID.
+A reproducible explicit-gzip response decoding defect was fixed and tested; the
+original response encoding was not retained, so that cause is not retrospectively
+asserted as proven. No second live POST was sent to validate the parser.
+
+Exact syncId/marker discovery found demand
+`f3bf819b-d85d-11f1-0a80-10b9007810c7`, `applicable=false`. Normal readback then
+exposed the documented minute precision of `moment`: the immutable intention
+15:41:17.584Z was observed as 15:41:00Z. The official DateTime rule is recorded in
+`moysklad-accounting-moment-contract.json`; precise source/event timestamps remain
+unchanged. Pausing no longer prevents authorized reads of an already dispatched
+request, while new writes still require the current policy.
+
+The corrected normal worker reconciled native document **and parent** with code
+`NATIVE_DOCUMENT_MOMENT_MINUTE_CONFIRMED`, preserving the original command
+fingerprint, receipt and UNKNOWN history. A separate reconciliation records the
+actual document UUID and observed minute. Quantity, price, reservation and shipped
+quantity were 1 / 150 RUB / 0 / 0. The unposted fixture is retained. Native phase:
+Ozon **9 reads / 0 writes**, MoySklad **43 reads / 1 write**, all 53 HTTP 200.
+Read budgets were explicitly revised 30→40→50 to diagnose and reconcile without
+resending. Failed readback workers were stopped before another observation phase.
+The private journal is `.local/orders-v8/native-draft-live59.json`.
+
+All temporary automation is OFF: stock 29, catalog 4, orders 18, no active grants
+or native posted permission. Runtime stock/catalog publication flags are unset.
+All new external operations are reconciled; historical UNKNOWN receipts remain.
+The 58→59 local migration preserved all original columns/5,462 rows in 127 tables
+and the encryption key, following another encrypted backup.
+
+Merchant browser verification used the real React application, both APIs and the
+historical database, without API mocks. Login/history and disabled configuration
+worked on desktop/mobile. GUI metadata checks made 33 MoySklad reads and no writes:
+the first 12-request estimate was exceeded at 17 and recorded explicitly; the
+second 16 stayed within a separately approved 20-request budget. Completed metadata
+loading was not asserted from those screenshots. Deterministic tests prove ordinary
+cache reuse and cancellation; two complete development traversals do not establish
+a production cache defect.
+
+### Integrated quality gate
+
+- Full PostgreSQL/integration race checkpoint (compiled at `8ec67ea`, schema 59):
+  **728 PASS / 66 SKIP / 0 FAIL**, 1,608 seconds. Subsequent accounting-minute
+  changes have the separate current native/startup/process race DELTA:
+  **19 PASS / 0 SKIP / 0 FAIL**, 201 seconds, including immutable legacy UNKNOWN.
+- Dedicated stock database supplement: **112 PASS / 6 intentional SKIP / 0 FAIL**.
+  All 51 primary cases requiring that database were actually run successfully.
+- Current React → Go → PostgreSQL → normal worker browser/process stack:
+  **12 test/subtest PASS / 0 SKIP**, 96 seconds; 3 API, 2 scheduler, 4 worker
+  OS processes and two independent merchants. Test children were stopped.
+- Frontend typecheck/lint/build and **276 unit tests** pass; **14 separate
+  console browser journeys** pass, with desktop/mobile screenshots inspected.
+- Current make lint/test, complete Go race suite, go vet and builds pass; full
+  integration-tag golangci-lint also reports **0 findings**. The existing large
+  frontend chunk warning remains visible; no lint rule or baseline was weakened.
+
+`orders-test-skips.json` retains primary skips and links actual supplements.
+The earlier schema-58 attempt (**698 PASS / 8 FAIL / 66 SKIP**) remains recorded
+as failed: stricter ownership exposed synthetic creators without dispatch proof,
+and a rollback test targeted the newest migration instead of recovery migration
+57. Fixtures now use actual durable dispatch and rollback targets are explicit.
+Skipped paid/live-event and legacy diagnostics were not turned into synthetic PASS.
+
+New composition support is manual, reviewed, all-owned and unshipped, with known
+zero VAT and supported plain native rows. Foreign/manual/unknown fields block the
+affected replacement. Composition UNKNOWN does not adopt new UUIDs or replay.
+Order reserves use an explicit versioned pending-quantity rule; stock baseline
+attribution remains independently proven, not assumed from the reserve write.
+Exemplar updates can preserve freshly observed weights and grouping without unit
+conversion or new measurements. Real ship/delivery/marking and posted native
+shipment/return events remain NOT_OBSERVED_LIVE because no applicable genuine event
+was fabricated; supported paths have deterministic HTTP/worker evidence.
