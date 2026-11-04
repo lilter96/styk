@@ -7,9 +7,9 @@ import (
 
 func TestNativeSumMismatchNeverBecomesReconciled(t *testing.T) {
 	t.Parallel()
-	line := orders.NativeMovementLine{Quantity: "3", Price: orders.Money{Amount: "0.335", Currency: "RUB"}, Discount: orders.Present(orders.Decimal("0")), VAT: orders.Present(orders.Decimal("0")), VATEnabled: orders.Present(false)}
+	line := orders.NativeMovementLine{Quantity: "3", Price: orders.Money{Amount: "0.33", Currency: "RUB"}, Discount: orders.Present(orders.Decimal("0")), VAT: orders.Present(orders.Decimal("0")), VATEnabled: orders.Present(false)}
 	command := orders.Command{NativeMovement: &orders.NativeMovement{Lines: []orders.NativeMovementLine{line}}}
-	actual := orders.NativeDocumentObservation{Sum: orders.Present(orders.Money{Amount: "1.01", Currency: "RUB"})}
+	actual := orders.NativeDocumentObservation{Sum: orders.Present(orders.Money{Amount: "0.99", Currency: "RUB"})}
 	if result := NativeDocumentTotal(command, actual); result.Code != "" {
 		t.Fatal(result)
 	}
@@ -38,5 +38,27 @@ func TestNativePostedDemandWaitsForExactParentShipment(t *testing.T) {
 	target.Positions[0].Shipped = orders.Present(orders.Decimal("4"))
 	if NativeParentEffectObserved(command, target) {
 		t.Fatal("contradictory extra movement hidden")
+	}
+}
+
+func TestNativeMovementNeverInventsCommercialRounding(t *testing.T) {
+	t.Parallel()
+	line := orders.NativeMovementLine{Quantity: "3", Price: orders.Money{Amount: "0.335", Currency: "RUB"}, Discount: orders.Present(orders.Decimal("0")), VAT: orders.Present(orders.Decimal("0")), VATEnabled: orders.Present(false)}
+	movement := orders.NativeMovement{Lines: []orders.NativeMovementLine{line}}
+	if result := NativeDocumentAmounts(&movement); result.Code != "native_sum_rounding_unverified" {
+		t.Fatal(result)
+	}
+	movement.Lines[0].Quantity = "2"
+	if result := NativeDocumentAmounts(&movement); result.Code != "" {
+		t.Fatal(result)
+	}
+	command := orders.Command{NativeMovement: &movement}
+	actual := orders.NativeDocumentObservation{Sum: orders.Present(orders.Money{Amount: "0.6701", Currency: "RUB"})}
+	if result := NativeDocumentTotal(command, actual); result.Code != "order_total_mismatch" {
+		t.Fatal("contradictory fractional total was rounded into a match", result)
+	}
+	actual.Sum = orders.Present(orders.Money{Amount: "0.67", Currency: "RUB"})
+	if result := NativeDocumentTotal(command, actual); result.Code != "" {
+		t.Fatal(result)
 	}
 }

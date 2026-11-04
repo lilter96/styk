@@ -13,7 +13,7 @@ import (
 
 func (c *OrderClient) nativeMovementPayload(command orders.Command) (map[string]any, error) {
 	movement := command.NativeMovement
-	if movement == nil || !nativeDispatchEventBound(command) {
+	if movement == nil || !nativeDispatchEventBound(command) || ordermoney.NativeDocumentAmounts(movement).Code != "" {
 		return nil, ErrOrderIntent
 	}
 	body := map[string]any{"syncId": movement.Correlation.SyncID, "externalCode": movement.Correlation.Marker, "name": movement.Correlation.Marker, "organization": c.reference("entity/organization", "organization", movement.OrganizationID), "agent": c.reference("entity/counterparty", "counterparty", movement.AgentID), "store": c.reference("entity/store", "store", movement.StoreID), "applicable": *movement.Applicable.Value, "vatEnabled": *movement.VATEnabled.Value, "vatIncluded": *movement.VATIncluded.Value, "moment": movement.Moment.In(time.FixedZone("Moscow", 3*60*60)).Format("2006-01-02 15:04:05.000")}

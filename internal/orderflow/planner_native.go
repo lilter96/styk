@@ -5,6 +5,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/lilter96/styk/internal/ordermoney"
 	"github.com/lilter96/styk/internal/orders"
 )
 
@@ -127,12 +128,20 @@ func (s *Service) freezeNativeMovement(ctx context.Context, review orders.Review
 	if err != nil {
 		return nativePlanBlocked(decision, "products", "bounded_native_product_requirements_unavailable"), nil
 	}
+	if validation := ordermoney.NativeDocumentAmounts(&movement); validation.Code != "" {
+		return nativePlanBlocked(decision, validation.Field, validation.Code), nil
+	}
 	movement.Products = products
+	return s.freezeNativeDecision(ctx, review, decision, warehouse, parent, proposal, movement, now)
+}
+
+func (s *Service) freezeNativeDecision(ctx context.Context, review orders.ReviewContext, decision orders.Decision, warehouse orders.WarehouseMappingRef, parent orders.TargetObservation, proposal orders.NativeMovementProposal, movement orders.NativeMovement, now time.Time) (orders.Decision, error) {
 	protector, ok := s.options.ActionProtector.(orders.NativeEventProtector)
 	if !ok {
 		return nativePlanBlocked(decision, "event", "protected_native_event_required"), nil
 	}
-	movement.Event, err = protector.ProtectNativeMovementEvent(ctx, review.Config, proposal, now)
+	event, err := protector.ProtectNativeMovementEvent(ctx, review.Config, proposal, now)
+	movement.Event = event
 	if err != nil {
 		return nativePlanBlocked(decision, "event", "native_event_attestation_invalid"), nil
 	}

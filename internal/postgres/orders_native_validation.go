@@ -15,6 +15,9 @@ func validateNativeMovementCurrent(command orders.Command, current orders.Review
 	if automatic || movement == nil || !movement.AllowedBy(current.Config.NativeDocuments, command.Action, now) {
 		return orders.ErrBlocked
 	}
+	if ordermoney.NativeDocumentAmounts(movement).Code != "" {
+		return orders.ErrBlocked
+	}
 	baseline, found := current.PositionBaselines[command.PostingNumber]
 	if !found || !baseline.Equal(movement.SourceBaseline) {
 		return orders.ErrStale
