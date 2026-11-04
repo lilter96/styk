@@ -75,7 +75,7 @@ func (p Protector) protect(ctx context.Context, config orders.Config, posting *o
 		if encryptErr != nil {
 			return encryptErr
 		}
-		now := page.FinishedAt
+		now := page.FinishedAt.UTC().Truncate(time.Microsecond)
 		secret = orders.PostingSecret{Scope: config.Scope, PostingNumber: posting.PostingNumber, Revision: revision, Purpose: "order-customer", Ciphertext: cipher, CreatedAt: now, ExpiresAt: now.Add(time.Duration(config.PIIRetentionSeconds) * time.Second)}
 		page.Secrets = append(page.Secrets, secret)
 	}
