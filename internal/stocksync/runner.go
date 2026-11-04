@@ -155,9 +155,13 @@ func (r Runner) RunNext(ctx context.Context) (bool, error) {
 	results, writeErr := client.UpdateStocks(send, items)
 	cancel()
 	if writeErr != nil {
-		if errors.Is(writeErr, ozon.ErrStockWritesDisabled) {
+		if errors.Is(writeErr, ozon.ErrStockWriteNotDispatched) || errors.Is(writeErr, ozon.ErrStockWritesDisabled) {
+			code := "EVIDENCE_CHANGED_OR_DISABLED"
+			if errors.Is(writeErr, ozon.ErrStockWriteNotDispatched) {
+				code = "PROVIDER_REQUEST_NOT_SENT"
+			}
 			for _, t := range targets {
-				if err = finish(t, "BLOCKED", "EVIDENCE_CHANGED_OR_DISABLED", nil); err != nil {
+				if err = finish(t, "BLOCKED", code, nil); err != nil {
 					return true, err
 				}
 			}
