@@ -69,6 +69,9 @@ func readOrderInventoryHeads(ctx context.Context, tx pgx.Tx, pool domain.StockPo
 	if len(result) > 100 {
 		return result[:100], true, nil
 	}
+	if err = enrichInventoryPositionOwnership(ctx, tx, result); err != nil {
+		return nil, false, err
+	}
 	return result, false, nil
 }
 

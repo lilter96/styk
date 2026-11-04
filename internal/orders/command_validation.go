@@ -17,6 +17,9 @@ func (action Action) IsMirror() bool {
 }
 
 func (command Command) Validate() error {
+	if err := command.ValidateApplicationBaseline(); err != nil {
+		return err
+	}
 	if command.NativeMovement != nil && !command.Action.IsNativeMovement() {
 		return ErrInvalid
 	}

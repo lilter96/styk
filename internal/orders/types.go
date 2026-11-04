@@ -379,6 +379,7 @@ type PostingAction struct {
 }
 
 type Command struct {
+	PositionBaseline        *PositionBaseline   `json:"position_baseline,omitempty"`
 	NativeMovement          *NativeMovement     `json:"native_movement,omitempty"`
 	PositionPatch           *PositionPatch      `json:"position_patch,omitempty"`
 	ID                      string              `json:"id"`

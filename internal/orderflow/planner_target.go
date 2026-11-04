@@ -68,6 +68,20 @@ func prepareMirrorUpdate(command *orders.Command, target orders.TargetObservatio
 	if !updatePositionsRepresented(*command, target.Positions) {
 		return preparePositionPatch(command, baselines)
 	}
+	if len(baselines) == 1 && orders.ScalarPositionFrontier(*command, baselines[0], target.Positions) {
+		proof := baselines[0]
+		command.PositionBaseline = &proof
+	}
+	if command.WritesApplication() {
+		if len(baselines) != 1 {
+			return orders.Validation{Field: "applicable", Code: "application_frontier_ownership_unverified"}
+		}
+		proof, err := orders.PlanApplicationBaseline(*command, target, baselines[0])
+		if err != nil {
+			return orders.Validation{Field: "applicable", Code: "application_frontier_ownership_unverified"}
+		}
+		command.PositionBaseline = proof
+	}
 	return orders.Validation{}
 }
 
@@ -137,7 +151,7 @@ func validTargetFields(fields orders.CustomerOrderWrite) bool {
 }
 
 func targetRepresents(command orders.Command, target orders.TargetObservation) bool {
-	if command.CustomerOrder == nil || !validTarget(command.Correlation, target) {
+	if command.CustomerOrder == nil || !validTarget(command.Correlation, target) || !orders.ApplicationTargetObserved(command, target) {
 		return false
 	}
 	if command.Action == orders.ActionMirrorPositionUpdate {

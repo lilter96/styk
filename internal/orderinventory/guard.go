@@ -29,6 +29,7 @@ const (
 // Observation preserves native facts separately from the correlation binding.
 // A resolved binding or a successful mirror alone cannot prove stock coverage.
 type Observation struct {
+	PositionOwnership   *orders.PositionBaseline
 	NativeDocument      *orders.NativeDocumentObservation
 	NativeConfirmedAt   time.Time
 	Posting             orders.Posting

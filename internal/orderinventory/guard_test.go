@@ -23,7 +23,7 @@ func inventoryObservation(now time.Time, number, quantity string) Observation {
 	identity := orders.LineIdentity{OfferID: "offer", SKU: "123"}
 	posting := orders.Posting{Scope: scope, CommercialOrderID: "commercial", PostingNumber: number, Scheme: orders.Present("FBS"), WarehouseID: orders.Present("warehouse"), Status: orders.Present("awaiting_packaging"), Evidence: orders.EvidenceRevision{Origin: orders.OriginOzon, Revision: "revision", ObservedAt: now.Add(-6 * time.Minute)}, Lines: []orders.PostingLine{{Identity: identity, ProductID: orders.Present("100"), Quantity: orders.Decimal(quantity), CancelledQuantity: orders.Present(orders.Decimal("0"))}}}
 	binding := orders.Correlation{Scope: scope, PostingNumber: number, SyncID: "sync-" + number, Marker: "marker-" + number, CustomerOrderID: "native-" + number}
-	work := &orders.Work{Scope: scope, State: orders.StateReconciled, Command: orders.Command{Scope: scope, Action: orders.ActionMirrorCreate, PostingNumber: number, ExpectedSourceRevision: posting.Evidence.Revision, Correlation: binding}}
+	work := &orders.Work{DispatchCount: 1, Scope: scope, State: orders.StateReconciled, Command: orders.Command{Scope: scope, Action: orders.ActionMirrorCreate, PostingNumber: number, ExpectedSourceRevision: posting.Evidence.Revision, Correlation: binding}}
 	target := &orders.TargetObservation{Scope: scope, Correlation: binding, Revision: "native-revision", Complete: true, ObservedAt: now.Add(-5 * time.Minute), Fields: orders.CustomerOrderWrite{StoreID: "store", Applicable: orders.Present(true)}, Positions: []orders.TargetPosition{{ID: "position-" + number, MoyskladKind: "product", MoyskladID: "item", Quantity: orders.Decimal(quantity), Reserve: orders.Present(orders.Decimal(quantity))}}}
 	position := domain.StockObservedOrderPosition{OrderID: binding.CustomerOrderID, PositionID: target.Positions[0].ID, ItemKind: "product", ItemID: "item", WarehouseID: ptr("store"), Quantity: ptr(quantity), Reserve: ptr(quantity), Shipped: ptr("0"), Applicable: ptr(true), ObservedAt: now.Add(-3 * time.Minute)}
 	return Observation{Posting: posting, Lines: []orders.LineIdentity{identity}, Binding: binding, Work: work, Target: target, Positions: []domain.StockObservedOrderPosition{position}, NativeSyncID: ptr(binding.SyncID), NativeStartedAt: now.Add(-4 * time.Minute), NativeFinishedAt: now.Add(-3 * time.Minute)}
@@ -245,5 +245,15 @@ func TestOrderInventoryAllSellersShareOneReserveLimit(t *testing.T) {
 	input.Observations = append(input.Observations, another)
 	if !Assess(input).Blocked {
 		t.Fatal("seller accounts attributed six units to three source reserve")
+	}
+}
+
+func TestExpiredInheritedPositionAttestationCannotSettleStockObligation(t *testing.T) {
+	t.Parallel()
+	input := inventoryFixture()
+	input.Observations[0].Work.Command.PositionBaseline = &orders.PositionBaseline{RecoveryID: "attestation", EvidenceClass: "OPERATOR_ATTESTED", ValidUntil: input.Now.Add(-time.Second)}
+	guard := Assess(input)
+	if !guard.Blocked || guard.Obligations[0].Reason != "position_ownership_attestation_expired" {
+		t.Fatalf("expired inherited ownership settled inventory %+v", guard)
 	}
 }

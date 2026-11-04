@@ -9,7 +9,7 @@ import (
 )
 
 func orderReadbackMatches(command orders.Command, observed orders.TargetObservation) bool {
-	if command.CustomerOrder == nil || !observed.Complete || observed.Scope != command.Scope || observed.Revision == "" || observed.ObservedAt.IsZero() {
+	if !orders.ApplicationTargetObserved(command, observed) || command.CustomerOrder == nil || !observed.Complete || observed.Scope != command.Scope || observed.Revision == "" || observed.ObservedAt.IsZero() {
 		return false
 	}
 	correlation := observed.Correlation

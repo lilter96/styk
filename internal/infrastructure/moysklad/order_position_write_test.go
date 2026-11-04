@@ -93,7 +93,7 @@ func positionTestCommand(t *testing.T, s *orderSimulator, client *OrderClient) o
 	if err != nil {
 		t.Fatal(err)
 	}
-	baseline, err := orders.ProjectionPositionBaseline(orders.Work{ID: "reconciled-prior", Scope: command.Scope, State: orders.StateReconciled, Command: command}, target)
+	baseline, err := orders.ProjectionPositionBaseline(orders.Work{ID: "reconciled-prior", DispatchCount: 1, Scope: command.Scope, State: orders.StateReconciled, Command: command}, target)
 	if err != nil {
 		t.Fatal(err)
 	}

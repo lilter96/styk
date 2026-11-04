@@ -4,6 +4,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lilter96/styk/internal/commitment"
 	"github.com/lilter96/styk/internal/orders"
@@ -49,6 +50,9 @@ func assessObservation(input Input, observation Observation) Obligation {
 	if reason := nativeDemandProofBlocker(observation); reason != "" {
 		return pending(result, ProjectionPending, reason)
 	}
+	if positionOwnershipExpired(observation, input.Now) {
+		return pending(result, ProjectionPending, "position_ownership_attestation_expired")
+	}
 	if !readbackProven(observation) {
 		return pending(result, ProjectionPending, "native_readback_not_reconciled")
 	}
@@ -86,6 +90,12 @@ func classifyObligation(result Obligation, posting orders.Posting, quantity, res
 func readbackProven(observation Observation) bool {
 	work, target, binding := observation.Work, observation.Target, observation.Binding
 	if work == nil || target == nil || work.State != orders.StateReconciled || !target.Complete || target.Revision == "" {
+		return false
+	}
+	if work.Command.Action == orders.ActionMirrorCreate && work.DispatchCount != 1 {
+		return false
+	}
+	if work.Command.Action == orders.ActionMirrorUpdate && !scalarOwnershipProven(observation) {
 		return false
 	}
 	if !work.Command.Action.IsMirror() && !nativeDemandReadbackProven(observation) {
@@ -234,4 +244,34 @@ func hasLine(lines []orders.LineIdentity, wanted orders.LineIdentity) bool {
 		}
 	}
 	return false
+}
+
+func scalarOwnershipProven(observation Observation) bool {
+	work, target := observation.Work, observation.Target
+	if work == nil || target == nil {
+		return false
+	}
+	if work.Command.PositionBaseline != nil {
+		_, err := orders.ProjectionPositionBaseline(*work, *target)
+		return err == nil
+	}
+	if observation.PositionOwnership == nil {
+		return false
+	}
+	_, err := orders.LegacyScalarPositionBaseline(*work, *target, *observation.PositionOwnership)
+	return err == nil
+}
+
+func positionOwnershipExpired(observation Observation, now time.Time) bool {
+	if observation.Work == nil {
+		return false
+	}
+	proof := observation.Work.Command.PositionBaseline
+	if patch := observation.Work.Command.PositionPatch; patch != nil {
+		proof = &patch.Baseline
+	}
+	if proof == nil {
+		proof = observation.PositionOwnership
+	}
+	return proof != nil && proof.RecoveryID != "" && !proof.ValidUntil.After(now)
 }

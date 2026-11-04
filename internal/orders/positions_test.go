@@ -17,7 +17,7 @@ func positionPatchFixture(t *testing.T) (Command, PositionBaseline) {
 	source := command.CustomerOrder.Positions[0]
 	native := TargetPosition{ID: "native-position", MoyskladKind: source.Mapping.MoyskladKind, MoyskladID: source.Mapping.MoyskladID, Quantity: source.Quantity, Reserve: source.Reserve, Price: source.Price, Shipped: Present(Decimal("0")), Discount: Present(Decimal("0"))}
 	target := TargetObservation{Scope: command.Scope, Correlation: correlation, Positions: []TargetPosition{native}, ObservedAt: time.Now().UTC(), Complete: true}
-	baseline, err := ProjectionPositionBaseline(Work{ID: "prior-work", Scope: command.Scope, State: StateReconciled, Command: command}, target)
+	baseline, err := ProjectionPositionBaseline(Work{ID: "prior-work", DispatchCount: 1, Scope: command.Scope, State: StateReconciled, Command: command}, target)
 	if err != nil {
 		t.Fatal(err)
 	}

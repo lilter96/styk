@@ -65,13 +65,23 @@ func ProjectionPositionBaseline(work Work, target TargetObservation) (PositionBa
 	if work.State != StateReconciled || !work.Command.Action.IsMirror() || work.Command.CustomerOrder == nil || !target.Complete || target.Scope != work.Scope || target.Correlation.PostingNumber != work.Command.PostingNumber || !baselineCorrelationMatches(work.Command.Correlation, target.Correlation) {
 		return result, ErrStale
 	}
-	sources := work.Command.CustomerOrder.Positions
-	if work.Command.PositionPatch != nil {
-		sources = work.Command.PositionPatch.appliedSources()
+	if work.Command.Action == ActionMirrorUpdate {
+		prior := work.Command.PositionBaseline
+		if prior == nil || !ScalarPositionFrontier(work.Command, *prior, target.Positions) {
+			return result, ErrBlocked
+		}
+		return *prior, nil
+	}
+	if work.Command.Action == ActionMirrorCreate && work.DispatchCount != 1 {
+		return result, ErrBlocked
+	}
+	sources, err := projectionPositionSources(work.Command, target, &result)
+	if err != nil {
+		return result, err
 	}
 	result.Bindings = make([]PositionBinding, 0, len(sources))
 	for _, source := range sources {
-		index := uniqueNativePosition(source, target.Positions)
+		index := projectionNativePositionIndex(work.Command, source, target.Positions)
 		if index < 0 || !PositionRepresented(source, target.Positions[index]) {
 			return result, ErrConflict
 		}
@@ -432,4 +442,37 @@ func sameNativeVATEnabled(a, b Field[bool]) bool {
 		return *a.Value == *b.Value
 	}
 	return a.Presence == b.Presence || a.IsMissing() && b.IsMissing()
+}
+
+func projectionNativePositionIndex(command Command, source PositionWrite, positions []TargetPosition) int {
+	if command.PositionPatch == nil {
+		return uniqueNativePosition(source, positions)
+	}
+	for _, binding := range command.PositionPatch.Baseline.Bindings {
+		if binding.Source.Identity.Key() != source.Identity.Key() || !positionMappingsEqual(binding.Source.Mapping, source.Mapping) {
+			continue
+		}
+		for index, position := range positions {
+			if position.ID == binding.Native.ID {
+				return index
+			}
+		}
+	}
+	return -1
+}
+
+func projectionPositionSources(command Command, target TargetObservation, result *PositionBaseline) ([]PositionWrite, error) {
+	patch := command.PositionPatch
+	if patch == nil {
+		return command.CustomerOrder.Positions, nil
+	}
+	prior := patch.Baseline
+	result.EvidenceClass, result.RecoveryID, result.ValidUntil = prior.EvidenceClass, prior.RecoveryID, prior.ValidUntil
+	if prior.RecoveryID != "" {
+		result.ObservedAt = prior.ObservedAt
+	}
+	if !PositionPatchObserved(command, target) {
+		return nil, ErrStale
+	}
+	return patch.appliedSources(), nil
 }
