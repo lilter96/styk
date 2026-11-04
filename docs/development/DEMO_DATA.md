@@ -1,5 +1,7 @@
 # Isolated STYK development data
 
+Runtime update, 31 October 2026: the owner explicitly replaced the active synthetic MoySklad connection with the verified real account in the local preview. The synthetic source is archived from navigation; its history is retained. The current preview database now contains encrypted real credentials, so the development fixture/reset guards must refuse it. Do not remove those guards or treat this runtime as a disposable demo.
+
 This fixture is optional development tooling. It is never called by API/worker startup and cannot authorize marketplace writes. Production migrations and synchronization rules are unchanged.
 
 ## Current local environment
