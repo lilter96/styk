@@ -132,3 +132,17 @@ func TestPositionPatchValidationSurvivesDurableJSONRoundTrip(t *testing.T) {
 		t.Fatalf("durable patch invalidated by canonical missing field encoding: %v", err)
 	}
 }
+
+func TestNativePositionKeepsDocumentedNegativeDiscountAsSurcharge(t *testing.T) {
+	t.Parallel()
+	command, _ := positionPatchFixture(t)
+	position := command.TargetPositions[0]
+	position.Discount = Present(Decimal("-10"))
+	if !NativePositionEqual(position, position) {
+		t.Fatal("documented surcharge was rejected as invalid native evidence")
+	}
+	position.Discount = Present(Decimal("10"))
+	if NativePositionEqual(command.TargetPositions[0], position) {
+		t.Fatal("changed native discount was ignored")
+	}
+}

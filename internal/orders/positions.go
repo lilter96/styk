@@ -406,10 +406,13 @@ func validNativePosition(native TargetPosition) bool {
 	if !validID(native.ID) || !validID(native.MoyskladID) || (native.MoyskladKind != "product" && native.MoyskladKind != "variant") || !positiveDecimal(native.Quantity) {
 		return false
 	}
-	for _, field := range []Field[Decimal]{native.Reserve, native.Shipped, native.Discount, native.VAT} {
+	for _, field := range []Field[Decimal]{native.Reserve, native.Shipped, native.VAT} {
 		if field.Validate() != nil || field.IsKnown() && !nonnegativeDecimal(*field.Value) {
 			return false
 		}
+	}
+	if native.Discount.Validate() != nil || native.Discount.IsKnown() && native.Discount.Value.Validate() != nil {
+		return false
 	}
 	return native.Price.Validate() == nil && (!native.Price.IsKnown() || native.Price.Value.Validate() == nil && nonnegativeDecimal(native.Price.Value.Amount))
 }
