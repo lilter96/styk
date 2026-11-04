@@ -14,17 +14,24 @@ func (page SourcePage) validateReadFailures(success map[string]bool) error {
 	if page.Exhausted && page.NextCursor != "" {
 		return ErrInvalid
 	}
-	if (page.Exhausted || len(page.Failures) > 0 || page.FailuresTruncated) && (page.Stream != "ozon-orders-active" || !page.FreshDetail) {
+	if (page.Exhausted || len(page.Failures) > 0 || page.FailuresTruncated) && ((page.Stream != "ozon-orders-active" && page.Stream != NativePointStream) || !page.FreshDetail) {
 		return ErrInvalid
 	}
 	seen := make(map[string]bool, len(page.Failures))
 	for _, failure := range page.Failures {
-		if !validID(failure.PostingNumber) || seen[failure.PostingNumber] || success[failure.PostingNumber] || !validReadFailureCode(failure.Code) {
+		if !validID(failure.PostingNumber) || seen[failure.PostingNumber] || success[failure.PostingNumber] || !page.validReadFailureCode(failure.Code) {
 			return ErrInvalid
 		}
 		seen[failure.PostingNumber] = true
 	}
 	return nil
+}
+
+func (page SourcePage) validReadFailureCode(code string) bool {
+	if page.Stream == NativePointStream {
+		return validateNativePointFailureCode(code) == nil
+	}
+	return validReadFailureCode(code)
 }
 
 func validReadFailureCode(code string) bool {
@@ -44,6 +51,20 @@ func MergeReadFailures(previous, current []ReadFailure, postings []Posting, trun
 	for _, posting := range postings {
 		success[posting.PostingNumber] = true
 	}
+	return mergeReadFailureKeys(previous, current, success, truncated)
+}
+
+func MergeNativePointFailures(previous, current []ReadFailure, reads []NativeOrderPointRead, truncated bool) ([]ReadFailure, bool) {
+	success := make(map[string]bool, len(reads))
+	for _, read := range reads {
+		if read.Point != nil && read.Code == "" {
+			success[read.Correlation.PostingNumber] = true
+		}
+	}
+	return mergeReadFailureKeys(previous, current, success, truncated)
+}
+
+func mergeReadFailureKeys(previous, current []ReadFailure, success map[string]bool, truncated bool) ([]ReadFailure, bool) {
 	failures := make([]ReadFailure, 0, min(MaxPagePostings, len(previous)+len(current)))
 	indexes := make(map[string]int, cap(failures))
 	for _, list := range [][]ReadFailure{previous, current} {
