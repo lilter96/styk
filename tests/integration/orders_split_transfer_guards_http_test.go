@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -104,7 +105,7 @@ func assertSplitTransferApprovalRefused(t *testing.T, f positionHTTPFixture, pre
 	}
 	status, _ := f.merchant.request(t, http.MethodPost, "/api/orders/approve", string(body), true)
 	if status != http.StatusConflict && status != http.StatusUnprocessableEntity {
-		t.Fatalf("queued parent did not invalidate child approval: HTTP %d", status)
+		t.Fatalf("split transfer group did not invalidate stale approval: HTTP %d", status)
 	}
 }
 
@@ -121,6 +122,7 @@ func assertSplitTransferChildFencesParent(t *testing.T, unknown bool) {
 	f, _, split := retainedSplitParentFixture(t)
 	reduceRetainedSplitParent(t, f, split, false)
 	addSplitParentDescriptionMapping(t, &f)
+	parent := splitMemberHTTPPreview(t, f, split.Command.PostingNumber, nil)
 	f.provider.base.mu.Lock()
 	f.provider.base.lost["split-http-child"] = unknown
 	f.provider.base.mu.Unlock()
@@ -131,19 +133,36 @@ func assertSplitTransferChildFencesParent(t *testing.T, unknown bool) {
 	}
 	f.run(t, state)
 	child := f.latestWork(t)
-	parent := splitMemberHTTPPreview(t, f, split.Command.PostingNumber, nil)
-	f.approve(t, parent)
 	held, err := f.db.ClaimOrderWork(f.ctx, orders.ClaimRequest{WorkerID: "split-child-poll-holder", Now: time.Now(), LeaseUntil: time.Now().Add(time.Minute)})
 	if err != nil || held == nil || held.ID != child.ID || held.State != state {
 		t.Fatal("hold acknowledged child polling lease", err)
 	}
-	f.run(t, orders.StateBlocked)
+	assertSplitTransferParentPreviewBusy(t, f, split.Command.PostingNumber)
+	assertSplitTransferApprovalRefused(t, f, parent)
 	work := f.latestWork(t)
-	if work.Command.PostingNumber != split.Command.PostingNumber || work.DispatchCount != 0 || work.Command.Action != orders.ActionMirrorUpdate {
-		t.Fatal("active dependent child permitted a parent mutation")
+	if work.ID != child.ID || work.State != state || work.DispatchCount != 1 {
+		t.Fatal("parent review changed the unresolved child or created another operation")
 	}
+	assertOrdersRowCount(t, f.ordersStoreFixture, `SELECT count(*) FROM orders_work WHERE posting_number='position-http-posting' AND action='mirror_update'`, 0)
 	if f.provider.patches.Load() != 1 {
 		t.Fatal("parent changed after dependent child dispatch")
 	}
 	assertOrdersRowCount(t, f.ordersStoreFixture, `SELECT count(*) FROM orders_work WHERE posting_number='split-http-child' AND state IN ('ACKNOWLEDGED','UNKNOWN') AND dispatch_count=1`, 1)
+}
+
+func assertSplitTransferParentPreviewBusy(t *testing.T, f positionHTTPFixture, number string) {
+	t.Helper()
+	body, err := json.Marshal(map[string]any{"moysklad_account": f.config.Scope.MoyskladAccount, "ozon_account": f.config.Scope.OzonAccount, "expected_revision": f.config.Revision, "posting_numbers": []string{number}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, raw := f.merchant.request(t, http.MethodPost, "/api/orders/preview", string(body), true)
+	var preview orders.Preview
+	if status != http.StatusOK || json.Unmarshal(raw, &preview) != nil || len(preview.Decisions) != 1 {
+		t.Fatalf("busy parent preview: HTTP %d", status)
+	}
+	decision := preview.Decisions[0]
+	if decision.Ready || len(decision.Commands) != 0 || !slices.ContainsFunc(decision.Validation, func(v orders.Validation) bool { return v.Code == "split_reserve_group_busy" }) {
+		t.Fatal("busy split group advertised a new parent mutation", decision.Validation)
+	}
 }
