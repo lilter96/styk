@@ -41,17 +41,19 @@ func loadOrderInventoryGuard(ctx context.Context, tx pgx.Tx, request domain.Stoc
 	input := orderinventory.Input{Pool: request.Pool, Baseline: source, Now: now, MaxAge: request.Policy.MaxObservationAge}
 	var err error
 	input.Observations, input.Truncated, err = readOrderInventoryHeads(ctx, tx, request.Pool)
-	if err != nil || len(input.Observations) == 0 {
-		return orderinventory.Assess(input), err
+	if err != nil {
+		return orderinventory.Guard{}, err
 	}
 	input.BaselineStartedAt, err = orderInventoryBaselineStart(ctx, tx, request.Pool, source.ImportID)
 	if err != nil {
 		return orderinventory.Guard{}, err
 	}
-	if err = readOrderInventoryNative(ctx, tx, &input); err != nil {
-		return orderinventory.Guard{}, err
+	if len(input.Observations) > 0 {
+		if err = readOrderInventoryNative(ctx, tx, &input); err != nil {
+			return orderinventory.Guard{}, err
+		}
 	}
-	return orderinventory.Assess(input), nil
+	return loadNativeInventoryGuard(ctx, tx, request, source, input.BaselineStartedAt, now, orderinventory.Assess(input))
 }
 
 func readOrderInventoryBaseline(ctx context.Context, tx pgx.Tx, request domain.StockCalculationRequest, importID int64) (domain.StockSourceEvidence, error) {
@@ -73,7 +75,8 @@ func readOrderInventoryBaseline(ctx context.Context, tx pgx.Tx, request domain.S
 	source.Physical, source.Reserve, source.ObservedAt = &physical, &reserve, &observed
 	source.TimeBasis = "local_batch_finished"
 	source.TraversalComplete = strings.Contains(scope, "stock/bystore;stockMode=all;groupBy=variant")
-	return source, nil
+	source.FreshTraversal, err = loadMatchingTraversal(ctx, tx, pool.Tenant, "moysklad", pool.MoyskladAccount, importID)
+	return source, err
 }
 
 func orderInventoryBaselineStart(ctx context.Context, tx pgx.Tx, pool domain.StockPool, importID *int64) (time.Time, error) {
