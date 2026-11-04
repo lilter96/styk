@@ -112,3 +112,16 @@ func TestNativeEffectCannotUseAnotherSourceAccountOrFutureTraversal(t *testing.T
 		t.Fatal("future traversal released pool fence")
 	}
 }
+
+func TestNativeEffectCannotUseUnadmittedClientSnapshotClock(t *testing.T) {
+	t.Parallel()
+	pool, source, effect, now := nativeEffectFixture()
+	effect.State = orders.StateReconciled
+	snapshot := now.Add(-time.Second)
+	if !(Guard{}).WithNativeEffects(pool, source, snapshot, now, []orders.NativeInventoryEffect{effect}, false).Blocked {
+		t.Fatal("client snapshot timestamp released physical effect without DB-admitted traversal")
+	}
+	if !NativeEffectBaselineStart(pool, source, snapshot, now).IsZero() {
+		t.Fatal("missing durable traversal invented a database admission time")
+	}
+}

@@ -43,6 +43,12 @@ func assessObservation(input Input, observation Observation) Obligation {
 		result.State, result.Reserve = Cancelled, "0"
 		return result
 	}
+	if observation.Work != nil && observation.Work.Command.Action == orders.ActionSalesReturnCreate {
+		return pending(result, Unknown, "native_return_obligation_attribution_unverified")
+	}
+	if reason := nativeDemandProofBlocker(observation); reason != "" {
+		return pending(result, ProjectionPending, reason)
+	}
 	if !readbackProven(observation) {
 		return pending(result, ProjectionPending, "native_readback_not_reconciled")
 	}
@@ -56,7 +62,7 @@ func assessObservation(input Input, observation Observation) Obligation {
 	}
 	result.Reserve = strconv.FormatInt(reserve, 10)
 	if !baselineOrdered(input, observation) {
-		return pending(result, ReserveObserved, "baseline_inclusion_unproven")
+		return pending(result, ReserveObserved, nativeDemandOrderingBlocker(input, observation))
 	}
 	return classifyObligation(result, posting, quantity, reserve, shipped)
 }
@@ -79,7 +85,10 @@ func classifyObligation(result Obligation, posting orders.Posting, quantity, res
 
 func readbackProven(observation Observation) bool {
 	work, target, binding := observation.Work, observation.Target, observation.Binding
-	if work == nil || target == nil || work.State != orders.StateReconciled || !work.Command.Action.IsMirror() || !target.Complete || target.Revision == "" {
+	if work == nil || target == nil || work.State != orders.StateReconciled || !target.Complete || target.Revision == "" {
+		return false
+	}
+	if !work.Command.Action.IsMirror() && !nativeDemandReadbackProven(observation) {
 		return false
 	}
 	if binding.CustomerOrderID == "" || target.Scope != observation.Posting.Scope || binding.Scope != target.Scope || target.Correlation != binding || work.Scope != target.Scope || work.Command.Scope != target.Scope || work.Command.Correlation.Scope != target.Scope {
@@ -96,6 +105,9 @@ func readbackProven(observation Observation) bool {
 
 func baselineOrdered(input Input, observation Observation) bool {
 	source, target := input.Baseline, observation.Target
+	if observation.Work != nil && observation.Work.Command.Action.IsNativeMovement() {
+		return nativeDemandBaselineOrdered(input, observation)
+	}
 	if !source.ObservationFound || source.ImportID == nil || *source.ImportID <= 0 || !source.TraversalComplete || source.Physical == nil || source.Reserve == nil || target == nil {
 		return false
 	}
@@ -106,7 +118,11 @@ func baselineOrdered(input Input, observation Observation) bool {
 	if freshness == nil || freshness.After(input.Now) || input.MaxAge <= 0 || input.Now.Sub(*freshness) >= input.MaxAge {
 		return false
 	}
-	if observation.NativeStartedAt.IsZero() || observation.NativeStartedAt.Before(target.ObservedAt) || observation.NativeFinishedAt.Before(observation.NativeStartedAt) || input.BaselineStartedAt.Before(observation.NativeFinishedAt) || input.BaselineStartedAt.After(input.Now) {
+	baselineStart := input.BaselineStartedAt
+	if source.FreshTraversal != nil {
+		baselineStart = NativeEffectBaselineStart(input.Pool, source, baselineStart, input.Now)
+	}
+	if observation.NativeStartedAt.IsZero() || observation.NativeStartedAt.Before(target.ObservedAt) || observation.NativeFinishedAt.Before(observation.NativeStartedAt) || baselineStart.Before(observation.NativeFinishedAt) || baselineStart.After(input.Now) {
 		return false
 	}
 	_, physicalOK := whole(*source.Physical)

@@ -59,7 +59,7 @@ func NativeEffectBaselineStart(pool domain.StockPool, source domain.StockSourceE
 	}
 	traversal := source.FreshTraversal
 	if traversal == nil {
-		return snapshotStart
+		return time.Time{}
 	}
 	if traversal.OperationID == "" || traversal.ImportID != *source.ImportID || traversal.StartedAt.IsZero() || traversal.FinishedAt.Before(traversal.StartedAt) || traversal.FinishedAt.After(now) {
 		return time.Time{}

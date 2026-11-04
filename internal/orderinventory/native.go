@@ -8,6 +8,9 @@ import (
 )
 
 func nativeUnits(input Input, observation Observation) (int64, int64, bool) {
+	if observation.Work != nil && observation.Work.Command.Action.IsNativeMovement() {
+		return nativeDemandUnits(input, observation)
+	}
 	target := observation.Target
 	if target == nil || target.Fields.StoreID != input.Pool.WarehouseID || observation.NativeSyncID == nil || *observation.NativeSyncID != observation.Binding.SyncID {
 		return 0, 0, false

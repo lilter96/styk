@@ -40,7 +40,14 @@ func (c *OrderClient) decodeOrderFields(ctx context.Context, document orderNativ
 	if err != nil || !sum.IsKnown() {
 		return orders.TargetObservation{}, ErrOrderSchema
 	}
-	return orders.TargetObservation{Scope: c.scope, Correlation: correlation, Fields: write, Sum: sum, ObservedAt: time.Now().UTC()}, nil
+	if _, err := orderReadMoment(raw, "updated"); err != nil {
+		return orders.TargetObservation{}, err
+	}
+	updated, err := orderReadField[string](raw, "updated")
+	if err != nil {
+		return orders.TargetObservation{}, err
+	}
+	return orders.TargetObservation{ProviderUpdatedAt: updated, Scope: c.scope, Correlation: correlation, Fields: write, Sum: sum, ObservedAt: time.Now().UTC()}, nil
 }
 
 func (c *OrderClient) decodeOrderAttributes(raw json.RawMessage) ([]orders.AttributeWrite, error) {

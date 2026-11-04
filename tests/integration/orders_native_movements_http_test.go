@@ -248,8 +248,13 @@ func (p *nativeMovementHTTPProvider) serve(w http.ResponseWriter, r *http.Reques
 			w.WriteHeader(500)
 			return
 		}
-		for _, product := range body["result"].(map[string]any)["products"].([]any) {
-			product.(map[string]any)["vat"] = "0"
+		result := body["result"].(map[string]any)
+		result["order_id"] = json.Number("5001")
+		method := result["delivery_method"].(map[string]any)
+		method["id"], method["warehouse_id"] = json.Number("4001"), json.Number("3001")
+		for _, product := range result["products"].([]any) {
+			row := product.(map[string]any)
+			row["vat"], row["sku"] = "0", json.Number("2001")
 		}
 		p.position.base.reply(w, body)
 		return
@@ -291,6 +296,9 @@ func (p *nativeMovementHTTPProvider) serve(w http.ResponseWriter, r *http.Reques
 			}
 		} else {
 			body["vatEnabled"], body["vatIncluded"] = false, false
+			if _, specified := body["applicable"]; !specified {
+				body["applicable"] = false
+			}
 		}
 		p.position.base.reply(w, body)
 		return
@@ -522,7 +530,11 @@ func TestOrdersNativeHTTPPostedEffectFencesPoolUntilActualFreshStockRead(t *test
 	if refreshed == baseline {
 		t.Fatal("changed actual stock snapshot missing")
 	}
-	if reason := f.nativeStockReason(t, refreshed, ordersProcessID(8)); reason != "" {
-		t.Fatalf("genuine fresh provider traversal did not cover known effect: %s", reason)
+	if reason := f.nativeStockReason(t, refreshed, ordersProcessID(8)); reason != "NATIVE_DOCUMENT_STOCK_RECHECK_REQUIRED" {
+		t.Fatalf("client-only snapshot released DB-clock fence: %s", reason)
+	}
+	admitted := nativeDurableStockImport(t, f)
+	if reason := f.nativeStockReason(t, admitted, ordersProcessID(8)); reason != "" {
+		t.Fatalf("durable worker traversal did not cover known effect: %s", reason)
 	}
 }
