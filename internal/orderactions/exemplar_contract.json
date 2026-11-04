@@ -1,0 +1,11 @@
+{
+ "schema_status":"official_reviewed_operation_subset",
+ "reviewed_on":"2026-11-04",
+ "source":"https://docs.ozon.ru/api/seller/zh/swagger.json",
+ "prepare":{"endpoint":"/v6/fbs/posting/product/exemplar/create-or-get","request":{"posting_number":"string"},"response_identity":"provider-generated exemplar_id:int64; product_id is SKU:int64"},
+ "set":{"endpoint":"/v6/fbs/posting/product/exemplar/set","complete_products_and_units":true,"response_http_200":"accepted for asynchronous validation; no task identifier"},
+ "status":{"endpoint":"/v5/fbs/posting/product/exemplar/status","request":{"posting_number":"string"},"states":["ship_available","ship_not_available","validation_in_process","update_available","update_not_available"],"checks":["processing","failed","passed"]},
+ "mark_types":["mandatory_mark","jw_uin","imei"],
+ "private_fields":["gtd","rnpt","marks.mark"],
+ "limitations":["Formal enum definitions conflict with some Swagger examples; unknown enums remain schema drift, never success.","Weight writes are not implemented because reviewed weight notice does not establish authoritative unit.","Country values require a separate operation; not inferred.","Exemplar values are never included inline in ship-v4."]
+}

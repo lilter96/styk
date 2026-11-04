@@ -13,6 +13,7 @@ type SaveConfigRequest struct {
 }
 
 type ReviewContext struct {
+	ExemplarProofs    map[string]ExemplarEvidence      `json:"-"`
 	NativeDocuments   map[string]NativeDocumentBinding `json:"native_documents,omitempty"`
 	PositionBaselines map[string]PositionBaseline      `json:"position_baselines,omitempty"`
 	Config            Config                           `json:"config"`
@@ -127,14 +128,16 @@ type ClaimRequest struct {
 // Begin journals the exact intent before network I/O. Every check includes the
 // claim token, current config, mappings, credentials, grant and per-posting fence.
 type DispatchGuard struct {
-	Work  Work
-	Now   time.Time
-	Begin bool
+	ExemplarSecret *ExemplarSecret
+	Work           Work
+	Now            time.Time
+	Begin          bool
 }
 
 // Completion is a state+claim-token CAS. Unknown and acknowledged work may only
 // schedule reads. Reconciled persists correlation and outcome atomically.
 type Completion struct {
+	ExemplarSecret         *ExemplarSecret
 	ObservedNativeDocument *NativeDocumentObservation
 	LabelArtifact          *LabelArtifact
 	WorkID                 string

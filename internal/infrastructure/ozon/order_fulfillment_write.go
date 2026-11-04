@@ -22,6 +22,10 @@ import (
 // the saved operation subset does not contain a verified endpoint.
 func fulfillmentPath(action orders.Action) string {
 	switch action {
+	case orders.ActionExemplarPrepare:
+		return exemplarPreparePath
+	case orders.ActionExemplarSet:
+		return exemplarSetPath
 	case orders.ActionPostingPack, orders.ActionPostingSplit:
 		return "/v4/posting/fbs/ship"
 	case orders.ActionPostingCancel:
@@ -120,6 +124,19 @@ func (c *OrdersClient) fulfillmentResponse(command orders.Command, path string, 
 
 func (c *OrdersClient) parseFulfillmentReceipt(command orders.Command, path string, data []byte, status int) (orders.Receipt, error) {
 	switch command.Action {
+	case orders.ActionExemplarPrepare:
+		snapshot, err := decodeExemplarSnapshot(data, command.PostingNumber)
+		if err != nil {
+			return orderReceipt(command, orders.StateUnknown, status, "EXEMPLAR_RESPONSE_UNVERIFIED"), err
+		}
+		receipt := orderReceipt(command, orders.StateAcknowledged, status, "EXEMPLAR_IDS_ACCEPTED")
+		receipt.PreparedExemplars = &snapshot
+		return receipt, nil
+	case orders.ActionExemplarSet:
+		if len(bytes.TrimSpace(data)) != 0 && string(bytes.TrimSpace(data)) != "{}" {
+			return orderReceipt(command, orders.StateUnknown, status, "EXEMPLAR_SET_RESPONSE_UNVERIFIED"), orders.ErrSchemaDrift
+		}
+		return orderReceipt(command, orders.StatePolling, status, "EXEMPLAR_VALIDATION_PENDING"), nil
 	case orders.ActionPostingPack, orders.ActionPostingSplit:
 		return c.shipReceipt(command, data, status)
 	case orders.ActionPostingCancel:
@@ -284,6 +301,10 @@ func fulfillmentPayload(command orders.Command, path string) (map[string]any, er
 		command.PostingAction = &action
 	}
 	switch command.Action {
+	case orders.ActionExemplarPrepare:
+		return map[string]any{"posting_number": command.PostingNumber}, nil
+	case orders.ActionExemplarSet:
+		return exemplarSetPayload(command)
 	case orders.ActionPostingPack, orders.ActionPostingSplit:
 		return shipPayload(command)
 	case orders.ActionPostingCancel:

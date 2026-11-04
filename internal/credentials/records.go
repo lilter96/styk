@@ -28,7 +28,7 @@ func recordAAD(scope RecordScope) ([]byte, error) {
 }
 
 func validRecordPurpose(purpose string) bool {
-	return purpose == "order-customer" || purpose == "order-action" || purpose == "order-artifact"
+	return purpose == "order-customer" || purpose == "order-action" || purpose == "order-artifact" || purpose == "order-exemplar"
 }
 
 func (v *Vault) EncryptRecord(scope RecordScope, plain []byte) ([]byte, error) {

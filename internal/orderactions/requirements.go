@@ -2,12 +2,17 @@ package orderactions
 
 import (
 	"github.com/lilter96/styk/internal/orders"
+	"time"
 )
 
 // PackingRequirementValidation gates only packing/splitting. A problem with a
 // marked product never blocks reading, mirroring or unrelated postings. The
 // reviewed ship-v4 grammar cannot carry exemplar/marking values inline.
 func PackingRequirementValidation(posting orders.Posting, action orders.Action) []orders.Validation {
+	return PackingRequirementValidationWithProof(posting, action, orders.ExemplarEvidence{}, time.Time{})
+}
+
+func PackingRequirementValidationWithProof(posting orders.Posting, action orders.Action, proof orders.ExemplarEvidence, now time.Time) []orders.Validation {
 	if action != orders.ActionPostingPack && action != orders.ActionPostingSplit {
 		return nil
 	}
@@ -32,6 +37,9 @@ func PackingRequirementValidation(posting orders.Posting, action orders.Action) 
 			result = append(result, actionBlock("requirements."+string(kind), "packing_requirement_unknown"))
 			continue
 		}
+		if orders.ExemplarProofValid(posting, proof, now) && kind != orders.RequirementCountry && kind != orders.RequirementChangeCountry && kind != orders.RequirementWeight && allPackingSKUsKnown(*field.Value, skus) {
+			continue
+		}
 		result = append(result, packingProductRequirements(kind, *field.Value, skus)...)
 	}
 	return result
@@ -47,4 +55,13 @@ func packingProductRequirements(kind orders.PackingRequirementKind, values []str
 		result = append(result, actionBlock("products[sku="+sku+"].requirements."+string(kind), code))
 	}
 	return result
+}
+
+func allPackingSKUsKnown(values []string, known map[string]bool) bool {
+	for _, sku := range values {
+		if !known[sku] {
+			return false
+		}
+	}
+	return true
 }

@@ -10,7 +10,14 @@ import (
 )
 
 func ValidateExecution(posting orders.Posting, cap orders.CapabilityRef, proposal orders.ActionProposal, reasons []orders.ActionReason, now time.Time) []orders.Validation {
-	plan := PlanExecution(posting, cap, proposal.Action, now)
+	return ValidateExecutionWithProof(posting, cap, proposal, reasons, orders.ExemplarEvidence{}, now)
+}
+
+func ValidateExecutionWithProof(posting orders.Posting, cap orders.CapabilityRef, proposal orders.ActionProposal, reasons []orders.ActionReason, proof orders.ExemplarEvidence, now time.Time) []orders.Validation {
+	plan := PlanExecutionWithProof(posting, cap, proposal.Action, proof, now)
+	if proof.Verified && (proposal.Action == orders.ActionPostingPack || proposal.Action == orders.ActionPostingSplit) && proposal.Parameters.ExemplarWorkID != proof.SnapshotID {
+		return []orders.Validation{actionBlock("exemplar_work_id", "exemplar_verified_proof_required")}
+	}
 	if proposal.PostingNumber != posting.PostingNumber {
 		return append(plan.Blockers, actionBlock("posting_number", "exact_posting_required"))
 	}
@@ -25,6 +32,13 @@ func ValidateExecution(posting orders.Posting, cap orders.CapabilityRef, proposa
 
 func executionInput(posting orders.Posting, action orders.Action, input orders.ActionParameters, reasons []orders.ActionReason) error {
 	switch action {
+	case orders.ActionExemplarPrepare:
+		return nil
+	case orders.ActionExemplarSet:
+		if input.ExemplarWorkID == "" || len(input.ExemplarWorkID) > 256 || input.Exemplars == nil {
+			return orders.ErrInvalid
+		}
+		return nil
 	case orders.ActionPostingPack, orders.ActionPostingSplit:
 		if !input.ReadinessConfirmed || (action == orders.ActionPostingSplit && len(input.Packages) < 2) || (action == orders.ActionPostingPack && len(input.Packages) != 1) {
 			return orders.ErrBlocked

@@ -103,7 +103,7 @@ func isMutation(req *http.Request) bool {
 		return false
 	}
 	switch path {
-	case "/v2/product/info/stocks-by-warehouse/fbs", "/v3/products/info/attributes", "/v1/posting/fbs/cancel-reason":
+	case "/v5/fbs/posting/product/exemplar/status", "/v2/product/info/stocks-by-warehouse/fbs", "/v3/products/info/attributes", "/v1/posting/fbs/cancel-reason":
 		return false
 	}
 	return true

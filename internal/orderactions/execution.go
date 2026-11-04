@@ -12,7 +12,7 @@ import (
 
 // ContractVersion records the operation subset reviewed against the official
 // Chinese Swagger in the preceding lab. It is not a full Swagger download.
-const ContractVersion = "ozon-fulfillment-2026-11-04:v4:ship-v4,cancel-v2,partial-result-string,tracking-v2,delivery-v2,label-v3,hybrid-printed-label-v1,marking-requirements-v1"
+const ContractVersion = "ozon-fulfillment-2026-11-04:v4:ship-v4,cancel-v2,partial-result-string,tracking-v2,delivery-v2,label-v3,hybrid-printed-label-v1,marking-requirements-v1,exemplars-v6-v5-v1"
 
 //go:embed label_contract.json
 var labelContract []byte
@@ -20,14 +20,18 @@ var labelContract []byte
 //go:embed requirements_contract.json
 var requirementsContract []byte
 
+//go:embed exemplar_contract.json
+var exemplarContract []byte
+
 func ExecutionContractHash() string {
 	payload := append([]byte(ContractVersion), labelContract...)
-	sum := sha256.Sum256(append(payload, requirementsContract...))
+	payload = append(payload, requirementsContract...)
+	sum := sha256.Sum256(append(payload, exemplarContract...))
 	return hex.EncodeToString(sum[:])
 }
 
 func ExecutionActions() []orders.Action {
-	return []orders.Action{orders.ActionPostingPack, orders.ActionPostingSplit, orders.ActionPostingCancel,
+	return []orders.Action{orders.ActionExemplarPrepare, orders.ActionExemplarSet, orders.ActionPostingPack, orders.ActionPostingSplit, orders.ActionPostingCancel,
 		orders.ActionPostingPartialCancel, orders.ActionPostingTracking, orders.ActionPostingShip,
 		orders.ActionPostingLastMile, orders.ActionPostingDeliver, orders.ActionPostingSentBySeller, orders.ActionPostingLabelCreate}
 }
@@ -39,12 +43,19 @@ func RequiredParameters(action orders.Action) []string {
 }
 
 func PlanExecution(posting orders.Posting, cap orders.CapabilityRef, action orders.Action, now time.Time) orders.ActionOption {
+	return PlanExecutionWithProof(posting, cap, action, orders.ExemplarEvidence{}, now)
+}
+
+func PlanExecutionWithProof(posting orders.Posting, cap orders.CapabilityRef, action orders.Action, proof orders.ExemplarEvidence, now time.Time) orders.ActionOption {
 	plan := executionEdge(action)
+	if proof.Verified && (action == orders.ActionPostingPack || action == orders.ActionPostingSplit) {
+		plan.ParametersRequired = append(plan.ParametersRequired, "exemplar_work_id")
+	}
 	if orders.HybridLabelRequired(posting, action) {
 		plan.ParametersRequired = append(plan.ParametersRequired, "label_work_id", "label_printed_confirmed")
 	}
 	plan.Blockers = append(plan.Blockers, executionFacts(posting, cap, now)...)
-	plan.Blockers = append(plan.Blockers, PackingRequirementValidation(posting, action)...)
+	plan.Blockers = append(plan.Blockers, PackingRequirementValidationWithProof(posting, action, proof, now)...)
 	if !posting.Status.IsKnown() || !executionPredecessor(action, *posting.Status.Value) {
 		plan.Blockers = append(plan.Blockers, actionBlock("status", "action_not_available_in_current_status"))
 	}
@@ -80,6 +91,10 @@ func executionFacts(posting orders.Posting, cap orders.CapabilityRef, now time.T
 func executionEdge(action orders.Action) orders.ActionOption {
 	p := orders.ActionOption{Action: action, Blockers: []orders.Validation{}, ParametersRequired: []string{}}
 	switch action {
+	case orders.ActionExemplarPrepare:
+		p.Endpoint = "/v6/fbs/posting/product/exemplar/create-or-get"
+	case orders.ActionExemplarSet:
+		p.Endpoint, p.ParametersRequired = "/v6/fbs/posting/product/exemplar/set", []string{"exemplar_work_id", "exemplars"}
 	case orders.ActionPostingPack, orders.ActionPostingSplit:
 		p.Endpoint, p.ExpectedStatus, p.ParametersRequired = "/v4/posting/fbs/ship", "awaiting_deliver", []string{"packages", "readiness_confirmed"}
 	case orders.ActionPostingCancel:
@@ -104,6 +119,8 @@ func executionEdge(action orders.Action) orders.ActionOption {
 
 func executionPredecessor(action orders.Action, status string) bool {
 	switch action {
+	case orders.ActionExemplarPrepare, orders.ActionExemplarSet:
+		return status == "awaiting_packaging"
 	case orders.ActionPostingPack, orders.ActionPostingSplit:
 		return status == "awaiting_packaging"
 	case orders.ActionPostingCancel, orders.ActionPostingPartialCancel:
@@ -139,6 +156,7 @@ func actionAdvertised(actions []string, action orders.Action) bool {
 		return true // the optional list is not exhaustive when absent
 	}
 	tokens := map[orders.Action][]string{
+		orders.ActionExemplarPrepare: {"update_cis", "ship_with_additional_info", "ship", "ship_async"}, orders.ActionExemplarSet: {"update_cis", "ship_with_additional_info", "ship", "ship_async"},
 		orders.ActionPostingPack: {"ship", "ship_async", "pack"}, orders.ActionPostingSplit: {"ship", "ship_async"},
 		orders.ActionPostingCancel: {"cancel"}, orders.ActionPostingPartialCancel: {"product_cancel"},
 		orders.ActionPostingTracking: {"set_track_number"}, orders.ActionPostingShip: {"non_int_delivering"},

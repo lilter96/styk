@@ -69,7 +69,7 @@ func (c *OrdersClient) ReadOrderCorrelation(_ context.Context, _ orders.Correlat
 
 func orderReadPath(path string) bool {
 	switch path {
-	case "/v4/posting/fbs/list", "/v4/posting/fbs/unfulfilled/list", "/v3/posting/fbs/get", "/v2/warehouse/list", "/v2/delivery-method/list", "/v1/posting/fbs/cancel-reason", labelTaskPath:
+	case exemplarStatusPath, "/v4/posting/fbs/list", "/v4/posting/fbs/unfulfilled/list", "/v3/posting/fbs/get", "/v2/warehouse/list", "/v2/delivery-method/list", "/v1/posting/fbs/cancel-reason", labelTaskPath:
 		return true
 	default:
 		return false

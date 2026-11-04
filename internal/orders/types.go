@@ -368,12 +368,13 @@ type CustomerOrderWrite struct {
 // PostingAction is an explicit command with reviewed capability evidence.
 // Provider status fields are never copied into this command union.
 type PostingAction struct {
-	Capability     CapabilityRef         `json:"capability"`
-	Lines          []LineIdentity        `json:"lines"`
-	ReasonID       Field[string]         `json:"reason_id"`
-	Parameters     ActionParameters      `json:"parameters"`
-	ProtectedInput *ProtectedActionInput `json:"protected_input,omitempty"`
-	ContractHash   string                `json:"contract_hash,omitempty"`
+	PackingTargetFingerprint string                `json:"packing_target_fingerprint,omitempty"`
+	Capability               CapabilityRef         `json:"capability"`
+	Lines                    []LineIdentity        `json:"lines"`
+	ReasonID                 Field[string]         `json:"reason_id"`
+	Parameters               ActionParameters      `json:"parameters"`
+	ProtectedInput           *ProtectedActionInput `json:"protected_input,omitempty"`
+	ContractHash             string                `json:"contract_hash,omitempty"`
 }
 
 type Command struct {
@@ -420,19 +421,21 @@ const (
 )
 
 type Receipt struct {
-	LabelTasksVerified bool           `json:"label_tasks_verified,omitempty"`
-	LabelTask          *LabelTask     `json:"label_task,omitempty"`
-	TaskIDs            []ActionTask   `json:"task_ids,omitempty"`
-	Artifact           *OrderArtifact `json:"artifact,omitempty"`
-	ObservedPostings   []Posting      `json:"observed_postings,omitempty"`
-	PostingNumbers     []string       `json:"posting_numbers,omitempty"`
-	CommandID          string         `json:"command_id"`
-	State              State          `json:"state"`
-	HTTPStatus         int            `json:"http_status,omitempty"`
-	TaskID             string         `json:"task_id,omitempty"`
-	ExternalID         string         `json:"external_id,omitempty"`
-	Code               string         `json:"code,omitempty"`
-	ObservedAt         time.Time      `json:"observed_at"`
+	PreparedExemplars  *ExemplarSnapshot `json:"-"`
+	ExemplarEvidence   *ExemplarEvidence `json:"exemplar_evidence,omitempty"`
+	LabelTasksVerified bool              `json:"label_tasks_verified,omitempty"`
+	LabelTask          *LabelTask        `json:"label_task,omitempty"`
+	TaskIDs            []ActionTask      `json:"task_ids,omitempty"`
+	Artifact           *OrderArtifact    `json:"artifact,omitempty"`
+	ObservedPostings   []Posting         `json:"observed_postings,omitempty"`
+	PostingNumbers     []string          `json:"posting_numbers,omitempty"`
+	CommandID          string            `json:"command_id"`
+	State              State             `json:"state"`
+	HTTPStatus         int               `json:"http_status,omitempty"`
+	TaskID             string            `json:"task_id,omitempty"`
+	ExternalID         string            `json:"external_id,omitempty"`
+	Code               string            `json:"code,omitempty"`
+	ObservedAt         time.Time         `json:"observed_at"`
 }
 
 type Validation struct {

@@ -28,22 +28,25 @@ const (
 // Private strings are accepted from the authenticated operator but sealed before
 // a preview or intent is persisted. Public flags disclose presence, never values.
 type ActionParameters struct {
-	NativeEventKind        string           `json:"native_event_kind,omitempty"`
-	NativeEventOccurredAt  time.Time        `json:"native_event_occurred_at,omitempty"`
-	Packages               []ActionPackage  `json:"packages,omitempty"`
-	Lines                  []ActionQuantity `json:"lines,omitempty"`
-	ReasonID               string           `json:"reason_id,omitempty"`
-	ReasonMessage          string           `json:"reason_message,omitempty"`
-	TrackingNumber         string           `json:"tracking_number,omitempty"`
-	EventReference         string           `json:"event_reference,omitempty"`
-	EventConfirmed         bool             `json:"event_confirmed,omitempty"`
-	ReadinessConfirmed     bool             `json:"readiness_confirmed,omitempty"`
-	LabelType              string           `json:"label_type,omitempty"`
-	LabelWorkID            string           `json:"label_work_id,omitempty"`
-	LabelPrintedConfirmed  bool             `json:"label_printed_confirmed,omitempty"`
-	ReasonMessageProvided  bool             `json:"reason_message_provided,omitempty"`
-	TrackingProvided       bool             `json:"tracking_provided,omitempty"`
-	EventReferenceProvided bool             `json:"event_reference_provided,omitempty"`
+	ExemplarWorkID         string            `json:"exemplar_work_id,omitempty"`
+	Exemplars              *ExemplarSetInput `json:"exemplars,omitempty"`
+	ExemplarsProvided      bool              `json:"exemplars_provided,omitempty"`
+	NativeEventKind        string            `json:"native_event_kind,omitempty"`
+	NativeEventOccurredAt  time.Time         `json:"native_event_occurred_at,omitempty"`
+	Packages               []ActionPackage   `json:"packages,omitempty"`
+	Lines                  []ActionQuantity  `json:"lines,omitempty"`
+	ReasonID               string            `json:"reason_id,omitempty"`
+	ReasonMessage          string            `json:"reason_message,omitempty"`
+	TrackingNumber         string            `json:"tracking_number,omitempty"`
+	EventReference         string            `json:"event_reference,omitempty"`
+	EventConfirmed         bool              `json:"event_confirmed,omitempty"`
+	ReadinessConfirmed     bool              `json:"readiness_confirmed,omitempty"`
+	LabelType              string            `json:"label_type,omitempty"`
+	LabelWorkID            string            `json:"label_work_id,omitempty"`
+	LabelPrintedConfirmed  bool              `json:"label_printed_confirmed,omitempty"`
+	ReasonMessageProvided  bool              `json:"reason_message_provided,omitempty"`
+	TrackingProvided       bool              `json:"tracking_provided,omitempty"`
+	EventReferenceProvided bool              `json:"event_reference_provided,omitempty"`
 }
 
 type ActionProposal struct {
@@ -180,10 +183,12 @@ func ExpectedPostingStatus(action Action) string {
 }
 
 func (input ActionParameters) HasPrivateValues() bool {
-	return input.ReasonMessage != "" || input.TrackingNumber != "" || input.EventReference != ""
+	return input.ReasonMessage != "" || input.TrackingNumber != "" || input.EventReference != "" || input.Exemplars != nil
 }
 
 func (input ActionParameters) Public() ActionParameters {
+	input.ExemplarsProvided = input.Exemplars != nil
+	input.Exemplars = nil
 	input.ReasonMessageProvided = input.ReasonMessage != ""
 	input.TrackingProvided = input.TrackingNumber != ""
 	input.EventReferenceProvided = input.EventReference != ""

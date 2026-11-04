@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/lilter96/styk/internal/orders"
 )
@@ -73,5 +74,34 @@ func TestPackingRequirementsNeverInventMissingOrNewProviderRules(t *testing.T) {
 	posting.Requirements.UnknownFields = true
 	if got = PackingRequirementValidation(posting, orders.ActionPostingPack); !slices.ContainsFunc(got, func(v orders.Validation) bool { return v.Code == "packing_requirement_contract_changed" }) {
 		t.Fatal("unknown provider rule silently ignored")
+	}
+}
+
+func TestExemplarProofOnlyUnblocksVerifiedExactTargetRequirements(t *testing.T) {
+	t.Parallel()
+	posting := rfbsTestPosting()
+	posting.Requirements = emptyPackingRequirementFixture()
+	posting.Requirements.Products[orders.RequirementMandatoryMark] = orders.Present([]string{"123"})
+	hash, err := orders.PackingTargetFingerprint(posting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof := orders.ExemplarEvidence{Scope: posting.Scope, Verified: true, PackingReady: true, SnapshotID: "set-proof", Status: "ship_available", TargetFingerprint: hash, RequirementsHash: orders.ExemplarRequirementsHash(posting), CheckedAt: rfbsTestNow}
+	if got := PackingRequirementValidationWithProof(posting, orders.ActionPostingPack, proof, rfbsTestNow); len(got) != 0 {
+		t.Fatal("verified marking still blocked", got)
+	}
+	proof.CheckedAt = rfbsTestNow.Add(-6 * time.Minute)
+	if len(PackingRequirementValidationWithProof(posting, orders.ActionPostingPack, proof, rfbsTestNow)) == 0 {
+		t.Fatal("expired proof accepted")
+	}
+	proof.CheckedAt = rfbsTestNow
+	posting.Requirements.Products[orders.RequirementWeight] = orders.Present([]string{"123"})
+	proof.RequirementsHash = orders.ExemplarRequirementsHash(posting)
+	if got := PackingRequirementValidationWithProof(posting, orders.ActionPostingPack, proof, rfbsTestNow); len(got) != 1 || got[0].Code != "packing_weight_required" {
+		t.Fatal("marking proof fabricated weight", got)
+	}
+	proof.Scope.Tenant = "other"
+	if len(PackingRequirementValidationWithProof(posting, orders.ActionPostingPack, proof, rfbsTestNow)) < 2 {
+		t.Fatal("cross-tenant proof accepted")
 	}
 }

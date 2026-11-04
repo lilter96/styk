@@ -19,7 +19,7 @@
     "set": "/v6/fbs/posting/product/exemplar/set",
     "status": "/v5/fbs/posting/product/exemplar/status",
     "http_200_is_final_success": false,
-    "implemented_in_this_subset": false
+    "implemented_in_this_subset": true
   },
   "limitations": ["Not a complete Swagger download.", "The current detail requirements component omits weight, while its response example and v4 list schemas include weight; missing weight stays UNKNOWN.", "Country and exemplar obligations must be resolved by their own documented operations, then reobserved; readiness attestation cannot replace legal or per-unit data."]
 }
