@@ -23,7 +23,7 @@ func TestCoverageIncludesEveryManifestFieldWithoutPromotingFixtures(t *testing.T
 		if row.Proof.Implemented {
 			implemented++
 		}
-		if row.Proof.DeterministicIntegration || row.IntegrationReason == "" {
+		if row.IntegrationReason == "" || row.Proof.DeterministicIntegration != reviewedRelatedIntegration(row) {
 			t.Fatal("fixture coverage was promoted into unaudited integration coverage")
 		}
 	}
@@ -136,5 +136,19 @@ func TestReconciledAttributeLiveEvidenceIsLimitedToWrittenLeaves(t *testing.T) {
 	}
 	if writes != 4 || reads != 3 {
 		t.Fatalf("unexpected attribute proof counts: writes=%d reads=%d", writes, reads)
+	}
+}
+
+// These fields were separately asserted by the normal PostgreSQL/nine-process
+// merchant browser journey. A validator fixture alone cannot enter this list.
+func reviewedRelatedIntegration(row FieldCoverageRow) bool {
+	if row.Endpoint != "/v3/posting/fbs/get" || row.Direction != "response" {
+		return false
+	}
+	switch row.Path {
+	case "$.result.related_postings", "$.result.related_postings.related_posting_numbers", "$.result.related_postings.related_posting_numbers[]":
+		return true
+	default:
+		return false
 	}
 }

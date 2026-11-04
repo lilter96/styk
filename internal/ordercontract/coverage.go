@@ -67,7 +67,7 @@ func CoverageReport() (CoverageSnapshot, error) {
 	return CoverageSnapshot{CheckedAt: manifest.CheckedAt, Rows: manifest.FieldCoverage(), Limitations: []string{
 		"Validator fixture coverage is not implementation, deterministic integration, or live-provider coverage.",
 		"Integration remains false where a field-specific integration assertion has not been audited; adapter unit tests are not integration evidence.",
-		"Live flags cover only the owner-reported two genuinely cancelled FBS mirrors on 2026-10-30, not rFBS or fulfillment transitions.",
+		"Each LiveScope identifies dated, field-specific evidence. Related detail container/list fields were observed as EMPTY on 2026-11-04; no nonempty related element or fulfillment transition is claimed.",
 		"Three registered string attribute definitions were reconciled, including read-only verification after an unknown outcome. Two existing customerorders each received exactly one HTTP200 attributes PUT; both reconciled with unchanged native IDs, and fresh normal previews produced zero commands for both.",
 		"LiveWrite means this endpoint field was sent to its provider, not that an Ozon source value was mirrored elsewhere.",
 		"Only existing manifest paths are reported; missing price/currency or metadata-create paths are not invented.",
@@ -103,6 +103,9 @@ func coverageBase(c Contract, f Field) FieldCoverageRow {
 }
 
 func applyCoverageRule(row *FieldCoverageRow) {
+	if coverRelatedPosting(row) {
+		return
+	}
 	if row.Endpoint == "/v3/posting/fbs/get" && row.Direction == "response" {
 		coverOzonRead(row)
 		return
