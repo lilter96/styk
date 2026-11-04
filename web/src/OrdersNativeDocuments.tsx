@@ -182,7 +182,7 @@ function NativeForm({
     config.data.test_enabled &&
     config.data.publication_available === true &&
     !!policy?.enabled &&
-    policy.actions.includes(action) &&
+    policy.actions?.includes(action) === true &&
     (mode === "draft" || postedAllowed);
   const lines = posting.lines.flatMap((line, index) =>
     quantities[index]?.trim()

@@ -8,6 +8,35 @@ import type { NativeDocumentPolicy } from "./OrdersNativeTypes";
 import type { OrderCommand } from "./OrdersTypes";
 
 afterEach(cleanup);
+it("keeps an empty server policy editable without granting document actions", () => {
+  const policy: NativeDocumentPolicy = {
+    enabled: true,
+    allow_posted: false,
+    actions: null,
+    maximum_quantity: "10",
+    event_max_age_seconds: 3600,
+    attested_at: "",
+    valid_until: "",
+  };
+  expect(nativePolicyValid(policy)).toBe(false);
+  let latest: NativeDocumentPolicy | undefined;
+  render(
+    <OrdersNativePolicy
+      value={policy}
+      disabled={false}
+      onChange={(next) => {
+        latest = next;
+      }}
+    />,
+  );
+  expect(screen.getByLabelText("Отгрузка")).not.toBeChecked();
+  expect(
+    screen.getByLabelText("Возврат покупателя по связанной отгрузке"),
+  ).not.toBeChecked();
+  fireEvent.click(screen.getByLabelText("Отгрузка"));
+  expect(latest?.actions).toEqual(["demand_create"]);
+  expect(latest?.allow_posted).toBe(false);
+});
 it("validates physical-event policy expiry and bounded quantities", () => {
   const policy: NativeDocumentPolicy = {
     enabled: true,

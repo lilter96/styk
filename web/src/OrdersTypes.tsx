@@ -412,6 +412,8 @@ export const orderActionLabel = (action: string) =>
     posting_exemplar_set: "Передать сведения экземпляров в Ozon",
   })[action] || action;
 const issueLabels: Record<string, string> = {
+  application_frontier_ownership_unverified:
+    "Нельзя изменить проведение заказа: не подтверждено, что все затронутые позиции и резервы принадлежат STYK. Проверьте ручные изменения в МойСклад и создайте новый предпросмотр.",
   shipment_address_component_too_long:
     "Поле адреса превышает ограничение МойСклад. Сокращение автоматически не выполняется: проверьте исходные данные или выберите передачу адреса одной строкой.",
   shipment_address_component_invalid:

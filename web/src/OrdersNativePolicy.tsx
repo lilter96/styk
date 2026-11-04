@@ -10,7 +10,7 @@ export function nativePolicyValid(value: NativeDocumentPolicy | undefined) {
     !Number.isInteger(value.event_max_age_seconds) ||
     value.event_max_age_seconds < 1 ||
     value.event_max_age_seconds > 86400 ||
-    !value.actions.length
+    !value.actions?.length
   )
     return false;
   if (!value.allow_posted) return true;
@@ -76,12 +76,14 @@ export function OrdersNativePolicy({
               <label className="orders-check" key={action}>
                 <input
                   type="checkbox"
-                  checked={policy.actions.includes(action)}
+                  checked={policy.actions?.includes(action) ?? false}
                   onChange={(event) =>
                     change({
                       actions: event.target.checked
-                        ? [...policy.actions, action]
-                        : policy.actions.filter((item) => item !== action),
+                        ? [...(policy.actions ?? []), action]
+                        : (policy.actions ?? []).filter(
+                            (item) => item !== action,
+                          ),
                     })
                   }
                 />
