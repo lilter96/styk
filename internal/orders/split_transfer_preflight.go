@@ -1,10 +1,13 @@
 package orders
 
-// ParentSourceMatches compares current provider facts, not traversal clocks or
-// opaque local revision labels. No buyer data is needed to transfer a reserve.
+// ParentSourceMatches compares current allocation facts, not traversal clocks,
+// informational assembly membership or opaque local revision labels.
 func (permission SplitReserveTransferPermission) ParentSourceMatches(posting Posting) bool {
-	before := splitTransferSafePosting(permission.ParentPosting)
-	current := splitTransferSafePosting(posting)
+	if permission.ParentPosting.Validate() != nil || posting.Validate() != nil {
+		return false
+	}
+	before := splitTransferAllocationPosting(permission.ParentPosting)
+	current := splitTransferAllocationPosting(posting)
 	left, err := PostingFingerprint(before)
 	if err != nil {
 		return false

@@ -171,7 +171,10 @@ func (permission SplitReserveTransferPermission) Equal(other SplitReserveTransfe
 }
 
 func splitTransferPostingEqual(before, after Posting) bool {
-	before, after = splitTransferSafePosting(before), splitTransferSafePosting(after)
+	if before.Validate() != nil || after.Validate() != nil {
+		return false
+	}
+	before, after = splitTransferAllocationPosting(before), splitTransferAllocationPosting(after)
 	left, err := PostingFingerprint(before)
 	if err != nil {
 		return false
@@ -227,4 +230,12 @@ func splitTransferProductIdentities(before, after []PostingLine) bool {
 		}
 	}
 	return true
+}
+
+// Assembly membership is retained for display/audit but is not an allocation
+// proof. Parent/child identities, quantities, statuses and drift remain checked.
+func splitTransferAllocationPosting(posting Posting) Posting {
+	result := splitTransferSafePosting(posting)
+	result.RelatedPostings = nil
+	return result
 }
