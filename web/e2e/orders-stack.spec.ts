@@ -99,6 +99,29 @@ test("orders review reaches real API replicas and durable worker readback", asyn
     await expect(
       a.locator(".orders-work").filter({ hasText: "browser-create" }),
     ).toContainText("Подтверждено сверкой");
+    await a.getByLabel("Найти отправление или заказ").fill("browser-create");
+    await a.getByText("Связанные отправления сборки", { exact: true }).click();
+    await a
+      .getByRole("button", {
+        name: "Найти связанное отправление browser-related",
+        exact: true,
+      })
+      .click();
+    await expect(a.getByLabel("Найти отправление или заказ")).toHaveValue(
+      "browser-related",
+    );
+    await expect(a.locator(".orders-posting strong")).toHaveText(
+      "browser-related",
+    );
+    await a.getByLabel("Найти отправление или заказ").fill("browser-create");
+    await a.getByText("Связанные отправления сборки", { exact: true }).click();
+    await expect(
+      a.getByText("Связь сборки не означает, что резерв уже перенесён."),
+    ).toBeVisible();
+    await a
+      .locator(".orders-posting")
+      .filter({ hasText: "browser-create" })
+      .screenshot({ path: "test-results/orders-related-desktop.png" });
     const query = new URLSearchParams(scope).toString();
     for (const resource of ["postings", "operations", "config", "metadata"]) {
       const response = await b.request.get(
@@ -124,6 +147,10 @@ test("orders review reaches real API replicas and durable worker readback", asyn
         .filter((element) => element.right > window.innerWidth + 1)
         .slice(0, 12),
     }));
+    await a
+      .locator(".orders-posting")
+      .filter({ hasText: "browser-create" })
+      .screenshot({ path: "test-results/orders-related-mobile.png" });
     expect(overflow.document, JSON.stringify(overflow)).toBeLessThanOrEqual(
       overflow.viewport + 1,
     );

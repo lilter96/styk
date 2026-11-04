@@ -27,6 +27,7 @@ func (s *ordersProcessStack) browser(t *testing.T) {
 		t.Skip("orders browser stack not requested")
 	}
 	s.add(t, s.a, "browser-create", "FBS", false)
+	s.add(t, s.a, "browser-related", "FBS", false)
 	s.workersEnabled(t, true)
 	defer s.workersEnabled(t, false)
 	mailSecret := ordersProcessRandom(t)

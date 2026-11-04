@@ -33,7 +33,12 @@ export type OrderLine = {
   price: OrderField<OrderMoney>;
   cancelled_quantity?: OrderField<string>;
 };
+export type RelatedPostingGroup = {
+  presence: OrderField<unknown>["presence"];
+  posting_numbers: OrderField<string[]>;
+};
 export type OrderPosting = {
+  related_postings?: RelatedPostingGroup;
   scope: NativeScope;
   commercial_order_id: string;
   posting_number: string;

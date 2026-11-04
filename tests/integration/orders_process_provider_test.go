@@ -146,7 +146,11 @@ func (p *ordersProcessProvider) ozon(w http.ResponseWriter, r *http.Request, acc
 }
 
 func (p *ordersProcessProvider) posting(number, scheme string) map[string]any {
-	return map[string]any{"posting_number": number, "order_id": "5001", "order_number": "synthetic-order", "status": "awaiting_deliver", "substatus": "posting_created", "scheme": scheme, "created_at": "2026-10-29T08:00:00Z", "updated_at": "2026-10-29T08:01:00Z", "delivery_method": map[string]any{"id": "4001", "warehouse_id": "3001"}, "products": []any{map[string]any{"sku": "2001", "product_id": "1001", "offer_id": "process-offer", "quantity": 2, "price": "12.34", "currency_code": "RUB", "vat": "20"}}}
+	row := map[string]any{"posting_number": number, "order_id": "5001", "order_number": "synthetic-order", "status": "awaiting_deliver", "substatus": "posting_created", "scheme": scheme, "created_at": "2026-10-29T08:00:00Z", "updated_at": "2026-10-29T08:01:00Z", "delivery_method": map[string]any{"id": "4001", "warehouse_id": "3001"}, "products": []any{map[string]any{"sku": "2001", "product_id": "1001", "offer_id": "process-offer", "quantity": 2, "price": "12.34", "currency_code": "RUB", "vat": "20"}}}
+	if number == "browser-create" {
+		row["related_postings"] = map[string]any{"related_posting_numbers": []string{"browser-create", "browser-related"}}
+	}
+	return row
 }
 
 func (p *ordersProcessProvider) moy(w http.ResponseWriter, r *http.Request, account string) {

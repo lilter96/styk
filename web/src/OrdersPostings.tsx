@@ -1,3 +1,4 @@
+import { OrdersRelatedPostings } from "./OrdersRelatedPostings";
 import { OrdersNativeDocuments } from "./OrdersNativeDocuments";
 import {
   OrdersComposition,
@@ -290,6 +291,11 @@ export function OrdersPostings({
                   onDraftChange={onActionDraftChange ?? (() => {})}
                 />
               )}
+              <OrdersRelatedPostings
+                group={posting.related_postings}
+                current={posting.posting_number}
+                onFind={findPosting}
+              />
               {(parent || posting.child_posting_numbers?.length > 0) && (
                 <div className="orders-split">
                   {parent && (
