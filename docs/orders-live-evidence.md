@@ -198,3 +198,22 @@ encrypted payloads/screenshots and
 backups. Sensitive customer values and native names remain encrypted or transient;
 safe identifiers and counts are separate. The legitimate owner's reset password
 is only in the designated private file.
+
+### 2026-11-04: deterministic split reconciliation follow-up
+
+Split receipts now retain returned posting identities and bounded, resumable
+child observations. Reconciliation checks the exact approved packages, quantities,
+commercial order, account, warehouse and delivery method. PostgreSQL independently
+checks the immutable preview and keeps observations in append-only receipt history.
+These are serial detail reads after acknowledgment, not an atomic provider snapshot.
+Pending children are re-read; UNKNOWN never becomes a write retry. Child observations
+here are reconciliation evidence, not a claim that native child reservations have
+already been projected or that a shared inventory frontier has been transferred.
+
+Verified locally: complete Go race suite, make lint/test/build, default and
+integration-tag golangci-lint (0 findings), PostgreSQL split/store/ingestion
+regressions, frontend typecheck/lint/build, 234 frontend tests and five synthetic
+browser journeys. Desktop/mobile split screenshots inspected. No new live provider
+requests occurred in this follow-up. Live split remains NOT_OBSERVED_LIVE.
+The legacy live-order diagnostic is explicitly opt-in and does not qualify as
+normal-pipeline E2E evidence because it still contains direct-provider/SQL fallbacks.

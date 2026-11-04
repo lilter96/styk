@@ -35,6 +35,11 @@ import (
 //
 // It uses real MoySklad credentials from .env and a synthetic Ozon server.
 func TestOrderFlowFullE2E(t *testing.T) {
+	// This legacy diagnostic contains direct-provider/SQL fallbacks and is not
+	// evidence of a completed normal-pipeline end-to-end release gate.
+	if os.Getenv("STYK_LIVE_ORDER_FLOW_TEST") != "true" {
+		t.Skip("explicit legacy live diagnostic opt-in required")
+	}
 	token := os.Getenv("MOYSKLAD_TOKEN")
 	account := os.Getenv("MOYSKLAD_ACCOUNT_ID")
 	if token == "" || account == "" {
@@ -46,21 +51,13 @@ func TestOrderFlowFullE2E(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	// catalogSyncDB requires real provider env to be absent.
-	savedMoyToken, savedMoyAccount := os.Getenv("MOYSKLAD_TOKEN"), os.Getenv("MOYSKLAD_ACCOUNT_ID")
-	savedOzonKey, savedOzonClient := os.Getenv("OZON_API_KEY"), os.Getenv("OZON_CLIENT_ID")
-	os.Unsetenv("MOYSKLAD_TOKEN")
-	os.Unsetenv("MOYSKLAD_ACCOUNT_ID")
-	os.Unsetenv("OZON_API_KEY")
-	os.Unsetenv("OZON_CLIENT_ID")
+	// Keep real credentials in local variables, never in unrelated fixtures.
+	for _, key := range []string{"MOYSKLAD_TOKEN", "MOYSKLAD_ACCOUNT_ID", "OZON_API_KEY", "OZON_CLIENT_ID"} {
+		t.Setenv(key, "")
+	}
 	db := catalogSyncDB(t)
-	os.Setenv("MOYSKLAD_TOKEN", savedMoyToken)
-	os.Setenv("MOYSKLAD_ACCOUNT_ID", savedMoyAccount)
-	os.Setenv("OZON_API_KEY", savedOzonKey)
-	os.Setenv("OZON_CLIENT_ID", savedOzonClient)
-
-	os.Setenv("STYK_CREDENTIAL_ENCRYPTION_KEY", "Ly8vLy8vLy8vLy8vLy8vLy8vLy8vLy8vLy8vLy8vLy8=")
-	vault, err := credentials.FromEnvironment()
+	// A synthetic fixture vault must not replace the deployment encryption key.
+	vault, err := credentials.New(bytes.Repeat([]byte{47}, 32))
 	if err != nil || vault == nil {
 		t.Fatal("create synthetic vault")
 	}
@@ -173,16 +170,20 @@ func TestOrderFlowFullE2E(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		postingsRead.Add(1)
-		io.ReadAll(r.Body)
-		r.Body.Close()
+		if _, err := io.Copy(io.Discard, io.LimitReader(r.Body, 1<<20)); err != nil {
+			t.Error("read synthetic request")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		closeFixture(t, r.Body)
 		if strings.HasSuffix(r.URL.Path, "/v3/posting/fbs/get") {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(fmt.Sprintf(`{"result":{"posting_number":"%s","order_id":18446744073709551615,"order_number":"ORDER-E2E-1","status":"awaiting_packaging","substatus":null,"scheme":"FBS","delivery_method":{"warehouse_id":1,"id":1},"products":[{"sku":2001,"offer_id":"ozon-offer","quantity":2,"price":"12.34","currency_code":"RUB","name":"","vat":"20"}],"cancellation":{"cancel_reason":null,"cancel_reason_id":0,"cancelled_after_ship":false},"customer":{"name":"Test Buyer","phone":"+79000000000","email":"buyer@test.example","address":{"country":"RU","city":"Moscow","street":"Lenina","house":"1","apartment":"10","postal_code":"101000","region":"Moscow"}},"financial_data":{"products":[{"product_id":"1001","price":"12.34","old_price":"15.00","currency_code":"RUB","commission_amount":"0.00","commissions_currency_code":"RUB","payout":"12.34","vat":"20"}]},"analytics_data":{"region":"Region","city":"City","delivery_type":"courier","is_premium":true},"delivery":{"provider_name":"Carrier","tracking_number":"TRACK-E2E-1","destination_type":"address","express":false}}}`, postingNumber)))
+			fixtureText(t, w, fmt.Sprintf(`{"result":{"posting_number":"%s","order_id":18446744073709551615,"order_number":"ORDER-E2E-1","status":"awaiting_packaging","substatus":null,"scheme":"FBS","delivery_method":{"warehouse_id":1,"id":1},"products":[{"sku":2001,"offer_id":"ozon-offer","quantity":2,"price":"12.34","currency_code":"RUB","name":"","vat":"20"}],"cancellation":{"cancel_reason":null,"cancel_reason_id":0,"cancelled_after_ship":false},"customer":{"name":"Test Buyer","phone":"+79000000000","email":"buyer@test.example","address":{"country":"RU","city":"Moscow","street":"Lenina","house":"1","apartment":"10","postal_code":"101000","region":"Moscow"}},"financial_data":{"products":[{"product_id":"1001","price":"12.34","old_price":"15.00","currency_code":"RUB","commission_amount":"0.00","commissions_currency_code":"RUB","payout":"12.34","vat":"20"}]},"analytics_data":{"region":"Region","city":"City","delivery_type":"courier","is_premium":true},"delivery":{"provider_name":"Carrier","tracking_number":"TRACK-E2E-1","destination_type":"address","express":false}}}`, postingNumber))
 			return
 		}
 		if strings.HasSuffix(r.URL.Path, "/v4/posting/fbs/list") {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(fmt.Sprintf(`{"postings":[{"posting_number":"%s"}],"has_next":false,"cursor":""}`, postingNumber)))
+			fixtureText(t, w, fmt.Sprintf(`{"postings":[{"posting_number":"%s"}],"has_next":false,"cursor":""}`, postingNumber))
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)
@@ -225,29 +226,29 @@ func TestOrderFlowFullE2E(t *testing.T) {
 		t.Logf("Ozon collection failed (manifest validation): %v; inserting posting directly", err)
 		now2 := time.Now().UTC().Truncate(time.Microsecond)
 		posting := orders.Posting{
-			Scope:                  scope,
-			CommercialOrderID:      "commercial-e2e-1",
-			PostingNumber:          postingNumber,
-			OrderNumber:            orders.Present("ORDER-E2E-1"),
-			Status:                 orders.Present("awaiting_packaging"),
-			Substatus:              orders.Field[string]{Presence: orders.PresenceMissing},
-			Scheme:                 orders.Present("FBS"),
-			WarehouseID:            orders.Present("ozon-warehouse"),
-			DeliveryMethodID:       orders.Present("delivery-method"),
+			Scope:             scope,
+			CommercialOrderID: "commercial-e2e-1",
+			PostingNumber:     postingNumber,
+			OrderNumber:       orders.Present("ORDER-E2E-1"),
+			Status:            orders.Present("awaiting_packaging"),
+			Substatus:         orders.Field[string]{Presence: orders.PresenceMissing},
+			Scheme:            orders.Present("FBS"),
+			WarehouseID:       orders.Present("ozon-warehouse"),
+			DeliveryMethodID:  orders.Present("delivery-method"),
 			Lines: []orders.PostingLine{{
-				Identity: orders.LineIdentity{SKU: "2001", OfferID: "ozon-offer"},
+				Identity:  orders.LineIdentity{SKU: "2001", OfferID: "ozon-offer"},
 				ProductID: orders.Present("1001"),
-				Quantity: "2",
-				Price:    orders.Present(orders.Money{Amount: "12.34", Currency: "RUB"}),
-				VAT:      orders.Present(orders.Decimal("20")),
+				Quantity:  "2",
+				Price:     orders.Present(orders.Money{Amount: "12.34", Currency: "RUB"}),
+				VAT:       orders.Present(orders.Decimal("20")),
 			}},
 			Evidence: orders.EvidenceRevision{
-				Revision:     "source-e2e-1",
-				Origin:       orders.OriginOzon,
-				ObservedAt:   now2,
-				CheckedAt:    now2,
+				Revision:          "source-e2e-1",
+				Origin:            orders.OriginOzon,
+				ObservedAt:        now2,
+				CheckedAt:         now2,
 				ProviderUpdatedAt: orders.Present(now2),
-				CollectionKind: orders.CollectionSnapshot,
+				CollectionKind:    orders.CollectionSnapshot,
 			},
 		}
 		now3 := time.Now().UTC().Truncate(time.Microsecond)
@@ -374,14 +375,22 @@ func TestOrderFlowFullE2E(t *testing.T) {
 	if err != nil {
 		t.Fatalf("write MoySklad status: %v", err)
 	}
-	defer statusResp.Body.Close()
-	statusRespBody, _ := io.ReadAll(io.LimitReader(statusResp.Body, 1<<20))
-	if statusResp.Header.Get("Content-Encoding") == "gzip" {
-		gr, _ := gzip.NewReader(bytes.NewReader(statusRespBody))
-		defer gr.Close()
-		statusRespBody, _ = io.ReadAll(gr)
+	defer closeFixture(t, statusResp.Body)
+	statusRespBody, err := io.ReadAll(io.LimitReader(statusResp.Body, 1<<20))
+	if err != nil {
+		t.Fatal("read native status response")
 	}
-	t.Logf("MoySklad status update response: HTTP %d body=%s", statusResp.StatusCode, string(statusRespBody))
+	if statusResp.Header.Get("Content-Encoding") == "gzip" {
+		gr, err := gzip.NewReader(bytes.NewReader(statusRespBody))
+		if err != nil {
+			t.Fatal("decode native status response")
+		}
+		defer closeFixture(t, gr)
+		if _, err = io.Copy(io.Discard, io.LimitReader(gr, 1<<20)); err != nil {
+			t.Fatal("read decoded native status response")
+		}
+	}
+	t.Logf("MoySklad status update response: HTTP %d", statusResp.StatusCode)
 	if statusResp.StatusCode < 200 || statusResp.StatusCode >= 300 {
 		t.Fatalf("MoySklad rejected order status: HTTP %d", statusResp.StatusCode)
 	}
@@ -447,7 +456,7 @@ func createMoySkladOrderDirectly(t *testing.T, ctx context.Context, token string
 				"mediaType": "application/json",
 			},
 		},
-		"applicable": false,
+		"applicable":   false,
 		"vatEnabled":   false,
 		"vatIncluded":  false,
 		"moment":       time.Now().UTC().Format("2006-01-02 15:04:05.000"),
@@ -475,7 +484,7 @@ func createMoySkladOrderDirectly(t *testing.T, ctx context.Context, token string
 	if err != nil {
 		t.Fatalf("create MoySklad order: %v", err)
 	}
-	defer resp.Body.Close()
+	defer closeFixture(t, resp.Body)
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
@@ -488,7 +497,7 @@ func createMoySkladOrderDirectly(t *testing.T, ctx context.Context, token string
 		if err != nil {
 			t.Fatalf("gzip reader: %v", err)
 		}
-		defer gr.Close()
+		defer closeFixture(t, gr)
 		respBody, err = io.ReadAll(gr)
 		if err != nil {
 			t.Fatalf("gzip read: %v", err)
@@ -496,14 +505,14 @@ func createMoySkladOrderDirectly(t *testing.T, ctx context.Context, token string
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		t.Fatalf("MoySklad create order failed: HTTP %d body=%s", resp.StatusCode, string(respBody))
+		t.Fatalf("MoySklad create order failed: HTTP %d", resp.StatusCode)
 	}
 
 	var doc struct {
 		ID string `json:"id"`
 	}
 	if err := json.Unmarshal(respBody, &doc); err != nil {
-		t.Fatalf("parse response: %v body=%s", err, string(respBody))
+		t.Fatal("parse native order response")
 	}
 	if doc.ID == "" {
 		t.Fatal("MoySklad order created without ID")
