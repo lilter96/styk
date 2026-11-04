@@ -536,3 +536,14 @@ verification scopes and remaining restrictions are in
 [the order evidence report](orders-live-evidence.md). All temporary automation is
 OFF; runtime stock/catalog publication flags are unset; existing credentials,
 encryption key and historical records were preserved through migration 59.
+
+The next continuation implements retained-parent → child reserve transfer with
+fresh, scoped dependency proof, and automatic exact-bound native-order reads in
+the normal collector. It fixes cached-zero cancellation, partial proof, client
+clock and expired-attribution defects without changing the stock formula.
+Migration 60 and clean runtime `1b4d896` preserve historical rows and the original
+key. A read-only live gate persisted two native point observations using
+**14 MoySklad + 5 Ozon requests, all HTTP 200, zero external writes**. These point
+reads are not complete account coverage or a source-stock baseline. Temporary
+configuration revision 26 is OFF; general publication remains disabled. See the
+[updated evidence and explicit remaining split limitations](orders-live-evidence.md).

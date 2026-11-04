@@ -671,3 +671,78 @@ remain intact; temporary automation and general stock/catalog publication stay
 disabled. The implemented retained-parent reduction is a useful first stage,
 not authorization to double-reserve children or a claim that the complete order
 release has passed every production gate.
+
+### Retained split transfer and automatic native evidence — 2026-11-04
+
+The retained-parent limitation above is superseded for one independently proven
+split level. After an acknowledged, reconciled reduction of the existing
+parent's owned reserve, an immutable child permission binds the split receipt,
+parent release, current native identity, complete positions and mapping scope.
+The normal worker rereads both the parent posting and native order before child
+creation. Changed parent facts, foreign reserve changes, an active dependent
+child and an unresolved parent response remain fences. Parent/child dependencies
+are serialized in PostgreSQL. UNKNOWN history is not rewritten or replayed.
+Nested chains and a fully superseded parent that cannot be read remain gaps.
+
+The worker now refreshes exact bound MoySklad customerorders through the existing
+leased order collector, including terminal postings. Migration 60 stores immutable,
+PII-free point snapshots separately from actual read attempts and their stable
+DB admission clocks. These reads never claim complete account/window coverage or
+create `moy_order_batches`. New provider facts or a later failed read invalidate
+older proof. An unchanged snapshot may reuse an eligible pre-baseline attempt,
+so periodic polling does not continuously invalidate a long stock traversal.
+
+Attribution requires a point admitted after reconciliation, recorded before a
+new durable stock traversal, and still inside the configured evidence lifetime.
+A fresh aggregate reserve cannot refresh stale order attribution. Missing,
+null, explicit zero and deleted native documents remain distinct. A cached
+cancelled-order zero cannot bypass a newer native reserve or failed read.
+Every actual ingestion HTTP attempt revalidates its lease and current recorded
+merchant permission after shared budget admission; logout alone does not revoke
+a durable permission. Startup requires schema 60 and its actual structures.
+
+Deterministic validation on this checkpoint includes:
+
+- Normal HTTP adapters → PostgreSQL collector → durable stock import → attribution:
+  **21.343 seconds**, zero full-account native-order batches. A partial shipment
+  remains blocked; a fully observed shipment settles only after fresh native
+  evidence and a subsequent source traversal.
+- PostgreSQL point storage/authority/migration regressions: **25.877 seconds**;
+  actual eligible-snapshot batch-query regressions: **3.678 seconds**. Clock skew,
+  later failures, credential rotation and tenant/account substitution are covered.
+- Normal nine-process browser gate: **126.806 seconds**, all 12 Go tests/subtests
+  and both Playwright journeys passed. It recorded 1,018 loopback HTTP attempts,
+  minimum measured account arrival gap 18.418536 ms and maximum in-flight 1.
+  These are synthetic observations, not provider throughput or a new rate policy.
+- Native nine-process plus startup/migration gate: **68.942 seconds**, passed.
+  Desktop and 390-pixel mobile merchant screenshots were inspected. No real
+  buyer data is included in these screenshots.
+- `make lint test build`, full Go race, default/integration-tag lint (zero),
+  frontend typecheck/lint, all **276 frontend tests** and build passed. The
+  existing 716.36 kB frontend chunk warning remains.
+
+The broader current related PostgreSQL regression run is tracked separately;
+its result is not inferred from these focused gates. Earlier complete related
+checkpoint `c3c6f3c` passed 176 test/subtest events with six explicit opt-in/helper/
+live-key skips. Fulfillment writes are not considered live-validated merely
+because these deterministic tests pass.
+
+The bounded **live read-only** native-point gate then passed through the normal
+merchant API, scheduler, two API replicas and two workers at clean `1b4d896`.
+It made **14 MoySklad GETs and 5 Ozon reads, all HTTP 200; external writes 0**.
+Exactly two known native orders received successful point snapshots/read records:
+quantity 1, explicit reserve 0 and shipped 0, with verified pack/unit semantics.
+Credential revision 2, actual read clocks and DB admission/recording were retained.
+No full-account native-order batch, new order work or mutation intent was created.
+No new source-stock traversal was requested in this live gate; these point reads
+alone are not claimed to settle a stock baseline.
+
+Development migration 59→60 preserved all original columns/row fingerprints in
+127 tables (5,669 rows), credentials and the encryption key. An encrypted backup
+was taken first. Four owned API/worker processes now run clean `1b4d896`; both API
+replicas pass readiness/liveness. The temporary read configuration 24→25→26 was
+restored to its exact original disabled contents: test/native/automation OFF,
+stock/catalog publication flags OFF, zero active calls, pending work and grants.
+Private evidence: `.local/orders-v9/native-point-read-20261104.json` and
+`.local/orders-v9/upgrade60-result.json`. No paid buyer event, physical shipment,
+new external write or UNKNOWN replay was performed in this continuation.
