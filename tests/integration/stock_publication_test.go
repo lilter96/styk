@@ -44,7 +44,7 @@ func publicationData(t *testing.T, two bool) publicationFixture {
 	t.Setenv("STYK_STOCK_PUBLICATION_TEST_ENDPOINT", "http://127.0.0.1:1")
 	ctx := context.Background()
 	url := os.Getenv("TEST_DATABASE_URL")
-	if !strings.Contains(url, "127.0.0.1") || !strings.Contains(url, "styk_stock_publication_v1_test") {
+	if !publicationTestDatabaseURL(url) {
 		t.Skip("dedicated local stock publication test database required")
 	}
 	db, err := postgres.Open(ctx, url, 10*time.Second)
