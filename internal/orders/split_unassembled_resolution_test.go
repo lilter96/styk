@@ -63,3 +63,18 @@ func TestUnassembledAllocationRejectsStaleFailureAndForeignObservation(t *testin
 		t.Fatal("foreign posting became allocation evidence")
 	}
 }
+
+func TestUnassembledParentResponseDoesNotInventRetainedAllocation(t *testing.T) {
+	t.Parallel()
+	for _, reported := range []Decimal{"1", "2"} {
+		t.Run(string(reported), func(t *testing.T) {
+			t.Parallel()
+			before, work, reads := allocationResolutionFixture()
+			work.Receipt.UnassembledSplit.Parent = Present(SplitResponsePosting{PostingNumber: Present(before.PostingNumber), Products: Present([]SplitResponseProduct{{SKU: before.Lines[0].Identity.SKU, Quantity: reported}})})
+			result, err := ResolveUnassembledSplit(before, work, reads)
+			if err != nil || !result.Confirmed || len(result.PostingNumbers) != 2 {
+				t.Fatal("ACK parent contents overrode independently observed allocation", err)
+			}
+		})
+	}
+}

@@ -943,3 +943,42 @@ contents via audited revision **30 OFF**; stock revision **39 OFF** was unchange
 Both API replicas passed health/readiness, all four processes used publication
 flags OFF, and the original encryption key, credentials and historical outcomes
 were preserved. Final active calls, pending tasks and target fences were zero.
+
+### Unassembled split integration and fresh live evidence — 2026-11-05
+
+The reviewed `/v1/posting/fbs/split` contract is distinct from splitting while
+assembling through `/v4/posting/fbs/ship`. The normal fulfillment adapter now has
+a separate action, explicit package approval and bounded, resumable independent
+posting reads. Read candidates from the acknowledgement do not become confirmed
+allocation identities until all required detail evidence conserves the approved
+packages. The original-parent response block is not assumed to describe either
+its pre-split allocation or a retained remainder. An unavailable parent is not
+proof of retirement or permission to release its reserve. Normalized read links
+avoid copying up to 1,001 source bodies into a durable work JSON document.
+
+A fresh normal-application read-only run on the existing **two APIs and two
+workers** made **7 Ozon reads and 14 MoySklad reads; all returned HTTP 200**.
+Provider writes were **0**. Two historical cancelled postings were observed;
+the unfulfilled traversal contained no active candidate. Two actual linked
+MoySklad orders were independently rechecked: one position each, quantity 1,
+reserve 0, shipped 0. Fresh native read records 5 and 6 reused immutable snapshots
+1 and 2 without changing historical provider timestamps. Current rFBS discovery
+returned three active methods, but no applicable live Express or split posting.
+Unassembled split remains **NOT_OBSERVED_LIVE**; no cancelled posting was used to
+simulate a successful fulfillment transition.
+
+Private sealed ledgers (not committed):
+`.local/orders-v10/current-split-read-ee2e2c1f863c4ffe8b1c2855548e9bbd.json` and
+`.local/orders-v10/current-native-read-e76b53f4be984f7d819e91729472b497.json`.
+Original business settings were restored OFF at audited configuration revision
+34; native actions, automation grants and stock/catalog automation remained OFF.
+No new intents, pending work or active provider calls remained. The live run used
+the previous verified runtime `1e8274b` and schema 60; it does **not** validate the
+new schema-61 split code against a live eligible posting.
+
+Migration 61 was initially applied additively to the local development database
+because the Makefile's `.env` overrode an environment-supplied test DSN. After
+checking the new table and action had no data, its guarded rollback restored
+schema 60. No provider request was dispatched by that migration. The dedicated
+test migration was then run using an explicit **make command-line** database
+assignment. This incident did not change credentials, encryption keys or history.

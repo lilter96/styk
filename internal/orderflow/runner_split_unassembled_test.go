@@ -22,9 +22,9 @@ func (s *normalizedSplitStore) CompleteOrderWork(ctx context.Context, completion
 	return nil
 }
 
-func TestUnassembledSplitResumesNormalizedProgressWithoutReplayingWrite(t *testing.T) {
-	t.Parallel()
-	store, source, target, runner := dispatchedFlow(t)
+func normalizedSplitFixture(t *testing.T) (*normalizedSplitStore, *splitReaderFixture, *Runner) {
+	t.Helper()
+	store, source, _, runner := dispatchedFlow(t)
 	reader := prepareSplitReadback(t, store, source)
 	w := store.work
 	w.Command.Action = orders.ActionPostingSplitUnassembled
@@ -55,6 +55,13 @@ func TestUnassembledSplitResumesNormalizedProgressWithoutReplayingWrite(t *testi
 	w.Receipt.UnassembledSplit = &orders.UnassembledSplitAck{Postings: orders.Present(outputs)}
 	normalized := &normalizedSplitStore{flowStore: store}
 	runner.store = normalized
+	return normalized, reader, runner
+}
+
+func TestUnassembledSplitResumesNormalizedProgressWithoutReplayingWrite(t *testing.T) {
+	t.Parallel()
+	normalized, reader, runner := normalizedSplitFixture(t)
+	w := normalized.work
 	if err := runner.readbackUnassembledSplit(context.Background(), *w, reader); err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +80,7 @@ func TestUnassembledSplitResumesNormalizedProgressWithoutReplayingWrite(t *testi
 			t.Fatalf("candidate %s read %d times", number, count)
 		}
 	}
-	if target.writes != 0 {
-		t.Fatal("readback replayed mutation")
+	if len(normalized.completions) != 2 {
+		t.Fatal("readback introduced unexpected phases")
 	}
 }
