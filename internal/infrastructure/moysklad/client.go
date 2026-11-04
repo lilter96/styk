@@ -244,8 +244,12 @@ func (c *Client) get(ctx context.Context, path string, q url.Values) ([]byte, er
 				retry = true
 				continue
 			} else {
-				data, err = decompressResponse(resp.Header, data)
+				data, err = decompressResponse(resp.Header, data, bodyLimit)
 				if err != nil {
+					var limit *LimitError
+					if errors.As(err, &limit) {
+						return nil, err
+					}
 					retry = true
 					continue
 				}
@@ -306,8 +310,11 @@ func (c *Client) get(ctx context.Context, path string, q url.Values) ([]byte, er
 // decompressResponse decompresses a gzip-encoded response body. MoySklad
 // requires Accept-Encoding: gzip and returns gzip-compressed bodies; the
 // standard http.Client does not decompress automatically.
-func decompressResponse(headers http.Header, data []byte) ([]byte, error) {
-	if headers.Get("Content-Encoding") != "gzip" {
+func decompressResponse(headers http.Header, data []byte, limit int64) ([]byte, error) {
+	if int64(len(data)) > limit {
+		return nil, &LimitError{"response_bytes"}
+	}
+	if !strings.EqualFold(strings.TrimSpace(headers.Get("Content-Encoding")), "gzip") {
 		return data, nil
 	}
 	if len(data) == 0 {
@@ -317,13 +324,16 @@ func decompressResponse(headers http.Header, data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("gzip reader: %w", err)
 	}
-	out, readErr := io.ReadAll(gr)
+	out, readErr := io.ReadAll(io.LimitReader(gr, limit+1))
 	closeErr := gr.Close()
 	if readErr != nil {
 		return nil, fmt.Errorf("gzip read: %w", readErr)
 	}
 	if closeErr != nil {
 		return nil, fmt.Errorf("gzip close: %w", closeErr)
+	}
+	if int64(len(out)) > limit {
+		return nil, &LimitError{"response_bytes"}
 	}
 	return out, nil
 }

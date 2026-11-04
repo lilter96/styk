@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -206,10 +205,9 @@ func (c *OrderClient) orderWriteRequest(ctx context.Context, command orders.Comm
 }
 
 func (c *OrderClient) orderResponse(command orders.Command, response *http.Response) (orders.Receipt, error) {
-	raw, readErr := io.ReadAll(io.LimitReader(response.Body, orderResponseLimit+1))
-	closeErr := response.Body.Close()
+	raw, readErr := readOrderResponseBody(response)
 	c.client.deferRequests(rateDelay(response.Header, response.StatusCode, time.Now()))
-	if readErr != nil || closeErr != nil || len(raw) > orderResponseLimit {
+	if readErr != nil {
 		return orderReceipt(command, orders.StateUnknown, response.StatusCode, "response_uncertain"), ErrOrderUnknown
 	}
 	if orderRejectedStatus(response.StatusCode) {

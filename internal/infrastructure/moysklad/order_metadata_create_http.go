@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -77,15 +76,15 @@ func (c *OrderClient) orderAttributeRequest(ctx context.Context, intent orders.M
 	request.Header.Set("Authorization", "Bearer "+c.client.token)
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json;charset=utf-8")
+	request.Header.Set("Accept-Encoding", "gzip")
 	return request, nil
 }
 
 func (c *OrderClient) readOrderAttributeResponse(ctx context.Context, intent orders.MetadataCreationIntent, response *http.Response) (orders.MetadataCreationCompletion, error) {
 	completion := orderAttributeCompletion(intent, orders.StateUnknown)
-	raw, readErr := io.ReadAll(io.LimitReader(response.Body, orderResponseLimit+1))
-	closeErr := response.Body.Close()
+	raw, readErr := readOrderResponseBody(response)
 	c.client.deferRequests(rateDelay(response.Header, response.StatusCode, time.Now()))
-	if readErr != nil || closeErr != nil || len(raw) > orderResponseLimit {
+	if readErr != nil {
 		return completion, ErrOrderUnknown
 	}
 	if response.StatusCode != http.StatusOK {
