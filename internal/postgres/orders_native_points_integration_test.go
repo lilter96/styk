@@ -441,3 +441,19 @@ func TestNativeOrderPointsPostgresOldReadClaimCannotRevivePoint(t *testing.T) {
 		t.Fatal("stale response revived successful snapshot", err)
 	}
 }
+
+func TestNativeOrderPointsPostgresPeriodicDueUsesDBClockNotClientFuture(t *testing.T) {
+	f, binding := nativePointStoreFixture(t)
+	read := nativePointReadFixture(t, binding, time.Now().UTC().Add(2*time.Second))
+	page := nativePointPage(t, f, read, "periodic-clock-skew")
+	// Synthetic setup models a long-running, renewed lease. No stored read or
+	// historical operation is rewritten; provider clocks remain untouched.
+	inventoryExec(t, f.db, `UPDATE orders_ingestion_leases SET attempt_started_at=clock_timestamp()-interval '301 seconds' WHERE token=$1`, page.FenceToken)
+	if err := commitNativePointFixture(t, f, page); err != nil {
+		t.Fatal(err)
+	}
+	due, err := f.db.NativeOrderCandidates(f.ctx, f.config.Scope, 1, "")
+	if err != nil || len(due.Correlations) != 1 || due.Correlations[0] != binding {
+		t.Fatal("future client finish time stalled periodic DB scheduling", err)
+	}
+}
