@@ -1,6 +1,9 @@
 package orders
 
-import "slices"
+import (
+	"reflect"
+	"slices"
+)
 
 // These are local proof-work bounds, not provider limits or a promise that any
 // API accepts recursively splitting a particular posting/status.
@@ -55,8 +58,14 @@ func (proof SplitLineageProof) Validate() error {
 	if proof.facts == nil {
 		return ErrBlocked
 	}
-	_, err := buildSplitLineage(*proof.facts)
-	return err
+	graph, err := buildSplitLineage(*proof.facts)
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(proof.frontier, graph.frontier) || !slices.Equal(proof.path, graph.path) || !reflect.DeepEqual(proof.selected, graph.heads[proof.facts.SelectedPosting]) {
+		return ErrBlocked
+	}
+	return nil
 }
 
 // Frontier returns the terminal generation heads, including any cancellation or
@@ -77,5 +86,5 @@ func (proof SplitLineageProof) PathWorkIDs() []string {
 }
 
 func (proof SplitLineageProof) CurrentMatches(posting Posting) bool {
-	return proof.Validate() == nil && posting.PostingNumber == proof.facts.SelectedPosting && lineagePostingTrustworthy(posting) && splitTransferPostingEqual(proof.selected, posting)
+	return proof.Validate() == nil && posting.PostingNumber == proof.facts.SelectedPosting && lineagePostingTrustworthy(posting) && splitTransferPostingEqual(minimalSupersededPosting(proof.selected), minimalSupersededPosting(posting))
 }
