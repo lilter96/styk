@@ -27,7 +27,7 @@ func TestOrdersNativeSchemaConstraints(t *testing.T) {
 func TestOrdersNativeMigrationRoundTripPreservesExistingData(t *testing.T) {
 	f := newOrdersStoreFixture(t)
 	dsn := f.db.Pool.Config().ConnString()
-	catalogSyncMigrate(t, dsn, "down")
+	catalogSyncMigrate(t, dsn, "down-to", "54")
 	var count int
 	if err := f.db.Pool.QueryRow(f.ctx, `SELECT count(*) FROM orders_configs`).Scan(&count); err != nil || count != 1 {
 		t.Fatal("native rollback lost existing config", err)
