@@ -36,10 +36,14 @@ func enrichInventorySupersededSplits(ctx context.Context, tx pgx.Tx, observation
 }
 
 func applyInventorySupersededSplit(observation *orderinventory.Observation, retirement orders.SplitSupersededReserveFacts) {
-	if observation.Target == nil || observation.Work == nil || observation.PositionOwnership == nil || len(retirement.Children) == 0 {
+	if observation.Target == nil || observation.Work == nil || len(retirement.Children) == 0 {
 		return
 	}
-	retirement.Target, retirement.Baseline = *observation.Target, *observation.PositionOwnership
+	baseline, err := orders.ProjectionPositionBaseline(*observation.Work, *observation.Target)
+	if err != nil {
+		return
+	}
+	retirement.Target, retirement.Baseline = *observation.Target, baseline
 	facts := orders.SplitReserveTransferFacts{Split: retirement.Split, Before: retirement.Before,
 		OriginalCorrelation: retirement.OriginalCorrelation, ParentRelease: *observation.Work,
 		Parent: observation.Posting, ParentTarget: *observation.Target, Child: retirement.Children[0]}

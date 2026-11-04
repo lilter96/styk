@@ -17,8 +17,9 @@ func TestApplyNativePointPreservesZeroMissingAndDeletion(t *testing.T) {
 		{ID: "foreign", MoyskladKind: "product", MoyskladID: "other", Quantity: "3"},
 	}}
 	var observation orderinventory.Observation
+	point.TargetRevision = "actual-native-version"
 	applyInventoryNativePoint(domain.StockPool{ItemKind: "product", ItemID: "item"}, &observation, nativePointInventoryRead{Point: &point, AdmittedAt: at, RecordedAt: at.Add(time.Second)})
-	if len(observation.Positions) != 1 || observation.NativeSyncID == nil || *observation.NativeSyncID != "sync" {
+	if len(observation.Positions) != 1 || observation.NativeSyncID == nil || *observation.NativeSyncID != "sync" || observation.NativePointTargetRevision != point.TargetRevision {
 		t.Fatal("point identity or product filter lost")
 	}
 	p := observation.Positions[0]
@@ -33,9 +34,9 @@ func TestApplyNativePointPreservesZeroMissingAndDeletion(t *testing.T) {
 func TestFailedNativePointClearsCachedNativeProof(t *testing.T) {
 	t.Parallel()
 	syncID := "cached"
-	observation := orderinventory.Observation{NativeSyncID: &syncID, Positions: []domain.StockObservedOrderPosition{{PositionID: "cached"}}}
+	observation := orderinventory.Observation{NativePointTargetRevision: "cached-native-version", NativeSyncID: &syncID, Positions: []domain.StockObservedOrderPosition{{PositionID: "cached"}}}
 	applyInventoryNativePoint(domain.StockPool{}, &observation, nativePointInventoryRead{Code: "NATIVE_ORDER_NOT_FOUND"})
-	if observation.NativeReadCode != "NATIVE_ORDER_NOT_FOUND" || observation.NativeSyncID != nil || len(observation.Positions) != 0 {
+	if observation.NativeReadCode != "NATIVE_ORDER_NOT_FOUND" || observation.NativeSyncID != nil || len(observation.Positions) != 0 || observation.NativePointTargetRevision != "" {
 		t.Fatal("failed point silently retained cached native proof")
 	}
 }

@@ -9,11 +9,13 @@ import (
 func applyInventoryNativePoint(pool domain.StockPool, observation *orderinventory.Observation, read nativePointInventoryRead) {
 	observation.NativePointAdmittedAt, observation.NativePointRecordedAt = read.AdmittedAt, read.RecordedAt
 	observation.NativeReadCode, observation.Positions, observation.NativeSyncID = read.Code, nil, nil
+	observation.NativePointTargetRevision = ""
 	point := read.Point
 	if point == nil || read.Code != "" {
 		return
 	}
 	observation.NativeStartedAt, observation.NativeFinishedAt = point.StartedAt, point.FinishedAt
+	observation.NativePointTargetRevision = point.TargetRevision
 	syncID := point.Correlation.SyncID
 	observation.NativeSyncID = &syncID
 	for _, position := range point.Positions {
