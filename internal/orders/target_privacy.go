@@ -22,6 +22,10 @@ func (target TargetObservation) MarshalJSON() ([]byte, error) {
 	if target.Fields.ShipmentAddress.IsSpecified() {
 		masked.RedactedFields = append(masked.RedactedFields, "fields.shipment_address")
 	}
+	if target.Fields.ShipmentAddressFull.IsSpecified() {
+		masked.RedactedFields = append(masked.RedactedFields, "fields.shipment_address_full")
+	}
+	masked.Fields.ShipmentAddressFull = Field[ShipmentAddress]{Presence: PresenceMissing}
 	masked.Fields.Name = Field[string]{Presence: PresenceMissing}
 	masked.Fields.Description = Field[string]{Presence: PresenceMissing}
 	masked.Fields.Attributes = nil

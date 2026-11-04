@@ -151,6 +151,9 @@ func (write CustomerOrderWrite) validateFields() error {
 }
 
 func (write CustomerOrderWrite) validatePIIMappings(seen map[string]bool) error {
+	if write.HasShipmentAddressMapping() && write.HasShipmentAddressFullMapping() {
+		return ErrInvalid
+	}
 	seenSources := make(map[string]bool, len(write.PIIMappings))
 	for _, mapping := range write.PIIMappings {
 		if err := mapping.Validate(); err != nil || seenSources[mapping.Source] {
@@ -169,10 +172,16 @@ func (write CustomerOrderWrite) validatePIIMappings(seen map[string]bool) error 
 }
 
 func (write CustomerOrderWrite) validateTransientProjection() error {
-	if len(write.TransientAttributes) == 0 && !write.ShipmentAddress.IsSpecified() {
+	if len(write.TransientAttributes) == 0 && !write.ShipmentAddress.IsSpecified() && !write.ShipmentAddressFull.IsSpecified() {
 		return nil
 	}
-	if !write.HasPIIMappings() || write.ShipmentAddress.Validate() != nil {
+	if !write.HasPIIMappings() || write.ShipmentAddress.Validate() != nil || write.ShipmentAddressFull.Validate() != nil {
+		return ErrInvalid
+	}
+	if write.ShipmentAddressFull.IsKnown() && (!write.HasShipmentAddressFullMapping() || write.ShipmentAddressFull.Value.Validate() != nil) {
+		return ErrInvalid
+	}
+	if write.HasShipmentAddressMapping() && write.HasShipmentAddressFullMapping() {
 		return ErrInvalid
 	}
 	allowed := write.customerAttributeIDs()

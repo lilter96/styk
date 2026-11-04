@@ -60,6 +60,10 @@ func (write CustomerOrderWrite) collectFields(fields map[string]bool) {
 	fields["vat_enabled"], fields["vat_included"] = write.VATEnabled.IsSpecified(), write.VATIncluded.IsSpecified()
 	fields["state"], fields["attribute"] = write.StateID != "", len(write.Attributes) > 0
 	for _, mapping := range write.PIIMappings {
+		if target := ShipmentAddressTarget(mapping.Source); target != "" {
+			fields[target] = true
+			continue
+		}
 		if mapping.Source == "customer.address" {
 			fields["shipment_address"] = true
 			continue

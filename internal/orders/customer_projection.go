@@ -13,6 +13,12 @@ type PIIAttributeMapping struct {
 }
 
 func (mapping PIIAttributeMapping) Validate() error {
+	if ShipmentAddressTarget(mapping.Source) != "" {
+		if mapping.AttributeID != "" {
+			return ErrInvalid
+		}
+		return nil
+	}
 	switch mapping.Source {
 	case "customer.address":
 		if mapping.AttributeID != "" {
@@ -45,7 +51,7 @@ func (write CustomerOrderWrite) HasShipmentAddressMapping() bool {
 func (write CustomerOrderWrite) customerAttributeIDs() map[string]bool {
 	result := make(map[string]bool, len(write.PIIMappings))
 	for _, mapping := range write.PIIMappings {
-		if mapping.Source != "customer.address" {
+		if mapping.Source != "customer.address" && ShipmentAddressTarget(mapping.Source) == "" {
 			result[mapping.AttributeID] = true
 		}
 	}
@@ -73,6 +79,9 @@ func ProjectCustomer(customer Customer, mappings []PIIAttributeMapping) ([]Attri
 			return nil, Field[string]{}, ErrInvalid
 		}
 		seen[mapping.Source] = true
+		if ShipmentAddressTarget(mapping.Source) != "" {
+			continue
+		}
 		if mapping.Source == "customer.address" {
 			address = customerAddressText(customer.Address)
 			continue

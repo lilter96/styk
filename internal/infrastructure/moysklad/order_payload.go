@@ -85,6 +85,11 @@ func orderOwnedFields(command orders.Command) (map[string]bool, error) {
 		for _, field := range []string{"organization", "agent", "store", "state", "sales_channel", "rate", "name", "description", "moment", "delivery_at", "applicable", "vat_enabled", "vat_included", "positions", "attributes", "shipment_address"} {
 			owned[field] = true
 		}
+		for _, mapping := range command.CustomerOrder.PIIMappings {
+			if target := orders.ShipmentAddressTarget(mapping.Source); target != "" {
+				owned[target] = true
+			}
+		}
 		return owned, nil
 	}
 	if owned["organization"] || owned["agent"] {
@@ -96,6 +101,9 @@ func orderOwnedFields(command orders.Command) (map[string]bool, error) {
 }
 
 func orderWritableField(field string) bool {
+	if orders.ShipmentAddressTargetValid(field) {
+		return true
+	}
 	switch field {
 	case "organization", "agent", "store", "state", "sales_channel", "rate", "name", "description", "moment", "delivery_at", "applicable", "vat_enabled", "vat_included", "positions", "attributes", "attribute", "shipment_address":
 		return true
@@ -145,7 +153,7 @@ func addOrderFields(body map[string]any, write orders.CustomerOrderWrite, owned 
 	if write.ShipmentAddress.IsKnown() && len(*write.ShipmentAddress.Value) > 1024 {
 		return orders.ErrInvalid
 	}
-	return nil
+	return addShipmentAddressFull(body, write, owned)
 }
 
 func orderAddField[T any](body map[string]any, key string, field orders.Field[T], owned bool) {

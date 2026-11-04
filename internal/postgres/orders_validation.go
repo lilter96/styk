@@ -131,6 +131,9 @@ func orderPIIMappingConfigured(mapping orders.PIIAttributeMapping, current order
 		if configured.Source != mapping.Source {
 			continue
 		}
+		if orders.ShipmentAddressTarget(mapping.Source) == configured.Target && orders.ShipmentAddressTargetValid(configured.Target) {
+			return true
+		}
 		if mapping.Source == "customer.address" && configured.Target == "shipment_address" {
 			return true
 		}

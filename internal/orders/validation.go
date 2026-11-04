@@ -92,15 +92,25 @@ func (config Config) validateFieldMappings() error {
 			if !customerMappingTarget(mapping) {
 				return ErrInvalid
 			}
-		} else if mapping.Target == "shipment_address" {
+		} else if mapping.Target == "shipment_address" || ShipmentAddressTargetValid(mapping.Target) {
 			return ErrInvalid
 		}
 		seen[mapping.Target+":"+mapping.AttributeID] = true
+	}
+	if seen["shipment_address:"] {
+		for key := range seen {
+			if strings.HasPrefix(key, "shipment_address_full.") {
+				return ErrInvalid
+			}
+		}
 	}
 	return nil
 }
 
 func customerMappingTarget(mapping FieldMapping) bool {
+	if target := ShipmentAddressTarget(mapping.Source); target != "" {
+		return mapping.Target == target && mapping.AttributeID == ""
+	}
 	switch mapping.Source {
 	case "customer.address":
 		return mapping.Target == "shipment_address" && mapping.AttributeID == ""
@@ -112,6 +122,9 @@ func customerMappingTarget(mapping FieldMapping) bool {
 }
 
 func writableTarget(target string) bool {
+	if ShipmentAddressTargetValid(target) {
+		return true
+	}
 	switch target {
 	case "name", "description", "moment", "delivery_at", "applicable", "state", "attribute", "shipment_address":
 		return true

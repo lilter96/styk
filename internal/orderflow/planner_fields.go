@@ -2,6 +2,7 @@ package orderflow
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strconv"
 	"strings"
@@ -209,11 +210,13 @@ func resolveCustomerProjection(ctx context.Context, write *orders.CustomerOrderW
 	if err != nil || customer == nil {
 		return []orders.Validation{{Field: "customer", Code: "protected_customer_projection_unavailable"}}
 	}
-	attributes, address, err := orders.ProjectCustomer(*customer, write.PIIMappings)
-	if err != nil {
-		return []orders.Validation{{Field: "customer", Code: "protected_customer_projection_invalid"}}
+	if err := write.ApplyCustomerProjection(*customer); err != nil {
+		var invalid *orders.ShipmentAddressValueError
+		if errors.As(err, &invalid) {
+			return []orders.Validation{{Field: "customer.address." + invalid.Field, Code: invalid.Code}}
+		}
+		return []orders.Validation{{Field: "customer.address", Code: "protected_customer_projection_invalid_or_too_long"}}
 	}
-	write.TransientAttributes, write.ShipmentAddress = attributes, address
 	return nil
 }
 

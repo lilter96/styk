@@ -165,12 +165,10 @@ func (r *Runner) withCustomerProjection(ctx context.Context, command orders.Comm
 	if err != nil || value == nil {
 		return command, orders.ErrBlocked
 	}
-	attributes, address, err := orders.ProjectCustomer(*value, command.CustomerOrder.PIIMappings)
-	if err != nil {
+	write := *command.CustomerOrder
+	if err := write.ApplyCustomerProjection(*value); err != nil {
 		return command, err
 	}
-	write := *command.CustomerOrder
-	write.TransientAttributes, write.ShipmentAddress = attributes, address
 	command.CustomerOrder, command.PII = &write, value
 	return command, nil
 }

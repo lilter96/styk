@@ -72,7 +72,7 @@ func prepareMirrorUpdate(command *orders.Command, target orders.TargetObservatio
 }
 
 func changedScalarFields(wanted, actual orders.CustomerOrderWrite) []string {
-	fields := make([]string, 0, 10)
+	fields := orders.ShipmentAddressChangedFields(wanted, actual)
 	fields = appendChanged(fields, "name", !fieldRepresented(wanted.Name, actual.Name))
 	fields = appendChanged(fields, "description", !fieldRepresented(wanted.Description, actual.Description))
 	fields = appendChanged(fields, "moment", !timeRepresented(wanted.Moment, actual.Moment))

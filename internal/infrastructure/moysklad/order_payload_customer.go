@@ -11,7 +11,7 @@ func (c *OrderClient) orderCustomerValues(command orders.Command) (*orders.Custo
 		return nil, orders.ErrInvalid
 	}
 	if !write.HasPIIMappings() {
-		if len(write.TransientAttributes) > 0 || write.ShipmentAddress.IsSpecified() {
+		if len(write.TransientAttributes) > 0 || write.ShipmentAddress.IsSpecified() || write.ShipmentAddressFull.IsSpecified() {
 			return nil, orders.ErrInvalid
 		}
 		return nil, nil
@@ -19,11 +19,9 @@ func (c *OrderClient) orderCustomerValues(command orders.Command) (*orders.Custo
 	if command.PII == nil {
 		return nil, ErrOrderIntent
 	}
-	attributes, address, err := orders.ProjectCustomer(*command.PII, write.PIIMappings)
-	if err != nil {
-		return nil, orders.ErrInvalid
-	}
 	projected := *write
-	projected.TransientAttributes, projected.ShipmentAddress = attributes, address
+	if err := projected.ApplyCustomerProjection(*command.PII); err != nil {
+		return nil, err
+	}
 	return &projected, nil
 }

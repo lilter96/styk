@@ -17,6 +17,9 @@ func (c *OrderClient) decodeOrderFields(ctx context.Context, document orderNativ
 	if err = decodeOrderScalarFields(raw, &write); err != nil {
 		return orders.TargetObservation{}, err
 	}
+	if write.ShipmentAddressFull, err = c.readShipmentAddressFull(raw["shipmentAddressFull"]); err != nil {
+		return orders.TargetObservation{}, err
+	}
 	if write.Attributes, err = c.decodeOrderAttributes(raw["attributes"]); err != nil {
 		return orders.TargetObservation{}, err
 	}

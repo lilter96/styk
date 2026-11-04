@@ -138,6 +138,7 @@ func preparePositionPatch(command *orders.Command, baselines []orders.PositionBa
 	command.CustomerOrder.PIIMappings = nil
 	command.CustomerOrder.TransientAttributes = nil
 	command.CustomerOrder.ShipmentAddress = orders.Field[string]{}
+	command.CustomerOrder.ShipmentAddressFull = orders.Field[orders.ShipmentAddress]{}
 	command.ProtectedCustomer, command.PII = nil, nil
 	return orders.Validation{}
 }

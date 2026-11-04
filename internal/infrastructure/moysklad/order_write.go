@@ -58,6 +58,9 @@ func (c *OrderClient) orderPreflight(ctx context.Context, command orders.Command
 		}
 		return err
 	}
+	if err = c.mergeShipmentAddressFullUpdate(ctx, command, body); err != nil {
+		return err
+	}
 	if body["attributes"] != nil {
 		return c.mergeOrderAttributeUpdate(ctx, command, body, metadata)
 	}
