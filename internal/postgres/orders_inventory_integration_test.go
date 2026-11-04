@@ -218,7 +218,7 @@ func orderInventoryReconciled(t *testing.T, fixture orderInventoryFixture, posti
 	binding := bindings[0]
 	binding.CustomerOrderID = "native-order"
 	command := orders.Command{ID: "native-command", Scope: posting.Scope, Action: orders.ActionMirrorCreate, PostingNumber: posting.PostingNumber, Correlation: bindings[0], ExpectedSourceRevision: posting.Evidence.Revision}
-	work := orders.Work{ID: "native-work", OperationID: "native-operation", Scope: posting.Scope, ConfigRevision: fixture.config.Revision, State: orders.StateReconciled, Command: command, CommandFingerprint: strings.Repeat("a", 64)}
+	work := orders.Work{ID: "native-work", OperationID: "native-operation", Scope: posting.Scope, ConfigRevision: fixture.config.Revision, State: orders.StateReconciled, DispatchCount: 1, Command: command, CommandFingerprint: strings.Repeat("a", 64)}
 	target := orders.TargetObservation{Scope: posting.Scope, Correlation: binding, Revision: "native-revision", Complete: true, ObservedAt: fixture.now.Add(-5 * time.Minute), Fields: orders.CustomerOrderWrite{StoreID: fixture.config.StoreID, Applicable: orders.Present(true)}, Positions: []orders.TargetPosition{{ID: "native-position", MoyskladKind: "product", MoyskladID: "native-product", Quantity: "3", Reserve: orders.Present(orders.Decimal(reserve))}}}
 	tx, err := fixture.db.Pool.Begin(fixture.ctx)
 	if err != nil {
