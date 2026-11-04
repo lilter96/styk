@@ -22,7 +22,7 @@ func reservationFrontier(observations []Observation) (map[string]bool, bool) {
 		}
 		// A positive split retirement never bypasses current native failures or
 		// reserve attribution merely because provider child names are present.
-		if knownStatus(posting, orders.SupersededSplitParentStatus) {
+		if parentNeedsOwnAssessment(observation) {
 			continue
 		}
 		if len(posting.ChildPostingNumbers) == 0 {
@@ -35,6 +35,14 @@ func reservationFrontier(observations []Observation) (map[string]bool, bool) {
 		excluded[observationKey(posting)] = true
 	}
 	return excluded, valid
+}
+
+func parentNeedsOwnAssessment(observation Observation) bool {
+	posting, work := observation.Posting, observation.Work
+	if !posting.Status.IsKnown() || knownStatus(posting, orders.SupersededSplitParentStatus) || observation.SplitSuperseded != nil || observation.NativeReadCode != "" {
+		return true
+	}
+	return work != nil && (work.State != orders.StateReconciled || work.Command.SupersededSplitWorkID != "")
 }
 
 func splitProven(parent Observation, byPosting map[string]Observation) bool {
