@@ -10,17 +10,20 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/lilter96/styk/internal/providercall"
 )
 
 var ErrFBSLabelDownload = errors.New("ozon FBS label download rejected")
 
 const maxFBSLabelBytes = 8 << 20
 
-// FBSLabelDownloader can fetch a previously reconciled PDF on the exact Seller
-// API origin. No CDN origin is authorized by the current unverified schema.
-// Construction does not authorize label create/get API requests.
+// FBSLabelDownloader fetches a bounded PDF without seller credentials. The
+// public constructor only permits the exact Seller API origin. Task-authorized
+// CDN downloads additionally require a pinned public-address transport.
 type FBSLabelDownloader struct {
-	http *http.Client
+	http    *http.Client
+	taskURL string
 }
 
 func NewFBSLabelDownloader(client *http.Client) (*FBSLabelDownloader, error) {
@@ -28,6 +31,7 @@ func NewFBSLabelDownloader(client *http.Client) (*FBSLabelDownloader, error) {
 		return nil, ErrFBSLabelDownload
 	}
 	copyClient := *client
+	copyClient.Jar = nil
 	copyClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	if copyClient.Timeout <= 0 || copyClient.Timeout > 20*time.Second {
 		copyClient.Timeout = 20 * time.Second
@@ -52,11 +56,12 @@ func ValidateFBSLabelURL(raw string) error {
 }
 
 func (downloader *FBSLabelDownloader) Download(ctx context.Context, raw string) (data []byte, resultErr error) {
-	if downloader == nil || downloader.http == nil || ValidateFBSLabelURL(raw) != nil {
+	if downloader == nil || downloader.http == nil || !downloader.permits(raw) {
 		return nil, ErrFBSLabelDownload
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
+	ctx = providercall.WithLabelDownload(ctx)
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
 	if err != nil {
 		return nil, ErrFBSLabelDownload
@@ -72,6 +77,13 @@ func (downloader *FBSLabelDownloader) Download(ctx context.Context, raw string) 
 		}
 	}()
 	return readFBSLabel(response)
+}
+
+func (downloader *FBSLabelDownloader) permits(raw string) bool {
+	if downloader.taskURL != "" {
+		return raw == downloader.taskURL && validateLabelTaskURL(raw) == nil
+	}
+	return ValidateFBSLabelURL(raw) == nil
 }
 
 func readFBSLabel(response *http.Response) ([]byte, error) {
