@@ -12,15 +12,9 @@ func ApplyOpenQuantityReserve(posting Posting, write *CustomerOrderWrite, baseli
 	if validation := reservationPostingValidation(posting, write, baseline); validation.Code != "" {
 		return validation
 	}
-	quantities := make(map[string]Decimal, len(posting.Lines))
-	for _, line := range posting.Lines {
-		if line.Validate() != nil || !positiveDecimal(line.Quantity) || quantities[line.Identity.Key()] != "" {
-			return reservePolicyValidation("lines", "reservation_policy_invalid_line")
-		}
-		if line.CancelledQuantity.IsSpecified() && (!line.CancelledQuantity.IsKnown() || !decimalZero(*line.CancelledQuantity.Value)) {
-			return reservePolicyValidation("lines.cancelled_quantity", "reservation_policy_partial_cancellation_unknown")
-		}
-		quantities[line.Identity.Key()] = line.Quantity
+	quantities, validation := reservationLineQuantities(posting.Lines)
+	if validation.Code != "" {
+		return validation
 	}
 	if len(write.Positions) != len(quantities) || len(quantities) == 0 {
 		return reservePolicyValidation("positions.reserve", "reservation_policy_line_identity_mismatch")
@@ -90,4 +84,18 @@ func reservePolicyValidation(field, code string) Validation {
 
 func reservationAfterShipment(value Field[Cancellation]) bool {
 	return value.IsKnown() && value.Value.AfterShipment.IsKnown() && *value.Value.AfterShipment.Value
+}
+
+func reservationLineQuantities(lines []PostingLine) (map[string]Decimal, Validation) {
+	quantities := make(map[string]Decimal, len(lines))
+	for _, line := range lines {
+		if line.Validate() != nil || !positiveDecimal(line.Quantity) || quantities[line.Identity.Key()] != "" {
+			return nil, reservePolicyValidation("lines", "reservation_policy_invalid_line")
+		}
+		if line.CancelledQuantity.IsSpecified() && (!line.CancelledQuantity.IsKnown() || !decimalZero(*line.CancelledQuantity.Value)) {
+			return nil, reservePolicyValidation("lines.cancelled_quantity", "reservation_policy_partial_cancellation_unknown")
+		}
+		quantities[line.Identity.Key()] = line.Quantity
+	}
+	return quantities, Validation{}
 }

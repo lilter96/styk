@@ -81,6 +81,16 @@ func TestOrdersOpenQuantityReserveUsesNormalHTTPWorkerAndOwnedRelease(t *testing
 	f.run(t, orders.StateAcknowledged)
 	f.run(t, orders.StateReconciled)
 	assertReservePolicyNative(t, f, "0")
+	// A reserve-only patch is reconciled; cancelling the entire accounting
+	// document remains forbidden while the same order contains foreign stock.
+	blocked := f.preview(t)
+	if blocked.Decisions[0].Ready || len(blocked.Decisions[0].Commands) != 0 {
+		t.Fatal("foreign reserve allowed whole-document unposting after owned release")
+	}
+	target := f.readNative(t)
+	if !target.Fields.Applicable.IsKnown() || !*target.Fields.Applicable.Value {
+		t.Fatal("owned reserve release silently unposted foreign inventory")
+	}
 	assertOrdersRowCount(t, f.ordersStoreFixture, `SELECT count(*) FROM orders_work WHERE state='RECONCILED' AND dispatch_count=1`, 3)
 }
 
