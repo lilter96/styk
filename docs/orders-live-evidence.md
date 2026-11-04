@@ -592,3 +592,82 @@ OFF. No migration or historical record change was needed. Private evidence:
 `.local/orders-merchant-smoke-final-stack.log`,
 `.local/orders-merchant-smoke-interrupt.json` and
 `.local/orders-merchant-smoke-screenshots/`.
+
+### Fulfillment readbacks, cancellation and staged split reserves — 2026-11-04
+
+Verified fulfillment detail reads now enter the ordinary source-observation
+pipeline in the same transaction as reconciliation. Their original check times
+are retained. A late unversioned response remains historical evidence when a
+newer source head or an active collector prevents serial admission; allocating a
+new local sequence does not make an old provider read current. Invalid mixed
+split readbacks roll back atomically. Partial-cancellation proof must follow the
+actual dispatch attempt, not merely the earlier review.
+
+Deterministic merchant HTTP → PostgreSQL → normal outbox/worker tests verify:
+
+- Partial cancellation 2→1 updates the owned native quantity/reserve without an
+  intervening manual import. Lost Ozon and MoySklad responses do not replay either
+  mutation; an independent native reserve of 2 remains unchanged.
+- A confirmed split before any native parent projection creates two separate
+  package orders with reserve 1 each, rather than the obsolete whole parent.
+  Repeated reviews are write-free. Child identity comes from the actual local
+  split receipt, without inventing provider ancestry.
+- An existing retained parent may reduce only its independently owned,
+  unshipped quantity/reserve. The permission binds the frozen original review,
+  native correlation, split work and current ownership frontier. Changed prices,
+  VAT, mappings, growing quantities, attested ownership and earlier ancestry
+  cannot use this reduction permission.
+- Children of an already reserved parent remain blocked, including after the
+  reduction. Complete transfer authorization still needs a separate fresh,
+  scoped dependency proof; this checkpoint does **not** claim it is implemented.
+
+Existing native bindings established by read-only reconciliation are not treated
+as absent merely because no POST was recorded. Shortened provider responses do
+not erase ancestry retained in the reviewed source. Nested splits remain fenced
+behind their ancestor obligations. These are protections, not completed support
+for every nested or fully superseded-parent transfer.
+
+The related earlier checkpoint passed 157 PostgreSQL/integration tests with six
+explicit skips; its later current delta passed 17 tests without skips. The
+retained-parent extension and existing split/ancestry/binding cases subsequently
+passed with race instrumentation in 68.101 seconds. The separate nine-process
+native gate passed in 58.501 seconds, and the ordinary merchant/browser gate
+passed in 120.113 seconds. Those runs use deterministic providers and do not
+constitute live fulfillment writes. Test helper/opt-in/live-credential skips
+remain distinct from the separately executed opt-in gates.
+
+A fresh **read-only live** check used the existing merchant API, scheduler,
+workers and account-wide budgets: **6 Ozon requests, all HTTP 200; MoySklad 0;
+external writes 0**. It comprised one unfulfilled list, one creation-date list,
+two exact posting reads, warehouse discovery and delivery-method discovery.
+The cutoff window 2026-10-04T17:30:40Z–2026-11-04T17:30:40Z was empty; the
+creation window 2026-10-04T17:38:59Z–2026-11-04T17:38:59Z contained the two known
+cancelled FBS postings, with no available actions. No suitable active posting
+was observed within these bounded windows. Future cutoffs and orders outside
+these windows are not proven absent. No buyer event, delivery or shipment was
+fabricated to obtain a live transition.
+
+Temporary read configuration was restored to its original disabled contents at
+audited revision 22, without an automation grant. No new live work or mutation
+intent was created. The key, encrypted credentials and historical UNKNOWN
+receipts remain unchanged. Schema remains 59. Private request evidence is in
+`.local/orders-v9/active-discovery-20261104.json`.
+
+After the retained-parent changes were integrated, the final focused PostgreSQL
+race run passed **21 tests/subtests, 0 skips, 0 failures** in 119.299 seconds.
+The current native nine-process gate passed in 59.042 seconds; the normal
+merchant/order browser stack passed in 124.889 seconds with two Playwright
+journeys. That deterministic stack recorded 772 loopback-provider attempts,
+minimum account gap 42.04 ms and maximum in-flight count 1. These measurements
+do not describe live Ozon throughput. Current desktop and mobile screenshots
+were inspected. `make lint test build`, full Go race tests, integration-tag lint
+(0 findings), frontend typecheck/lint, all 276 frontend unit tests and production
+build pass. The existing frontend chunk-size warning remains.
+
+The normal local runtime was rebuilt from clean commit `91e2ca9` and its four
+owned processes were replaced only after a zero-active-work/provider-call check.
+Both API replicas passed liveness/readiness. Schema 59 and historical evidence
+remain intact; temporary automation and general stock/catalog publication stay
+disabled. The implemented retained-parent reduction is a useful first stage,
+not authorization to double-reserve children or a claim that the complete order
+release has passed every production gate.
