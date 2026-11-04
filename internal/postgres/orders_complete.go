@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"reflect"
 	"slices"
 	"time"
 
@@ -40,14 +41,17 @@ func completeOrderLocked(ctx context.Context, tx pgx.Tx, work orders.Work, compl
 	if work.State != completion.ExpectedState || !orders.CanTransition(work.State, completion.State) {
 		return orders.ErrStale
 	}
-	if err := validateOrderCompletion(work, completion); err != nil {
-		return err
-	}
-	if err := validateFulfillmentQuantityEvidence(ctx, tx, work, completion); err != nil {
-		return err
-	}
 	now, err := ordersClock(ctx, tx)
 	if err != nil {
+		return err
+	}
+	if err = saveUnassembledSplitReadbacks(ctx, tx, work, completion, now); err != nil {
+		return err
+	}
+	if err = validateOrderCompletion(work, completion); err != nil {
+		return err
+	}
+	if err = validateFulfillmentQuantityEvidence(ctx, tx, work, completion); err != nil {
 		return err
 	}
 	if err = saveOrderExemplarSecret(ctx, tx, work, completion, now); err != nil {
@@ -92,6 +96,9 @@ func completeOrderLocked(ctx context.Context, tx pgx.Tx, work orders.Work, compl
 }
 
 func validateOrderCompletion(work orders.Work, completion orders.Completion) error {
+	if err := validateUnassembledSplitReceiptUpdate(work, completion); err != nil {
+		return err
+	}
 	if err := validateCountryReceiptUpdate(work, completion); err != nil {
 		return err
 	}
@@ -155,6 +162,9 @@ func validateOrderReconciliation(work orders.Work, completion orders.Completion)
 			return orders.ErrStale
 		}
 		return nil
+	}
+	if work.Command.Action == orders.ActionPostingSplitUnassembled {
+		return nil // Normalized point readbacks are validated transactionally below.
 	}
 	if work.Command.Action == orders.ActionPostingSplit && len(completion.Receipt.ObservedPostings) > 1 {
 		return nil
@@ -235,4 +245,24 @@ func insertOrderReconciliation(ctx context.Context, tx pgx.Tx, work orders.Work,
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO orders_reconciliations(work_id,tenant_id,moysklad_account,ozon_account,correlation,observed_posting,observed_target,created_at,observed_native_document) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, work.ID, work.Scope.Tenant, work.Scope.MoyskladAccount, work.Scope.OzonAccount, raw, posting, target, now, native)
 	return ordersRowsError("save complete order readback evidence", err)
+}
+
+func validateUnassembledSplitReceiptUpdate(work orders.Work, completion orders.Completion) error {
+	if work.Command.Action != orders.ActionPostingSplitUnassembled {
+		return nil
+	}
+	if completion.ObservedPosting != nil || completion.Receipt.ObservedPostings != nil {
+		return orders.ErrInvalid
+	}
+	receipt := completion.Receipt
+	if completion.State == orders.StateReconciled && receipt.State != orders.StateReconciled {
+		return orders.ErrStale
+	}
+	if !work.State.ReadOnly() || receipt.State == "" {
+		return nil
+	}
+	if !reflect.DeepEqual(work.Receipt.UnassembledSplit, receipt.UnassembledSplit) || work.Receipt.HTTPStatus != receipt.HTTPStatus || !work.Receipt.ObservedAt.Equal(receipt.ObservedAt) {
+		return orders.ErrStale
+	}
+	return nil
 }

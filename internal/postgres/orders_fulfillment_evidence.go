@@ -2,12 +2,13 @@ package postgres
 
 import (
 	"context"
+	"slices"
 
 	"github.com/lilter96/styk/internal/orders"
 )
 
 func validateFulfillmentQuantityEvidence(ctx context.Context, q ordersQuerier, work orders.Work, completion orders.Completion) error {
-	if completion.State != orders.StateReconciled || (work.Command.Action != orders.ActionPostingPartialCancel && work.Command.Action != orders.ActionPostingSplit) {
+	if completion.State != orders.StateReconciled || (work.Command.Action != orders.ActionPostingPartialCancel && !work.Command.Action.IsSplit()) {
 		return nil
 	}
 	if work.Command.PostingAction == nil || (work.Command.Action == orders.ActionPostingPartialCancel && completion.ObservedPosting == nil) {
@@ -24,6 +25,9 @@ func validateFulfillmentQuantityEvidence(ctx context.Context, q ordersQuerier, w
 		hash, err := orders.CommandFingerprint(decision.Commands[0])
 		if err != nil || hash != work.CommandFingerprint {
 			return orders.ErrStale
+		}
+		if work.Command.Action == orders.ActionPostingSplitUnassembled {
+			return validateUnassembledSplitResolution(ctx, q, decision.Posting, work, completion)
 		}
 		if work.Command.Action == orders.ActionPostingSplit {
 			if !splitObservationsFollowAttempt(work, completion.Receipt) {
@@ -69,4 +73,19 @@ func splitObservationsFollowAttempt(work orders.Work, receipt orders.Receipt) bo
 		}
 	}
 	return true
+}
+
+func validateUnassembledSplitResolution(ctx context.Context, q ordersQuerier, before orders.Posting, work orders.Work, completion orders.Completion) error {
+	reads, err := readOrderSplitReadbacks(ctx, q, work.Scope, work.ID)
+	if err != nil {
+		return err
+	}
+	resolved, err := orders.ResolveUnassembledSplit(before, work, reads)
+	if err != nil {
+		return err
+	}
+	if !resolved.Confirmed || !slices.Equal(resolved.PostingNumbers, completion.Receipt.PostingNumbers) {
+		return orders.ErrStale
+	}
+	return nil
 }
