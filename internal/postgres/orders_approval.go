@@ -161,6 +161,9 @@ func insertOrderWork(ctx context.Context, tx pgx.Tx, operation orders.Operation,
 	if err = insertOrderWorkMappings(ctx, tx, work); err != nil {
 		return work, err
 	}
+	if err = insertNativeDocumentIntent(ctx, tx, work, now); err != nil {
+		return work, err
+	}
 	_, err = tx.Exec(ctx, `INSERT INTO outbox_tasks(operation_key,task_type,orders_operation_id,orders_work_id,orders_tenant_id,orders_moysklad_account,orders_ozon_account,max_attempts,available_at) VALUES($1,'orders_sync',$2,$3,$4,$5,$6,1,$7)`, "orders-sync:"+id, operation.ID, id, operation.Scope.Tenant, operation.Scope.MoyskladAccount, operation.Scope.OzonAccount, now)
 	return work, ordersRowsError("enqueue reviewed order command", err)
 }
@@ -174,6 +177,13 @@ func insertOrderWorkMappings(ctx context.Context, tx pgx.Tx, work orders.Work) e
 	_, err = tx.Exec(ctx, `INSERT INTO orders_work_warehouses(work_id,tenant_id,moysklad_account,ozon_account,mapping_id,mapping_version,store_id,warehouse_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, work.ID, work.Scope.Tenant, work.Scope.MoyskladAccount, work.Scope.OzonAccount, warehouseID, warehouse.Version, warehouse.MoyskladStoreID, warehouse.OzonWarehouseID)
 	if err != nil {
 		return ordersError("freeze order warehouse mapping", err)
+	}
+	if work.Command.NativeMovement != nil {
+		for _, line := range work.Command.NativeMovement.Lines {
+			if err := insertOrderWorkProductMapping(ctx, tx, work, line.Mapping); err != nil {
+				return err
+			}
+		}
 	}
 	if work.Command.CustomerOrder == nil {
 		return nil

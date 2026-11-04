@@ -70,6 +70,11 @@ func orderDispatchCurrent(ctx context.Context, tx pgx.Tx, work orders.Work, guar
 	if work.State.ReadOnly() {
 		return true, nil
 	}
+	if work.Command.NativeMovement != nil {
+		if _, err = readOrderActionSecret(ctx, tx, work.Scope, work.Command.PostingNumber, work.Command.Action, work.Command.NativeMovement.Event.ProtectedInput); err != nil {
+			return false, err
+		}
+	}
 	if len(current.Postings) == 1 {
 		if err = validateOrderHybridLabel(ctx, tx, current.Postings[0], work.Command); err != nil {
 			if errors.Is(err, orders.ErrStale) || errors.Is(err, orders.ErrBlocked) {
@@ -114,6 +119,9 @@ func readOrderWorkContext(ctx context.Context, q ordersQuerier, work orders.Work
 		return result, err
 	}
 	err = enrichOrderPositionBaselines(ctx, q, &result)
+	if err == nil {
+		err = enrichNativePreviewContext(ctx, q, orders.Preview{Scope: work.Scope, Decisions: []orders.Decision{{Commands: []orders.Command{work.Command}}}}, &result)
+	}
 	return result, err
 }
 

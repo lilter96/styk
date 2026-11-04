@@ -345,7 +345,7 @@ func NativePositionsEqual(before, after []TargetPosition) bool {
 }
 
 func NativePositionEqual(before, after TargetPosition) bool {
-	return validNativePosition(before) && validNativePosition(after) && before.ID == after.ID && before.MoyskladKind == after.MoyskladKind && before.MoyskladID == after.MoyskladID && ExactDecimalEqual(before.Quantity, after.Quantity) && SameObservedDecimal(before.Reserve, after.Reserve) && SameObservedDecimal(before.Shipped, after.Shipped) && SameObservedDecimal(before.Discount, after.Discount) && SameObservedDecimal(before.VAT, after.VAT) && sameObservedPrice(before.Price, after.Price)
+	return validNativePosition(before) && validNativePosition(after) && before.ID == after.ID && sameNativeVATEnabled(before.VATEnabled, after.VATEnabled) && before.MoyskladKind == after.MoyskladKind && before.MoyskladID == after.MoyskladID && ExactDecimalEqual(before.Quantity, after.Quantity) && SameObservedDecimal(before.Reserve, after.Reserve) && SameObservedDecimal(before.Shipped, after.Shipped) && SameObservedDecimal(before.Discount, after.Discount) && SameObservedDecimal(before.VAT, after.VAT) && sameObservedPrice(before.Price, after.Price)
 }
 
 func sameObservedPrice(a, b Field[Money]) bool {
@@ -415,4 +415,14 @@ func validNativePosition(native TargetPosition) bool {
 		return false
 	}
 	return native.Price.Validate() == nil && (!native.Price.IsKnown() || native.Price.Value.Validate() == nil && nonnegativeDecimal(native.Price.Value.Amount))
+}
+
+func sameNativeVATEnabled(a, b Field[bool]) bool {
+	if a.Validate() != nil || b.Validate() != nil {
+		return false
+	}
+	if a.IsKnown() && b.IsKnown() {
+		return *a.Value == *b.Value
+	}
+	return a.Presence == b.Presence || a.IsMissing() && b.IsMissing()
 }

@@ -55,6 +55,9 @@ func completeOrderLocked(ctx context.Context, tx pgx.Tx, work orders.Work, compl
 	if err = saveOrderCompletionEvidence(ctx, tx, work, completion, now); err != nil {
 		return err
 	}
+	if err = saveNativeDocumentResult(ctx, tx, work, completion, now); err != nil {
+		return err
+	}
 	if err = saveOrderLabelArtifact(ctx, tx, work, completion, now); err != nil {
 		return err
 	}
@@ -99,7 +102,7 @@ func validateOrderCompletion(work orders.Work, completion orders.Completion) err
 		if work.Command.Correlation.CustomerOrderID != "" && correlation.CustomerOrderID != work.Command.Correlation.CustomerOrderID {
 			return orders.ErrStale
 		}
-		if receipt.ExternalID != "" && correlation.CustomerOrderID != receipt.ExternalID {
+		if !work.Command.Action.IsNativeMovement() && receipt.ExternalID != "" && correlation.CustomerOrderID != receipt.ExternalID {
 			return orders.ErrStale
 		}
 	}
@@ -113,6 +116,9 @@ func validateOrderCompletion(work orders.Work, completion orders.Completion) err
 }
 
 func validateOrderReconciliation(work orders.Work, completion orders.Completion) error {
+	if work.Command.Action.IsNativeMovement() {
+		return validateNativeDocumentCompletion(work, completion)
+	}
 	if work.Command.Action == orders.ActionPostingLabelCreate {
 		if completion.LabelArtifact == nil || completion.Receipt.LabelTask == nil || !orders.LabelTaskComplete(work.Command, work.Receipt, *completion.Receipt.LabelTask) {
 			return orders.ErrStale
@@ -189,11 +195,22 @@ func insertOrderReconciliation(ctx context.Context, tx pgx.Tx, work orders.Work,
 	}
 	var target []byte
 	if completion.ObservedTarget != nil {
-		target, err = ordersJSON(sanitizedOrderTarget(work.Command, *completion.ObservedTarget))
+		observed := sanitizedOrderTarget(work.Command, *completion.ObservedTarget)
+		if work.Command.Action.IsNativeMovement() {
+			observed = orders.NativeParentFacts(observed)
+		}
+		target, err = ordersJSON(observed)
 		if err != nil {
 			return err
 		}
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO orders_reconciliations(work_id,tenant_id,moysklad_account,ozon_account,correlation,observed_posting,observed_target,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, work.ID, work.Scope.Tenant, work.Scope.MoyskladAccount, work.Scope.OzonAccount, raw, posting, target, now)
+	var native []byte
+	if completion.ObservedNativeDocument != nil {
+		native, err = ordersJSON(completion.ObservedNativeDocument)
+		if err != nil {
+			return err
+		}
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO orders_reconciliations(work_id,tenant_id,moysklad_account,ozon_account,correlation,observed_posting,observed_target,created_at,observed_native_document) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, work.ID, work.Scope.Tenant, work.Scope.MoyskladAccount, work.Scope.OzonAccount, raw, posting, target, now, native)
 	return ordersRowsError("save complete order readback evidence", err)
 }

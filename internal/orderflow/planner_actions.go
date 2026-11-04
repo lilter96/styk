@@ -35,6 +35,11 @@ func validateProposals(request orders.PreviewRequest) error {
 }
 
 func (s *Service) planRequestedPosting(ctx context.Context, request orders.PreviewRequest, review orders.ReviewContext, posting orders.Posting, automatic bool, now time.Time) (orders.Decision, error) {
+	for _, proposal := range request.NativeProposals {
+		if proposal.PostingNumber == posting.PostingNumber {
+			return s.planNativeMovement(ctx, review, posting, proposal, automatic, now)
+		}
+	}
 	for _, proposal := range request.Proposals {
 		if proposal.PostingNumber == posting.PostingNumber {
 			return s.planAction(ctx, review, posting, proposal, now)

@@ -11,11 +11,14 @@ import (
 )
 
 func (c *OrderClient) orderPayload(command orders.Command) (map[string]any, error) {
-	if !c.scopeAllowed(command.Scope) || command.Validate() != nil || !command.Action.IsMirror() {
+	if !c.scopeAllowed(command.Scope) || command.Validate() != nil || !command.Action.IsMirror() && !command.Action.IsNativeMovement() {
 		return nil, ErrOrderIntent
 	}
 	if transport, coordinated := c.client.http.Transport.(providercall.Transport); coordinated && (!orderTransportScope(transport, command.Scope) || transport.Scope.CredentialRevision != command.Credentials.Moysklad) {
 		return nil, ErrOrderIntent
+	}
+	if command.Action.IsNativeMovement() {
+		return c.nativeMovementPayload(command)
 	}
 	if command.Action == orders.ActionMirrorPositionUpdate {
 		return c.orderPositionPayload(command)

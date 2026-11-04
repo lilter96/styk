@@ -18,6 +18,9 @@ func (r *Runner) readback(ctx context.Context, work orders.Work) error {
 	if !allowed {
 		return r.deferReadback(ctx, work, "READBACK_AUTHORITY_CHANGED")
 	}
+	if work.Command.Action.IsNativeMovement() {
+		return r.readbackNative(ctx, work)
+	}
 	if !work.Command.Action.IsMirror() {
 		return r.readbackFulfillment(ctx, work)
 	}

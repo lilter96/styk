@@ -38,6 +38,9 @@ func (c *OrderClient) WriteOrder(ctx context.Context, command orders.Command) (o
 }
 
 func (c *OrderClient) orderPreflight(ctx context.Context, command orders.Command, body map[string]any) error {
+	if command.Action.IsNativeMovement() {
+		return c.nativeMovementPreflight(ctx, command)
+	}
 	metadata, err := c.readOrderMetadata(ctx)
 	if err != nil {
 		return err
@@ -177,6 +180,9 @@ func (c *OrderClient) orderWriteRequest(ctx context.Context, command orders.Comm
 	if command.Action == orders.ActionMirrorPositionUpdate {
 		path += "/positions/" + command.PositionPatch.PositionID
 	}
+	if command.Action.IsNativeMovement() {
+		method, path = http.MethodPost, "entity/"+command.Action.NativeDocumentKind()
+	}
 	u := c.client.base.ResolveReference(&url.URL{Path: path})
 	request, err := http.NewRequestWithContext(ctx, method, u.String(), bytes.NewReader(raw))
 	if err != nil {
@@ -202,6 +208,15 @@ func (c *OrderClient) orderResponse(command orders.Command, response *http.Respo
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return orderReceipt(command, orders.StateUnknown, response.StatusCode, "provider_uncertain"), ErrOrderUnknown
+	}
+	if command.Action.IsNativeMovement() {
+		document, _, err := c.decodeNativeIdentity(raw, command.NativeMovement.Correlation)
+		if err != nil {
+			return orderReceipt(command, orders.StateUnknown, response.StatusCode, "native_acknowledgement_unverified"), ErrOrderUnknown
+		}
+		receipt := orderReceipt(command, orders.StateAcknowledged, response.StatusCode, "native_document_acknowledged")
+		receipt.ExternalID = document.ID
+		return receipt, nil
 	}
 	if command.Action == orders.ActionMirrorPositionUpdate {
 		return c.orderPositionResponse(command, raw, response.StatusCode)

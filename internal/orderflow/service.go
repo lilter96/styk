@@ -89,6 +89,9 @@ func (s *Service) validatePreviewRequest(request orders.PreviewRequest) error {
 	if !s.allowed(request.Scope) {
 		return orders.ErrBlocked
 	}
+	if err := validateNativeProposals(request); err != nil {
+		return err
+	}
 	if err := validateProposals(request); err != nil {
 		return err
 	}

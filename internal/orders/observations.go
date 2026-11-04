@@ -67,6 +67,7 @@ type DeliveryFacts struct {
 }
 
 type TargetPosition struct {
+	VATEnabled   Field[bool]    `json:"vat_enabled"`
 	Shipped      Field[Decimal] `json:"shipped"`
 	Discount     Field[Decimal] `json:"discount"`
 	ID           string         `json:"id"`

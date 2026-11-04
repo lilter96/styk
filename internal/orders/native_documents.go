@@ -61,21 +61,22 @@ type NativeMovementLine struct {
 }
 
 type NativeMovement struct {
-	Correlation    NativeDocumentCorrelation  `json:"correlation"`
-	SourceBaseline PositionBaseline           `json:"source_baseline"`
-	DemandWorkID   string                     `json:"demand_work_id,omitempty"`
-	DemandBasis    *NativeDocumentObservation `json:"demand_basis,omitempty"`
-	OrganizationID string                     `json:"organization_id"`
-	AgentID        string                     `json:"agent_id"`
-	StoreID        string                     `json:"store_id"`
-	CurrencyID     string                     `json:"currency_id"`
-	RateValue      Field[Decimal]             `json:"rate_value"`
-	Applicable     Field[bool]                `json:"applicable"`
-	VATEnabled     Field[bool]                `json:"vat_enabled"`
-	VATIncluded    Field[bool]                `json:"vat_included"`
-	Moment         time.Time                  `json:"moment"`
-	Lines          []NativeMovementLine       `json:"lines"`
-	Event          NativeMovementEvent        `json:"event"`
+	Products       []NativeProductRequirements `json:"products"`
+	Correlation    NativeDocumentCorrelation   `json:"correlation"`
+	SourceBaseline PositionBaseline            `json:"source_baseline"`
+	DemandWorkID   string                      `json:"demand_work_id,omitempty"`
+	DemandBasis    *NativeDocumentObservation  `json:"demand_basis,omitempty"`
+	OrganizationID string                      `json:"organization_id"`
+	AgentID        string                      `json:"agent_id"`
+	StoreID        string                      `json:"store_id"`
+	CurrencyID     string                      `json:"currency_id"`
+	RateValue      Field[Decimal]              `json:"rate_value"`
+	Applicable     Field[bool]                 `json:"applicable"`
+	VATEnabled     Field[bool]                 `json:"vat_enabled"`
+	VATIncluded    Field[bool]                 `json:"vat_included"`
+	Moment         time.Time                   `json:"moment"`
+	Lines          []NativeMovementLine        `json:"lines"`
+	Event          NativeMovementEvent         `json:"event"`
 }
 
 type NativeDocumentPosition struct {
@@ -125,8 +126,11 @@ type NativeDocumentObservation struct {
 }
 
 type NativeDocumentBinding struct {
-	WorkID      string                    `json:"work_id"`
-	Observation NativeDocumentObservation `json:"observation"`
+	Parent        TargetObservation         `json:"parent"`
+	PostingNumber string                    `json:"posting_number"`
+	EventDigest   string                    `json:"event_digest"`
+	WorkID        string                    `json:"work_id"`
+	Observation   NativeDocumentObservation `json:"observation"`
 }
 
 type NativeDocumentRequest struct {
@@ -199,8 +203,12 @@ func (event NativeMovementEvent) Validate(revision int64, posted bool) error {
 	if posted && (!event.Confirmed || event.Kind != "shipment_dispatched" && event.Kind != "return_received") {
 		return ErrBlocked
 	}
-	if !posted && event.Kind != "draft_plan" {
+	if !posted && (event.Kind != "draft_plan" || event.Confirmed) {
 		return ErrInvalid
 	}
 	return nil
+}
+
+type NativeDocumentLookup interface {
+	OrderNativeDocument(context.Context, Scope, string) (NativeDocumentBinding, error)
 }

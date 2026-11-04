@@ -2,7 +2,7 @@ package orders
 
 import "time"
 
-func (movement NativeMovement) Validate(command Command) error {
+func (movement NativeMovement) validateHeader(command Command) error {
 	if !command.Action.IsNativeMovement() || command.CustomerOrder != nil || command.PostingAction != nil || command.PositionPatch != nil || command.SourceOrigin != OriginOzon {
 		return ErrInvalid
 	}
@@ -33,10 +33,23 @@ func (movement NativeMovement) Validate(command Command) error {
 	if *movement.Applicable.Value && (!movement.RateValue.IsKnown() || !nativeEventKindMatches(command.Action, movement.Event.Kind)) {
 		return ErrBlocked
 	}
+	return nil
+}
+
+func (movement NativeMovement) Validate(command Command) error {
+	if err := movement.validateHeader(command); err != nil {
+		return err
+	}
 	if len(movement.Lines) == 0 || len(movement.Lines) > 100 {
 		return ErrInvalid
 	}
 	if err := movement.validateLines(command.Scope); err != nil {
+		return err
+	}
+	if err := movement.validateOwnedLines(command); err != nil {
+		return err
+	}
+	if err := movement.validateProducts(command.Scope, command.Action); err != nil {
 		return err
 	}
 	return movement.validateBasis(command.Action)
@@ -58,6 +71,11 @@ func (movement NativeMovement) validateLines(scope Scope) error {
 		}
 		if line.Discount.Validate() != nil || !line.Discount.IsKnown() || line.Discount.Value.Validate() != nil || line.VAT.Validate() != nil || !line.VAT.IsKnown() || !nonnegativeDecimal(*line.VAT.Value) || !knownNativeBoolean(line.VATEnabled) {
 			return ErrInvalid
+		}
+		// Native totals currently have a verified simple monetary subset. Block
+		// unsupported rounding before dispatch, not after a physical movement.
+		if !ExactDecimalEqual(*line.Discount.Value, "0") || *line.VATEnabled.Value && !ExactDecimalEqual(*line.VAT.Value, "0") {
+			return ErrBlocked
 		}
 		if line.BasisPositionID != "" && !validUUID(line.BasisPositionID) {
 			return ErrInvalid
@@ -112,6 +130,20 @@ func (observation NativeDocumentObservation) Validate() error {
 	if observation.ReturnsComplete && (observation.ReturnsStartedAt.IsZero() || observation.ReturnsFinishedAt.Before(observation.ReturnsStartedAt)) {
 		return ErrInvalid
 	}
+	return observation.validateReturns()
+}
+
+func (observation NativeDocumentObservation) validateReturns() error {
+	if len(observation.Returns) > 25 || len(observation.Returns) > 0 && !observation.ReturnsComplete {
+		return ErrInvalid
+	}
+	seen := make(map[string]bool, len(observation.Returns))
+	for _, entry := range observation.Returns {
+		if entry.Validate(observation.Correlation.DocumentID, observation.Sum.Value.Currency) != nil || seen[entry.ID] {
+			return ErrInvalid
+		}
+		seen[entry.ID] = true
+	}
 	return nil
 }
 
@@ -138,4 +170,52 @@ func (movement NativeMovement) AllowedBy(policy *NativeDocumentPolicy, action Ac
 		}
 	}
 	return true
+}
+
+func (evidence NativeReturnEvidence) Validate(demandID, currency string) error {
+	if !validUUID(evidence.ID) || evidence.DemandID != demandID || !knownNativeBoolean(evidence.Applicable) || !validID(evidence.Revision) || evidence.ObservedAt.IsZero() || len(evidence.Positions) == 0 || len(evidence.Positions) > 1000 {
+		return ErrInvalid
+	}
+	seen := make(map[string]bool, len(evidence.Positions))
+	for _, position := range evidence.Positions {
+		if position.Validate() != nil || position.Price.Currency != currency || seen[position.ID] {
+			return ErrInvalid
+		}
+		seen[position.ID] = true
+	}
+	return nil
+}
+
+func (movement NativeMovement) validateOwnedLines(command Command) error {
+	if !command.TargetPositionsComplete || len(command.TargetPositions) == 0 {
+		return ErrBlocked
+	}
+	for _, line := range movement.Lines {
+		bindingFound := false
+		for _, binding := range movement.SourceBaseline.Bindings {
+			if binding.Native.ID == line.OrderPositionID && binding.Source.Identity.Key() == line.Identity.Key() && positionMappingsEqual(binding.Source.Mapping, line.Mapping) {
+				bindingFound = true
+			}
+		}
+		if !bindingFound {
+			return ErrStale
+		}
+		currentFound := false
+		for _, current := range command.TargetPositions {
+			if current.ID != line.OrderPositionID {
+				continue
+			}
+			if currentFound || current.MoyskladKind != line.Mapping.MoyskladKind || current.MoyskladID != line.Mapping.MoyskladID || !nonnegativeNotGreater(line.Quantity, current.Quantity) {
+				return ErrStale
+			}
+			currentFound = true
+			if command.Action == ActionDemandCreate && (!current.Price.IsKnown() || !sameObservedPrice(Present(line.Price), current.Price) || !SameObservedDecimal(line.Discount, current.Discount) || !SameObservedDecimal(line.VAT, current.VAT) || !nativeBoolEqual(line.VATEnabled, current.VATEnabled)) {
+				return ErrStale
+			}
+		}
+		if !currentFound {
+			return ErrStale
+		}
+	}
+	return nil
 }

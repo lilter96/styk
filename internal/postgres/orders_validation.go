@@ -65,10 +65,10 @@ func validateOrderCommandCurrent(command orders.Command, posting orders.Posting,
 	if err := command.Validate(); err != nil {
 		return err
 	}
-	if !command.Action.IsMirror() && command.PostingAction.ContractHash != orderactions.ExecutionContractHash() {
+	if !command.Action.IsMirror() && !command.Action.IsNativeMovement() && command.PostingAction.ContractHash != orderactions.ExecutionContractHash() {
 		return orders.ErrStale
 	}
-	if !command.Action.IsMirror() && len(orderactions.PackingRequirementValidation(posting, command.Action)) > 0 {
+	if !command.Action.IsMirror() && !command.Action.IsNativeMovement() && len(orderactions.PackingRequirementValidation(posting, command.Action)) > 0 {
 		return orders.ErrBlocked
 	}
 	if command.Scope != current.Config.Scope || command.ConfigRevision != current.Config.Revision || command.Credentials != current.Credentials || command.PostingNumber != posting.PostingNumber || command.CommercialOrderID != posting.CommercialOrderID || command.ExpectedSourceRevision != posting.Evidence.Revision || command.SourceOrigin != posting.Evidence.Origin {
@@ -84,6 +84,9 @@ func validateOrderCommandCurrent(command orders.Command, posting orders.Posting,
 		if err := validateOrderNativeWrite(*command.CustomerOrder, current); err != nil {
 			return err
 		}
+	}
+	if err := validateNativeMovementCurrent(command, current, automatic, now); err != nil {
+		return err
 	}
 	if err := validateOrderPositionBaseline(command, current); err != nil {
 		return err

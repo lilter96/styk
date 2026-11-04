@@ -26,14 +26,16 @@ const maxBody = 16 << 20
 const maxRows = 200000
 
 var orderReadPath = regexp.MustCompile(`^entity/customerorder/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(/positions)?$`)
+var nativeDocumentReadPath = regexp.MustCompile(`^entity/(demand|salesreturn)/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(/positions)?$`)
+
 var orderUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 func allowedReadPath(path string) bool {
 	switch path {
-	case "entity/customerorder/metadata", "entity/customerorder/metadata/attributes", "entity/organization", "entity/counterparty", "entity/currency", "entity/saleschannel", "context/employee", "entity/product", "entity/variant", "entity/store", "report/stock/all", "report/stock/bystore", "entity/customerorder":
+	case "entity/demand", "entity/salesreturn", "entity/customerorder/metadata", "entity/customerorder/metadata/attributes", "entity/organization", "entity/counterparty", "entity/currency", "entity/saleschannel", "context/employee", "entity/product", "entity/variant", "entity/store", "report/stock/all", "report/stock/bystore", "entity/customerorder":
 		return true
 	}
-	return orderReadPath.MatchString(path) || allowedCatalogReadPath(path)
+	return nativeDocumentReadPath.MatchString(path) || orderReadPath.MatchString(path) || allowedCatalogReadPath(path)
 }
 
 type Options struct {

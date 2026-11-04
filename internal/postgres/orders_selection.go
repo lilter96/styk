@@ -54,6 +54,9 @@ func readOrderPreviewContext(ctx context.Context, q ordersQuerier, preview order
 	if err == nil {
 		err = validateOrderPreviewHybridLabels(ctx, q, preview, review)
 	}
+	if err == nil {
+		err = enrichNativePreviewContext(ctx, q, preview, &review)
+	}
 	return review, err
 }
 

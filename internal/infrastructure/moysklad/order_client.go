@@ -30,7 +30,8 @@ var (
 )
 
 // OrderClient projects exactly one posting into its native customerorder. A
-// binding admits one mutation attempt; syncId is correlation, not idempotency.
+// binding admits one mutation attempt. Native syncId duplicate-create behavior
+// is additional provider protection, never permission to replay an UNKNOWN.
 type OrderClient struct {
 	client    *Client
 	scope     orders.Scope
@@ -109,9 +110,10 @@ func orderIntentBytes(command orders.Command) ([]byte, error) {
 	// Include transient PII in the one-use digest even though it is deliberately
 	// excluded from normal command JSON and durable command fingerprints.
 	raw, err := json.Marshal(struct {
-		Command orders.Command   `json:"command"`
-		PII     *orders.Customer `json:"pii"`
-	}{command, command.PII})
+		Command orders.Command           `json:"command"`
+		PII     *orders.Customer         `json:"pii"`
+		Input   *orders.ActionParameters `json:"native_event,omitempty"`
+	}{command, command.PII, command.ActionInput})
 	if err != nil {
 		return nil, ErrOrderIntent
 	}

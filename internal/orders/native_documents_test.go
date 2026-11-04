@@ -21,9 +21,21 @@ func nativeDomainFixture(t *testing.T) (Command, NativeDocumentPolicy) {
 	}
 	movement.Correlation = correlation
 	source := baseline.Bindings[0].Source
+	source.Mapping.MoyskladID = "00000000-0000-4000-8000-000000000014"
+	baseline.Bindings[0].Source = source
+	baseline.Bindings[0].Native.MoyskladID = source.Mapping.MoyskladID
+	movement.SourceBaseline = baseline
+	movement.Products = []NativeProductRequirements{{Scope: command.Scope, ItemKind: "product", ItemID: source.Mapping.MoyskladID, Archived: Present(false), SerialTrackable: Present(false), TrackingType: Present("NOT_TRACKED"), Revision: "product-revision", ObservedAt: time.Now().UTC()}}
 	movement.Lines = []NativeMovementLine{{Identity: source.Identity, Mapping: source.Mapping, OrderPositionID: baseline.Bindings[0].Native.ID, Quantity: "2", Price: *source.Price.Value, Discount: Present(Decimal("0")), VAT: Present(Decimal("0")), VATEnabled: Present(false)}}
 	command.Action, command.NativeMovement = ActionDemandCreate, movement
 	command.CustomerOrder = nil
+	native := baseline.Bindings[0].Native
+	native.Price = Present(movement.Lines[0].Price)
+	native.Discount = movement.Lines[0].Discount
+	native.VAT = movement.Lines[0].VAT
+	native.VATEnabled = movement.Lines[0].VATEnabled
+	command.TargetPositions = []TargetPosition{native}
+	command.TargetPositionsComplete = true
 	policy := NativeDocumentPolicy{Enabled: true, Actions: []Action{ActionDemandCreate, ActionSalesReturnCreate}, MaximumQuantity: "10", EventMaxAgeSeconds: 3600}
 	return command, policy
 }

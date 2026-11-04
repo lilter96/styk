@@ -58,3 +58,72 @@ func nativeDocumentLinesMatch(wanted []NativeMovementLine, actual []NativeDocume
 func nativeDocumentLineEqual(wanted NativeMovementLine, actual NativeDocumentPosition) bool {
 	return ExactDecimalEqual(wanted.Quantity, actual.Quantity) && wanted.Price.Currency == actual.Price.Currency && ExactDecimalEqual(wanted.Price.Amount, actual.Price.Amount) && desiredDecimal(wanted.Discount, actual.Discount) && desiredDecimal(wanted.VAT, actual.VAT) && nativeBoolEqual(wanted.VATEnabled, actual.VATEnabled)
 }
+
+// NativeParentReadback preserves all foreign lines and only permits native
+// posted-document reserve/shipped effects on explicitly selected owned lines.
+func NativeParentReadback(command Command, target TargetObservation) bool {
+	movement := command.NativeMovement
+	if movement == nil || !target.Complete || target.Scope != command.Scope || !baselineCorrelationMatches(command.Correlation, target.Correlation) || target.Correlation.CustomerOrderID != command.Correlation.CustomerOrderID || target.ObservedAt.IsZero() || len(target.Positions) != len(command.TargetPositions) {
+		return false
+	}
+	if target.Fields.OrganizationID != movement.OrganizationID || target.Fields.AgentID != movement.AgentID || target.Fields.StoreID != movement.StoreID || target.Fields.CurrencyID != movement.CurrencyID {
+		return false
+	}
+	if !movement.Applicable.IsKnown() {
+		return false
+	}
+	if !*movement.Applicable.Value {
+		return NativePositionsEqual(command.TargetPositions, target.Positions)
+	}
+	selected := make(map[string]bool, len(movement.Lines))
+	for _, line := range movement.Lines {
+		selected[line.OrderPositionID] = true
+	}
+	after := make(map[string]TargetPosition, len(target.Positions))
+	for _, position := range target.Positions {
+		if _, exists := after[position.ID]; exists {
+			return false
+		}
+		after[position.ID] = position
+	}
+	for _, before := range command.TargetPositions {
+		current, found := after[before.ID]
+		if !found {
+			return false
+		}
+		if !selected[before.ID] {
+			if !NativePositionEqual(before, current) {
+				return false
+			}
+			continue
+		}
+		if !nativeParentPositionEffect(command.Action, before, current) {
+			return false
+		}
+	}
+	return true
+}
+
+func nativeParentPositionEffect(action Action, before, after TargetPosition) bool {
+	if !before.Reserve.IsKnown() || !after.Reserve.IsKnown() || !before.Shipped.IsKnown() || !after.Shipped.IsKnown() {
+		return false
+	}
+	if action == ActionDemandCreate && (!nonnegativeNotGreater(*after.Reserve.Value, *before.Reserve.Value) || !nonnegativeNotGreater(*before.Shipped.Value, *after.Shipped.Value) || !nonnegativeNotGreater(*after.Shipped.Value, after.Quantity)) {
+		return false
+	}
+	// A return need not alter the customer order's shipped/reserve counters.
+	// Learn the provider counters rather than writing or inferring them.
+	if action == ActionSalesReturnCreate && (!SameObservedDecimal(before.Reserve, after.Reserve) || !SameObservedDecimal(before.Shipped, after.Shipped)) {
+		return false
+	}
+	after.Reserve, after.Shipped = before.Reserve, before.Shipped
+	return NativePositionEqual(before, after)
+}
+
+// NativeParentFacts deliberately excludes customer names, addresses, free text
+// and unrelated attributes from movement previews and immutable evidence.
+func NativeParentFacts(target TargetObservation) TargetObservation {
+	fields := target.Fields
+	target.Fields = CustomerOrderWrite{OrganizationID: fields.OrganizationID, AgentID: fields.AgentID, StoreID: fields.StoreID, CurrencyID: fields.CurrencyID, RateValue: fields.RateValue, VATEnabled: fields.VATEnabled, VATIncluded: fields.VATIncluded, Applicable: fields.Applicable, StateID: fields.StateID}
+	return target
+}

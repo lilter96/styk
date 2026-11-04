@@ -28,6 +28,8 @@ const (
 // Private strings are accepted from the authenticated operator but sealed before
 // a preview or intent is persisted. Public flags disclose presence, never values.
 type ActionParameters struct {
+	NativeEventKind        string           `json:"native_event_kind,omitempty"`
+	NativeEventOccurredAt  time.Time        `json:"native_event_occurred_at,omitempty"`
 	Packages               []ActionPackage  `json:"packages,omitempty"`
 	Lines                  []ActionQuantity `json:"lines,omitempty"`
 	ReasonID               string           `json:"reason_id,omitempty"`

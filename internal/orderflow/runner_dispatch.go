@@ -11,6 +11,9 @@ import (
 )
 
 func (r *Runner) dispatch(ctx context.Context, work orders.Work) error {
+	if work.Command.Action.IsNativeMovement() {
+		return r.dispatchNative(ctx, work)
+	}
 	if !work.Command.Action.IsMirror() {
 		return r.dispatchFulfillment(ctx, work)
 	}

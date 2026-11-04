@@ -4,7 +4,7 @@ import "fmt"
 
 func (action Action) Valid() bool {
 	switch action {
-	case ActionMirrorCreate, ActionMirrorUpdate, ActionMirrorPositionUpdate, ActionPostingPack, ActionPostingShip, ActionPostingCancel, ActionPostingDeliver,
+	case ActionDemandCreate, ActionSalesReturnCreate, ActionMirrorCreate, ActionMirrorUpdate, ActionMirrorPositionUpdate, ActionPostingPack, ActionPostingShip, ActionPostingCancel, ActionPostingDeliver,
 		ActionPostingSplit, ActionPostingPartialCancel, ActionPostingTracking, ActionPostingLastMile, ActionPostingSentBySeller, ActionPostingLabelCreate:
 		return true
 	default:
@@ -37,6 +37,12 @@ func (command Command) Validate() error {
 	}
 	if command.Warehouse.Scope != command.Scope || command.Warehouse.Validate() != nil {
 		return ErrStale
+	}
+	if command.Action.IsNativeMovement() {
+		if command.NativeMovement == nil {
+			return ErrInvalid
+		}
+		return command.NativeMovement.Validate(command)
 	}
 	if command.Action.IsMirror() {
 		return command.validateMirror()
