@@ -15,15 +15,22 @@ type ActionQuantity struct {
 }
 
 const (
-	ActionPostingSplit         Action = "posting_split"
-	ActionPostingPartialCancel Action = "posting_partial_cancel"
-	ActionPostingTracking      Action = "posting_tracking"
-	ActionPostingLastMile      Action = "posting_last_mile"
-	ActionPostingSentBySeller  Action = "posting_sent_by_seller"
-	ActionPostingLabelCreate   Action = "posting_label_create"
-	ActionDemandCreate         Action = "demand_create"
-	ActionSalesReturnCreate    Action = "salesreturn_create"
+	ActionPostingSplitUnassembled Action = "posting_split_unassembled"
+	ActionPostingSplit            Action = "posting_split"
+	ActionPostingPartialCancel    Action = "posting_partial_cancel"
+	ActionPostingTracking         Action = "posting_tracking"
+	ActionPostingLastMile         Action = "posting_last_mile"
+	ActionPostingSentBySeller     Action = "posting_sent_by_seller"
+	ActionPostingLabelCreate      Action = "posting_label_create"
+	ActionDemandCreate            Action = "demand_create"
+	ActionSalesReturnCreate       Action = "salesreturn_create"
 )
+
+// IsSplit identifies allocation-changing operations, without conflating a
+// split that assembles packages with a split that leaves assembly untouched.
+func (action Action) IsSplit() bool {
+	return action == ActionPostingSplit || action == ActionPostingSplitUnassembled
+}
 
 // Private strings are accepted from the authenticated operator but sealed before
 // a preview or intent is persisted. Public flags disclose presence, never values.
