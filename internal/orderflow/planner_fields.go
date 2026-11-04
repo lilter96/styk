@@ -21,6 +21,9 @@ func mirrorWrite(ctx context.Context, posting orders.Posting, review orders.Revi
 			validations = append(validations, validation)
 		}
 	}
+	if validation := applyConfiguredReserve(&write, posting, review); validation.Code != "" {
+		validations = append(validations, validation)
+	}
 	if len(validations) == 0 {
 		validations = append(validations, resolveCustomerProjection(ctx, &write, posting, customerReader)...)
 	}
@@ -50,6 +53,9 @@ func applyMirrorMapping(write *orders.CustomerOrderWrite, posting orders.Posting
 	case "applicable", "vat_enabled", "vat_included":
 		return applyBooleanMapping(write, posting, mapping)
 	case "positions.quantity", "positions.price", "positions.vat", "positions.reserve":
+		if mapping.Target == "positions.reserve" && mapping.Source == orders.ReserveOpenQuantitySource {
+			return orders.Validation{}
+		}
 		return applyPositionMapping(write, mapping)
 	case "state":
 		if mapping.Source == "status" || mapping.Source == "posting.status" {
@@ -385,4 +391,15 @@ func metadataAttributePresent(metadata orders.MetadataRegistry, id string, scope
 
 func unsupportedMapping(mapping orders.FieldMapping) orders.Validation {
 	return orders.Validation{Field: mapping.Source, Code: "field_mapping_source_unsupported"}
+}
+
+// Reserve evaluation follows scalar mappings so configuration ordering cannot
+// turn an explicit applicable=true into an accidental draft reserve.
+func applyConfiguredReserve(write *orders.CustomerOrderWrite, posting orders.Posting, review orders.ReviewContext) orders.Validation {
+	for _, mapping := range review.Config.FieldMappings {
+		if mapping.Target == "positions.reserve" && mapping.Source == orders.ReserveOpenQuantitySource {
+			return orders.ApplyOpenQuantityReserve(posting, write, review.PositionBaselines[posting.PostingNumber])
+		}
+	}
+	return orders.Validation{}
 }
