@@ -235,5 +235,3 @@ func orderTargetRevision(document map[string]json.RawMessage, rows []orderPositi
 	digest := sha256.Sum256(raw)
 	return hex.EncodeToString(digest[:]), nil
 }
-
-var _ orders.TargetStatusWriter = (*OrderClient)(nil)
