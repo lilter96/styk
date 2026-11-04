@@ -37,20 +37,22 @@ type ExemplarSetInput struct {
 	Products []ExemplarProductInput `json:"products"`
 }
 type ExemplarProduct struct {
-	SKU       string                                 `json:"sku"`
-	Quantity  int64                                  `json:"quantity"`
-	Required  map[PackingRequirementKind]Field[bool] `json:"required"`
-	Exemplars []ExemplarInput                        `json:"exemplars"`
+	UnsupportedFields []string                               `json:"unsupported_fields,omitempty"`
+	SKU               string                                 `json:"sku"`
+	Quantity          int64                                  `json:"quantity"`
+	Required          map[PackingRequirementKind]Field[bool] `json:"required"`
+	Exemplars         []ExemplarInput                        `json:"exemplars"`
 }
 type ExemplarSnapshot struct {
 	PostingNumber string            `json:"posting_number"`
 	Products      []ExemplarProduct `json:"products"`
 }
 type PublicExemplarProduct struct {
-	SKU      string                                 `json:"sku"`
-	Quantity int64                                  `json:"quantity"`
-	Required map[PackingRequirementKind]Field[bool] `json:"required"`
-	IDs      []string                               `json:"ids"`
+	UnsupportedFields []string                               `json:"unsupported_fields,omitempty"`
+	SKU               string                                 `json:"sku"`
+	Quantity          int64                                  `json:"quantity"`
+	Required          map[PackingRequirementKind]Field[bool] `json:"required"`
+	IDs               []string                               `json:"ids"`
 }
 type ExemplarPublic struct {
 	ProofValidUntil   *time.Time              `json:"proof_valid_until,omitempty"`
@@ -79,9 +81,10 @@ type ExemplarCheck struct {
 	Errors    []string `json:"errors,omitempty"`
 }
 type ExemplarStatusProduct struct {
-	SKU       string
-	Exemplars []ExemplarInput
-	Checks    []ExemplarCheck
+	UnsupportedFields []string
+	SKU               string
+	Exemplars         []ExemplarInput
+	Checks            []ExemplarCheck
 }
 type ExemplarStatus struct {
 	PostingNumber, Status string
@@ -146,7 +149,7 @@ func PackingTargetFingerprint(p Posting) (string, error) {
 func (s ExemplarSnapshot) Public(work Work, now time.Time) (ExemplarPublic, error) {
 	result := ExemplarPublic{Scope: work.Scope, SourceRevision: work.Command.ExpectedSourceRevision, WorkID: work.ID, PostingNumber: s.PostingNumber, Products: make([]PublicExemplarProduct, 0, len(s.Products)), ExpiresAt: now.Add(24 * time.Hour)}
 	for _, p := range s.Products {
-		v := PublicExemplarProduct{SKU: p.SKU, Quantity: p.Quantity, Required: p.Required, IDs: make([]string, 0, len(p.Exemplars))}
+		v := PublicExemplarProduct{UnsupportedFields: slices.Clone(p.UnsupportedFields), SKU: p.SKU, Quantity: p.Quantity, Required: p.Required, IDs: make([]string, 0, len(p.Exemplars))}
 		for _, u := range p.Exemplars {
 			v.IDs = append(v.IDs, u.ID)
 		}

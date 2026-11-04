@@ -154,6 +154,21 @@ func runExemplarHTTP(t *testing.T, mode string) {
 	if err != nil || summary.WorkID == "" {
 		t.Fatal("prepared exact IDs unavailable", err)
 	}
+
+	if transport.losePrepare {
+		if len(summary.Products) == 0 || len(summary.Products[0].UnsupportedFields) == 0 {
+			t.Fatal("status-only recovery fabricated multibox metadata")
+		}
+		replacement := exemplarHTTPPreview(t, f, service, orders.ActionExemplarPrepare, orders.ActionParameters{})
+		transport.losePrepare = false
+		replacementOp := ordersStoreApprove(t, f, replacement)
+		exemplarHTTPRun(t, f, runner, replacementOp.ID, orders.StateAcknowledged)
+		exemplarHTTPRun(t, f, runner, replacementOp.ID, orders.StateReconciled)
+		summary, err = f.db.OrderExemplarPublic(f.ctx, f.config.Scope, posting.PostingNumber)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	noop, noopErr := service.Preview(f.ctx, orders.PreviewRequest{Scope: f.config.Scope, ExpectedRevision: f.config.Revision, PostingNumbers: []string{posting.PostingNumber}, Actor: f.session.AuditID, Actions: []orders.Action{orders.ActionExemplarSet}, Proposals: []orders.ActionProposal{{PostingNumber: posting.PostingNumber, Action: orders.ActionExemplarSet, Parameters: orders.ActionParameters{ExemplarWorkID: summary.WorkID, Exemplars: &orders.ExemplarSetInput{}}}}})
 	if noopErr != nil || len(noop.Decisions) != 1 || noop.Decisions[0].Ready {
 		t.Fatal("no-op exemplar set became a write", noopErr)
@@ -167,14 +182,22 @@ func runExemplarHTTP(t *testing.T, mode string) {
 	}
 	exemplarHTTPRun(t, f, runner, op.ID, first)
 	exemplarHTTPRun(t, f, runner, op.ID, orders.StateReconciled)
-	assertOrdersRowCount(t, f, `SELECT count(*) FROM orders_exemplar_secrets`, 2)
-	assertOrdersRowCount(t, f, `SELECT count(*) FROM orders_work WHERE action IN ('posting_exemplar_prepare','posting_exemplar_set') AND state='RECONCILED' AND dispatch_count=1`, 2)
+	count := 2
+	if mode == "lost_prepare_response" {
+		count = 3
+	}
+	assertOrdersRowCount(t, f, `SELECT count(*) FROM orders_exemplar_secrets`, count)
+	assertOrdersRowCount(t, f, `SELECT count(*) FROM orders_work WHERE action IN ('posting_exemplar_prepare','posting_exemplar_set') AND state='RECONCILED' AND dispatch_count=1`, count)
 	assertOrdersRowCount(t, f, `SELECT count(*) FROM orders_work WHERE work::text LIKE '%SYNTHETIC-MARK%'`, 0)
 	assertOrdersRowCount(t, f, `SELECT count(*) FROM orders_receipts WHERE receipt::text LIKE '%SYNTHETIC-MARK%'`, 0)
 	if mode != "acknowledged" {
 		assertOrdersRowCount(t, f, `SELECT count(*) FROM orders_receipts WHERE receipt->>'state'='UNKNOWN'`, 1)
 	}
-	if transport.prepares != 1 || transport.sets != 1 {
+	wantPrepares := 1
+	if mode == "lost_prepare_response" {
+		wantPrepares = 2
+	}
+	if transport.prepares != wantPrepares || transport.sets != 1 {
 		t.Fatal("exemplar write replayed")
 	}
 	review, err := f.db.OrderReviewContext(f.ctx, f.config.Scope)

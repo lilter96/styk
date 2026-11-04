@@ -207,7 +207,7 @@ func (r *Runner) recoverUnknownExemplarIDs(ctx context.Context, work orders.Work
 	}
 	snapshot := orders.ExemplarSnapshot{PostingNumber: status.PostingNumber, Products: make([]orders.ExemplarProduct, 0, len(status.Products))}
 	for _, p := range status.Products {
-		snapshot.Products = append(snapshot.Products, orders.ExemplarProduct{SKU: p.SKU, Quantity: int64(len(p.Exemplars)), Exemplars: p.Exemplars})
+		snapshot.Products = append(snapshot.Products, orders.ExemplarProduct{UnsupportedFields: append(p.UnsupportedFields, "multi_box_qty_unknown"), SKU: p.SKU, Quantity: int64(len(p.Exemplars)), Exemplars: p.Exemplars})
 	}
 	orders.CompleteExemplarRequirements(&snapshot, posting)
 	if snapshot.ValidateFor(posting) != nil {

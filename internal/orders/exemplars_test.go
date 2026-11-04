@@ -96,3 +96,31 @@ func TestExemplarExplicitAbsenceClearsPriorDeclaration(t *testing.T) {
 		t.Fatal("new factual value retained old absence flag")
 	}
 }
+
+func TestExemplarUnownedWeightIsNotReinterpretedAsRequired(t *testing.T) {
+	t.Parallel()
+	p, snapshot := exemplarFixture()
+	snapshot.Products[0].Required[RequirementMandatoryMark] = Present(false)
+	snapshot.Products[0].UnsupportedFields = []string{"weight"}
+	if snapshot.ValidateFor(p) != nil {
+		t.Fatal("read-only prepared IDs must remain usable")
+	}
+	found := false
+	for _, v := range ValidateExemplarSet(snapshot, p) {
+		if v.Code == "exemplar_unowned_field_not_supported" && v.Field == "products[sku=2001].weight" {
+			found = true
+		}
+	}
+	if !found || *snapshot.Products[0].Required[RequirementWeight].Value {
+		t.Fatal("observed unowned weight erased or invented a provider requirement")
+	}
+}
+
+func TestExemplarFreshUnownedFieldCannotPassSetPreflight(t *testing.T) {
+	t.Parallel()
+	_, s := exemplarFixture()
+	actual := ExemplarStatus{PostingNumber: s.PostingNumber, Status: "update_available", Products: []ExemplarStatusProduct{{SKU: s.Products[0].SKU, Exemplars: s.Products[0].Exemplars, UnsupportedFields: []string{"weight"}}}}
+	if ExemplarStatusMatches(s, actual, false) {
+		t.Fatal("new unowned weight was silently overwritten")
+	}
+}

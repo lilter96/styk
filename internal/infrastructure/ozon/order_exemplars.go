@@ -1,6 +1,7 @@
 package ozon
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"slices"
@@ -59,12 +60,17 @@ func decodeExemplarSnapshot(data []byte, posting string) (orders.ExemplarSnapsho
 	if decodeLabelJSON(data, &response) != nil || response.Posting != posting || len(response.Products) == 0 || len(response.Products) > 1000 {
 		return orders.ExemplarSnapshot{}, orders.ErrSchemaDrift
 	}
+	unsupported, err := exemplarMultiboxUnsupported(response.MultiBox)
+	if err != nil {
+		return orders.ExemplarSnapshot{}, err
+	}
 	s := orders.ExemplarSnapshot{PostingNumber: posting, Products: make([]orders.ExemplarProduct, 0, len(response.Products))}
 	for _, row := range response.Products {
 		p, e := decodeExemplarProduct(row)
 		if e != nil {
 			return s, e
 		}
+		p.UnsupportedFields = append(p.UnsupportedFields, unsupported...)
 		s.Products = append(s.Products, p)
 	}
 	return s, nil
@@ -75,7 +81,7 @@ func decodeExemplarProduct(w exemplarProductWire) (orders.ExemplarProduct, error
 	if err != nil || len(w.Exemplars) > 1000 {
 		return orders.ExemplarProduct{}, orders.ErrInvalid
 	}
-	p := orders.ExemplarProduct{SKU: sku, Quantity: w.Quantity, Required: make(map[orders.PackingRequirementKind]orders.Field[bool]), Exemplars: make([]orders.ExemplarInput, 0, len(w.Exemplars))}
+	p := orders.ExemplarProduct{UnsupportedFields: exemplarUnsupportedFields(w.Exemplars), SKU: sku, Quantity: w.Quantity, Required: make(map[orders.PackingRequirementKind]orders.Field[bool]), Exemplars: make([]orders.ExemplarInput, 0, len(w.Exemplars))}
 	for kind, raw := range map[orders.PackingRequirementKind]json.RawMessage{orders.RequirementGTD: w.GTD, orders.RequirementRNPT: w.RNPT, orders.RequirementMandatoryMark: w.Mark, orders.RequirementJewelryUIN: w.Jewelry, orders.RequirementWeight: w.Weight} {
 		f := newOrderFields([]byte(`{}`))
 		if len(raw) > 0 {
@@ -139,13 +145,17 @@ func (c *OrdersClient) ReadOrderExemplarStatus(ctx context.Context, scope orders
 	if decodeLabelJSON(data, &w) != nil || w.Posting != posting || !slices.Contains([]string{"ship_available", "ship_not_available", "validation_in_process", "update_available", "update_not_available"}, w.Status) {
 		return orders.ExemplarStatus{}, orders.ErrSchemaDrift
 	}
+	unsupported, err := exemplarMultiboxUnsupported(w.MultiBox)
+	if err != nil {
+		return orders.ExemplarStatus{}, err
+	}
 	result := orders.ExemplarStatus{PostingNumber: posting, Status: w.Status, Products: make([]orders.ExemplarStatusProduct, 0, len(w.Products))}
 	for _, row := range w.Products {
 		sku, e := orderID(row.ID)
 		if e != nil {
 			return result, e
 		}
-		p := orders.ExemplarStatusProduct{SKU: sku}
+		p := orders.ExemplarStatusProduct{UnsupportedFields: append(exemplarUnsupportedFields(row.Exemplars), unsupported...), SKU: sku}
 		for _, value := range row.Exemplars {
 			u, check, e := decodeExemplarUnit(value)
 			if e != nil {
@@ -179,4 +189,29 @@ func decodeExemplarMarks(raw json.RawMessage, u *orders.ExemplarInput, check *or
 		u.Marks = orders.Present(values)
 	}
 	return nil
+}
+
+func exemplarUnsupportedFields(units []exemplarWire) []string {
+	for _, unit := range units {
+		value := bytes.TrimSpace(unit.Weight)
+		if len(value) > 0 && !bytes.Equal(value, []byte("null")) {
+			return []string{"weight"}
+		}
+	}
+	return nil
+}
+
+func exemplarMultiboxUnsupported(raw json.RawMessage) ([]string, error) {
+	value := bytes.TrimSpace(raw)
+	if len(value) == 0 || bytes.Equal(value, []byte("null")) {
+		return nil, nil
+	}
+	var count int64
+	if json.Unmarshal(value, &count) != nil || count < 0 || count > 2147483647 {
+		return nil, orders.ErrSchemaDrift
+	}
+	if count == 0 {
+		return nil, nil
+	}
+	return []string{"multi_box_qty"}, nil
 }

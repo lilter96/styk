@@ -33,6 +33,9 @@ func ValidateExemplarSet(s ExemplarSnapshot, p Posting) []Validation {
 	}
 	result := make([]Validation, 0)
 	for _, product := range s.Products {
+		for _, field := range product.UnsupportedFields {
+			result = append(result, Validation{Field: "products[sku=" + product.SKU + "]." + field, Code: "exemplar_unowned_field_not_supported"})
+		}
 		for _, u := range product.Exemplars {
 			if !exemplarPrivateComplete(u) {
 				result = append(result, Validation{Field: "products[sku=" + product.SKU + "].exemplar[" + u.ID + "]", Code: "exemplar_base_values_unknown"})

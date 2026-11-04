@@ -66,3 +66,26 @@ func TestExemplarMalformedPresentValueDoesNotPanicOrSerialize(t *testing.T) {
 		t.Fatal("malformed present pointer serialized")
 	}
 }
+
+func TestExemplarObservedWeightBlocksOnlyItsMutation(t *testing.T) {
+	t.Parallel()
+	raw := []byte(`{"posting_number":"posting","products":[{"product_id":2001,"quantity":1,"is_weight_needed":false,"exemplars":[{"exemplar_id":3,"weight":0,"marks":[]}]}]}`)
+	snapshot, err := decodeExemplarSnapshot(raw, "posting")
+	if err != nil || len(snapshot.Products[0].UnsupportedFields) != 1 || snapshot.Products[0].UnsupportedFields[0] != "weight" || *snapshot.Products[0].Required[orders.RequirementWeight].Value {
+		t.Fatal("existing weight was dropped or reclassified", err)
+	}
+}
+
+func TestExemplarObservedMultiboxIsExplicitUnsupportedField(t *testing.T) {
+	t.Parallel()
+	raw := `{"posting_number":"posting","multi_box_qty":2,"products":[{"product_id":2001,"quantity":1,"exemplars":[{"exemplar_id":3,"marks":[]}]}]}`
+	snapshot, err := decodeExemplarSnapshot([]byte(raw), "posting")
+	if err != nil || len(snapshot.Products[0].UnsupportedFields) != 1 || snapshot.Products[0].UnsupportedFields[0] != "multi_box_qty" {
+		t.Fatal("observed box count silently dropped", err)
+	}
+	for _, value := range []string{"-1", "1.5", "\"2\"", "2147483648"} {
+		if _, err = exemplarMultiboxUnsupported([]byte(value)); err == nil {
+			t.Fatal("invalid provider multibox quantity accepted")
+		}
+	}
+}

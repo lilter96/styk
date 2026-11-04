@@ -7,5 +7,5 @@
  "status":{"endpoint":"/v5/fbs/posting/product/exemplar/status","request":{"posting_number":"string"},"states":["ship_available","ship_not_available","validation_in_process","update_available","update_not_available"],"checks":["processing","failed","passed"]},
  "mark_types":["mandatory_mark","jw_uin","imei"],
  "private_fields":["gtd","rnpt","marks.mark"],
- "limitations":["Formal enum definitions conflict with some Swagger examples; unknown enums remain schema drift, never success.","Weight writes are not implemented because reviewed weight notice does not establish authoritative unit.","Country values require a separate operation; not inferred.","Exemplar values are never included inline in ship-v4."]
+ "limitations":["Formal enum definitions conflict with some Swagger examples; unknown enums remain schema drift, never success.","Weight writes are not implemented because reviewed weight notice does not establish authoritative unit.","Country values require a separate operation; not inferred.","Observed unowned weight or nonzero multi_box_qty blocks set; status-only recovered IDs cannot establish absent multibox metadata for set.","Exemplar values are never included inline in ship-v4."]
 }

@@ -18,7 +18,7 @@ func ExemplarStatusMatches(expected ExemplarSnapshot, status ExemplarStatus, val
 			return false
 		}
 		actual := status.Products[i]
-		if len(actual.Exemplars) != len(product.Exemplars) {
+		if !observedExemplarFieldsPreserved(product.UnsupportedFields, actual.UnsupportedFields) || len(actual.Exemplars) != len(product.Exemplars) {
 			return false
 		}
 		seen := make(map[string]bool)
@@ -110,4 +110,13 @@ func ExemplarValidationFailed(s ExemplarStatus) bool {
 		}
 	}
 	return false
+}
+
+func observedExemplarFieldsPreserved(known, actual []string) bool {
+	for _, field := range actual {
+		if !slices.Contains(known, field) {
+			return false
+		}
+	}
+	return true
 }
