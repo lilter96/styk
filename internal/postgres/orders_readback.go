@@ -21,7 +21,7 @@ func orderReadbackMatches(command orders.Command, observed orders.TargetObservat
 	}
 	wanted := *command.CustomerOrder
 	if command.Action == orders.ActionMirrorUpdate && len(wanted.OwnedFields) > 0 {
-		return orderOwnedReadback(wanted, observed)
+		return orderFrozenPositionsUnchanged(command, observed.Positions) && orderReadbackPositions(wanted.Positions, observed.Positions) && orderOwnedReadback(wanted, observed)
 	}
 	if !orderReadbackFields(wanted, observed.Fields) || len(wanted.Positions) != len(observed.Positions) {
 		return false
@@ -213,4 +213,59 @@ func orderReadbackAttributes(wanted, actual []orders.AttributeWrite) bool {
 		}
 	}
 	return true
+}
+
+// Scalar-only updates retain every reviewed native position, including manual
+// lines and their reserves. Checking only the fields this worker wrote would
+// let unrelated inventory changes be mislabeled as a fully reconciled mirror.
+func orderFrozenPositionsUnchanged(command orders.Command, actual []orders.TargetPosition) bool {
+	if !command.TargetPositionsComplete || len(command.TargetPositions) == 0 || len(command.TargetPositions) != len(actual) {
+		return false
+	}
+	byID := make(map[string]orders.TargetPosition, len(actual))
+	for _, position := range actual {
+		if position.ID == "" {
+			return false
+		}
+		if _, duplicate := byID[position.ID]; duplicate {
+			return false
+		}
+		byID[position.ID] = position
+	}
+	for _, before := range command.TargetPositions {
+		after, found := byID[before.ID]
+		if !found || !orderNativePositionUnchanged(before, after) {
+			return false
+		}
+		delete(byID, before.ID)
+	}
+	return len(byID) == 0
+}
+
+func orderNativePositionUnchanged(before, after orders.TargetPosition) bool {
+	return before.MoyskladKind == after.MoyskladKind && before.MoyskladID == after.MoyskladID &&
+		orderDecimalEqual(before.Quantity, after.Quantity) &&
+		orderObservedDecimalEqual(before.Reserve, after.Reserve) &&
+		orderObservedMoneyEqual(before.Price, after.Price) &&
+		orderObservedDecimalEqual(before.VAT, after.VAT)
+}
+
+func orderObservedDecimalEqual(before, after orders.Field[orders.Decimal]) bool {
+	if before.Validate() != nil || after.Validate() != nil {
+		return false
+	}
+	if before.IsKnown() && after.IsKnown() {
+		return orderDecimalEqual(*before.Value, *after.Value)
+	}
+	return before.Presence == after.Presence || before.IsMissing() && after.IsMissing()
+}
+
+func orderObservedMoneyEqual(before, after orders.Field[orders.Money]) bool {
+	if before.Validate() != nil || after.Validate() != nil {
+		return false
+	}
+	if before.IsKnown() && after.IsKnown() {
+		return before.Value.Currency == after.Value.Currency && orderDecimalEqual(before.Value.Amount, after.Value.Amount)
+	}
+	return before.Presence == after.Presence || before.IsMissing() && after.IsMissing()
 }
