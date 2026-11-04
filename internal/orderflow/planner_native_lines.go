@@ -14,7 +14,7 @@ func planNativeValues(review orders.ReviewContext, posting orders.Posting, propo
 	if !*proposal.Applicable.Value {
 		moment = proposal.PlannedMoment
 	}
-	movement := orders.NativeMovement{SourceBaseline: baseline, DemandWorkID: proposal.DemandWorkID, DemandBasis: basis, OrganizationID: fields.OrganizationID, AgentID: fields.AgentID, StoreID: fields.StoreID, CurrencyID: fields.CurrencyID, RateValue: fields.RateValue, Applicable: proposal.Applicable, VATEnabled: fields.VATEnabled, VATIncluded: fields.VATIncluded, Moment: moment.UTC().Truncate(time.Minute), Lines: make([]orders.NativeMovementLine, 0, len(proposal.Lines))}
+	movement := orders.NativeMovement{SourceBaseline: baseline, DemandWorkID: proposal.DemandWorkID, DemandBasis: basis, OrganizationID: fields.OrganizationID, AgentID: fields.AgentID, StoreID: fields.StoreID, CurrencyID: fields.CurrencyID, RateValue: fields.RateValue, Applicable: proposal.Applicable, VATEnabled: fields.VATEnabled, VATIncluded: fields.VATIncluded, Moment: moment.UTC().Truncate(time.Millisecond), Lines: make([]orders.NativeMovementLine, 0, len(proposal.Lines))}
 	if proposal.Action == orders.ActionDemandCreate && *proposal.Applicable.Value && posting.Status.IsKnown() && *posting.Status.Value == "cancelled" {
 		return movement, []orders.Validation{{Field: "posting.status", Code: "cancelled_posting_cannot_create_new_shipment"}}
 	}

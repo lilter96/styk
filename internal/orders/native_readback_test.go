@@ -1,6 +1,9 @@
 package orders
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestNativeParentReadbackPreservesForeignReserve(t *testing.T) {
 	t.Parallel()
@@ -44,6 +47,15 @@ func TestNativeReadbackCannotClaimDifferentDocument(t *testing.T) {
 	if !NativeDocumentMatches(command, actual) {
 		t.Fatal("exact native facts rejected")
 	}
+	actual.Moment = Present(movement.Moment.Add(time.Second))
+	if NativeDocumentMatches(command, actual) {
+		t.Fatal("within-minute different physical document moment accepted")
+	}
+	actual.Moment = Present(movement.Moment.Add(999 * time.Microsecond))
+	if !NativeDocumentMatches(command, actual) {
+		t.Fatal("provider millisecond precision rejected")
+	}
+	actual.Moment = Present(movement.Moment)
 	actual.CustomerOrderID = Present("00000000-0000-4000-8000-000000000096")
 	if NativeDocumentMatches(command, actual) {
 		t.Fatal("different native parent accepted")

@@ -15,7 +15,7 @@ func NativeDocumentMatches(command Command, actual NativeDocumentObservation) bo
 	if wanted.OrganizationID != actual.OrganizationID || wanted.AgentID != actual.AgentID || wanted.StoreID != actual.StoreID || wanted.CurrencyID != actual.CurrencyID || !nativeBoolEqual(wanted.Applicable, actual.Applicable) || !nativeBoolEqual(wanted.VATEnabled, actual.VATEnabled) || !nativeBoolEqual(wanted.VATIncluded, actual.VATIncluded) || !desiredDecimal(wanted.RateValue, actual.RateValue) {
 		return false
 	}
-	if !actual.Moment.IsKnown() || !wanted.Moment.UTC().Truncate(time.Minute).Equal(actual.Moment.Value.UTC().Truncate(time.Minute)) {
+	if !actual.Moment.IsKnown() || !wanted.Moment.UTC().Truncate(time.Millisecond).Equal(actual.Moment.Value.UTC().Truncate(time.Millisecond)) {
 		return false
 	}
 	if command.Action == ActionDemandCreate && (!actual.CustomerOrderID.IsKnown() || *actual.CustomerOrderID.Value != command.Correlation.CustomerOrderID) {
