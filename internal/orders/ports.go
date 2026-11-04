@@ -27,13 +27,14 @@ type ReviewContext struct {
 }
 
 type PreviewRequest struct {
-	NativeProposals  []NativeMovementProposal `json:"native_proposals,omitempty"`
-	Scope            Scope                    `json:"scope"`
-	ExpectedRevision int64                    `json:"expected_revision"`
-	PostingNumbers   []string                 `json:"posting_numbers,omitempty"`
-	Actions          []Action                 `json:"actions,omitempty"`
-	Proposals        []ActionProposal         `json:"proposals,omitempty"`
-	Actor            string                   `json:"-"`
+	CompositionProposals []CompositionProposal    `json:"composition_proposals,omitempty"`
+	NativeProposals      []NativeMovementProposal `json:"native_proposals,omitempty"`
+	Scope                Scope                    `json:"scope"`
+	ExpectedRevision     int64                    `json:"expected_revision"`
+	PostingNumbers       []string                 `json:"posting_numbers,omitempty"`
+	Actions              []Action                 `json:"actions,omitempty"`
+	Proposals            []ActionProposal         `json:"proposals,omitempty"`
+	Actor                string                   `json:"-"`
 }
 
 type Approval struct {

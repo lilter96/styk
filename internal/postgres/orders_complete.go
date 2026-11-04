@@ -141,6 +141,9 @@ func validateOrderReconciliation(work orders.Work, completion orders.Completion)
 		}
 		return nil
 	}
+	if work.Command.Action == orders.ActionMirrorCompositionUpdate && (work.DispatchCount != 1 || work.Receipt.State != orders.StateAcknowledged) {
+		return orders.ErrStale
+	}
 	if work.Command.Action.IsMirror() {
 		if completion.Correlation == nil || completion.Correlation.CustomerOrderID == "" || completion.ObservedTarget == nil {
 			return orders.ErrInvalid

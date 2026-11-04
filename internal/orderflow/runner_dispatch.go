@@ -50,6 +50,9 @@ func (r *Runner) dispatchMirror(ctx context.Context, work orders.Work) error {
 		return r.stop(ctx, work, "FRESH_TARGET_CHANGED_OR_UNAVAILABLE")
 	}
 	if target != nil && targetRepresents(work.Command, *target) {
+		if work.Command.Action == orders.ActionMirrorCompositionUpdate {
+			return r.stop(ctx, work, "COMPOSITION_ALREADY_CHANGED_REQUIRES_REVIEW")
+		}
 		return r.reconcileTarget(ctx, work, *target)
 	}
 	return r.bindAndWrite(ctx, work, client)

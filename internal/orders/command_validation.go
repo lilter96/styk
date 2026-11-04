@@ -4,7 +4,7 @@ import "fmt"
 
 func (action Action) Valid() bool {
 	switch action {
-	case ActionCountrySet, ActionExemplarPrepare, ActionExemplarSet, ActionDemandCreate, ActionSalesReturnCreate, ActionMirrorCreate, ActionMirrorUpdate, ActionMirrorPositionUpdate, ActionPostingPack, ActionPostingShip, ActionPostingCancel, ActionPostingDeliver,
+	case ActionMirrorCompositionUpdate, ActionCountrySet, ActionExemplarPrepare, ActionExemplarSet, ActionDemandCreate, ActionSalesReturnCreate, ActionMirrorCreate, ActionMirrorUpdate, ActionMirrorPositionUpdate, ActionPostingPack, ActionPostingShip, ActionPostingCancel, ActionPostingDeliver,
 		ActionPostingSplit, ActionPostingPartialCancel, ActionPostingTracking, ActionPostingLastMile, ActionPostingSentBySeller, ActionPostingLabelCreate:
 		return true
 	default:
@@ -13,10 +13,13 @@ func (action Action) Valid() bool {
 }
 
 func (action Action) IsMirror() bool {
-	return action == ActionMirrorCreate || action == ActionMirrorUpdate || action == ActionMirrorPositionUpdate
+	return action == ActionMirrorCompositionUpdate || action == ActionMirrorCreate || action == ActionMirrorUpdate || action == ActionMirrorPositionUpdate
 }
 
 func (command Command) Validate() error {
+	if command.PositionReplacement != nil && command.Action != ActionMirrorCompositionUpdate {
+		return ErrInvalid
+	}
 	if err := command.ValidateApplicationBaseline(); err != nil {
 		return err
 	}
@@ -69,6 +72,14 @@ func (command Command) validateMirror() error {
 	if command.CustomerOrder.HasPIIMappings() {
 		if command.ProtectedCustomer == nil || command.ProtectedCustomer.Validate() != nil {
 			return ErrInvalid
+		}
+	}
+	if command.Action == ActionMirrorCompositionUpdate {
+		if command.PositionReplacement == nil {
+			return ErrInvalid
+		}
+		if err := command.PositionReplacement.Validate(command); err != nil {
+			return err
 		}
 	}
 	if command.Action == ActionMirrorPositionUpdate {

@@ -42,6 +42,13 @@ func enrichOrderPositionBaselines(ctx context.Context, q ordersQuerier, result *
 }
 
 func validateOrderPositionBaseline(command orders.Command, current orders.ReviewContext) error {
+	if command.Action == orders.ActionMirrorCompositionUpdate {
+		baseline, found := current.PositionBaselines[command.PostingNumber]
+		if !found || command.PositionReplacement == nil || !baseline.Equal(command.PositionReplacement.Baseline) {
+			return orders.ErrStale
+		}
+		return command.PositionReplacement.Validate(command)
+	}
 	if command.PositionBaseline != nil || command.WritesApplication() {
 		baseline, found := current.PositionBaselines[command.PostingNumber]
 		if !found || command.PositionBaseline == nil || !baseline.Equal(*command.PositionBaseline) {

@@ -256,5 +256,5 @@ func (c *OrderClient) decodeOrderPosition(raw json.RawMessage, currency string) 
 	if err != nil {
 		return orders.TargetPosition{}, err
 	}
-	return orders.TargetPosition{VATEnabled: vatEnabled, Shipped: shipped, Discount: discount, ID: row.ID, MoyskladKind: kind, MoyskladID: id, Quantity: *quantity.Value, Reserve: reserve, Price: price, VAT: vat}, nil
+	return orders.TargetPosition{CompositionSafe: orders.Present(orderCompositionPositionSafe(fields)), VATEnabled: vatEnabled, Shipped: shipped, Discount: discount, ID: row.ID, MoyskladKind: kind, MoyskladID: id, Quantity: *quantity.Value, Reserve: reserve, Price: price, VAT: vat}, nil
 }

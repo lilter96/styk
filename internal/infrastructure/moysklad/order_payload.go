@@ -20,6 +20,9 @@ func (c *OrderClient) orderPayload(command orders.Command) (map[string]any, erro
 	if command.Action.IsNativeMovement() {
 		return c.nativeMovementPayload(command)
 	}
+	if command.Action == orders.ActionMirrorCompositionUpdate {
+		return c.compositionPayload(command)
+	}
 	if command.Action == orders.ActionMirrorPositionUpdate {
 		return c.orderPositionPayload(command)
 	}
@@ -248,7 +251,7 @@ func (c *OrderClient) validateOrderPayload(command orders.Command, body map[stri
 		return nil, orders.ErrInvalid
 	}
 	endpoint := "/entity/customerorder"
-	if command.Action == orders.ActionMirrorUpdate {
+	if command.Action == orders.ActionMirrorUpdate || command.Action == orders.ActionMirrorCompositionUpdate {
 		endpoint += "/{id}"
 	}
 	report := c.manifest.Validate(endpoint, "request", raw)

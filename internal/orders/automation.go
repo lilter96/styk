@@ -12,6 +12,9 @@ func validGrantField(field string) bool {
 // Allows requires an exact current grant revision, action and every specified
 // field. Explicit zero, null and empty fields never escape the field allowlist.
 func (grant AutomationGrant) Allows(command Command, now time.Time) bool {
+	if command.Action == ActionMirrorCompositionUpdate {
+		return false
+	}
 	if !grant.Active(now, command.Scope, command.ConfigRevision) || command.Validate() != nil || command.AutomationGrantRevision != grant.Revision {
 		return false
 	}

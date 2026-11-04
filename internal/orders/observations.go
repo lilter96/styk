@@ -69,18 +69,19 @@ type DeliveryFacts struct {
 }
 
 type TargetPosition struct {
-	VATEnabled   Field[bool]    `json:"vat_enabled"`
-	Shipped      Field[Decimal] `json:"shipped"`
-	Discount     Field[Decimal] `json:"discount"`
-	ID           string         `json:"id"`
-	Identity     LineIdentity   `json:"identity"`
-	MoyskladKind string         `json:"moysklad_kind"`
-	MoyskladID   string         `json:"moysklad_id"`
-	Quantity     Decimal        `json:"quantity"`
-	Reserve      Field[Decimal] `json:"reserve"`
-	Price        Field[Money]   `json:"price"`
-	VAT          Field[Decimal] `json:"vat"`
-	Managed      bool           `json:"managed"`
+	CompositionSafe Field[bool]    `json:"composition_safe,omitzero"`
+	VATEnabled      Field[bool]    `json:"vat_enabled"`
+	Shipped         Field[Decimal] `json:"shipped"`
+	Discount        Field[Decimal] `json:"discount"`
+	ID              string         `json:"id"`
+	Identity        LineIdentity   `json:"identity"`
+	MoyskladKind    string         `json:"moysklad_kind"`
+	MoyskladID      string         `json:"moysklad_id"`
+	Quantity        Decimal        `json:"quantity"`
+	Reserve         Field[Decimal] `json:"reserve"`
+	Price           Field[Money]   `json:"price"`
+	VAT             Field[Decimal] `json:"vat"`
+	Managed         bool           `json:"managed"`
 }
 
 // TargetObservation contains sanitized native facts, not raw customerorder JSON.

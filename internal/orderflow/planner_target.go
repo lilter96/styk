@@ -154,6 +154,9 @@ func targetRepresents(command orders.Command, target orders.TargetObservation) b
 	if command.CustomerOrder == nil || !validTarget(command.Correlation, target) || !orders.ApplicationTargetObserved(command, target) {
 		return false
 	}
+	if command.Action == orders.ActionMirrorCompositionUpdate {
+		return orders.CompositionTargetObserved(command, target)
+	}
 	if command.Action == orders.ActionMirrorPositionUpdate {
 		return sameNativeReferences(*command.CustomerOrder, target.Fields) && orders.PositionPatchObserved(command, target)
 	}

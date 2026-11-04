@@ -379,32 +379,33 @@ type PostingAction struct {
 }
 
 type Command struct {
-	PositionBaseline        *PositionBaseline   `json:"position_baseline,omitempty"`
-	NativeMovement          *NativeMovement     `json:"native_movement,omitempty"`
-	PositionPatch           *PositionPatch      `json:"position_patch,omitempty"`
-	ID                      string              `json:"id"`
-	Scope                   Scope               `json:"scope"`
-	Action                  Action              `json:"action"`
-	CommercialOrderID       string              `json:"commercial_order_id"`
-	PostingNumber           string              `json:"posting_number"`
-	Correlation             Correlation         `json:"correlation"`
-	ConfigRevision          int64               `json:"config_revision"`
-	Credentials             CredentialRevisions `json:"credentials"`
-	AutomationGrantRevision int64               `json:"automation_grant_revision,omitempty"`
-	ExpectedSourceRevision  string              `json:"expected_source_revision"`
-	ExpectedTargetRevision  string              `json:"expected_target_revision,omitempty"`
-	TargetPositions         []TargetPosition    `json:"target_positions,omitempty"`
-	TargetPositionsComplete bool                `json:"target_positions_complete,omitempty"`
-	SourceOrigin            Origin              `json:"source_origin"`
-	SourceCommandID         string              `json:"source_command_id,omitempty"`
-	Warehouse               WarehouseMappingRef `json:"warehouse"`
-	CustomerOrder           *CustomerOrderWrite `json:"customer_order,omitempty"`
-	PostingAction           *PostingAction      `json:"posting_action,omitempty"`
-	ProtectedCustomer       *ProtectedCustomer  `json:"protected_customer,omitempty"`
-	PII                     *Customer           `json:"-"`
-	ActionInput             *ActionParameters   `json:"-"`
-	IdempotencyKey          string              `json:"idempotency_key"`
-	CreatedAt               time.Time           `json:"created_at"`
+	PositionBaseline        *PositionBaseline    `json:"position_baseline,omitempty"`
+	NativeMovement          *NativeMovement      `json:"native_movement,omitempty"`
+	PositionReplacement     *PositionReplacement `json:"position_replacement,omitempty"`
+	PositionPatch           *PositionPatch       `json:"position_patch,omitempty"`
+	ID                      string               `json:"id"`
+	Scope                   Scope                `json:"scope"`
+	Action                  Action               `json:"action"`
+	CommercialOrderID       string               `json:"commercial_order_id"`
+	PostingNumber           string               `json:"posting_number"`
+	Correlation             Correlation          `json:"correlation"`
+	ConfigRevision          int64                `json:"config_revision"`
+	Credentials             CredentialRevisions  `json:"credentials"`
+	AutomationGrantRevision int64                `json:"automation_grant_revision,omitempty"`
+	ExpectedSourceRevision  string               `json:"expected_source_revision"`
+	ExpectedTargetRevision  string               `json:"expected_target_revision,omitempty"`
+	TargetPositions         []TargetPosition     `json:"target_positions,omitempty"`
+	TargetPositionsComplete bool                 `json:"target_positions_complete,omitempty"`
+	SourceOrigin            Origin               `json:"source_origin"`
+	SourceCommandID         string               `json:"source_command_id,omitempty"`
+	Warehouse               WarehouseMappingRef  `json:"warehouse"`
+	CustomerOrder           *CustomerOrderWrite  `json:"customer_order,omitempty"`
+	PostingAction           *PostingAction       `json:"posting_action,omitempty"`
+	ProtectedCustomer       *ProtectedCustomer   `json:"protected_customer,omitempty"`
+	PII                     *Customer            `json:"-"`
+	ActionInput             *ActionParameters    `json:"-"`
+	IdempotencyKey          string               `json:"idempotency_key"`
+	CreatedAt               time.Time            `json:"created_at"`
 }
 
 type State string

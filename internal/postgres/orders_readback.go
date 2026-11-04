@@ -19,6 +19,9 @@ func orderReadbackMatches(command orders.Command, observed orders.TargetObservat
 	if command.Correlation.CustomerOrderID != "" && command.Correlation.CustomerOrderID != correlation.CustomerOrderID {
 		return false
 	}
+	if command.Action == orders.ActionMirrorCompositionUpdate {
+		return orders.CompositionTargetObserved(command, observed)
+	}
 	if command.Action == orders.ActionMirrorPositionUpdate {
 		return orders.PositionPatchObserved(command, observed)
 	}

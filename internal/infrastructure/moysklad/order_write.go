@@ -58,6 +58,9 @@ func (c *OrderClient) orderPreflight(ctx context.Context, command orders.Command
 		}
 		return err
 	}
+	if command.Action == orders.ActionMirrorCompositionUpdate {
+		return c.compositionPreflight(ctx, command)
+	}
 	if err = c.applicationPreflight(ctx, command); err != nil {
 		return err
 	}

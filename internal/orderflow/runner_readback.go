@@ -29,6 +29,9 @@ func (r *Runner) readback(ctx context.Context, work orders.Work) error {
 	if sourceErr == nil {
 		fresh, sourceErr = r.freshSource(ctx, work, decision.Posting)
 	}
+	if work.Command.Action == orders.ActionMirrorCompositionUpdate && (work.DispatchCount != 1 || work.Receipt.State != orders.StateAcknowledged) {
+		return r.deferReadback(ctx, work, "COMPOSITION_ACKNOWLEDGEMENT_UNCERTAIN")
+	}
 	target, err := r.readWorkTarget(ctx, work)
 	if err != nil {
 		return r.deferReadback(ctx, work, "TARGET_READBACK_PENDING")

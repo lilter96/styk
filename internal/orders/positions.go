@@ -75,6 +75,9 @@ func ProjectionPositionBaseline(work Work, target TargetObservation) (PositionBa
 	if work.Command.Action == ActionMirrorCreate && work.DispatchCount != 1 {
 		return result, ErrBlocked
 	}
+	if work.Command.Action == ActionMirrorCompositionUpdate && (work.DispatchCount != 1 || work.Receipt.State != StateAcknowledged || !CompositionTargetObserved(work.Command, target)) {
+		return result, ErrBlocked
+	}
 	sources, err := projectionPositionSources(work.Command, target, &result)
 	if err != nil {
 		return result, err

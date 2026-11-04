@@ -91,6 +91,9 @@ func (s *Service) validatePreviewRequest(request orders.PreviewRequest) error {
 	if !s.allowed(request.Scope) {
 		return orders.ErrBlocked
 	}
+	if err := validateCompositionProposals(request); err != nil {
+		return err
+	}
 	if err := validateNativeProposals(request); err != nil {
 		return err
 	}
