@@ -577,5 +577,427 @@
       "supplemental_run": "shadow.jsonl"
     }
   ],
-  "primary_source_revision": "5ea6ac4"
+  "primary_source_revision": "5ea6ac4",
+  "follow_up_2026_11_04": {
+    "source_checkpoint": "2318366; cf15d19 and ea5108b subsequently checked by focused race suites",
+    "primary_command": "go test -race -tags=integration -json ./tests/integration ./internal/postgres -count=1 -timeout=30m",
+    "counts": {
+      "pass": 653,
+      "skip": 64
+    },
+    "supplemental_stock": {
+      "counts": {
+        "pass": 60,
+        "skip": 2
+      },
+      "passed_tests": [
+        "TestStockPublicationOperatorAssertionsAreNeverProviderProof",
+        "TestStockPublicationReviewExpiresWhenMarketplaceTraversalAgesOut",
+        "TestStockPublicationRequiresProofsScopedReviewAndExplicitIntent",
+        "TestStockPublicationUnknownNeverReplaysAndReadbackIsExplicit",
+        "TestStockPublicationSuccessfulResultAndContinuousChangedEvidence",
+        "TestStockPublicationPartialReadbackKeepsUnknownTargetsVisible",
+        "TestStockPublicationStaleReviewAndExpiredProofsFailClosed",
+        "TestStockPublicationConcurrentIntentAndDispatchAreSingle",
+        "TestStockPublicationTargetFenceSpansMoyskladScopes",
+        "TestStockPublicationCredentialRevisionRequiresNewReview",
+        "TestStockPublicationHTTPExplicitEnableReplayAndDisable",
+        "TestStockPublicationRejectsRecoveredStaleWorkerClaim",
+        "TestStockPublicationRejectsOutOfOrderImports/moysklad",
+        "TestStockPublicationRejectsOutOfOrderImports/ozon",
+        "TestStockPublicationRejectsOutOfOrderImports",
+        "TestStockPublicationRequiresCurrentCatalogIdentity/offer_changed",
+        "TestStockPublicationRequiresCurrentCatalogIdentity/stock_sku_differs",
+        "TestStockPublicationRequiresCurrentCatalogIdentity/sku_changed_consistently",
+        "TestStockPublicationRequiresCurrentCatalogIdentity/offer_archived",
+        "TestStockPublicationRequiresCurrentCatalogIdentity/warehouse_becomes_rfbs",
+        "TestStockPublicationRequiresCurrentCatalogIdentity/source_item_missing",
+        "TestStockPublicationRequiresCurrentCatalogIdentity",
+        "TestStockPublicationBlocksProductAndVariantSharedPool",
+        "TestStockPublicationPartialErrorKeepsUncertainTargetFenced",
+        "TestStockPublicationLostResponseNeverReissuesRegardlessOfEffect/applied_false",
+        "TestStockPublicationLostResponseNeverReissuesRegardlessOfEffect/applied_true",
+        "TestStockPublicationLostResponseNeverReissuesRegardlessOfEffect",
+        "TestStockPublicationDatabaseFailureAfterDispatchDoesNotReplay",
+        "TestStockPublicationZeroAndMissingQuantitiesAreDistinct",
+        "TestStockPublicationRejectsInvalidMarketplaceNumbers/present",
+        "TestStockPublicationRejectsInvalidMarketplaceNumbers/reserved",
+        "TestStockPublicationRejectsInvalidMarketplaceNumbers/free",
+        "TestStockPublicationRejectsInvalidMarketplaceNumbers",
+        "TestStockPublicationReusedBatchDoesNotRefreshObservationTime",
+        "TestStockPublicationFreshDurableTraversalReusesHistoricalBatch",
+        "TestStockPublicationDisableCannotUndoInFlightRequest",
+        "TestStockPublicationDisabledWorkerDoesNotClaimPreviouslyEnabledPolicy",
+        "TestStockPublicationFrozenMappingRevisionChangesBlockDispatch/product_mappings",
+        "TestStockPublicationFrozenMappingRevisionChangesBlockDispatch/warehouse_mappings",
+        "TestStockPublicationFrozenMappingRevisionChangesBlockDispatch",
+        "TestStockPublicationRejectsMissingReservationAttribution",
+        "TestStockPublicationWorkerCrashAfterDispatchIsNotRetried",
+        "TestStockPublicationRejectsProofAfterSourceTraversalStarted",
+        "TestStockPublicationRejectsLongRunningTraversalEvenIfRecentlyFinished/moysklad",
+        "TestStockPublicationRejectsLongRunningTraversalEvenIfRecentlyFinished/ozon",
+        "TestStockPublicationRejectsLongRunningTraversalEvenIfRecentlyFinished",
+        "TestStockPublicationRejectsIdenticalStartTimesForDifferentBatches",
+        "TestStockShadowProjectionBoundaries/explicit_zero",
+        "TestStockShadowProjectionBoundaries/missing_observation",
+        "TestStockShadowProjectionBoundaries/missing_reserve",
+        "TestStockShadowProjectionBoundaries/negative_stock",
+        "TestStockShadowProjectionBoundaries/fractional_stock",
+        "TestStockShadowProjectionBoundaries",
+        "TestStockShadowRejectsParentVariantOverlap",
+        "TestStockShadowStaleReusedAndUnknown/reused_batch",
+        "TestStockShadowStaleReusedAndUnknown/stale_traversal",
+        "TestStockShadowStaleReusedAndUnknown/unknown_write",
+        "TestStockShadowStaleReusedAndUnknown/expired_attestation",
+        "TestStockShadowStaleReusedAndUnknown",
+        "TestStockShadowDistinguishesRecoveredAndUnresolvedUnknown"
+      ]
+    },
+    "supplemental_process_browser": {
+      "counts": {
+        "pass": 12
+      },
+      "passed_tests": [
+        "TestOrdersNineProcessStack/sessions-and-isolation",
+        "TestOrdersNineProcessStack/provider-global-cooldown",
+        "TestOrdersNineProcessStack/concurrent-approval-and-workers",
+        "TestOrdersNineProcessStack/unknown-does-not-resend-or-block-other-postings",
+        "TestOrdersNineProcessStack/kill-restart-before-claim",
+        "TestOrdersNineProcessStack/kill-restart-after-claim",
+        "TestOrdersNineProcessStack/kill-restart-after-provider-before-ack",
+        "TestOrdersNineProcessStack/kill-restart-during-poll",
+        "TestOrdersNineProcessStack/stale-child-cannot-ack",
+        "TestOrdersNineProcessStack/browser",
+        "TestOrdersNineProcessStack/credential-rotation-and-expired-grant",
+        "TestOrdersNineProcessStack"
+      ]
+    },
+    "skips": [
+      {
+        "test": "TestCatalogMerchantBrowserStack",
+        "reason": "catalog_browser_stack_test.go:44: catalog browser stack not requested",
+        "supplemental_pass": false
+      },
+      {
+        "test": "TestControlledStockPublicationBrowser",
+        "reason": "controlled_stock_browser_test.go:38: browser E2E not requested",
+        "supplemental_pass": false
+      },
+      {
+        "test": "TestControlledStockRecoveryBrowser",
+        "reason": "controlled_stock_browser_test.go:45: recovery browser E2E not requested",
+        "supplemental_pass": false
+      },
+      {
+        "test": "TestControlledStockAutomaticBrowser",
+        "reason": "controlled_stock_browser_test.go:52: automatic browser E2E not requested",
+        "supplemental_pass": false
+      },
+      {
+        "test": "TestControlledStockAutomaticMultiBrowser",
+        "reason": "controlled_stock_browser_test.go:59: automatic multi-product browser E2E not requested",
+        "supplemental_pass": false
+      },
+      {
+        "test": "TestMerchantBrowserWorkspaces",
+        "reason": "merchant_browser_test.go:41: merchant browser E2E not requested",
+        "supplemental_pass": false
+      },
+      {
+        "test": "TestOrderFlowFullE2E",
+        "reason": "orders_flow_full_e2e_test.go:41: explicit legacy live diagnostic opt-in required",
+        "supplemental_pass": false
+      },
+      {
+        "test": "TestOrdersProcessChild",
+        "reason": "orders_process_child_test.go:42: orders process subprocess only",
+        "supplemental_pass": false
+      },
+      {
+        "test": "TestOrdersNineProcessStack/browser",
+        "reason": "orders_process_browser_test.go:27: orders browser stack not requested",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestOzonFulfillmentFbsE2E",
+        "reason": "ozon_fulfillment_e2e_test.go:26: skipping live Ozon fulfillment e2e: OZON_API_KEY not set",
+        "supplemental_pass": false
+      },
+      {
+        "test": "TestProviderCoordinatorProcessChild",
+        "reason": "provider_process_test.go:87: provider coordination subprocess only",
+        "supplemental_pass": false
+      },
+      {
+        "test": "TestStockPublicationOperatorAssertionsAreNeverProviderProof",
+        "reason": "stock_publication_test.go:113: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationReviewExpiresWhenMarketplaceTraversalAgesOut",
+        "reason": "stock_publication_test.go:175: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationRequiresProofsScopedReviewAndExplicitIntent",
+        "reason": "stock_publication_test.go:191: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationUnknownNeverReplaysAndReadbackIsExplicit",
+        "reason": "stock_publication_test.go:232: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationSuccessfulResultAndContinuousChangedEvidence",
+        "reason": "stock_publication_test.go:304: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationPartialReadbackKeepsUnknownTargetsVisible",
+        "reason": "stock_publication_test.go:356: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationStaleReviewAndExpiredProofsFailClosed",
+        "reason": "stock_publication_test.go:408: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationConcurrentIntentAndDispatchAreSingle",
+        "reason": "stock_publication_test.go:432: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationTargetFenceSpansMoyskladScopes",
+        "reason": "stock_publication_test.go:483: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationCredentialRevisionRequiresNewReview",
+        "reason": "stock_publication_test.go:533: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationHTTPExplicitEnableReplayAndDisable",
+        "reason": "stock_publication_test.go:560: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationRejectsRecoveredStaleWorkerClaim",
+        "reason": "stock_publication_test.go:697: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationRejectsOutOfOrderImports/moysklad",
+        "reason": "stock_publication_test.go:725: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationRejectsOutOfOrderImports/ozon",
+        "reason": "stock_publication_test.go:725: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationRequiresCurrentCatalogIdentity/offer_changed",
+        "reason": "stock_publication_test.go:773: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationRequiresCurrentCatalogIdentity/stock_sku_differs",
+        "reason": "stock_publication_test.go:773: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationRequiresCurrentCatalogIdentity/sku_changed_consistently",
+        "reason": "stock_publication_test.go:773: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationRequiresCurrentCatalogIdentity/offer_archived",
+        "reason": "stock_publication_test.go:773: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationRequiresCurrentCatalogIdentity/warehouse_becomes_rfbs",
+        "reason": "stock_publication_test.go:773: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationRequiresCurrentCatalogIdentity/source_item_missing",
+        "reason": "stock_publication_test.go:773: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationBlocksProductAndVariantSharedPool",
+        "reason": "stock_publication_test.go:831: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationPartialErrorKeepsUncertainTargetFenced",
+        "reason": "stock_publication_test.go:876: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationLostResponseNeverReissuesRegardlessOfEffect/applied_false",
+        "reason": "stock_publication_test.go:907: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationLostResponseNeverReissuesRegardlessOfEffect/applied_true",
+        "reason": "stock_publication_test.go:907: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationDatabaseFailureAfterDispatchDoesNotReplay",
+        "reason": "stock_publication_test.go:946: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationZeroAndMissingQuantitiesAreDistinct",
+        "reason": "stock_publication_test.go:989: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationRejectsInvalidMarketplaceNumbers/present",
+        "reason": "stock_publication_test.go:1015: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationRejectsInvalidMarketplaceNumbers/reserved",
+        "reason": "stock_publication_test.go:1015: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationRejectsInvalidMarketplaceNumbers/free",
+        "reason": "stock_publication_test.go:1015: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationReusedBatchDoesNotRefreshObservationTime",
+        "reason": "stock_publication_test.go:1040: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationFreshDurableTraversalReusesHistoricalBatch",
+        "reason": "stock_publication_test.go:1058: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationDisableCannotUndoInFlightRequest",
+        "reason": "stock_publication_test.go:1130: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationDisabledWorkerDoesNotClaimPreviouslyEnabledPolicy",
+        "reason": "stock_publication_test.go:1163: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationFrozenMappingRevisionChangesBlockDispatch/product_mappings",
+        "reason": "stock_publication_test.go:1183: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationFrozenMappingRevisionChangesBlockDispatch/warehouse_mappings",
+        "reason": "stock_publication_test.go:1183: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationRejectsMissingReservationAttribution",
+        "reason": "stock_publication_test.go:1213: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationCrashHelper",
+        "reason": "stock_publication_test.go:1239: subprocess fixture",
+        "supplemental_pass": false
+      },
+      {
+        "test": "TestStockPublicationWorkerCrashAfterDispatchIsNotRetried",
+        "reason": "stock_publication_test.go:1256: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationRejectsProofAfterSourceTraversalStarted",
+        "reason": "stock_publication_test.go:1310: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationRejectsLongRunningTraversalEvenIfRecentlyFinished/moysklad",
+        "reason": "stock_publication_test.go:1334: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationRejectsLongRunningTraversalEvenIfRecentlyFinished/ozon",
+        "reason": "stock_publication_test.go:1334: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockPublicationRejectsIdenticalStartTimesForDifferentBatches",
+        "reason": "stock_publication_test.go:1376: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockShadowBrowser",
+        "reason": "stock_shadow_browser_test.go:43: shadow browser E2E not requested",
+        "supplemental_pass": false
+      },
+      {
+        "test": "TestStockShadowProjectionBoundaries/explicit_zero",
+        "reason": "stock_shadow_test.go:112: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockShadowProjectionBoundaries/missing_observation",
+        "reason": "stock_shadow_test.go:112: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockShadowProjectionBoundaries/missing_reserve",
+        "reason": "stock_shadow_test.go:112: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockShadowProjectionBoundaries/negative_stock",
+        "reason": "stock_shadow_test.go:112: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockShadowProjectionBoundaries/fractional_stock",
+        "reason": "stock_shadow_test.go:112: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockShadowRejectsParentVariantOverlap",
+        "reason": "stock_shadow_test.go:192: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockShadowStaleReusedAndUnknown/reused_batch",
+        "reason": "stock_shadow_test.go:238: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockShadowStaleReusedAndUnknown/stale_traversal",
+        "reason": "stock_shadow_test.go:255: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockShadowStaleReusedAndUnknown/unknown_write",
+        "reason": "stock_shadow_test.go:268: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      },
+      {
+        "test": "TestStockShadowStaleReusedAndUnknown/expired_attestation",
+        "reason": "stock_shadow_test.go:285: dedicated local stock publication test database required",
+        "supplemental_pass": true
+      }
+    ],
+    "notes": [
+      "Counts include subtests and must not be added as unique test totals.",
+      "Optional live fulfillment and legacy live diagnostic were intentionally not dispatched.",
+      "Missing optional browser flags and dedicated stock database requirements are not passes; supplemental exact named passes are recorded separately."
+    ]
+  }
 }

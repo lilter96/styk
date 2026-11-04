@@ -261,3 +261,69 @@ validation, while duplicate/unapproved fields remain rejected. No new live
 fulfillment commands or real buyer/delivery events occurred in these checks.
 Live labels and delivery transitions remain **NOT_OBSERVED_LIVE**; native demand,
 salesreturn and safe structural line replacement are not established by this work.
+
+### 2026-11-04: owned native line updates and integration checkpoint
+
+The normal order pipeline now supports one reviewed update of an existing native
+position UUID: quantity, price and owned reserve, with exact prior successful
+source/native binding. A complete fresh native frontier is frozen and rechecked;
+foreign lines/reserves are preserved. Quantity/reserve changes require known zero
+shipped quantity; price changes require known zero discount and the same currency.
+Documented native surcharge discounts remain readable. New/deleted lines,
+assortment changes and tax changes remain separate unsupported mutations.
+A reconciled line patch does not assert that every field or other line is current.
+
+Real Go service preview, merchant HTTP approval/CSRF/idempotency, PostgreSQL,
+outbox, normal runner and the actual MoySklad adapter were tested with deterministic
+HTTP providers: one position PUT changed quantity to 1 and price to 19.99 RUB;
+foreign quantity 7/reserve 2 remained unchanged. Independent readback reconciled;
+subsequent preview was a no-op. Source/manual-target changes rejected dispatch.
+A lost response remained UNKNOWN, then a new runner reconciled by reads without
+another PUT. Additional regressions fixed large int64 revision rounding and
+customer-consent/fresh-private-value checks; the unused unjournaled status writer
+was removed.
+
+Hybrid handover requires a reconciled same-posting label, unchanged source
+revision, matching warehouse/method, unexpired encrypted PDF and explicit operator
+print confirmation. Preview, approval and final dispatch revalidate the proof.
+The merchant selects that label; expiry clears the selection without polling.
+Eight typed Ozon packing requirement lists distinguish missing/null from explicit
+empty. Outstanding SKU-specific legal/exemplar requirements are actionable
+blockers, never invented values or inline additions to the ship-v4 payload.
+Separate exemplar write operations were not implemented in this checkpoint.
+
+Migration 53 preserves native position provenance and refuses destructive rollback
+with position-update history. Migration 54 serializes active Ozon posting actions
+across different MoySklad projections; it retains UNKNOWN fences. The historical
+local upgrade 52→54 preserved all **4,410 rows in 117 existing tables** and the
+original encryption key, after another encrypted custom-format backup. No existing
+publication outcome was rewritten.
+
+Verification at this checkpoint: make lint/test/build, complete Go race suite and
+full integration-tag lint (0 findings). Prepared full PostgreSQL/race run:
+**653 passed / 64 skipped / 0 failures**. Supplemental dedicated stock suite:
+**60 passed / 2 skipped**; nine-process/browser gate: **12 passed / 0 skipped**.
+Counts include subtests; detailed skip reasons and supplemental matches are in
+`orders-test-skips.json`. The process gate uses 3 API processes, 2 schedulers,
+4 workers, one PostgreSQL and two merchants. Frontend typecheck/lint/build,
+**235 unit tests** and **8 synthetic browser journeys** pass; desktop/mobile
+screenshots inspected, including current and expired hybrid label selection.
+Subsequent focused race tests verified independent fresh-target evaluation despite
+partial collection failure, without approving stale/UNKNOWN targets or losing the
+read error. No stock formula or partial-traversal completeness was changed.
+
+Live continuation through two authenticated normal APIs and two normal workers:
+**8 MoySklad metadata reads, all HTTP 200**. One Ozon order-read attempt ended
+without an HTTP response; a separate unauthenticated TLS connectivity probe also
+timed out. This does not establish an account permission rejection. The active
+local traversal checkpoint advanced without claiming fresh provider evidence for
+the two cached historical cancelled postings. No provider writes were dispatched;
+order work count remained unchanged. Temporary read configuration revisions 9/10
+ended disabled with no automation grant. Normal merchant desktop/mobile UI was
+checked against the historical database without API mocks; sessions worked across
+both API processes. Existing general publication restrictions remain active.
+
+This checkpoint does not establish live ship/delivery/marking behavior or native
+shipment/return processing. Native movement, exemplar and operator recovery work
+continues on isolated implementation branches and is not credited as integrated
+functionality here.
