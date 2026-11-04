@@ -99,7 +99,7 @@ func newOrdersWork(db *postgres.Store, resolver *credentials.Resolver) (applicat
 	if err != nil {
 		return nil, err
 	}
-	runner, err := orderflow.NewRunner(db, factory, orderflow.RunnerOptions{WorkerID: id, AllowScope: orderAllowed, Service: service, Collector: collector, CustomerReader: protector, LabelDownloader: labelDownloader.Download})
+	runner, err := orderflow.NewRunner(db, factory, orderflow.RunnerOptions{WorkerID: id, AllowScope: orderAllowed, Service: service, Collector: collector, CustomerReader: protector, ActionReader: orderprivacy.ActionProtector{Vault: resolver.Vault, Store: db}, LabelDownloader: labelDownloader.Download})
 	if err != nil {
 		return nil, err
 	}

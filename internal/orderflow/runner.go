@@ -25,6 +25,7 @@ type RunnerOptions struct {
 	Service        *Service
 	Collector      Collector
 	CustomerReader orders.CustomerReader
+	ActionReader   orders.ActionInputReader
 	// LabelDownloader downloads a provider label PDF from a validated URL.
 	// It is invoked after a label creation task completes. The caller is
 	// responsible for durable storage of the returned bytes.

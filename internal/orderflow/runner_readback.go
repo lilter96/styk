@@ -107,6 +107,9 @@ func (r *Runner) readFulfillmentResult(ctx context.Context, work orders.Work) (o
 // cycle instead of being marked reconciled. After confirmation, the status is
 // written back to MoySklad to keep both providers in sync.
 func (r *Runner) reconcileFulfillment(ctx context.Context, work orders.Work, posting orders.Posting) error {
+	if posting.Scope != work.Scope || posting.PostingNumber != work.Command.PostingNumber || posting.CommercialOrderID != work.Command.CommercialOrderID {
+		return r.deferReadback(ctx, work, "FULFILLMENT_TARGET_MISMATCH")
+	}
 	expected := orders.ExpectedPostingStatus(work.Command.Action)
 
 	// Label creation is verified through a separate provider task, not posting
@@ -126,10 +129,23 @@ func (r *Runner) reconcileFulfillment(ctx context.Context, work orders.Work, pos
 	// Native projection is a separate reviewed durable operation. Reconciliation
 	// must never issue an unjournaled PUT or replay it after a lost response.
 	if expected == "" {
-		return r.deferReadback(ctx, work, "ACTION_SPECIFIC_READBACK_REQUIRED")
+		if !r.trackingConfirmed(ctx, work.Command, posting) {
+			return r.deferReadback(ctx, work, "ACTION_SPECIFIC_READBACK_REQUIRED")
+		}
 	}
 
 	return r.complete(ctx, work, orders.Completion{State: orders.StateReconciled, Code: "FULFILLMENT_CONFIRMED", ObservedPosting: &posting, NextRunAt: r.now().Add(r.options.PollInterval)})
+}
+
+func (r *Runner) trackingConfirmed(ctx context.Context, command orders.Command, posting orders.Posting) bool {
+	if command.Action != orders.ActionPostingTracking || !posting.Delivery.TrackingNumber.IsKnown() {
+		return false
+	}
+	hydrated, err := r.withActionInput(ctx, command)
+	if err != nil || hydrated.ActionInput == nil || hydrated.ActionInput.TrackingNumber == "" {
+		return false
+	}
+	return *posting.Delivery.TrackingNumber.Value == hydrated.ActionInput.TrackingNumber
 }
 
 // pollLabelTask checks the Ozon label task until it completes or fails. It

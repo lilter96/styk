@@ -2,6 +2,7 @@ package ozon
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -9,6 +10,33 @@ import (
 
 	"github.com/lilter96/styk/internal/orders"
 )
+
+func TestFulfillmentProtectedInputIsTransientAndExact(t *testing.T) {
+	t.Parallel()
+	input := orders.ActionParameters{TrackingNumber: "actual-tracking"}
+	command := orders.Command{Action: orders.ActionPostingTracking, PostingNumber: "posting", PostingAction: &orders.PostingAction{Parameters: input.Public(), ProtectedInput: &orders.ProtectedActionInput{Reference: "sealed", Revision: 1}}}
+	if _, err := fulfillmentPayload(command, ""); err == nil {
+		t.Fatal("missing secret accepted")
+	}
+	command.ActionInput = &input
+	body, err := fulfillmentPayload(command, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(body)
+	if err != nil || !strings.Contains(string(encoded), "actual-tracking") || strings.Contains(string(encoded), "delivery_service") {
+		t.Fatal("actual tracking not transmitted faithfully")
+	}
+	stored, err := json.Marshal(command)
+	if err != nil || strings.Contains(string(stored), "actual-tracking") {
+		t.Fatal("private tracking leaked into durable command")
+	}
+	wrong := orders.ActionParameters{ReasonMessage: "different action"}
+	command.ActionInput = &wrong
+	if _, err = fulfillmentPayload(command, ""); err == nil {
+		t.Fatal("substituted secret accepted")
+	}
+}
 
 func TestFulfillmentBindingDoesNotAuthorizeInvalidIntent(t *testing.T) {
 	t.Parallel()

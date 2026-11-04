@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -269,6 +270,14 @@ func fulfillmentPayload(command orders.Command, path string) (map[string]any, er
 	if command.PostingAction == nil || command.PostingAction.Parameters.HasPrivateValues() {
 		return nil, orders.ErrInvalid
 	}
+	if command.PostingAction.ProtectedInput != nil {
+		if command.ActionInput == nil || !reflect.DeepEqual(command.ActionInput.Public(), command.PostingAction.Parameters) {
+			return nil, orders.ErrStale
+		}
+		action := *command.PostingAction
+		action.Parameters = *command.ActionInput
+		command.PostingAction = &action
+	}
 	switch command.Action {
 	case orders.ActionPostingPack, orders.ActionPostingSplit:
 		return shipPayload(command)
@@ -311,8 +320,8 @@ func cancelPayload(command orders.Command) (map[string]any, error) {
 		return nil, orders.ErrInvalid
 	}
 	body := map[string]any{"posting_number": command.PostingNumber, "cancel_reason_id": reasonID}
-	if command.PostingAction.Parameters.ReasonMessageProvided {
-		body["cancel_reason_message"] = ""
+	if command.PostingAction.Parameters.ReasonMessage != "" {
+		body["cancel_reason_message"] = command.PostingAction.Parameters.ReasonMessage
 	}
 	return body, nil
 }
@@ -334,7 +343,7 @@ func partialCancelPayload(command orders.Command) (map[string]any, error) {
 		}
 		items = append(items, map[string]any{"sku": parsed, "quantity": qty})
 	}
-	body := map[string]any{"posting_number": command.PostingNumber, "cancel_reason_id": reasonID, "cancel_reason_message": "", "items": items}
+	body := map[string]any{"posting_number": command.PostingNumber, "cancel_reason_id": reasonID, "cancel_reason_message": command.PostingAction.Parameters.ReasonMessage, "items": items}
 	return body, nil
 }
 

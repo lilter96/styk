@@ -66,6 +66,11 @@ func (r *Runner) dispatchFulfillment(ctx context.Context, work orders.Work) erro
 	if sourceErr != nil {
 		return r.stop(ctx, work, "FRESH_SOURCE_CHANGED_OR_UNAVAILABLE")
 	}
+	command, err := r.withActionInput(ctx, work.Command)
+	if err != nil {
+		return r.stop(ctx, work, "PROTECTED_ACTION_INPUT_UNAVAILABLE")
+	}
+	work.Command = command
 	client, err := resolveOrderClient(ctx, r.resolver, work.Scope, "ozon", work.Credentials.Ozon)
 	if err != nil {
 		return r.stop(ctx, work, "SCOPED_SOURCE_CREDENTIALS_UNAVAILABLE")

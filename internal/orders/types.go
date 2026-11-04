@@ -394,6 +394,7 @@ type Command struct {
 	PostingAction           *PostingAction      `json:"posting_action,omitempty"`
 	ProtectedCustomer       *ProtectedCustomer  `json:"protected_customer,omitempty"`
 	PII                     *Customer           `json:"-"`
+	ActionInput             *ActionParameters   `json:"-"`
 	IdempotencyKey          string              `json:"idempotency_key"`
 	CreatedAt               time.Time           `json:"created_at"`
 }
