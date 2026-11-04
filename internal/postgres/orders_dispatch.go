@@ -79,6 +79,9 @@ func orderDispatchCurrent(ctx context.Context, tx pgx.Tx, work orders.Work, guar
 	if !guard.Begin && work.State != orders.StateClaimed && work.State != orders.StateDispatching && !work.State.ReadOnly() {
 		return false, nil
 	}
+	if !guard.Begin && work.State.ReadOnly() {
+		return orderReadbackCurrent(ctx, tx, work)
+	}
 	current, err := readOrderWorkContext(ctx, tx, work)
 	if err != nil {
 		return false, err
