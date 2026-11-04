@@ -21,7 +21,7 @@ func (p Profile) Validate() error {
 	if p.Contract.Validate() != nil || p.ObservedAt.IsZero() || p.CheckedAt.Before(p.ObservedAt) || !p.ValidUntil.After(p.CheckedAt) || p.ValidUntil.Sub(p.CheckedAt) > Validity {
 		return orders.ErrInvalid
 	}
-	for _, field := range []orders.Field[string]{p.MethodID, p.Scheme, p.WarehouseType, p.WarehouseStatus, p.CarrierIntegration, p.DestinationType} {
+	for _, field := range []orders.Field[string]{p.MethodID, p.MethodStatus, p.Scheme, p.WarehouseType, p.WarehouseStatus, p.CarrierIntegration, p.DestinationType} {
 		if field.Validate() != nil || (field.IsKnown() && !safeID(*field.Value)) {
 			return orders.ErrInvalid
 		}
@@ -31,7 +31,7 @@ func (p Profile) Validate() error {
 	}
 	seen := make(map[string]bool, len(p.VerifiedDimensions))
 	for _, dimension := range p.VerifiedDimensions {
-		if !slices.Contains([]string{"scheme", "warehouse", "warehouse_type", "warehouse_status", "delivery_method", "express", "carrier", "destination"}, dimension) || seen[dimension] {
+		if !slices.Contains([]string{"scheme", "warehouse", "warehouse_type", "warehouse_status", "delivery_method", "method_status", "express", "carrier", "destination"}, dimension) || seen[dimension] {
 			return orders.ErrInvalid
 		}
 		seen[dimension] = true

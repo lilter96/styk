@@ -76,7 +76,7 @@ func (c *OrdersClient) readOrderMethods(ctx context.Context) ([]delivery.Method,
 
 func appendOrderMethods(result *[]delivery.Method, rows []orderFields, seen map[string]bool) error {
 	for _, row := range rows {
-		method := delivery.Method{ID: orderKnown(row.id("id")), WarehouseID: orderKnown(row.id("warehouse_id")), Express: row.boolean("is_express")}
+		method := delivery.Method{ID: orderKnown(row.id("id")), WarehouseID: orderKnown(row.id("warehouse_id")), Express: row.boolean("is_express"), Status: row.text("status")}
 		if method.ID == "" || method.WarehouseID == "" || seen[method.ID] || *row.err != nil || len(*result) >= maxDeliveryRows {
 			return errOrderPayload
 		}

@@ -33,9 +33,10 @@ type Warehouse struct {
 }
 
 type Method struct {
-	ID          string             `json:"id"`
-	WarehouseID string             `json:"warehouse_id"`
-	Express     orders.Field[bool] `json:"express"`
+	ID          string               `json:"id"`
+	WarehouseID string               `json:"warehouse_id"`
+	Express     orders.Field[bool]   `json:"express"`
+	Status      orders.Field[string] `json:"status"`
 }
 
 type Profile struct {
@@ -45,6 +46,7 @@ type Profile struct {
 	WarehouseID        string               `json:"warehouse_id"`
 	MethodID           orders.Field[string] `json:"method_id"`
 	MethodVerified     bool                 `json:"method_verified"`
+	MethodStatus       orders.Field[string] `json:"method_status,omitzero"`
 	Scheme             orders.Field[string] `json:"scheme"`
 	WarehouseType      orders.Field[string] `json:"warehouse_type"`
 	WarehouseStatus    orders.Field[string] `json:"warehouse_status"`

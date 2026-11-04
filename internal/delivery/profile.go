@@ -88,6 +88,7 @@ func (p *Profile) classifyMethod(method *Method) {
 	}
 	p.MethodID, p.MethodVerified = orders.Present(method.ID), true
 	p.VerifiedDimensions = append(p.VerifiedDimensions, "delivery_method")
+	p.classifyMethodStatus(method.Status)
 	if !method.Express.IsKnown() {
 		return
 	}
@@ -100,6 +101,19 @@ func (p *Profile) classifyMethod(method *Method) {
 	p.Express = method.Express
 	if !slices.Contains(p.VerifiedDimensions, "express") {
 		p.VerifiedDimensions = append(p.VerifiedDimensions, "express")
+	}
+}
+
+// A method lifecycle state is evidence, not a universal prohibition on
+// fulfilling postings already assigned to a disabled delivery method.
+func (p *Profile) classifyMethodStatus(status orders.Field[string]) {
+	p.MethodStatus = status
+	if !status.IsKnown() {
+		return
+	}
+	p.VerifiedDimensions = append(p.VerifiedDimensions, "method_status")
+	if !slices.Contains([]string{"NEW", "EDITED", "ACTIVE", "DISABLED", "WAITING", "BROKEN"}, *status.Value) {
+		p.Drift = append(p.Drift, orders.Drift{Path: "$.delivery_methods[].status", Code: "unknown_enum"})
 	}
 }
 

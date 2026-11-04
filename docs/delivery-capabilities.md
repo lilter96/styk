@@ -13,11 +13,14 @@ contain a scheme: a matching explicit warehouse type supplies FBS/rFBS evidence.
 permissions. FBS methods absent from the method list are not fabricated.
 
 Discovery uses `/v2/warehouse/list` with `{limit:100,cursor:""}` and
-`/v2/delivery-method/list` with `{filter:{},limit:50,offset:0}`. These structures
-were observed in the bounded read reported in [orders-live-evidence.md](orders-live-evidence.md).
-Warehouse traversal is bounded to ten pages; method continuation is rejected
-until its current semantics are reviewed. A response cursor does not prove that
-a request accepts one. The five-minute cache belongs to one exact scoped client;
+`/v2/delivery-method/list` with cursor, limit 100, `sort_dir: "ASC"` and an explicit
+filter containing all six documented lifecycle statuses. The v2 method contract
+was checked against the [official OpenAPI](https://docs.ozon.ru/api/seller/zh/swagger.json)
+on 2026-11-04 (`v2DeliveryMethodListV2Request`,
+`v2DeliveryMethodListV2Response`). The earlier offset request was a legacy-contract
+defect, not a provider pagination limitation. Both traversals are bounded to ten
+pages/1,000 entities. Missing/repeated continuation cursors, duplicate identities
+and partial responses are rejected; partial results are not cached as complete. The five-minute cache belongs to one exact scoped client;
 concurrent readers share one bounded discovery and cannot mutate its cache.
 
 [Official notice 648](https://dev.ozon.ru/news/648-Izmeneniia-v-metodakh-Seller-API/)
@@ -34,8 +37,12 @@ Migration 47 persists tenant/account/warehouse/method/revision observations with
 exact contract hash, contract check date, observation/check times and expiry.
 Fact revisions remain stable across freshness checks. Empty method identity is
 an explicit warehouse-only observation. Writes are transactional; reads reject
-old contracts and expired evidence. These observations do not remove the existing
-rFBS stock guards or claim stock publication readiness. Rollback refuses to
+old contracts and expired evidence. Method lifecycle status is preserved independently, including missing/null and
+unknown future values. A disabled method is not automatically evidence that an
+already assigned posting cannot be fulfilled: each action still needs its own
+validated prerequisites. Legacy profile identities without this new observation
+remain valid. These observations do not enroll targets or grant stock publication
+permission; the exact-account test policy and reviewed mappings remain required. Rollback refuses to
 discard observation history while the table is populated; no provider operation
 is issued.
 

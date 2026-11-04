@@ -47,12 +47,12 @@ func TestOrderMethodsV2TraversesCursorsAndPreservesExactIdentities(t *testing.T)
 			if cursor != "" {
 				t.Error("initial cursor not empty")
 			}
-			writeTestResponse(t, w, `{"delivery_methods":[{"id":9223372036854775806,"warehouse_id":9007199254740993,"is_express":true}],"has_next":true,"cursor":"opaque+/=cursor"}`)
+			writeTestResponse(t, w, `{"delivery_methods":[{"id":9223372036854775806,"warehouse_id":9007199254740993,"is_express":true,"status":"DISABLED"}],"has_next":true,"cursor":"opaque+/=cursor"}`)
 		case 2:
 			if cursor != "opaque+/=cursor" {
 				t.Error("provider cursor altered")
 			}
-			writeTestResponse(t, w, `{"delivery_methods":[{"id":9223372036854775807,"warehouse_id":9007199254740995,"is_express":false}],"has_next":false}`)
+			writeTestResponse(t, w, `{"delivery_methods":[{"id":9223372036854775807,"warehouse_id":9007199254740995,"is_express":false,"status":null}],"has_next":false}`)
 		default:
 			t.Error("unexpected extra request")
 		}
@@ -64,6 +64,9 @@ func TestOrderMethodsV2TraversesCursorsAndPreservesExactIdentities(t *testing.T)
 	}
 	if methods[0].ID != "9223372036854775806" || methods[0].WarehouseID != "9007199254740993" || methods[1].ID != "9223372036854775807" || methods[1].WarehouseID != "9007199254740995" {
 		t.Fatal("int64 identity precision lost")
+	}
+	if orderKnown(methods[0].Status) != "DISABLED" || methods[1].Status.Presence != orders.PresenceNull {
+		t.Fatal("method lifecycle status was discarded or defaulted")
 	}
 }
 
