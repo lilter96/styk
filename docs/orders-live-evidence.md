@@ -871,3 +871,75 @@ rotation/expired grants. Its 1,069 actual loopback HTTP attempts had maximum
 in-flight 1; these are deterministic local-provider measurements, not live Ozon
 throughput. Current desktop/mobile assembly-reference screenshots were inspected;
 unknown quantities remain explicit and the mobile card fits the viewport.
+
+### Positive superseded-parent reserve transfer — 2026-11-05
+
+The earlier rejected superseded-parent candidate was replaced with a hardened,
+integrated path (`36cd4bc`, `eea9d32`, `9cfd2ab`, `0d056dd`, `7a39345`). The
+[official detail schema](https://docs.ozon.ru/api/seller/zh/swagger.json), reviewed
+again on November 5, describes `cancelled_from_split_pending` separately from
+ordinary cancellation. The decoder recognizes that exact value without making
+ordinary cancellation or generic HTTP 404 sufficient authority to release stock.
+
+The existing immutable split work/preview/receipt, current raw parent status,
+complete conserving child observations and native UUID ownership now derive a
+transient permission. The durable command stores only the split work identity
+and its existing frozen source/native frontier. JSON/literal permissions cannot
+be supplied as authority. The normal worker rereads the parent, every child and
+the native document; final DB-clock checks compare current child heads and
+target-scoped fences under the existing dispatch lock. Each intent can change
+only one owned reserve to zero, preserving quantity, price, application and
+foreign positions. Children unlock only after actual acknowledgment and a
+reconciled zero for every owned parent reserve; repeated cycles are no-ops.
+
+Stock attribution remains separate: a fresh complete native point must match the
+released native version and precede a successful durable stock traversal. The
+old parent is assessed as explicitly **superseded**, not silently excluded by a
+child list. UNKNOWN, changed native facts, missing evidence or a later read failure
+still block the affected pool. Foreign same-pool reserves stay in the source
+aggregate and are deducted once by the existing calculator. A PostgreSQL/HTTP
+test found and fixed missing reserve-only ownership enrichment; the completed
+pipeline now settles the parent and both children only after those real reads.
+No schema migration, credential replacement or historical outcome rewrite occurs.
+
+Verification: 28 split PostgreSQL race test/subtest events passed in 310.725 s;
+the new split-to-native-point-to-stock-traversal case passed in 24.394 s; 39 native
+storage events passed in 11.103 s; the existing native collector case passed in
+18.216 s. The stock selection passed **68 / skipped 5 / failed 0** in 91.064 s
+(the same four opt-in browser tests and parent-invoked crash helper listed above).
+The nine-process race/browser gate passed in 130.105 s, with two Playwright
+journeys and current desktop/mobile screenshots inspected. Make lint/test/build,
+go vet, full race, frontend typecheck/lint/build and 283 frontend tests passed;
+normal and integration-tag Go lint report 0. These are deterministic local-provider
+integration results, not live Ozon split/shipment claims.
+
+Final guard wiring was rechecked with 9 passing PostgreSQL test/subtest events
+in 138.302 s. Four additional regressions ensure a missing/null parent status,
+failed native read or UNKNOWN native write cannot disappear behind otherwise
+conserving children. Existing unencumbered split coverage remains intact. The
+new workflow phases and fixtures are kept bounded without rewriting unrelated
+legacy functions.
+After those final phase/frontier changes, the new split attribution and existing
+native collector PostgreSQL cases passed again together in 45.505 s; full Go
+lint/test/build/vet/race and integration-tag lint passed on the final source.
+
+**Remaining scope:** nested split chains and an unreadable/absent old parent do
+not acquire permission from this path. A lost acknowledgment is not converted
+into a successful HTTP receipt; matching readback alone cannot supply the missing
+acknowledged transfer proof. An actual active Ozon replacement-parent transition
+has **NOT_OBSERVED_LIVE** coverage until an eligible real posting is available.
+
+A post-deployment **live read-only** gate exercised the clean `7a39345` code on
+two API replicas and two workers: **6 Ozon reads + 14 MoySklad reads, all HTTP
+200; provider writes 0**. Normal unfulfilled polling was empty; the complementary
+creation/detail cycle persisted two historical cancelled postings with explicitly
+empty assembly groups. No positive split-retirement status was observed. Two
+successful native point attempts reused immutable snapshots/target revisions but
+recorded new DB admission and recording times. No complete native account-order
+batch, stock publication, order intent or fabricated buyer event was produced.
+Private ledger: `.local/orders-v10/superseded-release-read-20261105.json`.
+Original disabled order configuration 28 was restored to identical business
+contents via audited revision **30 OFF**; stock revision **39 OFF** was unchanged.
+Both API replicas passed health/readiness, all four processes used publication
+flags OFF, and the original encryption key, credentials and historical outcomes
+were preserved. Final active calls, pending tasks and target fences were zero.

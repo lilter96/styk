@@ -568,3 +568,14 @@ independent source and destination stock/reserve were zero, settings revision
 **39 OFF**, and both API/worker replicas ran clean `ded6a74` with publication
 flags unset. Exact operations, retained source documents, accepted uncertainty
 and regression scopes are in the [order evidence report](orders-live-evidence.md).
+
+The positive superseded-parent path is now integrated for an explicitly observed
+`cancelled_from_split_pending` plus an acknowledged conserving split, owned
+reserve-only release, both child projections and fresh stock attribution. Its
+complete PostgreSQL/HTTP pipeline passed, including lost-response and stale-child
+guards. A deployed `7a39345` live compatibility check made **6 Ozon + 14 MoySklad
+reads, all HTTP 200, no provider writes**. It observed historical ordinary
+cancellations only; a real active replacement split is **NOT_OBSERVED_LIVE**.
+Order settings are **30 OFF**, stock settings **39 OFF**, all publication flags
+OFF, key/history intact. Nested/unreadable-parent limitations and exact test
+evidence remain explicit in the [order report](orders-live-evidence.md).
