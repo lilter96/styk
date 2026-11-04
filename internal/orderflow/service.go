@@ -11,6 +11,7 @@ import (
 
 type ServiceOptions struct {
 	ExemplarReader  orders.ExemplarReader
+	RecoverySealer  orders.RecoveryReasonSealer
 	AllowScope      func(orders.Scope) bool
 	Now             func() time.Time
 	CustomerReader  orders.CustomerReader

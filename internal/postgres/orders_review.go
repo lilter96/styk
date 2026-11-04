@@ -249,7 +249,7 @@ func validateOrderPreview(preview orders.Preview, current orders.ReviewContext, 
 }
 
 func readOrderActivePostings(ctx context.Context, q ordersQuerier, scope orders.Scope) (map[string]orders.State, error) {
-	rows, err := q.Query(ctx, `SELECT posting_number,state FROM orders_work WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND state IN ('QUEUED','CLAIMED','DISPATCHING','ACKNOWLEDGED','POLLING','UNKNOWN') LIMIT 10001`, ordersScopeArgs(scope)...)
+	rows, err := q.Query(ctx, `SELECT w.posting_number,w.state FROM orders_target_fences f JOIN orders_work w ON w.id=f.work_id WHERE f.tenant_id=$1 AND f.moysklad_account=$2 AND f.ozon_account=$3 LIMIT 10001`, ordersScopeArgs(scope)...)
 	if err != nil {
 		return nil, ordersError("read order target fences", err)
 	}

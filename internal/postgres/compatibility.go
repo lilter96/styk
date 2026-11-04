@@ -15,11 +15,11 @@ func (s *Store) RequireCurrentSchema(ctx context.Context) error {
 	defer cancel()
 	var version int64
 	err := s.Pool.QueryRow(ctx, `SELECT COALESCE(max(version_id),0) FROM (SELECT DISTINCT ON(version_id) version_id,is_applied FROM goose_db_version ORDER BY version_id,id DESC) versions WHERE is_applied`).Scan(&version)
-	if err != nil || version < 56 {
+	if err != nil || version < 57 {
 		return ErrSchemaIncompatible
 	}
 	var compatible bool
-	err = s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid=to_regclass('orders_posting_heads') AND attname='projection' AND NOT attisdropped) AND to_regclass('provider_call_accounts') IS NOT NULL AND to_regclass('delivery_capability_observations') IS NOT NULL AND to_regclass('orders_work') IS NOT NULL AND to_regclass('orders_label_artifacts') IS NOT NULL AND to_regclass('orders_work_active_fulfillment_target') IS NOT NULL AND to_regclass('orders_exemplar_secrets') IS NOT NULL`).Scan(&compatible)
+	err = s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid=to_regclass('orders_posting_heads') AND attname='projection' AND NOT attisdropped) AND to_regclass('provider_call_accounts') IS NOT NULL AND to_regclass('delivery_capability_observations') IS NOT NULL AND to_regclass('orders_work') IS NOT NULL AND to_regclass('orders_label_artifacts') IS NOT NULL AND to_regclass('orders_work_active_fulfillment_target') IS NOT NULL AND to_regclass('orders_native_document_intents') IS NOT NULL AND to_regclass('orders_exemplar_secrets') IS NOT NULL AND to_regclass('orders_target_fences') IS NOT NULL AND to_regclass('orders_recovery_resolutions') IS NOT NULL`).Scan(&compatible)
 	if err != nil || !compatible {
 		return ErrSchemaIncompatible
 	}

@@ -96,5 +96,9 @@ func (s *Store) DeleteExpiredOrderSecrets(ctx context.Context, _ time.Time, limi
 		return int(tag.RowsAffected()) + labels + actions, err
 	}
 	exemplars, err := s.deleteExpiredOrderExemplars(ctx, limit)
-	return int(tag.RowsAffected()) + labels + actions + exemplars, err
+	if err != nil {
+		return int(tag.RowsAffected()) + labels + actions + exemplars, err
+	}
+	reasons, err := deleteExpiredRecoveryReasons(ctx, s.Pool, limit)
+	return int(tag.RowsAffected()) + labels + actions + exemplars + reasons, err
 }

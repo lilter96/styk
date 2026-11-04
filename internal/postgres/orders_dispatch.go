@@ -55,6 +55,17 @@ func (s *Store) GuardOrderDispatch(ctx context.Context, guard orders.DispatchGua
 }
 
 func orderDispatchCurrent(ctx context.Context, tx pgx.Tx, work orders.Work, guard orders.DispatchGuard) (bool, error) {
+	var fenced bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM orders_target_fences WHERE work_id=$1)`, work.ID).Scan(&fenced); err != nil {
+		return false, ordersError("check current order target fence", err)
+	}
+	if !fenced {
+		return false, nil
+	}
+	if valid, err := recoveryDispatchCurrent(ctx, tx, work); err != nil || !valid {
+		return false, err
+	}
+
 	hash, err := orders.CommandFingerprint(guard.Work.Command)
 	if err != nil {
 		return false, err

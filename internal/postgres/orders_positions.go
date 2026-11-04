@@ -41,7 +41,11 @@ func enrichOrderPositionBaselines(ctx context.Context, q ordersQuerier, result *
 			result.PositionBaselines[number] = baseline
 		}
 	}
-	return ordersRowsError("read reconciled position ownership", rows.Err())
+	rows.Close()
+	if err = rows.Err(); err != nil {
+		return ordersError("read reconciled position ownership", err)
+	}
+	return enrichRecoveryPositionBaselines(ctx, q, result, numbers)
 }
 
 func validateOrderPositionBaseline(command orders.Command, current orders.ReviewContext) error {

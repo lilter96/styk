@@ -33,7 +33,7 @@ func readSelectedOrderFences(ctx context.Context, q ordersQuerier, scope orders.
 		return result, nil
 	}
 	args := append(ordersScopeArgs(scope), numbers)
-	rows, err := q.Query(ctx, `SELECT posting_number,state FROM orders_work WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND posting_number=ANY($4::text[]) AND state IN ('QUEUED','CLAIMED','DISPATCHING','ACKNOWLEDGED','POLLING','UNKNOWN') LIMIT 100`, args...)
+	rows, err := q.Query(ctx, `SELECT w.posting_number,w.state FROM orders_target_fences f JOIN orders_work w ON w.id=f.work_id WHERE f.tenant_id=$1 AND f.moysklad_account=$2 AND f.ozon_account=$3 AND f.posting_number=ANY($4::text[]) LIMIT 100`, args...)
 	if err != nil {
 		return nil, ordersError("select bounded order target fences", err)
 	}

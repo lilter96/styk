@@ -10,15 +10,19 @@ import (
 
 const ActionMirrorPositionUpdate Action = "mirror_position_update"
 
-// PositionBaseline is derived only from immutable reconciled work and native
-// readback. A matching SKU or a provider-supplied Managed flag is not ownership.
+// PositionBaseline comes from reconciled work and native readback, or an
+// explicitly identified expiring operator recovery attestation. A matching SKU
+// or a provider-supplied Managed flag is not ownership.
 type PositionBaseline struct {
-	Scope       Scope             `json:"scope"`
-	WorkID      string            `json:"work_id"`
-	CommandID   string            `json:"command_id"`
-	Correlation Correlation       `json:"correlation"`
-	Bindings    []PositionBinding `json:"bindings"`
-	ObservedAt  time.Time         `json:"observed_at"`
+	RecoveryID    string            `json:"recovery_id,omitempty"`
+	EvidenceClass string            `json:"evidence_class,omitempty"`
+	ValidUntil    time.Time         `json:"valid_until,omitzero"`
+	Scope         Scope             `json:"scope"`
+	WorkID        string            `json:"work_id"`
+	CommandID     string            `json:"command_id"`
+	Correlation   Correlation       `json:"correlation"`
+	Bindings      []PositionBinding `json:"bindings"`
+	ObservedAt    time.Time         `json:"observed_at"`
 }
 
 type PositionBinding struct {
@@ -38,6 +42,9 @@ type PositionPatch struct {
 }
 
 func (baseline PositionBaseline) Validate() error {
+	if baseline.RecoveryID != "" && (!validID(baseline.RecoveryID) || baseline.EvidenceClass != "OPERATOR_ATTESTED" || !baseline.ValidUntil.After(baseline.ObservedAt)) {
+		return ErrInvalid
+	}
 	if baseline.Scope.Validate() != nil || !validID(baseline.WorkID) || !validID(baseline.CommandID) || baseline.Correlation.Validate() != nil || baseline.Correlation.Scope != baseline.Scope || baseline.Correlation.CustomerOrderID == "" || baseline.ObservedAt.IsZero() || len(baseline.Bindings) == 0 || len(baseline.Bindings) > 1000 {
 		return ErrInvalid
 	}
