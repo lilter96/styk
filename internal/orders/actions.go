@@ -152,8 +152,10 @@ type ActionOptionsRequest struct {
 // through a separate provider resource (e.g. label task).
 func ExpectedPostingStatus(action Action) string {
 	switch action {
-	case ActionPostingPack, ActionPostingSplit:
+	case ActionPostingPack:
 		return "awaiting_deliver"
+	case ActionPostingSplit:
+		return "" // each returned child and its allocated quantities must be observed
 	case ActionPostingShip:
 		return "delivering"
 	case ActionPostingDeliver:

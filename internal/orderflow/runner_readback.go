@@ -107,7 +107,7 @@ func (r *Runner) readFulfillmentResult(ctx context.Context, work orders.Work) (o
 // cycle instead of being marked reconciled. After confirmation, the status is
 // written back to MoySklad to keep both providers in sync.
 func (r *Runner) reconcileFulfillment(ctx context.Context, work orders.Work, posting orders.Posting) error {
-	if posting.Scope != work.Scope || posting.PostingNumber != work.Command.PostingNumber || posting.CommercialOrderID != work.Command.CommercialOrderID {
+	if posting.Validate() != nil || posting.Evidence.Origin != orders.OriginOzon || posting.Scope != work.Scope || posting.PostingNumber != work.Command.PostingNumber || posting.CommercialOrderID != work.Command.CommercialOrderID {
 		return r.deferReadback(ctx, work, "FULFILLMENT_TARGET_MISMATCH")
 	}
 	expected := orders.ExpectedPostingStatus(work.Command.Action)
@@ -129,12 +129,20 @@ func (r *Runner) reconcileFulfillment(ctx context.Context, work orders.Work, pos
 	// Native projection is a separate reviewed durable operation. Reconciliation
 	// must never issue an unjournaled PUT or replay it after a lost response.
 	if expected == "" {
-		if !r.trackingConfirmed(ctx, work.Command, posting) {
+		if !r.trackingConfirmed(ctx, work.Command, posting) && !r.partialCancellationConfirmed(ctx, work, posting) {
 			return r.deferReadback(ctx, work, "ACTION_SPECIFIC_READBACK_REQUIRED")
 		}
 	}
 
 	return r.complete(ctx, work, orders.Completion{State: orders.StateReconciled, Code: "FULFILLMENT_CONFIRMED", ObservedPosting: &posting, NextRunAt: r.now().Add(r.options.PollInterval)})
+}
+
+func (r *Runner) partialCancellationConfirmed(ctx context.Context, work orders.Work, posting orders.Posting) bool {
+	if work.Command.Action != orders.ActionPostingPartialCancel || work.Command.PostingAction == nil {
+		return false
+	}
+	decision, err := r.reviewedDecision(ctx, work)
+	return err == nil && orders.PartialCancellationObserved(decision.Posting, posting, work.Command.PostingAction.Parameters.Lines)
 }
 
 func (r *Runner) trackingConfirmed(ctx context.Context, command orders.Command, posting orders.Posting) bool {

@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -42,6 +43,9 @@ func completeOrderLocked(ctx context.Context, tx pgx.Tx, work orders.Work, compl
 	if err := validateOrderCompletion(work, completion); err != nil {
 		return err
 	}
+	if err := validatePartialCancellationEvidence(ctx, tx, work, completion); err != nil {
+		return err
+	}
 	now, err := ordersClock(ctx, tx)
 	if err != nil {
 		return err
@@ -72,6 +76,9 @@ func validateOrderCompletion(work orders.Work, completion orders.Completion) err
 			return orders.ErrInvalid
 		}
 		if work.Receipt.TaskID != "" && receipt.TaskID != "" && work.Receipt.TaskID != receipt.TaskID {
+			return orders.ErrStale
+		}
+		if len(work.Receipt.PostingNumbers) > 0 && !slices.Equal(work.Receipt.PostingNumbers, receipt.PostingNumbers) {
 			return orders.ErrStale
 		}
 	}

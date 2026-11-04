@@ -11,6 +11,22 @@ import (
 	"github.com/lilter96/styk/internal/orders"
 )
 
+func TestSplitAcknowledgementPreservesExactChildIdentities(t *testing.T) {
+	t.Parallel()
+	c := &OrdersClient{}
+	command := orders.Command{ID: "intent", Action: orders.ActionPostingSplit, PostingNumber: "parent", PostingAction: &orders.PostingAction{Parameters: orders.ActionParameters{Packages: []orders.ActionPackage{{}, {}}}}}
+	receipt, err := c.shipReceipt(command, []byte(`{"result":["child-9007199254740993","child-2"]}`), 200)
+	if err != nil || receipt.State != orders.StateAcknowledged || len(receipt.PostingNumbers) != 2 || receipt.PostingNumbers[0] != "child-9007199254740993" {
+		t.Fatalf("split lineage lost: %+v %v", receipt, err)
+	}
+	for _, raw := range []string{`{"result":["child","child"]}`, `{"result":["child"]}`, `{"result":[]}`} {
+		receipt, err = c.shipReceipt(command, []byte(raw), 200)
+		if err == nil || receipt.State != orders.StateUnknown {
+			t.Fatal("invalid split result accepted")
+		}
+	}
+}
+
 func TestFulfillmentProtectedInputIsTransientAndExact(t *testing.T) {
 	t.Parallel()
 	input := orders.ActionParameters{TrackingNumber: "actual-tracking"}

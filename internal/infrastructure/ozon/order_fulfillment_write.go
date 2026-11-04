@@ -138,10 +138,26 @@ func (c *OrdersClient) shipReceipt(command orders.Command, data []byte, status i
 	var response struct {
 		Result []string `json:"result"`
 	}
-	if json.Unmarshal(data, &response) != nil || !slices.Contains(response.Result, command.PostingNumber) {
+	if json.Unmarshal(data, &response) != nil || !validShipPostingNumbers(command, response.Result) {
 		return orderReceipt(command, orders.StateUnknown, status, "acknowledgement_unverified"), orders.ErrStale
 	}
-	return orderReceipt(command, orders.StateAcknowledged, status, "provider_acknowledged"), nil
+	receipt := orderReceipt(command, orders.StateAcknowledged, status, "provider_acknowledged")
+	receipt.PostingNumbers = slices.Clone(response.Result)
+	return receipt, nil
+}
+
+func validShipPostingNumbers(command orders.Command, numbers []string) bool {
+	if command.PostingAction == nil || len(numbers) == 0 || len(numbers) != len(command.PostingAction.Parameters.Packages) {
+		return false
+	}
+	seen := make(map[string]bool, len(numbers))
+	for _, number := range numbers {
+		if number == "" || len(number) > 200 || strings.TrimSpace(number) != number || strings.ContainsAny(number, "\r\n\x00") || seen[number] {
+			return false
+		}
+		seen[number] = true
+	}
+	return command.Action == orders.ActionPostingSplit || (len(numbers) == 1 && numbers[0] == command.PostingNumber)
 }
 
 func (c *OrdersClient) cancelReceipt(command orders.Command, data []byte, status int) (orders.Receipt, error) {

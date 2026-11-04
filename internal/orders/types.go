@@ -415,13 +415,14 @@ const (
 )
 
 type Receipt struct {
-	CommandID  string    `json:"command_id"`
-	State      State     `json:"state"`
-	HTTPStatus int       `json:"http_status,omitempty"`
-	TaskID     string    `json:"task_id,omitempty"`
-	ExternalID string    `json:"external_id,omitempty"`
-	Code       string    `json:"code,omitempty"`
-	ObservedAt time.Time `json:"observed_at"`
+	PostingNumbers []string  `json:"posting_numbers,omitempty"`
+	CommandID      string    `json:"command_id"`
+	State          State     `json:"state"`
+	HTTPStatus     int       `json:"http_status,omitempty"`
+	TaskID         string    `json:"task_id,omitempty"`
+	ExternalID     string    `json:"external_id,omitempty"`
+	Code           string    `json:"code,omitempty"`
+	ObservedAt     time.Time `json:"observed_at"`
 }
 
 type Validation struct {
