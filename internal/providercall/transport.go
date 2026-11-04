@@ -46,6 +46,9 @@ func (t Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if t.Gate == nil || t.Base == nil {
 		return nil, &NotDispatchedError{Cause: ErrInvalid}
 	}
+	if err := enterDispatchEvidence(req.Context()); err != nil {
+		return nil, &NotDispatchedError{Cause: err}
+	}
 	operation := operationKey(req.URL.Path)
 	if label, _ := req.Context().Value(labelDownloadKey{}).(bool); label && req.Method == http.MethodGet {
 		operation = "orders/label/pdf"
@@ -60,13 +63,8 @@ func (t Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			slog.Warn("provider admission cleanup pending")
 		}
 	}()
-	if err = permit.Start(req.Context()); err != nil {
+	if err = startProviderDispatch(req.Context(), permit); err != nil {
 		return nil, &NotDispatchedError{Cause: err}
-	}
-	if guard, ok := req.Context().Value(guardKey{}).(func(context.Context) error); ok {
-		if err = guard(req.Context()); err != nil {
-			return nil, &NotDispatchedError{Cause: err}
-		}
 	}
 	response, err := t.Base.RoundTrip(req)
 	if response == nil {
@@ -77,6 +75,18 @@ func (t Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		response.Header.Set("X-STYK-Coordination-Pending", "true")
 	}
 	return response, err
+}
+
+func startProviderDispatch(ctx context.Context, permit *Permit) error {
+	if err := permit.Start(ctx); err != nil {
+		return err
+	}
+	if guard, ok := ctx.Value(guardKey{}).(func(context.Context) error); ok {
+		if err := guard(ctx); err != nil {
+			return err
+		}
+	}
+	return startDispatchEvidence(ctx)
 }
 
 func operationKey(path string) string {

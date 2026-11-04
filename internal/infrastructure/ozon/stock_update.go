@@ -19,6 +19,8 @@ const stockUpdatePath = "/v2/products/stocks"
 
 var ErrStockWritesDisabled = errors.New("stock writes are disabled")
 
+var ErrStockWriteNotDispatched = errors.New("ozon stock write was not dispatched")
+
 var ErrStockWriteUnknown = errors.New("ozon stock write outcome is unknown")
 var ErrStockReadbackUnavailable = errors.New("ozon stock readback is unavailable")
 
@@ -135,7 +137,7 @@ func (c *Client) UpdateStocks(ctx context.Context, items []StockUpdate) ([]Stock
 	}
 	payload, _ := json.Marshal(body)
 	if err := c.wait(ctx); err != nil {
-		return nil, err
+		return nil, ErrStockWriteNotDispatched
 	}
 	ctx, err = c.authorizeRequest(ctx, func(check context.Context) error { return c.authorizeStockIntent(check, authorize) })
 	if err != nil {
@@ -144,10 +146,11 @@ func (c *Client) UpdateStocks(ctx context.Context, items []StockUpdate) ([]Stock
 	if len(items) == 1 {
 		ctx = providercall.WithTarget(ctx, items[0].ProductID+":"+items[0].WarehouseID)
 	}
+	ctx, dispatch := providercall.WithDispatchEvidence(ctx)
 	u := c.base.ResolveReference(&url.URL{Path: stockUpdatePath})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(payload))
 	if err != nil {
-		return nil, errors.New("construct stock update")
+		return nil, ErrStockWriteNotDispatched
 	}
 	req.Header.Set("Client-Id", c.id)
 	req.Header.Set("Api-Key", c.key)
@@ -155,8 +158,8 @@ func (c *Client) UpdateStocks(ctx context.Context, items []StockUpdate) ([]Stock
 	req.Header.Set("Accept", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		if providercall.IsNotDispatched(err) {
-			return nil, ErrStockWritesDisabled
+		if dispatch.AbortBeforeDispatch() || providercall.IsNotDispatched(err) && !dispatch.Started() {
+			return nil, ErrStockWriteNotDispatched
 		}
 		return nil, &StockWriteError{}
 	}
