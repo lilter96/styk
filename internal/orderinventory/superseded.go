@@ -10,7 +10,7 @@ func assessSupersededParent(input Input, observation Observation, result Obligat
 	if proof == nil || work == nil || target == nil || !knownStatus(observation.Posting, orders.SupersededSplitParentStatus) || !nativePointBaselineOrdered(input, observation) {
 		return pending(result, Unreflected, "superseded_parent_release_unproven")
 	}
-	if proof.Scope != observation.Posting.Scope || proof.ParentWorkID != work.ID || proof.SplitWorkID != work.Command.SupersededSplitWorkID || proof.ParentCorrelation != observation.Binding || proof.ParentStoreID != input.Pool.WarehouseID || !proof.ParentSourceMatches(observation.Posting) || target.Fields.Applicable.Validate() != nil || !proof.ParentTargetMatches(*target) || !proof.ConfirmedAt.Equal(target.ObservedAt) {
+	if observation.NativePointTargetRevision == "" || observation.NativePointTargetRevision != proof.ParentTargetRevision || proof.Scope != observation.Posting.Scope || proof.ParentWorkID != work.ID || proof.SplitWorkID != work.Command.SupersededSplitWorkID || proof.ParentCorrelation != observation.Binding || proof.ParentStoreID != input.Pool.WarehouseID || !proof.ParentSourceMatches(observation.Posting) || target.Fields.Applicable.Validate() != nil || !proof.ParentTargetMatches(*target) || !proof.ConfirmedAt.Equal(target.ObservedAt) {
 		return pending(result, Unreflected, "superseded_parent_frontier_changed")
 	}
 	patch := work.Command.PositionPatch

@@ -31,26 +31,27 @@ const (
 // A resolved binding or a successful mirror alone cannot prove stock coverage.
 type Observation struct {
 	// Constructed from scoped immutable split/release work and current child heads.
-	SplitSuperseded       *orders.SplitReserveTransferPermission
-	ReconciledAt          time.Time
-	NativePointAdmittedAt time.Time
-	NativePointRecordedAt time.Time
-	NativeReadCode        string
-	PositionOwnership     *orders.PositionBaseline
-	NativeDocument        *orders.NativeDocumentObservation
-	NativeConfirmedAt     time.Time
-	Posting               orders.Posting
-	Lines                 []orders.LineIdentity
-	Binding               orders.Correlation
-	Work                  *orders.Work
-	Target                *orders.TargetObservation
-	Positions             []domain.StockObservedOrderPosition
-	NativeSyncID          *string
-	NativeStartedAt       time.Time
-	NativeFinishedAt      time.Time
-	Quarantined           bool
-	Truncated             bool
-	ProjectionAttempted   bool
+	SplitSuperseded           *orders.SplitReserveTransferPermission
+	ReconciledAt              time.Time
+	NativePointTargetRevision string
+	NativePointAdmittedAt     time.Time
+	NativePointRecordedAt     time.Time
+	NativeReadCode            string
+	PositionOwnership         *orders.PositionBaseline
+	NativeDocument            *orders.NativeDocumentObservation
+	NativeConfirmedAt         time.Time
+	Posting                   orders.Posting
+	Lines                     []orders.LineIdentity
+	Binding                   orders.Correlation
+	Work                      *orders.Work
+	Target                    *orders.TargetObservation
+	Positions                 []domain.StockObservedOrderPosition
+	NativeSyncID              *string
+	NativeStartedAt           time.Time
+	NativeFinishedAt          time.Time
+	Quarantined               bool
+	Truncated                 bool
+	ProjectionAttempted       bool
 }
 
 type Input struct {

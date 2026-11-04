@@ -48,6 +48,7 @@ func supersededInventoryFixture(t *testing.T, foreign bool) Input {
 	target.Positions = append([]orders.TargetPosition(nil), command.TargetPositions...)
 	target.Positions[0].Reserve = orders.Present(orders.Decimal("0"))
 	o.Target = &target
+	o.NativePointTargetRevision = target.Revision
 	o.Positions[0].Reserve = ptr("0")
 	o.Positions[0].Shipped = ptr("0")
 	o.Positions[0].Applicable = ptr(true)
@@ -95,6 +96,8 @@ func TestSupersededInventoryMissingOrChangedProofNeverSettles(t *testing.T) {
 		name string
 		edit func(*Input)
 	}{
+		{"missing current native revision", func(i *Input) { i.Observations[0].NativePointTargetRevision = "" }},
+		{"changed current native revision", func(i *Input) { i.Observations[0].NativePointTargetRevision = "unreviewed-new-native-version" }},
 		{"missing current child proof", func(i *Input) { i.Observations[0].SplitSuperseded = nil }},
 		{"latest native failure", func(i *Input) { i.Observations[0].NativeReadCode = "NATIVE_READ_FAILED" }},
 		{"own reserve resurged", func(i *Input) { i.Observations[0].Positions[0].Reserve = ptr("1") }},
