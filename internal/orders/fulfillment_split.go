@@ -10,6 +10,10 @@ import (
 // contents, never by response order. Child line IDs may legitimately differ
 // from the original line IDs; SKU and offer remain separate identities.
 func SplitObserved(before Posting, packages []ActionPackage, numbers []string, children []Posting) bool {
+	return splitAllocationObserved(before, packages, numbers, children, splitChildValid)
+}
+
+func splitAllocationObserved(before Posting, packages []ActionPackage, numbers []string, children []Posting, valid func(Posting, Posting) bool) bool {
 	if len(packages) < 2 || len(packages) > 1000 || len(numbers) != len(packages) || len(children) != len(numbers) {
 		return false
 	}
@@ -19,7 +23,7 @@ func SplitObserved(before Posting, packages []ActionPackage, numbers []string, c
 	}
 	seen := make(map[string]bool, len(children))
 	for _, child := range children {
-		if !splitChildValid(before, child) || seen[child.PostingNumber] || !slices.Contains(numbers, child.PostingNumber) {
+		if !valid(before, child) || seen[child.PostingNumber] || !slices.Contains(numbers, child.PostingNumber) {
 			return false
 		}
 		seen[child.PostingNumber] = true

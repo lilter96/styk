@@ -41,6 +41,11 @@ func executionInput(posting orders.Posting, action orders.Action, input orders.A
 			return orders.ErrInvalid
 		}
 		return nil
+	case orders.ActionPostingSplitUnassembled:
+		if len(input.Packages) < 2 || !unassembledSourceSKUsUnique(posting) {
+			return orders.ErrInvalid
+		}
+		return validatePackageConservation(posting, input.Packages)
 	case orders.ActionPostingPack, orders.ActionPostingSplit:
 		if !input.ReadinessConfirmed || (action == orders.ActionPostingSplit && len(input.Packages) < 2) || (action == orders.ActionPostingPack && len(input.Packages) != 1) {
 			return orders.ErrBlocked
@@ -142,4 +147,17 @@ func validatePartialQuantities(posting orders.Posting, input orders.ActionParame
 
 func executionText(value string) bool {
 	return len(strings.TrimSpace(value)) > 0 && len(value) <= 4096 && !strings.ContainsAny(value, "\x00\r\n")
+}
+
+// The split response identifies products by SKU only. Two source lines sharing
+// that SKU cannot be attributed independently, even with distinct provider IDs.
+func unassembledSourceSKUsUnique(posting orders.Posting) bool {
+	seen := make(map[string]bool, len(posting.Lines))
+	for _, line := range posting.Lines {
+		if seen[line.Identity.SKU] {
+			return false
+		}
+		seen[line.Identity.SKU] = true
+	}
+	return true
 }

@@ -7,6 +7,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/lilter96/styk/internal/ordercontract"
 	"github.com/lilter96/styk/internal/orders"
 )
 
@@ -34,12 +35,13 @@ func ExecutionContractHash() string {
 	payload = append(payload, requirementsContract...)
 	payload = append(payload, exemplarContract...)
 	payload = append(payload, countryContract...)
+	payload = append(payload, ordercontract.UnassembledSplitContractHash()...)
 	sum := sha256.Sum256(append(payload, deliveryMethodContract...))
 	return hex.EncodeToString(sum[:])
 }
 
 func ExecutionActions() []orders.Action {
-	return []orders.Action{orders.ActionCountrySet, orders.ActionExemplarPrepare, orders.ActionExemplarSet, orders.ActionPostingPack, orders.ActionPostingSplit, orders.ActionPostingCancel,
+	return []orders.Action{orders.ActionCountrySet, orders.ActionExemplarPrepare, orders.ActionExemplarSet, orders.ActionPostingPack, orders.ActionPostingSplit, orders.ActionPostingSplitUnassembled, orders.ActionPostingCancel,
 		orders.ActionPostingPartialCancel, orders.ActionPostingTracking, orders.ActionPostingShip,
 		orders.ActionPostingLastMile, orders.ActionPostingDeliver, orders.ActionPostingSentBySeller, orders.ActionPostingLabelCreate}
 }
@@ -115,6 +117,8 @@ func executionEdge(action orders.Action) orders.ActionOption {
 		p.Endpoint, p.ParametersRequired = "/v6/fbs/posting/product/exemplar/set", []string{"exemplar_work_id", "exemplars"}
 	case orders.ActionPostingPack, orders.ActionPostingSplit:
 		p.Endpoint, p.ExpectedStatus, p.ParametersRequired = "/v4/posting/fbs/ship", "awaiting_deliver", []string{"packages", "readiness_confirmed"}
+	case orders.ActionPostingSplitUnassembled:
+		p.Endpoint, p.ParametersRequired = "/v1/posting/fbs/split", []string{"packages"}
 	case orders.ActionPostingCancel:
 		p.Endpoint, p.ExpectedStatus, p.ParametersRequired = "/v2/posting/fbs/cancel", "cancelled", []string{"reason_id"}
 	case orders.ActionPostingPartialCancel:
@@ -139,7 +143,7 @@ func executionPredecessor(action orders.Action, status string) bool {
 	switch action {
 	case orders.ActionCountrySet, orders.ActionExemplarPrepare, orders.ActionExemplarSet:
 		return status == "awaiting_packaging"
-	case orders.ActionPostingPack, orders.ActionPostingSplit:
+	case orders.ActionPostingPack, orders.ActionPostingSplit, orders.ActionPostingSplitUnassembled:
 		return status == "awaiting_packaging"
 	case orders.ActionPostingCancel, orders.ActionPostingPartialCancel:
 		return slices.Contains([]string{"awaiting_packaging", "awaiting_deliver"}, status)
@@ -173,6 +177,11 @@ func sellerDeliveryControl(posting orders.Posting, cap orders.CapabilityRef, act
 }
 
 func actionAdvertised(actions []string, action orders.Action) bool {
+	if action == orders.ActionPostingSplitUnassembled {
+		// The optional list has no documented token for this distinct endpoint.
+		// Do not fabricate one or treat the assembly token as authorization.
+		return true
+	}
 	if action == orders.ActionCountrySet {
 		return true
 	} // Required country facts, not an undocumented available_actions token, gate this operation.
