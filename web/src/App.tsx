@@ -1,5 +1,6 @@
 import { AppShell } from "./AppShell";
 import { connectionState, type MoyProvider } from "./MoySkladSettingsData";
+import { OverviewDashboard } from "./OverviewDashboard";
 import { StatePanel, ProviderBadge, PageHeader, Icon } from "./UI";
 import {
   WorkspaceSwitcher,
@@ -188,11 +189,11 @@ export function Overview({
     (check) => check.code === "WAREHOUSE_MAPPINGS" && check.status === "PASS",
   );
   return (
-    <div className="read-page">
-      <PageHeader
-        title="Обзор"
-        description="Последние загруженные данные выбранных аккаунтов."
-      />
+    <OverviewDashboard
+      report={report}
+      checkTitles={checkTitles}
+      checkSummary={checkSummary}
+    >
       <div className="read-source-grid">
         <SourceCard
           name="МойСклад"
@@ -229,7 +230,7 @@ export function Overview({
           <NavLink to="/diagnostics">Диагностика</NavLink>
         </nav>
       </section>
-    </div>
+    </OverviewDashboard>
   );
 }
 export function Products({
@@ -845,6 +846,8 @@ export function App() {
       api<Report>("/api/diagnostics?" + scopeParams(scope), signal),
     enabled:
       session.isSuccess && !!chosen && identityReady && marketplace === "ozon",
+    refetchInterval: pathname === "/" ? 30_000 : false,
+    refetchOnWindowFocus: true,
   });
   if (authLinkInSession) {
     const leaveLink = () => {
