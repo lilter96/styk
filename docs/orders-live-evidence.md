@@ -794,3 +794,80 @@ found deletion, source-proof mutation, drift and malformed-field defects. Its
 accidental master application `7ddc857` was immediately undone by ordinary revert
 `7cb3e04`; neither was deployed. Production dispatch for that unfinished transfer
 remains disabled pending corrected source proofs and full normal-pipeline wiring.
+
+### Real reservation/stock automation and admission recovery — 2026-11-04/05
+
+The owner-authorized ordinary fixture was exercised through the normal merchant
+API, automatic scheduler, durable outbox, two workers and independent provider
+reads. MoySklad physical/reserved observations were **0/0 → 2/0 → 2/1 → 2/0 →
+0/0**. Four distinct normal publications reached Ozon **2 → 1 → 2 → 0**:
+
+| Publication | Intended/readback | Actual result |
+| --- | --- | --- |
+| `7aa85df1a51ab1d059d73cf727da91e1` | 2 / 2 | HTTP 200, updated=true, errors=[], RECONCILED |
+| `ee9d986b0f28d5d569b8ab4e24843421` | 1 / 1 | HTTP 200, updated=true, errors=[], RECONCILED |
+| `f7853b1c3f79e8e524525f848cf0cb1b` | 2 / 2 | HTTP 200, updated=true, errors=[], RECONCILED |
+| `84cf0fa821b26381a9a00e058b885233` | 0 / 0 | HTTP 200, updated=true, errors=[], RECONCILED |
+
+The reserved unit belonged to a dedicated zero-price MoySklad test customerorder;
+this is not a fabricated Ozon posting or buyer event. The existing calculator
+produced 1 from physical 2/reserve 1, then 2 after releasing only that order's
+reserve. The source was reduced to zero only after quantity 2 reconciled.
+Retained fixtures: enter `fa5196ab-d88d-11f1-0a80-0bf300860f46`, customerorder
+`14de5c39-d88e-11f1-0a80-16d60088a0bf` (reserve 0), and loss
+`f6073cb6-d892-11f1-0a80-1ff3008d2231`. No payment or shipment was created.
+
+This live run exposed an admission defect: operation
+`c8b3838161f66242d5d7d42e35c89e51` exhausted its HTTP timeout while waiting for
+the shared target cooldown, before obtaining a write slot. The original UNKNOWN,
+null HTTP status and failed single attempt remain historical facts. After stopping
+the prior workers, fresh observations and an explicit uncertainty acknowledgment,
+audit `6821e489bfc0372069810d2a22ce2aa4` superseded its target fence; it did not
+replay or rewrite the original attempt and does not establish external ordering.
+
+The correction keeps a publication queued until the shared database admission
+conditions permit a claim. A transport witness preserves positively established
+non-dispatch despite net/http timeout wrapping; such attempts become BLOCKED /
+PROVIDER_REQUEST_NOT_SENT. Once transport dispatch starts, lost responses remain
+UNKNOWN and are never automatically replayed. The transport still owns actual
+provider admission; the queue predicate does not reserve a slot. Subsequent live
+operations stayed QUEUED during cooldown and reconciled normally. Measured last
+write intervals were **120.208632 s and 120.157130 s**.
+
+Three subsequent completed cycles were NO_CHANGE, without publication IDs or
+external writes. Reused source batch 61 retained its original timestamps/content
+hash while new successful traversal evidence advanced. Final independent reads
+after disabling automation: Ozon present/reserved/free **0/0/0** at 21:08:09 UTC;
+MoySklad physical/reserve **0/0** at 21:08:14 UTC. Actual network totals:
+**Ozon 75 reads + 4 writes; MoySklad 94 reads + 4 writes, all 177 HTTP 200**.
+The planned limits were Ozon 200 reads/4 writes and MoySklad 150 reads/8 writes.
+These include live normal imports/readbacks, not merely hand-picked diagnostics.
+
+Private journal: `.local/orders-v10/stock-reservation-live-20261104.json`.
+Its legacy source intent summary initially said quantity 1 although the approved
+phase and serialized request were quantity 2; an append-only correction preserves
+both original evidence and the body hash. Two private orchestration assertions
+were corrected without an additional provider write. No evidence was overwritten.
+Original pretest business settings were restored as audited revision **39 OFF**;
+new temporal metadata was not represented as byte-identical restoration. Two APIs
+and two workers were restarted from clean `ded6a74` without publication flags.
+Schema 60, credentials and key remain intact; final active calls, pending tasks,
+dispatches, unresolved target fences and temporary automation grants were zero.
+
+Verification of this correction: make lint/test/build, full Go race and
+integration-tag lint passed (lint 0). Three focused real-PostgreSQL/normal-worker
+regressions cover pre-network timeout, shared target cooldown and post-dispatch
+lost response. The broader stock PostgreSQL race selection completed **68 PASS /
+5 SKIP / 0 FAIL** in 86.707 s; skips are four separately opted-in browser tests
+and a parent-invoked crash helper. These skips are not counted as passes. Live
+active Ozon ship/delivery transitions and unfinished superseded-parent transfer
+are not established by this reservation/stock experiment.
+
+The post-correction nine-OS-process browser/race gate also passed in **131.390 s**
+(two Playwright journeys passed). It exercised cross-replica sessions/isolation,
+shared cooldown, concurrent approvals, independent progress beside UNKNOWN,
+kill/restart at claim/dispatch/poll boundaries, stale-worker fencing and credential
+rotation/expired grants. Its 1,069 actual loopback HTTP attempts had maximum
+in-flight 1; these are deterministic local-provider measurements, not live Ozon
+throughput. Current desktop/mobile assembly-reference screenshots were inspected;
+unknown quantities remain explicit and the mobile card fits the viewport.

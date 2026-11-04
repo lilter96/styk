@@ -556,3 +556,15 @@ No parent retirement is inferred from these lists or from generic HTTP 404.
 The ordinary application runs clean `cdd1861`, schema 60, configuration **28 OFF**.
 Updated field-level evidence and the still-unfinished superseded-parent transfer
 are recorded in the [existing order report](orders-live-evidence.md).
+
+The next real ordinary-product experiment verified source physical/reserve
+**0/0 → 2/0 → 2/1 → 2/0 → 0/0** and automatic Ozon **2 → 1 → 2 → 0**.
+All four normal-worker writes returned HTTP 200, updated=true/errors=[] and
+RECONCILED. A real admission-timeout defect was found and fixed; its original
+UNKNOWN remains immutable with audited supersession, without replay. Three
+completed no-op cycles produced no additional writes. Actual totals were Ozon
+**75 reads/4 writes**, MoySklad **94 reads/4 writes**, all HTTP 200. Final
+independent source and destination stock/reserve were zero, settings revision
+**39 OFF**, and both API/worker replicas ran clean `ded6a74` with publication
+flags unset. Exact operations, retained source documents, accepted uncertainty
+and regression scopes are in the [order evidence report](orders-live-evidence.md).
