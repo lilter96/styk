@@ -115,9 +115,9 @@ func (c *OrdersClient) fulfillmentResponse(command orders.Command, path string, 
 	if readErr != nil || closeErr != nil || len(raw) > maxBody {
 		return orderReceipt(command, orders.StateUnknown, response.StatusCode, "response_uncertain"), orders.ErrStale
 	}
-	if slices.Contains([]int{400, 401, 403, 404, 409, 429}, response.StatusCode) {
-		return orderReceipt(command, orders.StateRejected, response.StatusCode, "provider_rejected"), nil
-	}
+	// HTTP status alone does not prove rollback or rejection before application.
+	// This response follows a dispatched mutation; retain uncertainty unless the
+	// verified successful payload supplies an exact per-target outcome.
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return orderReceipt(command, orders.StateUnknown, response.StatusCode, "provider_uncertain"), orders.ErrStale
 	}
