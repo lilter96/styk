@@ -1,6 +1,7 @@
 package ozon
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -8,6 +9,19 @@ import (
 
 	"github.com/lilter96/styk/internal/orders"
 )
+
+func TestFulfillmentBindingDoesNotAuthorizeInvalidIntent(t *testing.T) {
+	t.Parallel()
+	c := &OrdersClient{}
+	calls := 0
+	err := c.BindOrderIntent(orders.Command{}, func(context.Context) (bool, error) {
+		calls++
+		return true, nil
+	})
+	if err == nil || calls != 0 {
+		t.Fatal("invalid binding invoked the durable dispatch guard")
+	}
+}
 
 func TestFulfillmentNumericOverflowRejected(t *testing.T) {
 	t.Parallel()

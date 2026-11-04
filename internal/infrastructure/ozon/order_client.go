@@ -26,6 +26,9 @@ type OrdersClient struct {
 	ReadonlyReaderRequest bool
 	options               OrderReadOptions
 	now                   func() time.Time
+	intentMu              sync.Mutex
+	intentHash            string
+	intentGuard           func(context.Context) (bool, error)
 	deliveryMu            sync.Mutex
 	deliveryCache         *delivery.Discovery
 	deliveryFlight        chan struct{}

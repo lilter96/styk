@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/lilter96/styk/internal/orders"
+	"github.com/lilter96/styk/internal/providercall"
 )
 
 // fulfillmentPath returns the POST path for one reviewed action, or empty when
@@ -42,10 +43,10 @@ func fulfillmentPath(action orders.Action) string {
 
 // WriteOrder sends exactly one fulfillment mutation; it never retries.
 func (c *OrdersClient) WriteOrder(ctx context.Context, command orders.Command) (orders.Receipt, error) {
-	if c.ReadonlyReaderRequest {
+	if command.Scope != c.scope || command.Validate() != nil {
 		return orderReceipt(command, orders.StateRejected, 0, "read_only_client"), orders.ErrBlocked
 	}
-	if command.CustomerOrder != nil || command.PostingAction == nil || command.Action.IsMirror() || c.read == nil {
+	if command.CustomerOrder != nil || command.PostingAction == nil || command.Action.IsMirror() || c.read == nil || !c.read.coordinated {
 		return orderReceipt(command, orders.StateRejected, 0, "invalid_fulfillment_intent"), orders.ErrInvalid
 	}
 	path := fulfillmentPath(command.Action)
@@ -88,6 +89,11 @@ func (c *OrdersClient) dispatchFulfillment(ctx context.Context, command orders.C
 	request.Header.Set("Accept", "application/json")
 	request.Close = true
 
+	guard, err := c.consumeFulfillmentIntent(command)
+	if err != nil {
+		return orderReceipt(command, orders.StateRejected, 0, "unbound_intent"), err
+	}
+	request = request.WithContext(providercall.WithGuard(request.Context(), guard))
 	response, err := c.read.http.Do(request)
 	if err != nil {
 		return orderReceipt(command, orders.StateUnknown, 0, "transport_uncertain"), orders.ErrStale
@@ -219,14 +225,44 @@ func (c *OrdersClient) statusTransitionReceipt(command orders.Command, data []by
 // command is about to be sent to the provider. The guard must be entered before
 // WriteOrder is called; otherwise the runner treats the dispatch as rejected.
 func (c *OrdersClient) BindOrderIntent(command orders.Command, authorize func(context.Context) (bool, error)) error {
-	if authorize == nil {
+	if authorize == nil || command.Scope != c.scope || command.Action.IsMirror() {
 		return orders.ErrInvalid
 	}
-	allowed, err := authorize(context.Background())
-	if err != nil || !allowed {
-		return orders.ErrBlocked
+	fingerprint, err := orders.CommandFingerprint(command)
+	if err != nil {
+		return err
 	}
+	c.intentMu.Lock()
+	defer c.intentMu.Unlock()
+	if c.intentHash != "" {
+		return orders.ErrConflict
+	}
+	c.intentHash, c.intentGuard = fingerprint, authorize
 	return nil
+}
+
+func (c *OrdersClient) consumeFulfillmentIntent(command orders.Command) (func(context.Context) error, error) {
+	fingerprint, err := orders.CommandFingerprint(command)
+	if err != nil {
+		return nil, err
+	}
+	c.intentMu.Lock()
+	defer c.intentMu.Unlock()
+	if c.intentHash != fingerprint || c.intentGuard == nil {
+		return nil, orders.ErrBlocked
+	}
+	authorize := c.intentGuard
+	c.intentGuard = nil
+	return func(ctx context.Context) error {
+		allowed, err := authorize(ctx)
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return orders.ErrBlocked
+		}
+		return nil
+	}, nil
 }
 
 func fulfillmentPayload(command orders.Command, path string) (map[string]any, error) {
