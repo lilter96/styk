@@ -1,4 +1,8 @@
 import { OrdersNativeDocuments } from "./OrdersNativeDocuments";
+import {
+  OrdersComposition,
+  type OrderCompositionProposal,
+} from "./OrdersComposition";
 import type { OrderNativeProposal } from "./OrdersNativeTypes";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -71,6 +75,7 @@ export function OrdersPostings({
   freshnessSeconds = 300,
   onActionPreview,
   onNativePreview,
+  onCompositionPreview,
   onActionDraftChange,
   actionReset = 0,
 }: {
@@ -83,6 +88,7 @@ export function OrdersPostings({
   freshnessSeconds?: number;
   onActionPreview?: (proposal: OrderActionProposal) => void;
   onNativePreview?: (proposal: OrderNativeProposal) => void;
+  onCompositionPreview?: (proposal: OrderCompositionProposal) => void;
   onActionDraftChange?: () => void;
   actionReset?: number;
 }) {
@@ -272,6 +278,15 @@ export function OrdersPostings({
                   posting={posting}
                   disabled={disabled || locked}
                   onPreview={onNativePreview}
+                  onDraftChange={onActionDraftChange ?? (() => {})}
+                />
+              )}
+              {onCompositionPreview && (
+                <OrdersComposition
+                  key={`composition:${posting.evidence.revision}:${actionReset}`}
+                  postingNumber={posting.posting_number}
+                  disabled={disabled || locked}
+                  onPreview={onCompositionPreview}
                   onDraftChange={onActionDraftChange ?? (() => {})}
                 />
               )}

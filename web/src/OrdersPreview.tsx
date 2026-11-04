@@ -1,4 +1,5 @@
 import { OrdersNativeSummary } from "./OrdersNativeSummary";
+import { OrdersCompositionSummary } from "./OrdersComposition";
 import { useEffect, useState } from "react";
 import { OrdersPositionPatch } from "./OrdersPositionPatch";
 import { OrdersActionSummary } from "./OrdersActionSummary";
@@ -151,6 +152,9 @@ export function OrdersPreview({
       decision.commands.every(
         (command) =>
           permittedActions.includes(command.action) &&
+          (command.action !== "mirror_composition_update" ||
+            (command.position_replacement?.confirm_replacement === true &&
+              !!command.customer_order?.positions?.length)) &&
           (command.action.startsWith("mirror_") ||
             (["demand_create", "salesreturn_create"].includes(command.action) &&
               !!command.native_movement) ||
@@ -165,6 +169,7 @@ export function OrdersPreview({
   const native = permittedActions.some((action) =>
     ["demand_create", "salesreturn_create"].includes(action),
   );
+  const composition = permittedActions.includes("mirror_composition_update");
   function select(numbers: string[]) {
     setChosen(numbers);
     setConsent(false);
@@ -179,7 +184,9 @@ export function OrdersPreview({
           ? "Проверка действия в Ozon"
           : native
             ? "Проверка складского документа"
-            : "Проверка перед передачей"}
+            : composition
+              ? "Проверка замены состава заказа"
+              : "Проверка перед передачей"}
       </h2>
       <p>
         Готово: {ready.length}. Требуют внимания:{" "}
@@ -252,12 +259,20 @@ export function OrdersPreview({
                 {command.position_patch && (
                   <OrdersPositionPatch value={command.position_patch} />
                 )}
-                {command.customer_order && !command.position_patch && (
-                  <ProposedOrder
-                    value={command.customer_order}
-                    metadata={metadata}
+                {command.position_replacement && (
+                  <OrdersCompositionSummary
+                    value={command.position_replacement}
+                    positions={command.customer_order?.positions}
                   />
                 )}
+                {command.customer_order &&
+                  !command.position_patch &&
+                  !command.position_replacement && (
+                    <ProposedOrder
+                      value={command.customer_order}
+                      metadata={metadata}
+                    />
+                  )}
                 {command.native_movement && (
                   <OrdersNativeSummary command={command} />
                 )}
@@ -291,7 +306,9 @@ export function OrdersPreview({
           ? "Я проверил параметры выбранного действия и подтверждаю отправку запроса в Ozon."
           : native
             ? "Я проверил фактическое основание, состав и проведение документа и подтверждаю создание складского документа в МойСклад."
-            : "Я проверил состав и поля выбранных отправлений и подтверждаю создание или обновление заказов в МойСклад."}
+            : composition
+              ? "Я проверил добавляемые и удаляемые позиции и подтверждаю замену состава этого заказа МойСклад."
+              : "Я проверил состав и поля выбранных отправлений и подтверждаю создание или обновление заказов в МойСклад."}
       </label>
       <div className="orders-actions">
         <button
@@ -307,7 +324,9 @@ export function OrdersPreview({
               ? `Подтвердить действие в Ozon (${chosen.length})`
               : native
                 ? `Создать складские документы (${chosen.length})`
-                : `Передать в МойСклад (${chosen.length})`}
+                : composition
+                  ? `Заменить состав заказов (${chosen.length})`
+                  : `Передать в МойСклад (${chosen.length})`}
         </button>
         <p className="orders-note">
           Результат передачи подтверждается отдельной сверкой в истории

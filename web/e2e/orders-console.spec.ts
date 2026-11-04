@@ -4,6 +4,114 @@ import type { OrderActionProposal, OrderCommand } from "../src/OrdersTypes";
 
 const origin = process.env.STYK_ORDERS_UI_ORIGIN || "http://127.0.0.1:5173";
 
+test("composition replacement has explicit preview and separate destructive approval", async ({
+  page,
+}, testInfo) => {
+  const { approvals, errors } = await openOrders(page, false, true);
+  const proposed = decision("SYNTHETIC-1");
+  const command = proposed.commands[0];
+  command.action = "mirror_composition_update";
+  command.customer_order.positions[0].quantity = "2";
+  const replacement = {
+    confirm_replacement: true,
+    retained: [],
+    added: [{ offer_id: "SYNTHETIC-SKU", sku: "123456" }],
+    removed: [
+      {
+        source_identity: { sku: "9007199254740993" },
+        native_position_id: "native-old",
+      },
+    ],
+  };
+  let previews = 0;
+  await page.route("**/api/orders/preview", (route) => {
+    const body = route.request().postDataJSON();
+    expect(body.actions).toEqual(["mirror_composition_update"]);
+    expect(body.composition_proposals).toEqual([
+      { posting_number: "SYNTHETIC-1", confirm_replacement: true },
+    ]);
+    expect(body.proposals).toBeUndefined();
+    expect(body.native_proposals).toBeUndefined();
+    previews++;
+    return fulfill(route, {
+      id: "preview-synthetic",
+      scope,
+      config_revision: 1,
+      expires_at: new Date(Date.now() + 300000).toISOString(),
+      decisions: [
+        {
+          ...proposed,
+          correlation: {
+            customer_order_id: "11111111-1111-4111-8111-111111111111",
+          },
+          commands: [
+            {
+              ...command,
+              correlation: {
+                customer_order_id: "11111111-1111-4111-8111-111111111111",
+              },
+              position_replacement: replacement,
+            },
+          ],
+        },
+      ],
+    });
+  });
+  await page
+    .getByText("Изменить состав заказа МойСклад", { exact: true })
+    .click();
+  const review = page.getByRole("button", {
+    name: "Проверить замену состава",
+    exact: true,
+  });
+  await expect(review).toBeDisabled();
+  await page
+    .getByLabel(
+      "Разрешаю подготовить замену состава этого заказа по текущему отправлению Ozon.",
+    )
+    .check();
+  expect(approvals).toHaveLength(0);
+  await review.click();
+  await expect(
+    page.getByRole("heading", { name: "Проверка замены состава заказа" }),
+  ).toBeVisible();
+  await expect(page.getByText("Удалить: 9007199254740993")).toBeVisible();
+  expect(previews).toBe(1);
+  expect(approvals).toHaveLength(0);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page
+    .getByRole("heading", { name: "Проверка замены состава заказа" })
+    .scrollIntoViewIfNeeded();
+  await page
+    .locator('section[aria-labelledby="orders-preview-heading"]')
+    .screenshot({
+      path: testInfo.outputPath("composition-desktop.png"),
+    });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page
+    .getByRole("heading", { name: "Проверка замены состава заказа" })
+    .scrollIntoViewIfNeeded();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(390);
+  await page
+    .locator('section[aria-labelledby="orders-preview-heading"]')
+    .screenshot({
+      path: testInfo.outputPath("composition-mobile.png"),
+    });
+  await page.getByLabel("Подтвердить отправление SYNTHETIC-1").check();
+  await page
+    .getByLabel(
+      "Я проверил добавляемые и удаляемые позиции и подтверждаю замену состава этого заказа МойСклад.",
+    )
+    .check();
+  await page
+    .getByRole("button", { name: "Заменить состав заказов (1)", exact: true })
+    .click();
+  await expect.poll(() => approvals.length).toBe(1);
+  expect(errors).toEqual([]);
+});
+
 test("reserve policy is explicit and separate from document posting on desktop and mobile", async ({
   page,
 }, testInfo) => {

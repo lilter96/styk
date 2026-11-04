@@ -1,4 +1,5 @@
 import type { OrderNativeProposal } from "./OrdersNativeTypes";
+import type { OrderCompositionProposal } from "./OrdersComposition";
 import { useCallback, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, post } from "./api";
@@ -127,9 +128,12 @@ function OrdersAccount({
     setPreview(null);
     setMessage("Настройки заказов сохранены.");
   }
-  async function review(proposal?: OrderActionProposal | OrderNativeProposal) {
+  async function review(
+    proposal?:
+      OrderActionProposal | OrderNativeProposal | OrderCompositionProposal,
+  ) {
     if (proposal && dirty) {
-      setError("Сохраните настройки перед проверкой действия в Ozon.");
+      setError("Сохраните настройки перед проверкой изменения.");
       return;
     }
     const numbers = proposal ? [proposal.posting_number] : selected;
@@ -162,9 +166,18 @@ function OrdersAccount({
           posting_numbers: numbers,
           actions,
           ...(proposal
-            ? "applicable" in proposal
-              ? { native_proposals: [proposal] }
-              : { proposals: [proposal] }
+            ? "confirm_replacement" in proposal
+              ? {
+                  composition_proposals: [
+                    {
+                      posting_number: proposal.posting_number,
+                      confirm_replacement: proposal.confirm_replacement,
+                    },
+                  ],
+                }
+              : "applicable" in proposal
+                ? { native_proposals: [proposal] }
+                : { proposals: [proposal] }
             : {}),
         },
         AbortSignal.timeout(30000),
@@ -352,6 +365,7 @@ function OrdersAccount({
             actionReset={actionReset}
             onActionPreview={(proposal) => void review(proposal)}
             onNativePreview={(proposal) => void review(proposal)}
+            onCompositionPreview={(proposal) => void review(proposal)}
             onActionDraftChange={() => setPreview(null)}
             selected={selected}
             disabled={busy !== null}

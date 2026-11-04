@@ -227,7 +227,20 @@ export type OrderNativeMovement = {
     vat_enabled: OrderField<boolean>;
   }[];
 };
+export type OrderCompositionReplacement = {
+  confirm_replacement: boolean;
+  retained: {
+    source_identity: OrderLine["identity"];
+    native_position_id: string;
+  }[];
+  added: OrderLine["identity"][];
+  removed: {
+    source_identity: OrderLine["identity"];
+    native_position_id: string;
+  }[];
+};
 export type OrderCommand = {
+  position_replacement?: OrderCompositionReplacement;
   native_movement?: OrderNativeMovement;
   id: string;
   action: string;
@@ -397,6 +410,7 @@ export const orderActionLabel = (action: string) =>
     mirror_create: "Создать заказ в МойСклад",
     mirror_update: "Обновить заказ в МойСклад",
     mirror_position_update: "Обновить позицию заказа в МойСклад",
+    mirror_composition_update: "Заменить состав заказа в МойСклад",
     posting_pack: "Передать сборку в Ozon",
     posting_split: "Разделить отправление в Ozon",
     posting_cancel: "Отменить отправление в Ozon",
@@ -412,6 +426,20 @@ export const orderActionLabel = (action: string) =>
     posting_exemplar_set: "Передать сведения экземпляров в Ozon",
   })[action] || action;
 const issueLabels: Record<string, string> = {
+  composition_manual_confirmation_required:
+    "Замена состава требует отдельного ручного предпросмотра и подтверждения. Автоматически она не выполняется.",
+  existing_customerorder_required:
+    "Сначала нужен связанный заказ МойСклад. Замена состава не создаёт новый заказ.",
+  composition_ownership_unverified:
+    "Не подтверждено владение всеми позициями или изменились реквизиты заказа. Чужие строки не заменяются.",
+  composition_frontier_or_values_unverified:
+    "Для замены нужны подтверждённые неотгруженные позиции, резерв, цена и налоговые сведения. Неподдерживаемые упаковки и неоднозначные значения блокируют изменение.",
+  invalid_composition_intent:
+    "Не удалось подготовить согласованную замену состава. Обновите данные и проверьте соответствия товаров.",
+  explicit_delivery_action_required_for_profile:
+    "Для этого профиля доставки нужно явно доступное действие в свежем ответе Ozon. Обновите отправление; отсутствие действия не считается разрешением.",
+  conflicting_integration:
+    "Данные отправления и метода доставки о службе перевозки противоречат друг другу. Действия Ozon остановлены до свежей согласованной проверки.",
   reservation_policy_status_unknown:
     "Неизвестен статус отправления. Получите свежие данные Ozon перед изменением резерва.",
   reservation_policy_status_not_pending:
