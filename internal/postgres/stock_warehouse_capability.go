@@ -86,3 +86,9 @@ func recordStockContractEvidence(evidence *domain.StockEvidence) {
 		Reference: "official reviewed stock subset sha256:" + stockContractSHA256,
 		AsOf:      time.Date(2026, time.October, 30, 0, 0, 0, 0, time.UTC)}
 }
+
+// WarehouseMappingStockSupported shares the actual review policy with its
+// read-only merchant preview. Eligibility does not enroll a publication target.
+func WarehouseMappingStockSupported(scope domain.StockSyncScope, warehouse domain.OzonWarehouse) bool {
+	return warehouseReviewStockSupported(scope, warehouseSnapshot{OzonType: warehouse.WarehouseType, OzonStatus: warehouse.Status, IsRFBS: warehouse.IsRFBS})
+}

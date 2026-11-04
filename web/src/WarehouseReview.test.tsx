@@ -159,3 +159,42 @@ it("shows a loading state while the review is requested", () => {
   );
   expect(screen.getByRole("status").textContent).toContain("Проверяем склады");
 });
+it("permits server-validated controlled rFBS review without enabling stock publication", async () => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        status: "ELIGIBLE_FOR_REVIEW",
+        moysklad: { ...e, id: "m", account: scope.moy },
+        ozon: {
+          ...e,
+          id: "o",
+          account: scope.ozon,
+          is_rfbs: true,
+          warehouse_type: "rfbs_express",
+        },
+        mappings: [],
+        history: [],
+        has_next: false,
+        offset: 0,
+      }),
+      { headers: { "Content-Type": "application/json" } },
+    ),
+  );
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <WarehouseReview scope={scope} moy="m" ozon="o" />
+    </QueryClientProvider>,
+  );
+  const button = await screen.findByRole("button", {
+    name: "Проверить пару складов",
+  });
+  expect((button as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.queryByText("Склады rFBS не поддерживаются.")).toBeNull();
+  expect(
+    screen.getByText(/Подтверждение связи не включает синхронизацию остатков/),
+  ).toBeTruthy();
+});

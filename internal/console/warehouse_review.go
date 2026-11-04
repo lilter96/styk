@@ -7,17 +7,19 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/postgres"
 )
 
 type warehouseEvidence struct {
-	ID         string    `json:"id"`
-	Name       string    `json:"name"`
-	Account    string    `json:"account"`
-	Status     string    `json:"status"`
-	IsRFBS     *bool     `json:"is_rfbs"`
-	ObservedAt time.Time `json:"observed_at"`
-	StockRows  int64     `json:"stock_rows"`
+	WarehouseType string    `json:"warehouse_type,omitempty"`
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	Account       string    `json:"account"`
+	Status        string    `json:"status"`
+	IsRFBS        *bool     `json:"is_rfbs"`
+	ObservedAt    time.Time `json:"observed_at"`
+	StockRows     int64     `json:"stock_rows"`
 }
 type warehouseReviewMapping struct {
 	ID          int64     `json:"mapping_id"`
@@ -65,7 +67,7 @@ func warehouseReview(db *postgres.Store) http.HandlerFunc {
 			return
 		}
 		b := warehouseEvidence{ID: ozonID, Account: ozon}
-		err = tx.QueryRow(ctx, `WITH latest AS (SELECT i.id,i.finished_at FROM source_imports i JOIN ozon_import_batches b ON b.import_id=i.id AND b.traversal_status='completed' JOIN stock_connections c ON c.tenant_id=$1 AND c.source=i.source AND c.account_id=i.account_id WHERE i.source='ozon' AND i.account_id=$2 AND (c.include_import_history OR i.started_at>=c.registered_at) ORDER BY i.id DESC LIMIT 1) SELECT e.name,e.status,e.is_rfbs,l.finished_at,(SELECT count(*) FROM ozon_fbs_stock_observations s WHERE s.import_id=l.id AND s.warehouse_id=e.warehouse_id) FROM latest l JOIN ozon_warehouse_observations e ON e.import_id=l.id AND e.warehouse_id=$3`, tenant, ozon, ozonID).Scan(&b.Name, &b.Status, &b.IsRFBS, &b.ObservedAt, &b.StockRows)
+		err = tx.QueryRow(ctx, `WITH latest AS (SELECT i.id,i.finished_at FROM source_imports i JOIN ozon_import_batches b ON b.import_id=i.id AND b.traversal_status='completed' JOIN stock_connections c ON c.tenant_id=$1 AND c.source=i.source AND c.account_id=i.account_id WHERE i.source='ozon' AND i.account_id=$2 AND (c.include_import_history OR i.started_at>=c.registered_at) ORDER BY i.id DESC LIMIT 1) SELECT e.name,e.status,e.warehouse_type,e.is_rfbs,l.finished_at,(SELECT count(*) FROM ozon_fbs_stock_observations s WHERE s.import_id=l.id AND s.warehouse_id=e.warehouse_id) FROM latest l JOIN ozon_warehouse_observations e ON e.import_id=l.id AND e.warehouse_id=$3`, tenant, ozon, ozonID).Scan(&b.Name, &b.Status, &b.WarehouseType, &b.IsRFBS, &b.ObservedAt, &b.StockRows)
 		if err == nil {
 			oz = &b
 		} else if err != pgx.ErrNoRows {
@@ -102,7 +104,7 @@ func warehouseReview(db *postgres.Store) http.HandlerFunc {
 		status := "ELIGIBLE_FOR_REVIEW"
 		if ms == nil || oz == nil || (oz != nil && oz.IsRFBS == nil) {
 			status = "MISSING_SOURCE_EVIDENCE"
-		} else if *oz.IsRFBS {
+		} else if !postgres.WarehouseMappingStockSupported(domain.StockSyncScope{Tenant: tenant, MoyskladAccount: moy, OzonAccount: ozon}, domain.OzonWarehouse{WarehouseType: oz.WarehouseType, Status: oz.Status, IsRFBS: oz.IsRFBS}) {
 			status = "UNSUPPORTED_WAREHOUSE"
 		}
 		if hiddenMapping {

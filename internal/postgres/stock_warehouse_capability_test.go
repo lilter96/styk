@@ -85,3 +85,20 @@ func TestStockWarehouseCapabilitiesNeverWidenAccounts(t *testing.T) {
 		t.Fatal("rFBS capability bypassed the deployment hold")
 	}
 }
+
+func TestMerchantWarehousePreviewSharesActualScopedReviewPolicy(t *testing.T) {
+	t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", "true")
+	warehouse := domain.OzonWarehouse{WarehouseType: "rfbs_express", Status: "created", IsRFBS: stockCapabilityBool(true)}
+	if !WarehouseMappingStockSupported(testpublication.Scope(), warehouse) {
+		t.Fatal("merchant preview incorrectly blocks supported controlled Express mapping")
+	}
+	other := testpublication.Scope()
+	other.Tenant = "another-merchant"
+	if WarehouseMappingStockSupported(other, warehouse) {
+		t.Fatal("merchant preview widened controlled account eligibility")
+	}
+	warehouse.Status = "disabled"
+	if WarehouseMappingStockSupported(testpublication.Scope(), warehouse) {
+		t.Fatal("merchant preview ignored disabled warehouse")
+	}
+}

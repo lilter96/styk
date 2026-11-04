@@ -108,7 +108,7 @@ export function WarehouseReview({
     q.data.moysklad.account === scope.moy &&
     q.data.ozon?.id === ozon &&
     q.data.ozon.account === scope.ozon &&
-    q.data.ozon.is_rfbs === false;
+    typeof q.data.ozon.is_rfbs === "boolean";
   const reviewed = durable.data?.review;
   const reviewMatchesSelection =
     reviewed?.id === reviewID &&
@@ -163,7 +163,8 @@ export function WarehouseReview({
     ELIGIBLE_FOR_REVIEW: "Можно проверить соответствие",
     ALREADY_MAPPED: "Склады уже сопоставлены",
     MAPPING_CONFLICT: "Есть конфликт соответствий",
-    UNSUPPORTED_WAREHOUSE: "Поддерживаются только склады Ozon FBS",
+    UNSUPPORTED_WAREHOUSE:
+      "Для этого склада не подтверждены возможности или разрешение передачи остатков",
     MISSING_SOURCE_EVIDENCE: "Не хватает данных о складах",
   };
   const describe = (e: Evidence | null, source: string) =>
@@ -257,9 +258,10 @@ export function WarehouseReview({
                 идентичность склада или принадлежность остатков.
               </p>
               <p>
-                Поддерживается одна пара: склад МойСклад и склад Ozon FBS.
-                Склады rFBS не поддерживаются. Подтверждение не включает
-                синхронизацию остатков.
+                Подтверждается выбранная пара складов. Для rFBS и Express нужны
+                подтверждённые возможности и отдельное разрешение тестового
+                аккаунта. Подтверждение связи не включает синхронизацию
+                остатков.
               </p>
               <button
                 className="mapping-primary"
