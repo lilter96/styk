@@ -37,7 +37,7 @@ func ordersProcessSafety(t testing.TB, dsn string) {
 		}
 	}
 	u, err := url.Parse(dsn)
-	if err != nil || (u.Hostname() != "127.0.0.1" && u.Hostname() != "localhost") || (u.Path != "/styk_orders_store_test" && u.Path != "/styk_orders_release_test") {
+	if err != nil || (u.Hostname() != "127.0.0.1" && u.Hostname() != "localhost") || (u.Path != "/styk_orders_store_test" && u.Path != "/styk_orders_release_test" && u.Path != "/styk_orders_guard_test") {
 		t.Fatal("orders process tests require the dedicated localhost orders test database")
 	}
 	config, err := pgxpool.ParseConfig(dsn)
