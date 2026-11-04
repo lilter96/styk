@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/lilter96/styk/internal/orders"
 )
@@ -9,7 +10,7 @@ import (
 // A retained package may reduce its own existing reserve before children are
 // admitted. This proof never authorizes a child's reserve or infers ancestry
 // from matching products. The frozen pre-split review binds the native owner.
-const retainedSplitReserveSQL = `SELECT h.posting_number,split.id,split.state,split.action,
+const retainedSplitReserveSQL = `SELECT h.posting_number,split.id,split.state,split.action,split.work,
  decision->'posting',decision->'correlation'
 FROM orders_posting_heads h
 JOIN LATERAL (SELECT w.* FROM orders_work w
@@ -41,30 +42,74 @@ WHERE h.tenant_id=$1 AND h.moysklad_account=$2 AND h.ozon_account=$3
      AND ancestor.work#>>'{command,commercial_order_id}'=split.work#>>'{command,commercial_order_id}')))
 ORDER BY h.posting_number LIMIT 10001`
 
+type retainedSplitCandidate struct {
+	number     string
+	state      orders.State
+	action     orders.Action
+	permission orders.SplitRetainedReservePermission
+	work       orders.Work
+}
+
 func enrichOrderRetainedSplitReserves(ctx context.Context, q ordersQuerier, result *orders.ReviewContext, numbers []string) error {
-	rows, err := q.Query(ctx, retainedSplitReserveSQL, append(ordersScopeArgs(result.Config.Scope), numbers)...)
+	candidates, err := readRetainedSplitCandidates(ctx, q, result.Config.Scope, numbers)
 	if err != nil {
-		return ordersError("read retained split reserve proofs", err)
+		return err
 	}
-	defer rows.Close()
-	result.SplitRetainedReserves = make(map[string]orders.SplitRetainedReservePermission, len(numbers))
-	for rows.Next() {
-		var number, state, action string
-		var rawPosting, rawCorrelation []byte
-		permission := orders.SplitRetainedReservePermission{Scope: result.Config.Scope}
-		if err = rows.Scan(&number, &permission.SplitWorkID, &state, &action, &rawPosting, &rawCorrelation); err != nil {
-			return ordersError("decode retained split reserve proof", err)
-		}
-		if state != string(orders.StateReconciled) || action != string(orders.ActionPostingSplit) {
+	result.SplitRetainedReserves = make(map[string]orders.SplitRetainedReservePermission, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.state != orders.StateReconciled {
 			continue
 		}
-		if err = ordersDecode(rawPosting, &permission.Before); err != nil {
-			return err
+		if candidate.action == orders.ActionPostingSplitUnassembled {
+			if err = hydrateHistoricalSplitWork(ctx, q, result.Config.Scope, &candidate.work); err != nil {
+				if historicalSplitUnavailable(err) {
+					continue
+				}
+				return err
+			}
+			work, before := candidate.work, candidate.permission.Before
+			if work.Command.PostingAction == nil || !orders.SplitObservedForAction(work.Command.Action, before, work.Command.PostingAction.Parameters.Packages, work.Receipt.PostingNumbers, work.Receipt.ObservedPostings) {
+				continue
+			}
 		}
-		if err = ordersDecode(rawCorrelation, &permission.Correlation); err != nil {
-			return err
-		}
-		result.SplitRetainedReserves[number] = permission
+		result.SplitRetainedReserves[candidate.number] = candidate.permission
 	}
-	return ordersRowsError("read retained split reserve proofs", rows.Err())
+	return nil
+}
+
+func readRetainedSplitCandidates(ctx context.Context, q ordersQuerier, scope orders.Scope, numbers []string) ([]retainedSplitCandidate, error) {
+	rows, err := q.Query(ctx, retainedSplitReserveSQL, append(ordersScopeArgs(scope), numbers)...)
+	if err != nil {
+		return nil, ordersError("read retained split reserve proofs", err)
+	}
+	defer rows.Close()
+	result := make([]retainedSplitCandidate, 0, len(numbers))
+	for rows.Next() {
+		candidate, err := decodeRetainedSplitCandidate(rows, scope)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, candidate)
+	}
+	return result, ordersRowsError("read retained split reserve proofs", rows.Err())
+}
+
+func decodeRetainedSplitCandidate(row pgx.Row, scope orders.Scope) (retainedSplitCandidate, error) {
+	result := retainedSplitCandidate{permission: orders.SplitRetainedReservePermission{Scope: scope}}
+	var posting, correlation, work []byte
+	if err := row.Scan(&result.number, &result.permission.SplitWorkID, &result.state, &result.action, &work, &posting, &correlation); err != nil {
+		return result, ordersError("decode retained split reserve proof", err)
+	}
+	if err := ordersDecode(posting, &result.permission.Before); err != nil {
+		return result, err
+	}
+	if err := ordersDecode(correlation, &result.permission.Correlation); err != nil {
+		return result, err
+	}
+	if result.action == orders.ActionPostingSplitUnassembled {
+		if err := ordersDecode(work, &result.work); err != nil {
+			return result, err
+		}
+	}
+	return result, nil
 }

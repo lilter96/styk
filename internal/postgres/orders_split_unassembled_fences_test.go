@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestUnassembledSplitJoinsAncestorFencesWithoutPositiveReserveAuthority(t *testing.T) {
+func TestUnassembledSplitJoinsAncestorFencesWithoutUnmirroredReserveAuthority(t *testing.T) {
 	t.Parallel()
 	both := "IN ('posting_split','posting_split_unassembled')"
 	for _, test := range []struct{ name, query string }{{"dependency", splitReserveBlocksSQL}, {"retained", retainedSplitReserveSQL}, {"superseded", supersededSplitReserveSQL}} {
@@ -21,11 +21,5 @@ func TestUnassembledSplitJoinsAncestorFencesWithoutPositiveReserveAuthority(t *t
 	}
 	if !strings.Contains(splitReserveBlocksSQL, "(split.action='posting_split' AND split.state='RECONCILED'") {
 		t.Fatal("new unassembled action acquired legacy unencumbered reserve authority")
-	}
-	if !strings.Contains(supersededSplitReserveSQL, "split ON split.state='RECONCILED' AND split.action='posting_split'") {
-		t.Fatal("unhydrated new split acquired positive retirement authority")
-	}
-	if !strings.Contains(splitTransferCandidatesSQL, "split.action='posting_split'") {
-		t.Fatal("unhydrated new split acquired positive transfer authority")
 	}
 }

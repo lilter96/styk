@@ -27,7 +27,7 @@ JOIN LATERAL (SELECT w.* FROM orders_work w
  WHERE w.tenant_id=h.tenant_id AND w.moysklad_account=h.moysklad_account
   AND w.ozon_account=h.ozon_account AND w.posting_number=h.posting_number
   AND w.action IN ('posting_split','posting_split_unassembled') AND w.dispatch_count=1 AND w.state NOT IN ('REJECTED','BLOCKED')
- ORDER BY w.created_at DESC,w.id DESC LIMIT 1) split ON split.state='RECONCILED' AND split.action='posting_split'
+ ORDER BY w.created_at DESC,w.id DESC LIMIT 1) split ON split.state='RECONCILED'
 JOIN orders_previews original ON original.id=split.work->>'preview_id'
  AND original.tenant_id=split.tenant_id AND original.moysklad_account=split.moysklad_account
  AND original.ozon_account=split.ozon_account
@@ -59,22 +59,17 @@ func enrichOrderSupersededSplitReserves(ctx context.Context, q ordersQuerier, re
 		parents[parent.PostingNumber] = parent
 	}
 	for rows.Next() {
-		var facts orders.SplitSupersededReserveFacts
-		var split, before, correlation, children []byte
-		if err = rows.Scan(&split, &before, &correlation, &children); err != nil {
-			return ordersError("decode superseded split reserve facts", err)
-		}
-		for _, pair := range []struct {
-			raw []byte
-			out any
-		}{{split, &facts.Split}, {before, &facts.Before}, {correlation, &facts.OriginalCorrelation}, {children, &facts.Children}} {
-			if err = ordersDecode(pair.raw, pair.out); err != nil {
-				return err
-			}
+		facts, e := decodeSupersededSplitCandidate(rows)
+		if e != nil {
+			return e
 		}
 		facts.Parent = parents[facts.Before.PostingNumber]
 		facts.Baseline = result.PositionBaselines[facts.Before.PostingNumber]
 		result.SplitSupersededReserves[facts.Before.PostingNumber] = facts
 	}
-	return ordersRowsError("read superseded split reserve facts", rows.Err())
+	if err = ordersRowsError("read superseded split reserve facts", rows.Err()); err != nil {
+		return err
+	}
+	rows.Close()
+	return hydrateSupersededSplitHistory(ctx, q, result)
 }

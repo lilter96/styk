@@ -17,7 +17,7 @@ const splitTransferCandidatesSQL = `SELECT selected.number,split.work,
 FROM unnest($4::text[],$5::text[]) selected(number,split_id)
 JOIN orders_work split ON split.id=selected.split_id AND split.tenant_id=$1
  AND split.moysklad_account=$2 AND split.ozon_account=$3 AND split.state='RECONCILED'
- AND split.action='posting_split' AND split.dispatch_count=1 AND split.posting_number<>selected.number
+ AND split.action IN ('posting_split','posting_split_unassembled') AND split.dispatch_count=1 AND split.posting_number<>selected.number
 JOIN orders_posting_heads parent ON parent.tenant_id=split.tenant_id
  AND parent.moysklad_account=split.moysklad_account AND parent.ozon_account=split.ozon_account
  AND parent.posting_number=split.posting_number
@@ -133,7 +133,11 @@ func readOrderSplitTransferCandidates(ctx context.Context, q ordersQuerier, scop
 			result = append(result, facts)
 		}
 	}
-	return result, ordersRowsError("read split reserve transfer candidates", rows.Err())
+	if err = ordersRowsError("read split reserve transfer candidates", rows.Err()); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	return hydrateSplitTransferCandidates(ctx, q, scope, result)
 }
 
 func decodeOrderSplitTransferCandidate(row pgx.Row) (orders.SplitReserveTransferFacts, bool, error) {
@@ -156,4 +160,30 @@ func decodeOrderSplitTransferCandidate(row pgx.Row) (orders.SplitReserveTransfer
 	result.Parent.Evidence.CheckedAt = checked
 	result.Child.PostingNumber = number
 	return result, quarantined, nil
+}
+
+func hydrateSplitTransferCandidates(ctx context.Context, q ordersQuerier, scope orders.Scope, candidates []orders.SplitReserveTransferFacts) ([]orders.SplitReserveTransferFacts, error) {
+	result := make([]orders.SplitReserveTransferFacts, 0, len(candidates))
+	cache := make(map[string]orders.Work)
+	blocked := make(map[string]bool)
+	for _, facts := range candidates {
+		if blocked[facts.Split.ID] {
+			continue
+		}
+		split, found := cache[facts.Split.ID]
+		if !found {
+			split = facts.Split
+			if err := hydrateHistoricalSplitWork(ctx, q, scope, &split); err != nil {
+				if historicalSplitUnavailable(err) {
+					blocked[split.ID] = true
+					continue
+				}
+				return nil, err
+			}
+			cache[split.ID] = split
+		}
+		facts.Split = split
+		result = append(result, facts)
+	}
+	return result, nil
 }
