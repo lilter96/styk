@@ -762,7 +762,7 @@ test("hybrid handover clears an expired printed-label selection without another 
           created_at: now.toISOString(),
           targets: [
             {
-              id: "label-current",
+              id: "0123456789abcdef0123456789abcdef",
               state: "RECONCILED",
               automatic: false,
               command: {
@@ -825,7 +825,7 @@ test("hybrid handover clears an expired printed-label selection without another 
   await expect(preview).toBeDisabled();
   await page
     .getByLabel("Подтверждённая этикетка")
-    .selectOption("label-current");
+    .selectOption("0123456789abcdef0123456789abcdef");
   await expect(preview).toBeDisabled();
   await page
     .getByLabel("Этикетка распечатана и наклеена на это отправление.")
@@ -833,6 +833,16 @@ test("hybrid handover clears an expired printed-label selection without another 
   await expect(preview).toBeEnabled();
   await page.screenshot({
     path: testInfo.outputPath("hybrid-label-desktop.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("hybrid-label-mobile-ready.png"),
     fullPage: true,
   });
   const reads = operationReads;

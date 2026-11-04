@@ -368,6 +368,40 @@ export const orderActionLabel = (action: string) =>
     posting_label_create: "Создать этикетку в Ozon",
   })[action] || action;
 const issueLabels: Record<string, string> = {
+  position_ownership_unverified:
+    "Нет подтверждённой связи позиции с ранее созданной строкой МойСклад. Автоматическая замена состава не выполняется.",
+  position_ownership_or_replacement_unverified:
+    "Состав или чужой резерв изменился. Проверьте заказ МойСклад: STYK обновляет только ранее согласованные позиции.",
+  hybrid_printed_label_required:
+    "Выберите этикетку этого отправления и подтвердите, что она распечатана и наклеена.",
+  hybrid_label_evidence_unavailable:
+    "Не удалось проверить готовую этикетку. Обновите историю операций.",
+  hybrid_label_evidence_stale_or_mismatched:
+    "Этикетка устарела или относится к другим данным отправления. Получите новую этикетку и создайте новый предпросмотр.",
+  packing_requirements_not_observed:
+    "Ozon не передал требования к комплектации. Запросите свежую проверку отправления.",
+  packing_requirement_unknown:
+    "Для этого поля комплектации Ozon не передал достаточных данных. Неизвестное значение не считается пустым.",
+  packing_requirement_contract_changed:
+    "Ozon вернул новое требование к комплектации. Нужна проверка поддерживаемого процесса.",
+  packing_requirement_sku_not_in_posting:
+    "Требование Ozon относится к товару, которого нет в составе отправления. Обновите данные.",
+  packing_country_required:
+    "Для указанного SKU нужно подтвердить страну происхождения в Ozon, затем обновить отправление.",
+  packing_change_country_required:
+    "Ozon требует уточнить страну происхождения указанного SKU. Заполните реальные данные в Ozon и обновите отправление.",
+  packing_gtd_required:
+    "Ozon требует таможенные сведения указанного SKU. Заполните их в Ozon и обновите отправление.",
+  packing_mandatory_mark_required:
+    "Ozon требует код маркировки указанного SKU. Передача экземпляров в STYK пока не реализована: укажите реальные данные в Ozon и обновите отправление.",
+  packing_jw_uin_required:
+    "Ozon требует УИН ювелирного изделия. Укажите реальные данные экземпляров в Ozon и обновите отправление.",
+  packing_rnpt_required:
+    "Ozon требует РНПТ указанного SKU. Укажите реальные данные в Ozon и обновите отправление.",
+  packing_imei_required:
+    "Ozon требует IMEI указанного SKU. Укажите реальные данные экземпляров в Ozon и обновите отправление.",
+  packing_weight_required:
+    "Ozon требует фактический вес указанного SKU. Укажите измеренное значение в Ozon и обновите отправление.",
   action_not_available:
     "Ozon не разрешает это действие для текущего состояния отправления.",
   posting_action_not_available:
