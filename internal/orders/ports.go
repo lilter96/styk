@@ -155,6 +155,7 @@ type DispatchGuard struct {
 // Completion is a state+claim-token CAS. Unknown and acknowledged work may only
 // schedule reads. Reconciled persists correlation and outcome atomically.
 type Completion struct {
+	SplitReads             []SplitReadback `json:"-"`
 	ExemplarSecret         *ExemplarSecret
 	ObservedNativeDocument *NativeDocumentObservation
 	LabelArtifact          *LabelArtifact
