@@ -10,7 +10,8 @@ import (
 // A retained package may reduce its own existing reserve before children are
 // admitted. This proof never authorizes a child's reserve or infers ancestry
 // from matching products. The frozen pre-split review binds the native owner.
-const retainedSplitReserveSQL = `SELECT h.posting_number,split.id,split.state,split.action,split.work,
+const retainedSplitReserveSQL = `SELECT h.posting_number,split.id,split.state,split.action,
+ CASE WHEN split.action='posting_split_unassembled' THEN split.work ELSE '{}'::jsonb END,
  decision->'posting',decision->'correlation'
 FROM orders_posting_heads h
 JOIN LATERAL (SELECT w.* FROM orders_work w
