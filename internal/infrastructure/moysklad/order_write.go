@@ -172,8 +172,11 @@ func (c *OrderClient) orderWriteRequest(ctx context.Context, command orders.Comm
 		return nil, orders.ErrInvalid
 	}
 	method, path := http.MethodPost, "entity/customerorder"
-	if command.Action == orders.ActionMirrorUpdate {
+	if command.Action != orders.ActionMirrorCreate {
 		method, path = http.MethodPut, path+"/"+command.Correlation.CustomerOrderID
+	}
+	if command.Action == orders.ActionMirrorPositionUpdate {
+		path += "/positions/" + command.PositionPatch.PositionID
 	}
 	u := c.client.base.ResolveReference(&url.URL{Path: path})
 	request, err := http.NewRequestWithContext(ctx, method, u.String(), bytes.NewReader(raw))
@@ -200,6 +203,9 @@ func (c *OrderClient) orderResponse(command orders.Command, response *http.Respo
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return orderReceipt(command, orders.StateUnknown, response.StatusCode, "provider_uncertain"), ErrOrderUnknown
+	}
+	if command.Action == orders.ActionMirrorPositionUpdate {
+		return c.orderPositionResponse(command, raw, response.StatusCode)
 	}
 	document, _, err := c.decodeOrderIdentity(raw, command.Correlation)
 	if err != nil {

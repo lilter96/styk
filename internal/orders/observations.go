@@ -67,6 +67,8 @@ type DeliveryFacts struct {
 }
 
 type TargetPosition struct {
+	Shipped      Field[Decimal] `json:"shipped"`
+	Discount     Field[Decimal] `json:"discount"`
 	ID           string         `json:"id"`
 	Identity     LineIdentity   `json:"identity"`
 	MoyskladKind string         `json:"moysklad_kind"`

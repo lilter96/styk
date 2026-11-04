@@ -16,7 +16,7 @@ func (s *Service) finishMirrorPlan(ctx context.Context, review orders.ReviewCont
 			return decision, nil
 		}
 		decision.Target = &target
-		if validation := prepareMirrorUpdate(&command, target); validation.Code != "" {
+		if validation := prepareMirrorUpdate(&command, target, review.PositionBaselines[command.PostingNumber]); validation.Code != "" {
 			decision.Validation = append(decision.Validation, validation)
 			return decision, nil
 		}
@@ -57,7 +57,7 @@ func (s *Service) readTarget(ctx context.Context, scope orders.Scope, revision i
 	return target, nil
 }
 
-func prepareMirrorUpdate(command *orders.Command, target orders.TargetObservation) orders.Validation {
+func prepareMirrorUpdate(command *orders.Command, target orders.TargetObservation, baselines ...orders.PositionBaseline) orders.Validation {
 	command.ExpectedTargetRevision = target.Revision
 	command.TargetPositions, command.TargetPositionsComplete = slices.Clone(target.Positions), target.Complete
 	wanted := command.CustomerOrder
@@ -66,7 +66,7 @@ func prepareMirrorUpdate(command *orders.Command, target orders.TargetObservatio
 	}
 	wanted.OwnedFields = changedScalarFields(*wanted, target.Fields)
 	if !updatePositionsRepresented(*command, target.Positions) {
-		return orders.Validation{Field: "positions", Code: "position_replacement_unverified"}
+		return preparePositionPatch(command, baselines)
 	}
 	return orders.Validation{}
 }
@@ -139,6 +139,9 @@ func validTargetFields(fields orders.CustomerOrderWrite) bool {
 func targetRepresents(command orders.Command, target orders.TargetObservation) bool {
 	if command.CustomerOrder == nil || !validTarget(command.Correlation, target) {
 		return false
+	}
+	if command.Action == orders.ActionMirrorPositionUpdate {
+		return sameNativeReferences(*command.CustomerOrder, target.Fields) && orders.PositionPatchObserved(command, target)
 	}
 	wanted := *command.CustomerOrder
 	if !sameNativeReferences(wanted, target.Fields) || len(changedScalarFields(wanted, target.Fields)) > 0 {

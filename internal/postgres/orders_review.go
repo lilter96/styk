@@ -62,6 +62,10 @@ func readOrderReviewContext(ctx context.Context, q ordersQuerier, scope orders.S
 		return result, err
 	}
 	result.ActivePostings, err = readOrderActivePostings(ctx, q, scope)
+	if err != nil {
+		return result, err
+	}
+	err = enrichOrderPositionBaselines(ctx, q, &result)
 	return result, err
 }
 

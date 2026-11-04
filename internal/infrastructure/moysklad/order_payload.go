@@ -17,6 +17,9 @@ func (c *OrderClient) orderPayload(command orders.Command) (map[string]any, erro
 	if transport, coordinated := c.client.http.Transport.(providercall.Transport); coordinated && (!orderTransportScope(transport, command.Scope) || transport.Scope.CredentialRevision != command.Credentials.Moysklad) {
 		return nil, ErrOrderIntent
 	}
+	if command.Action == orders.ActionMirrorPositionUpdate {
+		return c.orderPositionPayload(command)
+	}
 	write := command.CustomerOrder
 	if err := orderWriteReferences(*write); err != nil {
 		return nil, err

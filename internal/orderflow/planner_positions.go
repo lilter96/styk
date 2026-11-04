@@ -60,43 +60,7 @@ func updatePositionsRepresented(command orders.Command, actual []orders.TargetPo
 }
 
 func nativePositionsUnchanged(before, after []orders.TargetPosition) bool {
-	if len(before) != len(after) {
-		return false
-	}
-	byID := make(map[string]orders.TargetPosition, len(after))
-	for _, position := range after {
-		if _, exists := byID[position.ID]; exists {
-			return false
-		}
-		byID[position.ID] = position
-	}
-	for _, prior := range before {
-		current, exists := byID[prior.ID]
-		if !exists || !nativePositionUnchanged(prior, current) {
-			return false
-		}
-	}
-	return true
-}
-
-func nativePositionUnchanged(before, after orders.TargetPosition) bool {
-	return before.ID == after.ID && before.MoyskladKind == after.MoyskladKind && before.MoyskladID == after.MoyskladID &&
-		decimalEqual(before.Quantity, after.Quantity) && sameDecimalObservation(before.Reserve, after.Reserve) &&
-		sameMoneyObservation(before.Price, after.Price) && sameDecimalObservation(before.VAT, after.VAT)
-}
-
-func sameDecimalObservation(before, after orders.Field[orders.Decimal]) bool {
-	if before.IsKnown() && after.IsKnown() {
-		return decimalEqual(*before.Value, *after.Value)
-	}
-	return sameField(before, after)
-}
-
-func sameMoneyObservation(before, after orders.Field[orders.Money]) bool {
-	if before.IsKnown() && after.IsKnown() {
-		return before.Value.Currency == after.Value.Currency && decimalEqual(before.Value.Amount, after.Value.Amount)
-	}
-	return sameField(before, after)
+	return orders.NativePositionsEqual(before, after)
 }
 
 func representedPositionIndex(wanted orders.PositionWrite, all []orders.PositionWrite, actual []orders.TargetPosition) int {
@@ -158,4 +122,22 @@ func normalizedDecimal(value orders.Decimal) string {
 		return "0"
 	}
 	return result
+}
+
+func preparePositionPatch(command *orders.Command, baselines []orders.PositionBaseline) orders.Validation {
+	if len(baselines) != 1 {
+		return orders.Validation{Field: "positions", Code: "position_ownership_unverified"}
+	}
+	patch, err := orders.PlanPositionPatch(*command, baselines[0])
+	if err != nil || patch == nil {
+		return orders.Validation{Field: "positions", Code: "position_ownership_or_replacement_unverified"}
+	}
+	command.Action = orders.ActionMirrorPositionUpdate
+	command.PositionPatch = patch
+	command.CustomerOrder.OwnedFields = patch.Fields()
+	command.CustomerOrder.PIIMappings = nil
+	command.CustomerOrder.TransientAttributes = nil
+	command.CustomerOrder.ShipmentAddress = orders.Field[string]{}
+	command.ProtectedCustomer, command.PII = nil, nil
+	return orders.Validation{}
 }

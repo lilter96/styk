@@ -82,6 +82,9 @@ func validateOrderCommandCurrent(command orders.Command, posting orders.Posting,
 			return err
 		}
 	}
+	if err := validateOrderPositionBaseline(command, current); err != nil {
+		return err
+	}
 	if err := validateOrderPIIProjection(command, posting, current); err != nil {
 		return err
 	}

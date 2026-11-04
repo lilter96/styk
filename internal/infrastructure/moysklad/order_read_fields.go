@@ -234,5 +234,13 @@ func (c *OrderClient) decodeOrderPosition(raw json.RawMessage, currency string) 
 	if err != nil {
 		return orders.TargetPosition{}, err
 	}
-	return orders.TargetPosition{ID: row.ID, MoyskladKind: kind, MoyskladID: id, Quantity: *quantity.Value, Reserve: reserve, Price: price, VAT: vat}, nil
+	shipped, err := orderReadDecimal(fields, "shipped")
+	if err != nil {
+		return orders.TargetPosition{}, err
+	}
+	discount, err := orderReadDecimal(fields, "discount")
+	if err != nil {
+		return orders.TargetPosition{}, err
+	}
+	return orders.TargetPosition{Shipped: shipped, Discount: discount, ID: row.ID, MoyskladKind: kind, MoyskladID: id, Quantity: *quantity.Value, Reserve: reserve, Price: price, VAT: vat}, nil
 }

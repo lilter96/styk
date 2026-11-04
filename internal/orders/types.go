@@ -375,6 +375,7 @@ type PostingAction struct {
 }
 
 type Command struct {
+	PositionPatch           *PositionPatch      `json:"position_patch,omitempty"`
 	ID                      string              `json:"id"`
 	Scope                   Scope               `json:"scope"`
 	Action                  Action              `json:"action"`

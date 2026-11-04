@@ -4,7 +4,7 @@ import "fmt"
 
 func (action Action) Valid() bool {
 	switch action {
-	case ActionMirrorCreate, ActionMirrorUpdate, ActionPostingPack, ActionPostingShip, ActionPostingCancel, ActionPostingDeliver,
+	case ActionMirrorCreate, ActionMirrorUpdate, ActionMirrorPositionUpdate, ActionPostingPack, ActionPostingShip, ActionPostingCancel, ActionPostingDeliver,
 		ActionPostingSplit, ActionPostingPartialCancel, ActionPostingTracking, ActionPostingLastMile, ActionPostingSentBySeller, ActionPostingLabelCreate:
 		return true
 	default:
@@ -13,7 +13,7 @@ func (action Action) Valid() bool {
 }
 
 func (action Action) IsMirror() bool {
-	return action == ActionMirrorCreate || action == ActionMirrorUpdate
+	return action == ActionMirrorCreate || action == ActionMirrorUpdate || action == ActionMirrorPositionUpdate
 }
 
 func (command Command) Validate() error {
@@ -48,7 +48,7 @@ func (command Command) validateMirror() error {
 	if command.Action == ActionMirrorCreate && command.Correlation.CustomerOrderID != "" {
 		return ErrConflict
 	}
-	if command.Action == ActionMirrorUpdate && (!validID(command.Correlation.CustomerOrderID) || !validID(command.ExpectedTargetRevision)) {
+	if command.Action != ActionMirrorCreate && (!validID(command.Correlation.CustomerOrderID) || !validID(command.ExpectedTargetRevision)) {
 		return ErrInvalid
 	}
 	if command.CustomerOrder.StoreID != command.Warehouse.MoyskladStoreID {
@@ -58,6 +58,16 @@ func (command Command) validateMirror() error {
 		if command.ProtectedCustomer == nil || command.ProtectedCustomer.Validate() != nil {
 			return ErrInvalid
 		}
+	}
+	if command.Action == ActionMirrorPositionUpdate {
+		if command.PositionPatch == nil {
+			return ErrInvalid
+		}
+		if err := command.PositionPatch.Validate(command); err != nil {
+			return err
+		}
+	} else if command.PositionPatch != nil {
+		return ErrInvalid
 	}
 	return command.CustomerOrder.Validate(command.Scope)
 }

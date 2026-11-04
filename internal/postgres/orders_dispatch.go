@@ -110,6 +110,10 @@ func readOrderWorkContext(ctx context.Context, q ordersQuerier, work orders.Work
 		return result, err
 	}
 	result.Metadata, err = readOrderMetadata(ctx, q, work.Scope)
+	if err != nil {
+		return result, err
+	}
+	err = enrichOrderPositionBaselines(ctx, q, &result)
 	return result, err
 }
 

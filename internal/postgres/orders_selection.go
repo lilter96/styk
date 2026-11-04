@@ -102,7 +102,10 @@ func readOrderSelectionReferences(ctx context.Context, q ordersQuerier, result *
 		return err
 	}
 	result.ActivePostings, err = readSelectedOrderFences(ctx, q, scope, numbers)
-	return err
+	if err != nil {
+		return err
+	}
+	return enrichOrderPositionBaselines(ctx, q, result)
 }
 
 func validateOrderSelection(numbers []string) error {
