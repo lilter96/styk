@@ -130,18 +130,15 @@ func TestNativeOrderPointsPostgresDedupFreshAttemptsAndFailure(t *testing.T) {
 	}
 	var code string
 	var snapshot *int64
-	if err := f.db.Pool.QueryRow(f.ctx, `SELECT code,snapshot_id FROM orders_native_point_reads ORDER BY finished_at DESC,id DESC LIMIT 1`).Scan(&code, &snapshot); err != nil || code != "NATIVE_READ_FAILED" || snapshot != nil {
+	if err := f.db.Pool.QueryRow(f.ctx, `SELECT code,snapshot_id FROM orders_native_point_reads ORDER BY admitted_at DESC,finished_at DESC,id DESC LIMIT 1`).Scan(&code, &snapshot); err != nil || code != "NATIVE_READ_FAILED" || snapshot != nil {
 		t.Fatal("latest failed read falsely reused successful point", err)
 	}
-	old := nativePointReadFixture(t, binding, read.StartedAt.Add(-time.Millisecond))
-	if err := commitNativePointFixture(t, f, nativePointPage(t, f, old, "late-old-success")); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.db.Pool.QueryRow(f.ctx, `SELECT code FROM orders_native_point_reads ORDER BY finished_at DESC,id DESC LIMIT 1`).Scan(&code); err != nil || code != "NATIVE_READ_FAILED" {
-		t.Fatal("late old read revived stale successful evidence", err)
-	}
+
 	if _, err := f.db.CommitOrderPage(f.ctx, first); err != nil {
 		t.Fatal("normal page replay not idempotent", err)
+	}
+	if err := f.db.Pool.QueryRow(f.ctx, `SELECT code FROM orders_native_point_reads ORDER BY admitted_at DESC,finished_at DESC,id DESC LIMIT 1`).Scan(&code); err != nil || code != "NATIVE_READ_FAILED" {
+		t.Fatal("old journal replay revived previous point", err)
 	}
 }
 
@@ -351,7 +348,11 @@ func nativePointTestURL(explicit, fallback string) (*url.URL, error) {
 	if explicitSet && u.Path != "/styk_orders_point_test" || !explicitSet && u.Path != "/styk_orders_release_test" && u.Path != "/styk_orders_store_test" {
 		return nil, errors.New("native point tests require styk_orders_point_test or an allowlisted orders test DSN")
 	}
-	for key, values := range u.Query() {
+	query, err := url.ParseQuery(u.RawQuery)
+	if err != nil {
+		return nil, errors.New("native point test DSN query is invalid")
+	}
+	for key, values := range query {
 		if key != "sslmode" || len(values) != 1 {
 			return nil, errors.New("native point test DSN overrides are forbidden")
 		}
@@ -372,6 +373,7 @@ func TestNativeOrderPointTestDatabaseScopeGuard(t *testing.T) {
 		{"remote server", "postgres://remote.example/styk_orders_point_test", "", false},
 		{"database query override", "", "postgres://localhost/styk_orders_release_test?dbname=styk", false},
 		{"search path override", "postgres://localhost/styk_orders_point_test?options=-csearch_path=public", "", false},
+		{"malformed query override", "postgres://localhost/styk_orders_point_test?sslmode=disable;options=unsafe", "", false},
 		{"host query override", "", "postgres://localhost/styk_orders_release_test?host=remote.example", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -383,5 +385,59 @@ func TestNativeOrderPointTestDatabaseScopeGuard(t *testing.T) {
 				t.Fatal("point test connected to another database")
 			}
 		})
+	}
+}
+
+func TestNativeOrderPointsPostgresLaterFailedClaimWinsAcrossClientClockSkew(t *testing.T) {
+	f, binding := nativePointStoreFixture(t)
+	ahead := nativePointReadFixture(t, binding, time.Now().UTC().Add(2*time.Second))
+	if err := commitNativePointFixture(t, f, nativePointPage(t, f, ahead, "ahead-clock-success")); err != nil {
+		t.Fatal(err)
+	}
+	reconciled := nativePointReadFixture(t, binding, time.Now().UTC())
+	reconciled.Point.TargetRevision = "later-native-state"
+	seedNativePointReconciliation(t, f, reconciled)
+	behind := orders.NativeOrderPointRead{Correlation: binding, CredentialRevision: 1, StartedAt: time.Now().UTC().Add(-2 * time.Second), FinishedAt: time.Now().UTC().Add(-time.Second), Code: "NATIVE_READ_FAILED"}
+	if err := commitNativePointFixture(t, f, nativePointPage(t, f, behind, "later-behind-clock-failure")); err != nil {
+		t.Fatal(err)
+	}
+	candidates, err := f.db.NativeOrderCandidates(f.ctx, f.config.Scope, 1, "")
+	if err != nil || len(candidates.Correlations) != 0 {
+		t.Fatal("older successful client clock overrode later failed DB-admitted read", err)
+	}
+	var code string
+	if err = f.db.Pool.QueryRow(f.ctx, `SELECT code FROM orders_native_point_reads ORDER BY admitted_at DESC,finished_at DESC,id DESC LIMIT 1`).Scan(&code); err != nil || code != "NATIVE_READ_FAILED" {
+		t.Fatal("later failure did not invalidate previous successful point", err)
+	}
+}
+
+func TestNativeOrderPointsPostgresOldReadClaimCannotRevivePoint(t *testing.T) {
+	f, binding := nativePointStoreFixture(t)
+	old := nativePointReadFixture(t, binding, time.Now().UTC().Add(-time.Second))
+	stalePage := nativePointPage(t, f, old, "interrupted-original-read")
+	tx, err := f.db.Pool.Begin(f.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := lockOrderIngestion(f.ctx, tx, stalePage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Commit(f.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.db.ReleaseOrderIngestion(f.ctx, lease); err != nil {
+		t.Fatal(err)
+	}
+	failed := orders.NativeOrderPointRead{Correlation: binding, CredentialRevision: 1, StartedAt: time.Now().UTC(), FinishedAt: time.Now().UTC(), Code: "NATIVE_READ_FAILED"}
+	if err = commitNativePointFixture(t, f, nativePointPage(t, f, failed, "new-owner-read-failed")); err != nil {
+		t.Fatal(err)
+	}
+	if err = commitNativePointFixture(t, f, stalePage); !errors.Is(err, orders.ErrStale) && !errors.Is(err, orders.ErrNotFound) {
+		t.Fatal("old network read accepted under stale claim", err)
+	}
+	var snapshots int
+	if err = f.db.Pool.QueryRow(f.ctx, `SELECT count(*) FROM orders_native_point_snapshots`).Scan(&snapshots); err != nil || snapshots != 0 {
+		t.Fatal("stale response revived successful snapshot", err)
 	}
 }

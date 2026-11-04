@@ -42,7 +42,7 @@ CREATE TABLE orders_native_point_reads (
  FOREIGN KEY(tenant_id,moysklad_account,ozon_account,posting_number) REFERENCES orders_projection_bindings(tenant_id,moysklad_account,ozon_account,posting_number),
  FOREIGN KEY(snapshot_id,tenant_id,moysklad_account,ozon_account,posting_number,native_order_id) REFERENCES orders_native_point_snapshots(id,tenant_id,moysklad_account,ozon_account,posting_number,native_order_id)
 );
-CREATE INDEX orders_native_point_latest ON orders_native_point_reads(tenant_id,moysklad_account,ozon_account,posting_number,finished_at DESC,id DESC);
+CREATE INDEX orders_native_point_latest ON orders_native_point_reads(tenant_id,moysklad_account,ozon_account,posting_number,admitted_at DESC,finished_at DESC,id DESC);
 CREATE INDEX orders_reconciliations_native_point_due ON orders_reconciliations(tenant_id,moysklad_account,ozon_account,(correlation->>'posting_number'),created_at DESC);
 CREATE TRIGGER orders_native_point_snapshots_immutable BEFORE UPDATE OR DELETE ON orders_native_point_snapshots FOR EACH ROW EXECUTE FUNCTION stock_reject_mutation();
 CREATE TRIGGER orders_native_point_reads_immutable BEFORE UPDATE OR DELETE ON orders_native_point_reads FOR EACH ROW EXECUTE FUNCTION stock_reject_mutation();
