@@ -39,3 +39,34 @@ func TestCountryUsesRequiredSKUAndExplicitFactualInput(t *testing.T) {
 		t.Fatal("explicit cleared requirement not observed")
 	}
 }
+
+func TestCountryKnownPositiveDoesNotNeedOtherListToBecomeKnown(t *testing.T) {
+	t.Parallel()
+	posting, _ := exemplarFixture()
+	requirements := &PackingRequirements{Presence: PresenceValue, Products: make(map[PackingRequirementKind]Field[[]string])}
+	for _, kind := range PackingRequirementKinds() {
+		requirements.Products[kind] = Present([]string{})
+	}
+	posting.Requirements = requirements
+	requirements.Products[RequirementCountry] = Present([]string{"2001"})
+	requirements.Products[RequirementChangeCountry] = Field[[]string]{Presence: PresenceMissing}
+	input := ActionParameters{CountrySKU: "2001", CountryISOCode: "NO", CountryConfirmed: true}
+	if ValidateCountryProposal(posting, input) != nil {
+		t.Fatal("known positive obligation blocked by unrelated omitted list")
+	}
+	required, err := CountryRequiredSKUs(posting)
+	if err != nil || len(required) != 1 || required[0] != "2001" {
+		t.Fatal("GET lost independently observed positive SKU")
+	}
+	requirements.Products[RequirementCountry] = Present([]string{})
+	if CountryRequirementCleared(posting, "2001") {
+		t.Fatal("partial union absence became confirmed resolution")
+	}
+	requirements.Products[RequirementChangeCountry] = Present([]string{})
+	if !CountryRequirementCleared(posting, "2001") {
+		t.Fatal("both independently empty lists did not resolve actual SKU")
+	}
+	if CountryRequirementCleared(posting, "1001") {
+		t.Fatal("cleared requirement fabricated a product identity")
+	}
+}

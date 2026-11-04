@@ -44,22 +44,34 @@ func CountryISOValid(s string) bool {
 	return len(s) == 2 && s[0] >= 'A' && s[0] <= 'Z' && s[1] >= 'A' && s[1] <= 'Z'
 }
 func CountryRequiredSKUs(posting Posting) ([]string, error) {
-	r := posting.Requirements
-	if r == nil || r.Validate() != nil || r.UnknownFields || r.Presence != PresenceValue {
+	values, complete, err := observedCountryRequirements(posting)
+	if err != nil {
+		return nil, err
+	}
+	if !complete && len(values) == 0 {
 		return nil, ErrBlocked
 	}
+	return values, nil
+}
+func observedCountryRequirements(posting Posting) ([]string, bool, error) {
+	r := posting.Requirements
+	if r == nil || r.Validate() != nil || r.UnknownFields || r.Presence != PresenceValue {
+		return nil, false, ErrBlocked
+	}
 	result := make([]string, 0)
+	complete := true
 	for _, kind := range []PackingRequirementKind{RequirementCountry, RequirementChangeCountry} {
 		field := r.Products[kind]
 		if field.Presence == PresenceEmpty {
 			continue
 		}
 		if !field.IsKnown() {
-			return nil, ErrBlocked
+			complete = false
+			continue
 		}
 		for _, sku := range *field.Value {
 			if !slices.ContainsFunc(posting.Lines, func(line PostingLine) bool { return line.Identity.SKU == sku }) {
-				return nil, ErrStale
+				return nil, false, ErrStale
 			}
 			if !slices.Contains(result, sku) {
 				result = append(result, sku)
@@ -67,7 +79,7 @@ func CountryRequiredSKUs(posting Posting) ([]string, error) {
 		}
 	}
 	slices.Sort(result)
-	return result, nil
+	return result, complete, nil
 }
 func ValidateCountryProposal(p Posting, input ActionParameters) error {
 	required, err := CountryRequiredSKUs(p)
@@ -80,6 +92,6 @@ func ValidateCountryProposal(p Posting, input ActionParameters) error {
 	return nil
 }
 func CountryRequirementCleared(posting Posting, sku string) bool {
-	required, err := CountryRequiredSKUs(posting)
-	return err == nil && exemplarID(sku) && slices.ContainsFunc(posting.Lines, func(line PostingLine) bool { return line.Identity.SKU == sku }) && !slices.Contains(required, sku)
+	required, complete, err := observedCountryRequirements(posting)
+	return err == nil && complete && exemplarID(sku) && slices.ContainsFunc(posting.Lines, func(line PostingLine) bool { return line.Identity.SKU == sku }) && !slices.Contains(required, sku)
 }
