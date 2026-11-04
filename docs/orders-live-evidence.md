@@ -543,3 +543,52 @@ showed zero enabled order/stock/catalog configurations, active provider calls,
 dispatches and pending/running outbox tasks. Both API readiness checks passed.
 General stock/catalog publication flags remain unset; no live provider mutation
 was requested by this continuation. The unrelated `AGENTS.md` edit is preserved.
+
+
+### Merchant-authenticated browser entry and interruption recovery
+
+The previously failing default `npm run test:browser` no longer targets the
+removed local-operator secret form. It starts the existing isolated nine-process
+orders harness, requires an explicit dedicated localhost `TEST_DATABASE_URL`,
+strips real provider credentials/publication flags and invokes both current
+merchant smoke and order-publication browser scenarios. Effective PostgreSQL
+host/database/fallback validation remains in Go; `.env` and historical credentials
+are not loaded. No second scheduler, queue or production authentication bypass
+was introduced.
+
+The smoke registers a new merchant through React, waits beyond the 15-second
+session refresh while typing, verifies email delivered through the actual test
+SMTP path, logs in through round-robin API replicas, reloads and logs out.
+A separate random-secret mailbox route exists only in the integration harness
+and only serves the exact synthetic registration email. The normal API returns
+404 for that route. The second browser journey still performs merchant review →
+durable operation → outbox/worker → provider customerorder → readback and checks
+another merchant cannot read the order resources. No API response is mocked in
+these stack browser scenarios.
+
+Final normal invocation: **12 Go tests/subtests PASS, 0 SKIP, 0 FAIL** in
+119.809 seconds; its two Playwright scenarios pass in 33.4 seconds. The stack
+uses 3 API, 2 scheduler and 4 worker OS processes, one PostgreSQL and independent
+merchant sessions. It observed 778 deterministic loopback-provider HTTP attempts,
+minimum configured account gap 41.46 ms, maximum in-flight count 1. These are
+synthetic provider measurements, not Ozon throughput or live order evidence.
+The existing lost-response, stale-worker, credential-rotation and four kill/
+restart phases all remain in the default gate.
+
+Adversarial review found that forwarding a signal only to the Go driver could
+leave replicas alive. The POSIX runner now owns a separate process group and
+terminates that group on interruption. A real SIGTERM experiment verified
+**11 descendants and zero remaining running descendants**, with an expected
+nonzero runner exit. The initial Linux inspection was corrected to enumerate
+children of every Go OS thread, rather than only the main thread. No live fault
+injection or provider mutation occurred.
+
+Desktop and 390-pixel mobile screenshots were inspected; no horizontal overflow.
+`make lint test build`, full Go race tests, integration-tag golangci-lint (0
+findings), frontend typecheck/lint, 276 unit tests and production build pass.
+The pre-existing large frontend chunk warning remains. All test processes/Vite
+were stopped; the normal application remains running with temporary automation
+OFF. No migration or historical record change was needed. Private evidence:
+`.local/orders-merchant-smoke-final-stack.log`,
+`.local/orders-merchant-smoke-interrupt.json` and
+`.local/orders-merchant-smoke-screenshots/`.

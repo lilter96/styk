@@ -22,11 +22,30 @@ docker compose exec postgres psql -U styk -d styk -c "SELECT o.operation_key,o.s
 
 Running the demo again reuses the same operation key and does not create another task. `make down` stops services without deleting their persistent volume. Migrations are applied explicitly with goose; never run them against production without review.
 
+## Merchant and order browser verification
+
+After `npm ci` and installing Playwright Chromium in `web`, run
+`TEST_DATABASE_URL=... npm run test:browser` from `web`. Supply a dedicated
+localhost database named `styk_orders_release_test` or `styk_orders_store_test`;
+the command refuses the application database and does not read `.env` or local
+credential files. The Go harness additionally verifies the effective PostgreSQL
+host, database and fallback hosts before creating an isolated test schema.
+
+This command starts 3 API, 2 scheduler and 4 worker processes with synthetic
+credentials and loopback providers. It checks registration/email verification,
+merchant login/logout across API replicas, tenant isolation, durable order
+creation/readback, shared rate limiting, UNKNOWN isolation and worker failover.
+It owns a temporary frontend on port 15183; no previously running application is
+required. Do not run a second copy on that port. On POSIX, interrupting the command
+terminates its owned process group. Desktop/mobile captures are written under
+`web/test-results`. The synthetic mailbox exists only in the integration harness;
+the application has no mailbox-read or local-operator authentication bypass.
+
 ## Merchant catalog synchronization
 
 Open `/catalog-sync` after connecting both providers and importing their catalogs. Existing confirmed product mappings are reused. Choose the source for each supported field, select products with server-side search, review the diff and explicitly confirm the changes. Unsupported updates remain visible as limitations rather than erasing destination data.
 
-Apply all migrations (currently 44) and upgrade both API and worker together. `STYK_TEST_ACCOUNT_CATALOG=true` enables catalog writes **only** for the fixed, registered owner-controlled account pair. It is independent of the stock publication flag and cannot activate arbitrary merchant accounts. Keep it disabled outside an authorized test. `STYK_CATALOG_REQUEST_AUDIT=true` records bounded, secret-free HTTP attempt metadata for diagnostics.
+Apply all migrations (currently 59) and upgrade both API and worker together. `STYK_TEST_ACCOUNT_CATALOG=true` enables catalog writes **only** for the fixed, registered owner-controlled account pair. It is independent of the stock publication flag and cannot activate arbitrary merchant accounts. Keep it disabled outside an authorized test. `STYK_CATALOG_REQUEST_AUDIT=true` records bounded, secret-free HTTP attempt metadata for diagnostics.
 
 Product creation is separately approved. MoySklad creation uses a durable unique marker and returns the actual provider ID; import the created product and confirm its correspondence before enrolling it for ordinary updates. Ozon creation requires actual category/type, mandatory attributes, VAT, dimensions and other factual declarations; STYK does not invent them. An Ozon task ID means acceptance, not completion.
 
