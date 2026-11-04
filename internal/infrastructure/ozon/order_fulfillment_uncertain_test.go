@@ -36,17 +36,7 @@ func TestFulfillmentAppliedCancellationThenNonSuccessStaysUnknown(t *testing.T) 
 		t.Run(strconv.Itoa(status), func(t *testing.T) {
 			t.Parallel()
 			var applied, authorized atomic.Int32
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path != "/v2/posting/fbs/cancel" || r.Method != http.MethodPost || r.Header.Get("Client-Id") != "id" {
-					t.Error("wrong exact mutation target")
-					w.WriteHeader(400)
-					return
-				}
-				applied.Add(1) // Simulate committed provider effect before an error response.
-				w.WriteHeader(status)
-				writeTestResponse(t, w, `{"code":9,"message":"PRIVATE_PROVIDER_ERROR"}`)
-			}))
-			defer server.Close()
+			server := appliedCancelFailureServer(t, status, &applied)
 			client := uncertainFulfillmentClient(t, server)
 			command := rfbsAdapterCommand(t, rfbsAdapterPosting())
 			command.Action = orders.ActionPostingCancel
@@ -77,4 +67,20 @@ func uncertainFulfillmentClient(t *testing.T, server *httptest.Server) *OrdersCl
 		t.Fatal(err)
 	}
 	return client
+}
+
+func appliedCancelFailureServer(t *testing.T, status int, applied *atomic.Int32) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v2/posting/fbs/cancel" || r.Method != http.MethodPost || r.Header.Get("Client-Id") != "id" || r.Header.Get("Api-Key") != "test-key" {
+			t.Error("wrong exact mutation target")
+			w.WriteHeader(400)
+			return
+		}
+		applied.Add(1) // Simulate committed provider effect before an error response.
+		w.WriteHeader(status)
+		writeTestResponse(t, w, `{"code":9,"message":"PRIVATE_PROVIDER_ERROR"}`)
+	}))
+	t.Cleanup(server.Close)
+	return server
 }
