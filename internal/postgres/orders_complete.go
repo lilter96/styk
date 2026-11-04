@@ -43,7 +43,7 @@ func completeOrderLocked(ctx context.Context, tx pgx.Tx, work orders.Work, compl
 	if err := validateOrderCompletion(work, completion); err != nil {
 		return err
 	}
-	if err := validatePartialCancellationEvidence(ctx, tx, work, completion); err != nil {
+	if err := validateFulfillmentQuantityEvidence(ctx, tx, work, completion); err != nil {
 		return err
 	}
 	now, err := ordersClock(ctx, tx)
@@ -111,6 +111,9 @@ func validateOrderReconciliation(work orders.Work, completion orders.Completion)
 		if !orderReadbackMatches(work.Command, *completion.ObservedTarget) {
 			return orders.ErrStale
 		}
+		return nil
+	}
+	if work.Command.Action == orders.ActionPostingSplit && len(completion.Receipt.ObservedPostings) > 1 {
 		return nil
 	}
 	if completion.ObservedPosting == nil {

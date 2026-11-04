@@ -48,6 +48,9 @@ func (r *Runner) readbackFulfillment(ctx context.Context, work orders.Work) erro
 	if err != nil {
 		return r.deferReadback(ctx, work, "SCOPED_SOURCE_CREDENTIALS_UNAVAILABLE")
 	}
+	if work.Command.Action == orders.ActionPostingSplit {
+		return r.readbackSplit(ctx, work, client)
+	}
 	posting, err := client.ReadOrderPosting(ctx, work.Scope, work.Command.PostingNumber)
 	if err != nil {
 		return r.deferReadback(ctx, work, "FULFILLMENT_READBACK_UNAVAILABLE")
