@@ -128,7 +128,7 @@ func (write CustomerOrderWrite) validateFields() error {
 	if err := write.validatePIIMappings(seen); err != nil {
 		return err
 	}
-	return write.validateTransientProjection(seen)
+	return write.validateTransientProjection()
 }
 
 func (write CustomerOrderWrite) validatePIIMappings(seen map[string]bool) error {
@@ -149,7 +149,7 @@ func (write CustomerOrderWrite) validatePIIMappings(seen map[string]bool) error 
 	return nil
 }
 
-func (write CustomerOrderWrite) validateTransientProjection(seen map[string]bool) error {
+func (write CustomerOrderWrite) validateTransientProjection() error {
 	if len(write.TransientAttributes) == 0 && !write.ShipmentAddress.IsSpecified() {
 		return nil
 	}
@@ -157,6 +157,9 @@ func (write CustomerOrderWrite) validateTransientProjection(seen map[string]bool
 		return ErrInvalid
 	}
 	allowed := write.customerAttributeIDs()
+	// Reviewed destination IDs are permitted; only repeated transient values
+	// collide here. Durable/mapping collisions were checked separately.
+	seen := make(map[string]bool, len(write.TransientAttributes))
 	for _, attribute := range write.TransientAttributes {
 		if !allowed[attribute.AttributeID] || seen[attribute.AttributeID] || attribute.Value.Validate() != nil {
 			return ErrInvalid

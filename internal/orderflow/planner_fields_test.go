@@ -2,6 +2,8 @@ package orderflow
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -75,4 +77,30 @@ type flowCustomerReader struct{ customer *orders.Customer }
 
 func (reader flowCustomerReader) Customer(context.Context, orders.Scope, string, orders.ProtectedCustomer) (*orders.Customer, error) {
 	return reader.customer, nil
+}
+
+func TestServicePreviewAcceptsReviewedProtectedCustomerAttributes(t *testing.T) {
+	t.Parallel()
+	review := flowReview(t, "posting")
+	review.Config.PIIEnabled, review.Config.PIIRetentionSeconds = true, 3600
+	review.Config.FieldMappings = append(review.Config.FieldMappings, orders.FieldMapping{Source: "customer.name", Target: "attribute", AttributeID: projectionAttributeID})
+	review.Metadata = orders.MetadataRegistry{Scope: review.Config.Scope, Revision: 1, Attributes: []orders.AttributeDefinition{{UniqueCode: "test", AttributeID: projectionAttributeID, Type: "string"}}, ObservedAt: flowTestNow}
+	review.Postings[0].Customer = orders.ProtectedCustomer{Reference: "reference", Schema: "customer-v1", Revision: 1, Presence: orders.PresenceValue}
+	reader := flowCustomerReader{customer: &orders.Customer{Name: orders.Present("PRIVATE_PREVIEW_BUYER")}}
+	service, err := NewService(&flowStore{review: review}, flowResolver{}, ServiceOptions{AllowScope: func(orders.Scope) bool { return true }, Now: func() time.Time { return flowTestNow }, CustomerReader: reader})
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview := flowPreview(t, service, review)
+	decision := preview.Decisions[0]
+	if !decision.Ready || len(decision.Commands) != 1 || len(decision.Validation) != 0 {
+		t.Fatalf("ready=%v validation=%+v", decision.Ready, decision.Validation)
+	}
+	if _, err = orders.CommandFingerprint(decision.Commands[0]); err != nil {
+		t.Fatalf("reviewed projection has no valid durable fingerprint: %v", err)
+	}
+	raw, err := json.Marshal(preview)
+	if err != nil || strings.Contains(string(raw), "PRIVATE_PREVIEW_BUYER") {
+		t.Fatal("protected customer value escaped preview serialization")
+	}
 }

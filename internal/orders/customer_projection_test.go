@@ -1,6 +1,10 @@
 package orders
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 
 const (
 	projectionNameID  = "11111111-1111-4111-8111-111111111111"
@@ -85,5 +89,42 @@ func TestConfigPIIMappingsRequireExplicitTargets(t *testing.T) {
 	config.FieldMappings = []FieldMapping{{Source: "customer.address", Target: "shipment_address"}}
 	if err := config.validateFieldMappings(); err != ErrBlocked {
 		t.Fatalf("disabled PII mapping err=%v", err)
+	}
+}
+
+func TestCustomerProjectionCommandValidationKeepsReviewedTransientValues(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name   string
+		change func(*CustomerOrderWrite)
+		valid  bool
+	}{
+		{name: "reviewed customer attribute", valid: true},
+		{name: "duplicate transient attribute", change: func(w *CustomerOrderWrite) {
+			w.TransientAttributes = append(w.TransientAttributes, w.TransientAttributes[0])
+		}},
+		{name: "unreviewed transient attribute", change: func(w *CustomerOrderWrite) { w.TransientAttributes[0].AttributeID = projectionPhoneID }},
+		{name: "durable attribute collision", change: func(w *CustomerOrderWrite) {
+			w.Attributes = append(w.Attributes, AttributeWrite{AttributeID: projectionNameID, Value: Present("unmanaged")})
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			command := testCommand(t)
+			command.ProtectedCustomer = &ProtectedCustomer{Reference: "private-reference", Schema: "customer-v1", Revision: 1, Presence: PresenceValue}
+			command.CustomerOrder.PIIMappings = []PIIAttributeMapping{{Source: "customer.name", AttributeID: projectionNameID}}
+			command.CustomerOrder.TransientAttributes = []AttributeWrite{{AttributeID: projectionNameID, Value: Present("TRANSIENT_PRIVATE_BUYER")}}
+			if test.change != nil {
+				test.change(command.CustomerOrder)
+			}
+			err := command.Validate()
+			if (err == nil) != test.valid {
+				t.Fatalf("valid=%v err=%v", test.valid, err)
+			}
+			raw, marshalErr := json.Marshal(command)
+			if marshalErr != nil || strings.Contains(string(raw), "TRANSIENT_PRIVATE_BUYER") {
+				t.Fatal("transient customer data escaped durable command")
+			}
+		})
 	}
 }
