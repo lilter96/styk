@@ -20,6 +20,11 @@ func reservationFrontier(observations []Observation) (map[string]bool, bool) {
 			_, found := byPosting[observationKey(parent)]
 			valid = valid && found
 		}
+		// A positive split retirement never bypasses current native failures or
+		// reserve attribution merely because provider child names are present.
+		if knownStatus(posting, orders.SupersededSplitParentStatus) {
+			continue
+		}
 		if len(posting.ChildPostingNumbers) == 0 {
 			continue
 		}

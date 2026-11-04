@@ -71,6 +71,9 @@ func assessObservation(input Input, observation Observation) Obligation {
 	if !baselineOrdered(input, observation) {
 		return pending(result, ReserveObserved, nativeDemandOrderingBlocker(input, observation))
 	}
+	if knownStatus(posting, orders.SupersededSplitParentStatus) || observation.SplitSuperseded != nil {
+		return assessSupersededParent(input, observation, result)
+	}
 	return classifyObligation(result, posting, quantity, reserve, shipped)
 }
 
@@ -239,7 +242,7 @@ func whole(value string) (int64, bool) {
 }
 
 func settled(state State) bool {
-	return state == BaselineMatched || state == Shipped || state == Cancelled
+	return state == BaselineMatched || state == Shipped || state == Cancelled || state == Superseded
 }
 
 func pending(result Obligation, state State, reason string) Obligation {

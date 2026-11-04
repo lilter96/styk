@@ -23,6 +23,7 @@ const (
 	BaselineMatched   State = "baseline_matched"
 	Shipped           State = "shipped"
 	Cancelled         State = "cancelled"
+	Superseded        State = "superseded"
 	Unknown           State = "unknown"
 )
 
