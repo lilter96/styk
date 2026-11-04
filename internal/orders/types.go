@@ -431,6 +431,7 @@ const (
 )
 
 type Receipt struct {
+	SplitReadCursor    int                  `json:"split_read_cursor,omitempty"`
 	SplitReadCount     int                  `json:"split_read_count,omitempty"`
 	UnassembledSplit   *UnassembledSplitAck `json:"unassembled_split,omitempty"`
 	CountryEvidence    *CountryEvidence     `json:"country_evidence,omitempty"`

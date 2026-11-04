@@ -24,7 +24,9 @@ func (r *Runner) readbackUnassembledSplit(ctx context.Context, work orders.Work,
 	if err != nil {
 		return r.deferReadback(ctx, work, "SPLIT_READ_EVIDENCE_UNAVAILABLE")
 	}
-	fresh := r.readUnassembledCandidates(ctx, work, client, candidates, reads)
+	selected, cursor := unassembledReadWindow(candidates, reads, work.Receipt.SplitReadCursor)
+	fresh := r.readUnassembledCandidates(ctx, work, client, selected)
+	work.Receipt.SplitReadCursor = cursor
 	reads = mergeUnassembledReads(reads, fresh)
 	resolution, err := orders.ResolveUnassembledSplit(decision.Posting, work, reads)
 	if err != nil {
@@ -33,16 +35,11 @@ func (r *Runner) readbackUnassembledSplit(ctx context.Context, work orders.Work,
 	return r.completeUnassembledSplit(ctx, work, reads, fresh, resolution)
 }
 
-func (r *Runner) readUnassembledCandidates(ctx context.Context, work orders.Work, client orders.Provider, candidates []string, cached []orders.SplitReadback) []orders.SplitReadback {
+func (r *Runner) readUnassembledCandidates(ctx context.Context, work orders.Work, client orders.Provider, candidates []string) []orders.SplitReadback {
 	reads := make([]orders.SplitReadback, 0, 10)
 	for _, number := range candidates {
 		if len(reads) == 10 {
 			break
-		}
-		if slices.ContainsFunc(cached, func(read orders.SplitReadback) bool {
-			return read.PostingNumber == number && read.Code == "OBSERVED" && read.Posting != nil
-		}) {
-			continue
 		}
 		posting, err := client.ReadOrderPosting(ctx, work.Scope, number)
 		read := orders.SplitReadback{PostingNumber: number, Code: "SOURCE_UNAVAILABLE", CheckedAt: r.now()}
@@ -94,4 +91,37 @@ func (r *Runner) completeUnassembledSplit(ctx context.Context, work orders.Work,
 	}
 	receipt.State = state
 	return r.complete(ctx, work, orders.Completion{State: state, Code: code, Receipt: receipt, SplitReads: fresh, NextRunAt: r.now().Add(r.options.PollInterval)})
+}
+
+// Unattempted identities take priority. After that, every candidate (including
+// successful-but-not-yet-conserving observations) gets a fair new point read.
+// The cursor is persisted with the same work completion, never process memory.
+func unassembledReadWindow(candidates []string, reads []orders.SplitReadback, cursor int) ([]string, int) {
+	selected := make([]string, 0, 10)
+	seen := make(map[string]bool, len(reads))
+	for _, read := range reads {
+		seen[read.PostingNumber] = true
+	}
+	next := 0
+	for i, number := range candidates {
+		if !seen[number] {
+			selected = append(selected, number)
+			next = i + 1
+		}
+		if len(selected) == 10 {
+			return selected, next % len(candidates)
+		}
+	}
+	if len(selected) > 0 || len(candidates) == 0 {
+		return selected, next
+	}
+	if cursor < 0 {
+		cursor = 0
+	}
+	cursor %= len(candidates)
+	for i := 0; i < len(candidates) && len(selected) < 10; i++ {
+		index := (cursor + i) % len(candidates)
+		selected = append(selected, candidates[index])
+	}
+	return selected, (cursor + len(selected)) % len(candidates)
 }
