@@ -26,6 +26,7 @@ type ordersProcessStack struct {
 	schedules []*ordersProcessChild
 	workers   []*ordersProcessChild
 	a, b      *ordersHTTPBrowser
+	mailbox   *testMailbox
 }
 
 func TestOrdersNineProcessStack(t *testing.T) {
@@ -49,6 +50,7 @@ func ordersProcessNewStack(t *testing.T) *ordersProcessStack {
 	db, vault := ordersProcessDB(t)
 	stack := &ordersProcessStack{owner: t, db: db, vault: vault, provider: ordersProcessNewProvider(t)}
 	mailbox := &testMailbox{tokens: make(map[string]string)}
+	stack.mailbox = mailbox
 	mail, ca := ordersProcessMail(t, mailbox)
 	u, err := url.Parse(db.Pool.Config().ConnString())
 	if err != nil {

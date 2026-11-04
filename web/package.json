@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "test": "vitest run --environment jsdom src",
     "build": "tsc --noEmit && vite build",
-    "test:browser": "playwright test e2e/smoke.spec.ts --workers=1"
+    "test:browser": "node e2e/run-stack.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.105.0",

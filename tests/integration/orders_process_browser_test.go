@@ -29,18 +29,19 @@ func (s *ordersProcessStack) browser(t *testing.T) {
 	s.add(t, s.a, "browser-create", "FBS", false)
 	s.workersEnabled(t, true)
 	defer s.workersEnabled(t, false)
-	proxy := ordersProcessProxy(t, s.apis)
+	mailSecret := ordersProcessRandom(t)
+	proxy := ordersProcessProxy(t, s.apis, s.mailbox, mailSecret)
 	defer proxy.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
 	defer cancel()
-	ordersProcessPlaywright(t, ctx, proxy.URL, s.a.scope)
+	ordersProcessPlaywright(t, ctx, proxy.URL, s.a.scope, mailSecret)
 	s.awaitState(t, "browser-create", orders.StateReconciled)
 	if s.provider.writeCount("browser-create") != 1 {
 		t.Fatal("browser approval did not create exactly one native customerorder")
 	}
 }
 
-func ordersProcessProxy(t *testing.T, apis []*ordersProcessChild) *httptest.Server {
+func ordersProcessProxy(t *testing.T, apis []*ordersProcessChild, mailbox *testMailbox, mailSecret string) *httptest.Server {
 	t.Helper()
 	proxies := make([]*httputil.ReverseProxy, 0, len(apis))
 	for _, api := range apis {
@@ -54,15 +55,22 @@ func ordersProcessProxy(t *testing.T, apis []*ordersProcessChild) *httptest.Serv
 	}
 	var next atomic.Uint64
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/__test/orders/mail" {
+			ordersProcessBrowserMail(t, mailbox, mailSecret, w, r)
+			return
+		}
 		proxies[(next.Add(1)-1)%uint64(len(proxies))].ServeHTTP(w, r)
 	}))
 }
 
-func ordersProcessPlaywright(t *testing.T, ctx context.Context, proxy string, scope orders.Scope) {
+func ordersProcessPlaywright(t *testing.T, ctx context.Context, proxy string, scope orders.Scope, mailSecret string) {
 	t.Helper()
 	web, err := filepath.Abs("../../web")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if err = os.MkdirAll(filepath.Join(web, "node_modules/.cache"), 0o700); err != nil {
+		t.Fatal("create orders browser fixture directory")
 	}
 	config, err := os.CreateTemp(filepath.Join(web, "node_modules/.cache"), "orders-stack-vite-*.mjs")
 	if err != nil {
@@ -73,7 +81,7 @@ func ordersProcessPlaywright(t *testing.T, ctx context.Context, proxy string, sc
 			t.Error("remove orders Vite fixture config")
 		}
 	})
-	_, err = fmt.Fprintf(config, `import {defineConfig} from 'vite'; export default defineConfig({server:{host:'127.0.0.1',port:15183,strictPort:true,proxy:{'/api':{target:%q,changeOrigin:false}}}});`, proxy)
+	_, err = fmt.Fprintf(config, `import {defineConfig} from 'vite'; export default defineConfig({server:{host:'127.0.0.1',port:15183,strictPort:true,proxy:{'/api':{target:%q,changeOrigin:false},'/__test/orders/mail':{target:%q,changeOrigin:false}}}});`, proxy, proxy)
 	closeErr := config.Close()
 	if err != nil || closeErr != nil {
 		t.Fatal("write orders Vite fixture config")
@@ -87,7 +95,7 @@ func ordersProcessPlaywright(t *testing.T, ctx context.Context, proxy string, sc
 	}
 	defer ordersProcessStopCommand(t, vite)
 	ordersProcessViteReady(t, logs)
-	ordersProcessRunBrowser(t, ctx, web, scope)
+	ordersProcessRunBrowser(t, ctx, web, scope, mailSecret)
 }
 
 func ordersProcessViteReady(t *testing.T, logs *ordersProcessLog) {
@@ -107,15 +115,15 @@ func ordersProcessViteReady(t *testing.T, logs *ordersProcessLog) {
 	}
 }
 
-func ordersProcessRunBrowser(t *testing.T, ctx context.Context, web string, scope orders.Scope) {
+func ordersProcessRunBrowser(t *testing.T, ctx context.Context, web string, scope orders.Scope, mailSecret string) {
 	t.Helper()
 	raw, err := json.Marshal(scope)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.CommandContext(ctx, "node", "node_modules/@playwright/test/cli.js", "test", "e2e/orders-stack.spec.ts", "--workers=1", "--reporter=line")
+	cmd := exec.CommandContext(ctx, "node", "node_modules/@playwright/test/cli.js", "test", "e2e/smoke.spec.ts", "e2e/orders-stack.spec.ts", "--workers=1", "--reporter=line")
 	cmd.Dir = web
-	cmd.Env = append(os.Environ(), "STYK_ORDERS_STACK_ORIGIN="+ordersProcessOrigin, "STYK_ORDERS_STACK_SCOPE="+string(raw))
+	cmd.Env = append(os.Environ(), "STYK_ORDERS_STACK_ORIGIN="+ordersProcessOrigin, "STYK_ORDERS_STACK_SCOPE="+string(raw), "STYK_ORDERS_MAIL_SECRET="+mailSecret)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("orders live-stack browser gate: %v\n%s", err, output)
