@@ -25,6 +25,7 @@ type stockAdmissionHTTP struct {
 	writes   atomic.Int32
 	reads    atomic.Int32
 	limited  atomic.Bool
+	lostACK  atomic.Bool
 }
 
 func (p *stockAdmissionHTTP) serve(t *testing.T, w http.ResponseWriter, r *http.Request) {
@@ -34,24 +35,7 @@ func (p *stockAdmissionHTTP) serve(t *testing.T, w http.ResponseWriter, r *http.
 		return
 	}
 	if r.URL.Path == "/v2/products/stocks" {
-		var body struct {
-			Stocks []struct {
-				Stock       int64 `json:"stock"`
-				ProductID   int64 `json:"product_id"`
-				WarehouseID int64 `json:"warehouse_id"`
-			} `json:"stocks"`
-		}
-		if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body) != nil || len(body.Stocks) != 1 {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		if body.Stocks[0].ProductID != 2764544165 || body.Stocks[0].WarehouseID != 1020001323428000 {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		p.writes.Add(1)
-		p.quantity.Store(body.Stocks[0].Stock)
-		fixtureText(t, w, `{"result":[{"product_id":2764544165,"warehouse_id":1020001323428000,"updated":true,"errors":[]}]}`)
+		p.serveWrite(t, w, r)
 		return
 	}
 	if r.URL.Path != "/v2/product/info/stocks-by-warehouse/fbs" {
@@ -174,4 +158,53 @@ func stockAdmissionReview(t *testing.T, db *postgres.Store, previous domain.Stoc
 		t.Fatal("review after credential enrollment was not ready", err)
 	}
 	return review
+}
+
+func TestStockAdmissionStartedWriteTimeoutRemainsUnknown(t *testing.T) {
+	db, review := controlledFixture(t)
+	provider := &stockAdmissionHTTP{scope: review.StockSyncScope}
+	provider.lostACK.Store(true)
+	client := stockAdmissionClient(t, db, review.StockSyncScope, provider)
+	review = stockAdmissionReview(t, db, review)
+	view := controlledEnable(t, db, review)
+	runner := stockAdmissionRunner(db, func(context.Context, string, string) (*ozon.Client, error) { return client, nil })
+	if worked, err := runner.RunNext(context.Background()); err != nil || !worked {
+		t.Fatal("normal worker failed", err)
+	}
+	op, err := db.StockPublication(context.Background(), review.StockSyncScope, view.LastOperation.ID)
+	if err != nil || len(op.Targets) != 1 {
+		t.Fatal("publication evidence missing", err)
+	}
+	if provider.writes.Load() != 1 || provider.quantity.Load() != 7 || op.State != "UNKNOWN" || op.Targets[0].State != "UNKNOWN" || op.Targets[0].SafeError != "REQUEST_OUTCOME_UNKNOWN" {
+		t.Fatalf("started write falsely classified as unsent: state=%s target=%s code=%s writes=%d", op.State, op.Targets[0].State, op.Targets[0].SafeError, provider.writes.Load())
+	}
+	if worked, err := runner.RunNext(context.Background()); err != nil || worked || provider.writes.Load() != 1 {
+		t.Fatal("unknown external mutation was replayed", err)
+	}
+}
+
+func (p *stockAdmissionHTTP) serveWrite(t *testing.T, w http.ResponseWriter, r *http.Request) {
+	t.Helper()
+	var body struct {
+		Stocks []struct {
+			Stock       int64 `json:"stock"`
+			ProductID   int64 `json:"product_id"`
+			WarehouseID int64 `json:"warehouse_id"`
+		} `json:"stocks"`
+	}
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body) != nil || len(body.Stocks) != 1 {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	if body.Stocks[0].ProductID != 2764544165 || body.Stocks[0].WarehouseID != 1020001323428000 {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	p.writes.Add(1)
+	p.quantity.Store(body.Stocks[0].Stock)
+	if p.lostACK.Load() {
+		<-r.Context().Done()
+		return
+	}
+	fixtureText(t, w, `{"result":[{"product_id":2764544165,"warehouse_id":1020001323428000,"updated":true,"errors":[]}]}`)
 }
