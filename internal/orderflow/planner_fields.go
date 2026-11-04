@@ -398,6 +398,9 @@ func unsupportedMapping(mapping orders.FieldMapping) orders.Validation {
 func applyConfiguredReserve(write *orders.CustomerOrderWrite, posting orders.Posting, review orders.ReviewContext) orders.Validation {
 	for _, mapping := range review.Config.FieldMappings {
 		if mapping.Target == "positions.reserve" && mapping.Source == orders.ReserveOpenQuantitySource {
+			if permission, ok := review.SplitReserveTransfers[posting.PostingNumber]; ok {
+				return orders.ApplyTransferredSplitOpenQuantityReserve(posting, write, review.PositionBaselines[posting.PostingNumber], permission)
+			}
 			if review.SplitReserveBlocked[posting.PostingNumber] {
 				return orders.Validation{Field: "posting.lineage", Code: "split_reserve_transfer_pending"}
 			}

@@ -21,12 +21,8 @@ func (r *Runner) dispatch(ctx context.Context, work orders.Work) error {
 }
 
 func (r *Runner) dispatchMirror(ctx context.Context, work orders.Work) error {
-	allowed, err := r.store.GuardOrderDispatch(ctx, orders.DispatchGuard{Work: work, Now: r.now()})
-	if err != nil {
-		return fmt.Errorf("check order dispatch authority: %w", err)
-	}
-	if !allowed {
-		return r.stop(ctx, work, "CONFIG_MAPPING_OR_CREDENTIALS_CHANGED")
+	if allowed, err := r.authorizeDispatch(ctx, work, "CONFIG_MAPPING_OR_CREDENTIALS_CHANGED"); !allowed || err != nil {
+		return err
 	}
 	decision, err := r.reviewedDecision(ctx, work)
 	if err != nil {
@@ -45,6 +41,10 @@ func (r *Runner) dispatchMirror(ctx context.Context, work orders.Work) error {
 	if err != nil {
 		return r.stop(ctx, work, "SCOPED_TARGET_CREDENTIALS_UNAVAILABLE")
 	}
+	checks, err := r.splitParentPreflight(ctx, work, client)
+	if err != nil {
+		return r.stop(ctx, work, "SPLIT_PARENT_SOURCE_OR_RESERVE_CHANGED")
+	}
 	target, err := freshTarget(ctx, client, work.Command, decision.Target)
 	if err != nil {
 		return r.stop(ctx, work, "FRESH_TARGET_CHANGED_OR_UNAVAILABLE")
@@ -55,16 +55,12 @@ func (r *Runner) dispatchMirror(ctx context.Context, work orders.Work) error {
 		}
 		return r.reconcileTarget(ctx, work, *target)
 	}
-	return r.bindAndWrite(ctx, work, client)
+	return r.bindAndWrite(ctx, work, client, checks)
 }
 
 func (r *Runner) dispatchFulfillment(ctx context.Context, work orders.Work) error {
-	allowed, err := r.store.GuardOrderDispatch(ctx, orders.DispatchGuard{Work: work, Now: r.now()})
-	if err != nil {
-		return fmt.Errorf("check order dispatch authority: %w", err)
-	}
-	if !allowed {
-		return r.stop(ctx, work, "CONFIG_MAPPING_OR_CREDENTIALS_CHANGED")
+	if allowed, err := r.authorizeDispatch(ctx, work, "CONFIG_MAPPING_OR_CREDENTIALS_CHANGED"); !allowed || err != nil {
+		return err
 	}
 	decision, sourceErr := r.reviewedDecision(ctx, work)
 	if sourceErr == nil {
@@ -104,6 +100,9 @@ func (r *Runner) dispatchFulfillment(ctx context.Context, work orders.Work) erro
 	receipt, writeErr := client.WriteOrder(send, work.Command)
 	cancel()
 	if !began.Load() {
+		if errors.Is(writeErr, orders.ErrSplitTransferBusy) {
+			return r.stop(ctx, work, "SPLIT_RESERVE_GROUP_BUSY")
+		}
 		return r.stop(ctx, work, "FINAL_DISPATCH_GUARD_NOT_ENTERED")
 	}
 	work.State, work.DispatchCount = orders.StateDispatching, 1
@@ -210,10 +209,11 @@ func freshTarget(ctx context.Context, client orders.Provider, command orders.Com
 	return &target, nil
 }
 
-func (r *Runner) bindAndWrite(ctx context.Context, work orders.Work, client orders.Provider) error {
+func (r *Runner) bindAndWrite(ctx context.Context, work orders.Work, client orders.Provider, checks orders.DispatchGuard) error {
 	var began atomic.Bool
 	authorize := func(check context.Context) (bool, error) {
-		allowed, err := r.store.GuardOrderDispatch(check, orders.DispatchGuard{Work: work, Now: r.now(), Begin: true})
+		checks.Work, checks.Now, checks.Begin = work, r.now(), true
+		allowed, err := r.store.GuardOrderDispatch(check, checks)
 		if allowed && err == nil {
 			began.Store(true)
 		}
@@ -226,6 +226,9 @@ func (r *Runner) bindAndWrite(ctx context.Context, work orders.Work, client orde
 	receipt, err := client.WriteOrder(send, work.Command)
 	cancel()
 	if !began.Load() {
+		if errors.Is(err, orders.ErrSplitTransferBusy) {
+			return r.stop(ctx, work, "SPLIT_RESERVE_GROUP_BUSY")
+		}
 		return r.stop(ctx, work, "FINAL_DISPATCH_GUARD_NOT_ENTERED")
 	}
 	work.State, work.DispatchCount = orders.StateDispatching, 1

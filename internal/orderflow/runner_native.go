@@ -8,12 +8,8 @@ import (
 )
 
 func (r *Runner) dispatchNative(ctx context.Context, work orders.Work) error {
-	allowed, err := r.store.GuardOrderDispatch(ctx, orders.DispatchGuard{Work: work, Now: r.now()})
-	if err != nil {
+	if allowed, err := r.authorizeDispatch(ctx, work, "NATIVE_AUTHORITY_CHANGED"); !allowed || err != nil {
 		return err
-	}
-	if !allowed {
-		return r.stop(ctx, work, "NATIVE_AUTHORITY_CHANGED")
 	}
 	decision, err := r.reviewedDecision(ctx, work)
 	if err == nil {
@@ -42,7 +38,7 @@ func (r *Runner) dispatchNative(ctx context.Context, work orders.Work) error {
 	if !errors.Is(err, orders.ErrNotFound) {
 		return r.stop(ctx, work, "NATIVE_CORRELATION_UNAVAILABLE")
 	}
-	return r.bindAndWrite(ctx, work, client)
+	return r.bindAndWrite(ctx, work, client, orders.DispatchGuard{})
 }
 
 func (r *Runner) withNativeEvent(ctx context.Context, command orders.Command) (orders.Command, error) {

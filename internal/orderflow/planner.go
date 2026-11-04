@@ -98,6 +98,9 @@ func sourceValidation(posting orders.Posting, review orders.ReviewContext, now t
 			result = append(result, orders.Validation{Field: drift.Path, Code: "source_ordering_quarantined"})
 		}
 	}
+	if review.SplitTransferBusy[posting.PostingNumber] {
+		result = append(result, orders.Validation{Field: "posting.lineage", Code: "split_reserve_group_busy"})
+	}
 	return result
 }
 
@@ -203,6 +206,9 @@ func mirrorCommand(review orders.ReviewContext, decision orders.Decision, wareho
 		SourceCommandID: decision.Posting.Evidence.SourceCommandID, Warehouse: warehouse, CustomerOrder: &write, IdempotencyKey: id, CreatedAt: now}
 	command.SplitSourceWorkID = review.SplitReservePermissions[command.PostingNumber].SplitWorkID
 	command.RetainedSplitWorkID = review.SplitRetainedReserves[command.PostingNumber].SplitWorkID
+	if permission, ok := review.SplitReserveTransfers[command.PostingNumber]; ok {
+		command.SplitTransfer = &permission
+	}
 	if write.HasPIIMappings() {
 		protected := decision.Posting.Customer
 		command.ProtectedCustomer = &protected

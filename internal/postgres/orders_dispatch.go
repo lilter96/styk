@@ -99,6 +99,15 @@ func orderDispatchCurrent(ctx context.Context, tx pgx.Tx, work orders.Work, guar
 	if work.State.ReadOnly() {
 		return true, nil
 	}
+	if err = validateOrderSplitTransferDispatch(ctx, tx, work, guard, now); err != nil {
+		if errors.Is(err, orders.ErrSplitTransferBusy) {
+			return false, err
+		}
+		if errors.Is(err, orders.ErrStale) || errors.Is(err, orders.ErrBlocked) {
+			return false, nil
+		}
+		return false, err
+	}
 	if work.Command.NativeMovement != nil {
 		if _, err = readOrderActionSecret(ctx, tx, work.Scope, work.Command.PostingNumber, work.Command.Action, work.Command.NativeMovement.Event.ProtectedInput); err != nil {
 			return false, err

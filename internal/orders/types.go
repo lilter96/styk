@@ -8,13 +8,14 @@ import (
 )
 
 var (
-	ErrInvalid       = errors.New("invalid order synchronization request")
-	ErrNotFound      = errors.New("order synchronization resource not found")
-	ErrConflict      = errors.New("order synchronization conflict")
-	ErrStale         = errors.New("order synchronization evidence changed")
-	ErrBlocked       = errors.New("order synchronization is blocked")
-	ErrAmbiguousLine = errors.New("ambiguous order line identity")
-	ErrSchemaDrift   = errors.New("order provider schema changed")
+	ErrInvalid           = errors.New("invalid order synchronization request")
+	ErrNotFound          = errors.New("order synchronization resource not found")
+	ErrConflict          = errors.New("order synchronization conflict")
+	ErrStale             = errors.New("order synchronization evidence changed")
+	ErrBlocked           = errors.New("order synchronization is blocked")
+	ErrSplitTransferBusy = errors.New("split reserve transfer group is busy")
+	ErrAmbiguousLine     = errors.New("ambiguous order line identity")
+	ErrSchemaDrift       = errors.New("order provider schema changed")
 )
 
 type Scope struct {
@@ -380,35 +381,36 @@ type PostingAction struct {
 }
 
 type Command struct {
-	SplitSourceWorkID       string               `json:"split_source_work_id,omitempty"`
-	RetainedSplitWorkID     string               `json:"retained_split_work_id,omitempty"`
-	PositionBaseline        *PositionBaseline    `json:"position_baseline,omitempty"`
-	NativeMovement          *NativeMovement      `json:"native_movement,omitempty"`
-	PositionReplacement     *PositionReplacement `json:"position_replacement,omitempty"`
-	PositionPatch           *PositionPatch       `json:"position_patch,omitempty"`
-	ID                      string               `json:"id"`
-	Scope                   Scope                `json:"scope"`
-	Action                  Action               `json:"action"`
-	CommercialOrderID       string               `json:"commercial_order_id"`
-	PostingNumber           string               `json:"posting_number"`
-	Correlation             Correlation          `json:"correlation"`
-	ConfigRevision          int64                `json:"config_revision"`
-	Credentials             CredentialRevisions  `json:"credentials"`
-	AutomationGrantRevision int64                `json:"automation_grant_revision,omitempty"`
-	ExpectedSourceRevision  string               `json:"expected_source_revision"`
-	ExpectedTargetRevision  string               `json:"expected_target_revision,omitempty"`
-	TargetPositions         []TargetPosition     `json:"target_positions,omitempty"`
-	TargetPositionsComplete bool                 `json:"target_positions_complete,omitempty"`
-	SourceOrigin            Origin               `json:"source_origin"`
-	SourceCommandID         string               `json:"source_command_id,omitempty"`
-	Warehouse               WarehouseMappingRef  `json:"warehouse"`
-	CustomerOrder           *CustomerOrderWrite  `json:"customer_order,omitempty"`
-	PostingAction           *PostingAction       `json:"posting_action,omitempty"`
-	ProtectedCustomer       *ProtectedCustomer   `json:"protected_customer,omitempty"`
-	PII                     *Customer            `json:"-"`
-	ActionInput             *ActionParameters    `json:"-"`
-	IdempotencyKey          string               `json:"idempotency_key"`
-	CreatedAt               time.Time            `json:"created_at"`
+	SplitSourceWorkID       string                          `json:"split_source_work_id,omitempty"`
+	RetainedSplitWorkID     string                          `json:"retained_split_work_id,omitempty"`
+	SplitTransfer           *SplitReserveTransferPermission `json:"split_transfer,omitempty"`
+	PositionBaseline        *PositionBaseline               `json:"position_baseline,omitempty"`
+	NativeMovement          *NativeMovement                 `json:"native_movement,omitempty"`
+	PositionReplacement     *PositionReplacement            `json:"position_replacement,omitempty"`
+	PositionPatch           *PositionPatch                  `json:"position_patch,omitempty"`
+	ID                      string                          `json:"id"`
+	Scope                   Scope                           `json:"scope"`
+	Action                  Action                          `json:"action"`
+	CommercialOrderID       string                          `json:"commercial_order_id"`
+	PostingNumber           string                          `json:"posting_number"`
+	Correlation             Correlation                     `json:"correlation"`
+	ConfigRevision          int64                           `json:"config_revision"`
+	Credentials             CredentialRevisions             `json:"credentials"`
+	AutomationGrantRevision int64                           `json:"automation_grant_revision,omitempty"`
+	ExpectedSourceRevision  string                          `json:"expected_source_revision"`
+	ExpectedTargetRevision  string                          `json:"expected_target_revision,omitempty"`
+	TargetPositions         []TargetPosition                `json:"target_positions,omitempty"`
+	TargetPositionsComplete bool                            `json:"target_positions_complete,omitempty"`
+	SourceOrigin            Origin                          `json:"source_origin"`
+	SourceCommandID         string                          `json:"source_command_id,omitempty"`
+	Warehouse               WarehouseMappingRef             `json:"warehouse"`
+	CustomerOrder           *CustomerOrderWrite             `json:"customer_order,omitempty"`
+	PostingAction           *PostingAction                  `json:"posting_action,omitempty"`
+	ProtectedCustomer       *ProtectedCustomer              `json:"protected_customer,omitempty"`
+	PII                     *Customer                       `json:"-"`
+	ActionInput             *ActionParameters               `json:"-"`
+	IdempotencyKey          string                          `json:"idempotency_key"`
+	CreatedAt               time.Time                       `json:"created_at"`
 }
 
 type State string

@@ -61,33 +61,45 @@ WHERE h.tenant_id=$1 AND h.moysklad_account=$2 AND h.ozon_account=$3
  AND h.posting_number=ANY($4::text[]) ORDER BY h.posting_number LIMIT 10001`
 
 func enrichOrderSplitReserveBlocks(ctx context.Context, q ordersQuerier, result *orders.ReviewContext, numbers []string) error {
+	if err := enrichOrderSplitTransferBusy(ctx, q, result, numbers); err != nil {
+		return err
+	}
 	if len(numbers) == 0 || !slices.ContainsFunc(result.Config.FieldMappings, func(m orders.FieldMapping) bool {
 		return m.Target == "positions.reserve" && m.Source == orders.ReserveOpenQuantitySource
 	}) {
 		return nil
 	}
+	dependencies, err := readOrderSplitReserveBlocks(ctx, q, result, numbers)
+	if err != nil {
+		return err
+	}
+	if err = enrichOrderRetainedSplitReserves(ctx, q, result, numbers); err != nil {
+		return err
+	}
+	return enrichOrderSplitTransfers(ctx, q, result, dependencies)
+}
+
+func readOrderSplitReserveBlocks(ctx context.Context, q ordersQuerier, result *orders.ReviewContext, numbers []string) (map[string]string, error) {
 	rows, err := q.Query(ctx, splitReserveBlocksSQL, append(ordersScopeArgs(result.Config.Scope), numbers)...)
 	if err != nil {
-		return ordersError("read split reserve dependencies", err)
+		return nil, ordersError("read split reserve dependencies", err)
 	}
 	defer rows.Close()
 	result.SplitReserveBlocked = make(map[string]bool, len(numbers))
 	result.SplitReservePermissions = make(map[string]orders.SplitReservePermission, len(numbers))
+	dependencies := make(map[string]string, len(numbers))
 	for rows.Next() {
 		var number, workID, parent string
 		var unencumbered bool
 		if err = rows.Scan(&number, &workID, &parent, &unencumbered); err != nil {
-			return ordersError("decode split reserve dependency", err)
+			return nil, ordersError("decode split reserve dependency", err)
 		}
 		if unencumbered {
 			result.SplitReservePermissions[number] = orders.SplitReservePermission{Scope: result.Config.Scope, SplitWorkID: workID, ParentPostingNumber: parent, PostingNumber: number}
 		} else {
 			result.SplitReserveBlocked[number] = true
+			dependencies[number] = workID
 		}
 	}
-	rows.Close()
-	if err = rows.Err(); err != nil {
-		return ordersError("read split reserve dependencies", err)
-	}
-	return enrichOrderRetainedSplitReserves(ctx, q, result, numbers)
+	return dependencies, ordersRowsError("read split reserve dependencies", rows.Err())
 }
