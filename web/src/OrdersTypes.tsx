@@ -225,6 +225,11 @@ export type OrderWork = {
   automatic: boolean;
   receipt: {
     state: string;
+    posting_numbers?: string[];
+    observed_postings?: {
+      posting_number: string;
+      evidence: { observed_at: string; checked_at?: string };
+    }[];
     external_id?: string;
     code?: string;
     artifact?: {

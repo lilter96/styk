@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./api";
+import { OrdersSplitEvidence } from "./OrdersSplitEvidence";
 import {
   OrdersActionSummary,
   safeOrderArtifactURL,
@@ -154,6 +155,9 @@ export function OrdersOperations({
                   Задача обработки Ozon: {task.id}
                 </p>
               ))}
+              {work.command.action === "posting_split" && (
+                <OrdersSplitEvidence receipt={work.receipt} />
+              )}
               {work.state === "RECONCILED" &&
                 work.receipt?.artifact?.available &&
                 safeOrderArtifactURL(work.receipt.artifact.download_url) && (

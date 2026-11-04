@@ -2,6 +2,68 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 import type { OrderActionProposal, OrderCommand } from "../src/OrdersTypes";
 
 const origin = process.env.STYK_ORDERS_UI_ORIGIN || "http://127.0.0.1:5173";
+
+test("split history shows exact child identities and partial readback on desktop and mobile", async ({
+  page,
+}, testInfo) => {
+  await openOrders(page);
+  await page.route("**/api/orders/operations?*", (route) =>
+    fulfill(route, {
+      operations: [
+        {
+          id: "split-operation",
+          scope,
+          state: "POLLING",
+          created_at: "2026-11-04T10:00:00Z",
+          targets: [
+            {
+              id: "split-work",
+              state: "POLLING",
+              automatic: false,
+              command: {
+                action: "posting_split",
+                posting_number: "SYNTHETIC-1",
+                correlation: {},
+              },
+              receipt: {
+                state: "POLLING",
+                posting_numbers: ["child-9007199254740993", "child-b"],
+                observed_postings: [
+                  {
+                    posting_number: "child-9007199254740993",
+                    evidence: { observed_at: "2026-11-04T10:00:00Z" },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    }),
+  );
+  await page.getByRole("button", { name: "Обновить статусы заказов" }).click();
+  const summary = page.getByText("Посылки после разделения (2)");
+  await summary.focus();
+  await summary.press("Enter");
+  await expect(
+    page.getByText("child-9007199254740993", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Ожидаем подтверждения состава")).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("split-desktop.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("split-mobile.png"),
+    fullPage: true,
+  });
+});
 const scope = {
   tenant: "synthetic-orders",
   moysklad_account: "synthetic-moy",
@@ -294,6 +356,12 @@ async function openOrders(
               },
             ]
           : [],
+      });
+    if (url.pathname.endsWith("/reverse-suggestion"))
+      return route.fulfill({
+        status: 404,
+        contentType: "application/json",
+        body: JSON.stringify({ code: "NOT_FOUND" }),
       });
     throw new Error(`Unexpected synthetic Orders endpoint: ${url.pathname}`);
   });
