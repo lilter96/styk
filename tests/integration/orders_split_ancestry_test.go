@@ -165,3 +165,38 @@ func ancestrySplitPreview(t *testing.T, f ordersStoreFixture, before orders.Post
 	}
 	return preview
 }
+
+func TestOrdersSplitReserveUsesReviewedParentInsteadOfAbbreviatedRaw(t *testing.T) {
+	t.Parallel()
+	f, source := ancestryFixture(t)
+	source.ParentPostingNumber = orders.Present("provider-ancestor")
+	ordersStoreCommit(t, f, source, "known-provider-parent")
+	source.ParentPostingNumber = orders.Field[string]{Presence: orders.PresenceMissing}
+	source.Evidence.Revision = "abbreviated-parent-omitted"
+	source.Evidence.ObservedAt = time.Now().UTC()
+	source.Evidence.ProviderUpdatedAt = orders.Present(source.Evidence.ObservedAt)
+	ordersStoreCommit(t, f, source, "abbreviated-provider-parent")
+	current, err := f.db.OrderReviewContextFor(f.ctx, f.config.Scope, []string{source.PostingNumber}, false)
+	if err != nil || len(current.Postings) != 1 {
+		t.Fatal("read merged reviewed facts", err)
+	}
+	reviewed := current.Postings[0]
+	if !reviewed.ParentPostingNumber.IsKnown() || *reviewed.ParentPostingNumber.Value != "provider-ancestor" || reviewed.Evidence.Revision != source.Evidence.Revision {
+		t.Fatal("abbreviated source must retain known parent in reviewed projection")
+	}
+	var rawParent string
+	if err = f.db.Pool.QueryRow(f.ctx, `SELECT posting#>>'{parent_posting_number,presence}' FROM orders_posting_observations WHERE source_revision=$1`, source.Evidence.Revision).Scan(&rawParent); err != nil || rawParent != "missing" {
+		t.Fatal("fixture must preserve actual omitted raw field", err)
+	}
+	children := ancestryReconcileSplit(t, f, reviewed, "provider-ancestor-child", "1")
+	review, err := f.db.OrderReviewContextFor(f.ctx, f.config.Scope, []string{children[1].PostingNumber}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	number := children[1].PostingNumber
+	if !review.SplitReserveBlocked[number] || review.SplitReservePermissions[number].SplitWorkID != "" {
+		t.Fatalf("raw omission erased reviewed ancestry: blocked=%v permissions=%v", review.SplitReserveBlocked, review.SplitReservePermissions)
+	}
+	assertOrdersRowCount(t, f, `SELECT count(*) FROM orders_work WHERE action='posting_split' AND state='RECONCILED' AND dispatch_count=1`, 1)
+	assertOrdersRowCount(t, f, `SELECT count(*) FROM orders_work WHERE action LIKE 'mirror_%'`, 0)
+}
