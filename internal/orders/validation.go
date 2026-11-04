@@ -232,7 +232,7 @@ func (page SourcePage) Validate() error {
 	if page.ExpectedCheckpointRevision < 0 || len(page.Postings) > MaxPagePostings || page.WindowFrom.IsZero() || !page.WindowTo.After(page.WindowFrom) {
 		return ErrInvalid
 	}
-	if page.StartedAt.IsZero() || page.FinishedAt.Before(page.StartedAt) || (!page.Complete && (page.NextCursor == "" || page.NextCursor == page.ExpectedCursor)) {
+	if page.StartedAt.IsZero() || page.FinishedAt.Before(page.StartedAt) || (!page.Complete && !page.Exhausted && (page.NextCursor == "" || page.NextCursor == page.ExpectedCursor)) {
 		return ErrInvalid
 	}
 	seen := make(map[string]bool, len(page.Postings))
@@ -244,6 +244,9 @@ func (page SourcePage) Validate() error {
 			return ErrInvalid
 		}
 		seen[posting.PostingNumber] = true
+	}
+	if err := page.validateReadFailures(seen); err != nil {
+		return err
 	}
 	for _, secret := range page.Secrets {
 		if secret.Scope != page.Scope || !seen[secret.PostingNumber] || secret.Validate() != nil {

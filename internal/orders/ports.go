@@ -63,17 +63,20 @@ type HistoryPage struct {
 
 // Checkpoint is a local traversal position, not a provider update watermark.
 type Checkpoint struct {
-	Scope          Scope               `json:"scope"`
-	ConfigRevision int64               `json:"config_revision"`
-	Credentials    CredentialRevisions `json:"credentials"`
-	Stream         string              `json:"stream"`
-	RefreshKey     string              `json:"refresh_key"`
-	Revision       int64               `json:"revision"`
-	Cursor         string              `json:"cursor"`
-	WindowFrom     time.Time           `json:"window_from"`
-	WindowTo       time.Time           `json:"window_to"`
-	Complete       bool                `json:"complete"`
-	UpdatedAt      time.Time           `json:"updated_at"`
+	Scope             Scope               `json:"scope"`
+	ConfigRevision    int64               `json:"config_revision"`
+	Credentials       CredentialRevisions `json:"credentials"`
+	Stream            string              `json:"stream"`
+	RefreshKey        string              `json:"refresh_key"`
+	Revision          int64               `json:"revision"`
+	Cursor            string              `json:"cursor"`
+	WindowFrom        time.Time           `json:"window_from"`
+	WindowTo          time.Time           `json:"window_to"`
+	Complete          bool                `json:"complete"`
+	Exhausted         bool                `json:"exhausted,omitempty"`
+	Failures          []ReadFailure       `json:"failures,omitempty"`
+	FailuresTruncated bool                `json:"failures_truncated,omitempty"`
+	UpdatedAt         time.Time           `json:"updated_at"`
 }
 
 // SourcePage commits observations and traversal progress in one transaction.
@@ -90,6 +93,9 @@ type SourcePage struct {
 	WindowFrom                 time.Time           `json:"window_from"`
 	WindowTo                   time.Time           `json:"window_to"`
 	Complete                   bool                `json:"complete"`
+	Exhausted                  bool                `json:"exhausted,omitempty"`
+	Failures                   []ReadFailure       `json:"failures,omitempty"`
+	FailuresTruncated          bool                `json:"failures_truncated,omitempty"`
 	Postings                   []Posting           `json:"postings"`
 	Secrets                    []PostingSecret     `json:"-"`
 	StartedAt                  time.Time           `json:"started_at"`

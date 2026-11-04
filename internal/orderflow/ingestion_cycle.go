@@ -156,7 +156,7 @@ func (i *Ingestor) nextWindow(config orders.Config, checkpoint orders.Checkpoint
 			window.To = window.From.Add(31 * 24 * time.Hour)
 		}
 	}
-	if stream == ActiveStream && !checkpoint.Complete && checkpoint.ConfigRevision == config.Revision && checkpoint.Revision > 0 {
+	if stream == ActiveStream && !checkpoint.Complete && !checkpoint.Exhausted && checkpoint.ConfigRevision == config.Revision && checkpoint.Revision > 0 {
 		window.From, window.To = checkpoint.WindowFrom, checkpoint.WindowTo
 		return window, checkpoint.RefreshKey
 	}
@@ -178,18 +178,34 @@ func (i *Ingestor) collectLeasedPage(ctx context.Context, config orders.Config, 
 		return err
 	}
 	page.Postings, page.NextCursor, page.Complete = result.Postings, result.NextCursor, result.Complete
-	stampIngestionEvidence(&page, lease)
-	if err = i.protectPage(ctx, config, &page); err != nil {
-		return err
+	page.Failures, page.Exhausted = result.Failures, result.Exhausted
+	retainRefreshFailures(&page, checkpoint)
+	if ctx.Err() != nil {
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		ctx = cleanup
+		if _, err = i.currentConfig(ctx, config.Scope); err != nil {
+			return err
+		}
 	}
-	if err = i.renewLease(ctx, lease); err != nil {
-		return err
-	}
+	return i.persistLeasedPage(ctx, config, &page, lease)
+}
+
+func (i *Ingestor) persistLeasedPage(ctx context.Context, config orders.Config, page *orders.SourcePage, lease orders.IngestionLease) error {
+	// The protector uses the traversal finish time for secret retention. Setting
+	// this only after sealing would create expired year-one secret timestamps.
 	page.FinishedAt = i.options.Now()
-	if err = page.Validate(); err != nil {
+	stampIngestionEvidence(page, lease)
+	if err := i.protectPage(ctx, config, page); err != nil {
+		return err
+	}
+	if err := i.renewLease(ctx, lease); err != nil {
+		return err
+	}
+	if err := page.Validate(); err != nil {
 		return fmt.Errorf("validate collected order page: %w", err)
 	}
-	if _, err = i.store.CommitOrderPage(ctx, page); err != nil {
+	if _, err := i.store.CommitOrderPage(ctx, *page); err != nil {
 		return fmt.Errorf("commit order observations and checkpoint: %w", err)
 	}
 	return nil
@@ -203,18 +219,7 @@ func (i *Ingestor) readLeasedPage(ctx context.Context, scope orders.Scope, windo
 	if err != nil {
 		return orders.OrderSourcePage{}, fmt.Errorf("read active posting keys: %w", err)
 	}
-	page := orders.OrderSourcePage{Postings: make([]orders.Posting, 0, len(active.Postings)), NextCursor: active.NextCursor, Complete: active.NextCursor == ""}
-	for _, known := range active.Postings {
-		posting, readErr := i.source.ReadOrderPosting(ctx, scope, known.PostingNumber)
-		if readErr != nil {
-			return orders.OrderSourcePage{}, fmt.Errorf("refresh active order posting: %w", readErr)
-		}
-		if posting.Scope != scope || posting.PostingNumber != known.PostingNumber {
-			return orders.OrderSourcePage{}, orders.ErrConflict
-		}
-		page.Postings = append(page.Postings, posting)
-	}
-	return page, nil
+	return i.readActivePage(ctx, scope, active), nil
 }
 
 func stampIngestionEvidence(page *orders.SourcePage, lease orders.IngestionLease) {

@@ -69,7 +69,7 @@ func (s *ingestionTestStore) CommitOrderPage(_ context.Context, page orders.Sour
 	s.pages = append(s.pages, page)
 	checkpoint := orders.Checkpoint{Scope: page.Scope, ConfigRevision: page.ConfigRevision, Credentials: page.Credentials,
 		Stream: page.Stream, RefreshKey: page.RefreshKey, Revision: page.ExpectedCheckpointRevision + 1, Cursor: page.NextCursor,
-		WindowFrom: page.WindowFrom, WindowTo: page.WindowTo, Complete: page.Complete, UpdatedAt: page.FinishedAt}
+		WindowFrom: page.WindowFrom, WindowTo: page.WindowTo, Complete: page.Complete, Exhausted: page.Exhausted, Failures: page.Failures, FailuresTruncated: page.FailuresTruncated, UpdatedAt: page.FinishedAt}
 	s.checkpoints[page.Stream] = checkpoint
 	return checkpoint, nil
 }

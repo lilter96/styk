@@ -15,6 +15,8 @@ type OrderSourcePage struct {
 	Postings   []Posting
 	NextCursor string
 	Complete   bool
+	Exhausted  bool
+	Failures   []ReadFailure
 }
 type SourceReader interface {
 	ReadOrderPage(context.Context, Scope, OrderWindow, string) (OrderSourcePage, error)

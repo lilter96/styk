@@ -155,7 +155,8 @@ func writeOrderPage(ctx context.Context, tx pgx.Tx, page orders.SourcePage, conf
 			return previous, err
 		}
 	}
-	checkpoint := orders.Checkpoint{Scope: page.Scope, Stream: page.Stream, RefreshKey: page.RefreshKey, ConfigRevision: page.ConfigRevision, Credentials: page.Credentials, Revision: previous.Revision + 1, Cursor: page.NextCursor, WindowFrom: page.WindowFrom, WindowTo: page.WindowTo, Complete: page.Complete, UpdatedAt: now}
+	checkpoint := orders.Checkpoint{Scope: page.Scope, Stream: page.Stream, RefreshKey: page.RefreshKey, ConfigRevision: page.ConfigRevision, Credentials: page.Credentials, Revision: previous.Revision + 1, Cursor: page.NextCursor, WindowFrom: page.WindowFrom, WindowTo: page.WindowTo, Complete: page.Complete, Exhausted: page.Exhausted, Failures: page.Failures, FailuresTruncated: page.FailuresTruncated, UpdatedAt: now}
+	mergeOrderCheckpointFailures(&checkpoint, previous, page)
 	if err = insertOrderCheckpoint(ctx, tx, page, checkpoint, ids, hash); err != nil {
 		return previous, err
 	}
@@ -174,12 +175,12 @@ func validateOrderCheckpoint(page orders.SourcePage, previous orders.Checkpoint)
 	}
 	if page.RefreshKey != previous.RefreshKey {
 		reconfigured := previous.ConfigRevision != page.ConfigRevision || previous.Credentials != page.Credentials
-		if (!previous.Complete && !reconfigured) || page.ExpectedCursor != "" {
+		if (!previous.Complete && !previous.Exhausted && !reconfigured) || page.ExpectedCursor != "" {
 			return orders.ErrStale
 		}
 		return nil
 	}
-	if previous.Complete || previous.Cursor != page.ExpectedCursor || previous.ConfigRevision != page.ConfigRevision || previous.Credentials != page.Credentials || !previous.WindowFrom.Equal(page.WindowFrom) || !previous.WindowTo.Equal(page.WindowTo) {
+	if previous.Complete || previous.Exhausted || previous.Cursor != page.ExpectedCursor || previous.ConfigRevision != page.ConfigRevision || previous.Credentials != page.Credentials || !previous.WindowFrom.Equal(page.WindowFrom) || !previous.WindowTo.Equal(page.WindowTo) {
 		return orders.ErrStale
 	}
 	return nil
@@ -210,7 +211,7 @@ func insertOrderPagePostings(ctx context.Context, tx pgx.Tx, page orders.SourceP
 }
 
 func finishOrderIngestionPage(ctx context.Context, tx pgx.Tx, page orders.SourcePage) error {
-	if !page.Complete {
+	if !page.Complete && !page.Exhausted {
 		return nil
 	}
 	args := append(ordersScopeArgs(page.Scope), page.FenceToken)
@@ -233,4 +234,18 @@ func insertOrderCheckpoint(ctx context.Context, tx pgx.Tx, page orders.SourcePag
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO orders_ingestion_pages(id,tenant_id,moysklad_account,ozon_account,stream,request_key,request_hash,checkpoint_revision,checkpoint,observation_ids,started_at,finished_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, id, page.Scope.Tenant, page.Scope.MoyskladAccount, page.Scope.OzonAccount, page.Stream, page.IdempotencyKey, hash, checkpoint.Revision, raw, ids, page.StartedAt, page.FinishedAt)
 	return ordersRowsError("journal order ingestion page", err)
+}
+
+func mergeOrderCheckpointFailures(checkpoint *orders.Checkpoint, previous orders.Checkpoint, page orders.SourcePage) {
+	if page.Stream != "ozon-orders-active" {
+		return
+	}
+	var failures []orders.ReadFailure
+	truncated := page.FailuresTruncated
+	if page.RefreshKey == previous.RefreshKey {
+		failures = previous.Failures
+		truncated = truncated || previous.FailuresTruncated
+	}
+	checkpoint.Failures, checkpoint.FailuresTruncated = orders.MergeReadFailures(failures, page.Failures, page.Postings, truncated)
+	checkpoint.Complete = checkpoint.Complete && len(checkpoint.Failures) == 0 && !checkpoint.FailuresTruncated
 }
