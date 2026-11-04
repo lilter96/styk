@@ -414,6 +414,15 @@ export function OrdersConfig({
               {mapping.label}
             </label>
           ))}
+          {draft.field_mappings.some(
+            (mapping) =>
+              mapping.target === "moment" || mapping.target === "delivery_at",
+          ) && (
+            <p className="orders-note">
+              Учётные даты МойСклад сохраняются с точностью до минуты. Точные
+              исходные времена заказа Ozon сохраняются отдельно.
+            </p>
+          )}
         </fieldset>
         <OrdersReservationMapping
           mappings={draft.field_mappings}

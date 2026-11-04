@@ -426,6 +426,26 @@ export const orderActionLabel = (action: string) =>
     posting_exemplar_set: "Передать сведения экземпляров в Ozon",
   })[action] || action;
 const issueLabels: Record<string, string> = {
+  NATIVE_DOCUMENT_MOMENT_MINUTE_CONFIRMED:
+    "Документ и связанный заказ сверены. Учётная дата подтверждена с документированной минутной точностью МойСклад; первоначальный ответ записи сохранён в истории.",
+  TARGET_DOCUMENT_MINUTE_FACTS_CONFIRMED:
+    "Поля заказа сверены с учётом минутной точности учётной даты МойСклад. Исходные времена Ozon не изменены.",
+  NATIVE_ACKNOWLEDGEMENT_UNVERIFIED:
+    "Ответ записи МойСклад не удалось подтвердить. Повторная запись не отправляется; результат требует отдельной сверки.",
+  exemplar_weight_observed_value_required:
+    "Ozon требует вес, но подтверждённого положительного значения нет. Новый вес STYK не угадывает и не вводит в этом редакторе.",
+  exemplar_weight_merchant_edit_not_supported:
+    "Редактирование веса здесь недоступно. Сохранённое значение передаётся без изменения только после свежей проверки Ozon.",
+  exemplar_grouping_merchant_edit_not_supported:
+    "Изменение числа коробок здесь недоступно. STYK может сохранить только подтверждённое текущее значение Ozon.",
+  exemplar_multibox_fresh_evidence_required:
+    "Нет свежего подтверждения числа коробок отправления. Обновите сведения Ozon перед изменением экземпляров.",
+  exemplar_multibox_changed:
+    "Число коробок изменилось после подготовки. Создайте новую проверку, чтобы не затереть изменение.",
+  EXEMPLAR_WEIGHT_FRESH_READBACK_REQUIRED:
+    "Ozon не вернул свежий вес экземпляра для сверки. Результат требует проверки; повторная отправка автоматически не выполняется.",
+  EXEMPLAR_PRESERVED_WEIGHT_CHANGED:
+    "Наблюдаемый вес отличается от сохранённого. Проверьте изменение в Ozon; повторная запись автоматически не выполняется.",
   composition_manual_confirmation_required:
     "Замена состава требует отдельного ручного предпросмотра и подтверждения. Автоматически она не выполняется.",
   existing_customerorder_required:
