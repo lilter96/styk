@@ -90,7 +90,7 @@ func supersededSplitSource(facts SplitSupersededReserveFacts) bool {
 	if parent.Validate() != nil || !splitTransferSameAllocation(before, parent) || !sameFulfillmentTarget(before, parent) || !parent.Status.IsKnown() || *parent.Status.Value != SupersededSplitParentStatus || parent.ParentPostingNumber.IsKnown() {
 		return false
 	}
-	if slices.Contains(receipt.PostingNumbers, before.PostingNumber) || !SplitObserved(before, facts.Split.Command.PostingAction.Parameters.Packages, receipt.PostingNumbers, receipt.ObservedPostings) || !SplitObserved(before, facts.Split.Command.PostingAction.Parameters.Packages, receipt.PostingNumbers, facts.Children) {
+	if slices.Contains(receipt.PostingNumbers, before.PostingNumber) || !SplitObservedForAction(facts.Split.Command.Action, before, facts.Split.Command.PostingAction.Parameters.Packages, receipt.PostingNumbers, receipt.ObservedPostings) || !SplitObservedForAction(facts.Split.Command.Action, before, facts.Split.Command.PostingAction.Parameters.Packages, receipt.PostingNumbers, facts.Children) {
 		return false
 	}
 	if len(parent.ChildPostingNumbers) > 0 && !sameSupersededNumbers(parent.ChildPostingNumbers, receipt.PostingNumbers) {

@@ -53,7 +53,10 @@ func splitTransferRootVerified(facts SplitReserveTransferFacts) bool {
 		return false
 	}
 	command := split.Command
-	if command.Action != ActionPostingSplit || command.PostingAction == nil || command.Scope != before.Scope || command.PostingNumber != before.PostingNumber || command.CommercialOrderID != before.CommercialOrderID || command.ExpectedSourceRevision != before.Evidence.Revision {
+	if !command.Action.IsSplit() || command.PostingAction == nil || command.Scope != before.Scope || command.PostingNumber != before.PostingNumber || command.CommercialOrderID != before.CommercialOrderID || command.ExpectedSourceRevision != before.Evidence.Revision {
+		return false
+	}
+	if command.Action == ActionPostingSplitUnassembled && !unassembledAcknowledgedAllocation(split) {
 		return false
 	}
 	original := facts.OriginalCorrelation
@@ -62,7 +65,7 @@ func splitTransferRootVerified(facts SplitReserveTransferFacts) bool {
 
 func splitTransferAllocationVerified(facts SplitReserveTransferFacts) bool {
 	receipt, before := facts.Split.Receipt, facts.Before
-	if !SplitObserved(before, facts.Split.Command.PostingAction.Parameters.Packages, receipt.PostingNumbers, receipt.ObservedPostings) || facts.Parent.PostingNumber != before.PostingNumber || facts.Child.PostingNumber == before.PostingNumber {
+	if !SplitObservedForAction(facts.Split.Command.Action, before, facts.Split.Command.PostingAction.Parameters.Packages, receipt.PostingNumbers, receipt.ObservedPostings) || facts.Parent.PostingNumber != before.PostingNumber || facts.Child.PostingNumber == before.PostingNumber {
 		return false
 	}
 	retained, child := false, false

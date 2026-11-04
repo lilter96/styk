@@ -42,7 +42,7 @@ func minimalSupersededWork(work Work) Work {
 	if c.PostingAction != nil {
 		command.PostingAction = &PostingAction{Parameters: ActionParameters{Packages: c.PostingAction.Parameters.Packages}}
 	}
-	return Work{ID: work.ID, Scope: work.Scope, State: work.State, DispatchCount: work.DispatchCount, Command: command, Receipt: Receipt{CommandID: r.CommandID, State: r.State, HTTPStatus: r.HTTPStatus, PostingNumbers: r.PostingNumbers, ObservedPostings: minimalSupersededPostings(r.ObservedPostings)}}
+	return Work{ID: work.ID, Scope: work.Scope, State: work.State, DispatchCount: work.DispatchCount, Command: command, Receipt: Receipt{CommandID: r.CommandID, State: r.State, HTTPStatus: r.HTTPStatus, ObservedAt: r.ObservedAt, UnassembledSplit: r.UnassembledSplit, PostingNumbers: r.PostingNumbers, ObservedPostings: minimalSupersededPostings(r.ObservedPostings)}}
 }
 
 func minimalSupersededPostings(postings []Posting) []Posting {
