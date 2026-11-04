@@ -184,29 +184,30 @@ type Drift struct {
 }
 
 type Posting struct {
-	Scope               Scope               `json:"scope"`
-	CommercialOrderID   string              `json:"commercial_order_id"`
-	PostingNumber       string              `json:"posting_number"`
-	ParentPostingNumber Field[string]       `json:"parent_posting_number"`
-	ChildPostingNumbers []string            `json:"child_posting_numbers"`
-	OrderNumber         Field[string]       `json:"order_number"`
-	Status              Field[string]       `json:"status"`
-	Scheme              Field[string]       `json:"scheme"`
-	Financial           FinancialFacts      `json:"financial"`
-	Analytics           AnalyticsFacts      `json:"analytics"`
-	Delivery            DeliveryFacts       `json:"delivery"`
-	Substatus           Field[string]       `json:"substatus"`
-	WarehouseID         Field[string]       `json:"warehouse_id"`
-	DeliveryMethodID    Field[string]       `json:"delivery_method_id"`
-	DeliveryProfile     *CapabilityRef      `json:"delivery_profile,omitempty"`
-	AvailableActions    []string            `json:"available_actions"`
-	Times               PostingTimes        `json:"times"`
-	Cancellation        Field[Cancellation] `json:"cancellation"`
-	Lines               []PostingLine       `json:"lines"`
-	Customer            ProtectedCustomer   `json:"customer"`
-	PII                 *Customer           `json:"-"`
-	Evidence            EvidenceRevision    `json:"evidence"`
-	Drift               []Drift             `json:"drift"`
+	Scope               Scope                `json:"scope"`
+	CommercialOrderID   string               `json:"commercial_order_id"`
+	PostingNumber       string               `json:"posting_number"`
+	ParentPostingNumber Field[string]        `json:"parent_posting_number"`
+	ChildPostingNumbers []string             `json:"child_posting_numbers"`
+	OrderNumber         Field[string]        `json:"order_number"`
+	Status              Field[string]        `json:"status"`
+	Scheme              Field[string]        `json:"scheme"`
+	Financial           FinancialFacts       `json:"financial"`
+	Analytics           AnalyticsFacts       `json:"analytics"`
+	Delivery            DeliveryFacts        `json:"delivery"`
+	Substatus           Field[string]        `json:"substatus"`
+	WarehouseID         Field[string]        `json:"warehouse_id"`
+	DeliveryMethodID    Field[string]        `json:"delivery_method_id"`
+	DeliveryProfile     *CapabilityRef       `json:"delivery_profile,omitempty"`
+	AvailableActions    []string             `json:"available_actions"`
+	Requirements        *PackingRequirements `json:"requirements,omitempty"`
+	Times               PostingTimes         `json:"times"`
+	Cancellation        Field[Cancellation]  `json:"cancellation"`
+	Lines               []PostingLine        `json:"lines"`
+	Customer            ProtectedCustomer    `json:"customer"`
+	PII                 *Customer            `json:"-"`
+	Evidence            EvidenceRevision     `json:"evidence"`
+	Drift               []Drift              `json:"drift"`
 }
 
 type ProductMappingRef struct {

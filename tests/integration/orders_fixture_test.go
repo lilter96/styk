@@ -90,7 +90,11 @@ func ordersStoreMappings(t testing.TB, db *postgres.Store, scope orders.Scope) {
 }
 
 func ordersStorePosting(scope orders.Scope, number, revision string, at time.Time) orders.Posting {
-	return orders.Posting{Scope: scope, CommercialOrderID: "commercial-1", PostingNumber: number, OrderNumber: orders.Present("commercial-number-1"), Status: orders.Present("awaiting_deliver"), WarehouseID: orders.Present("ozon-warehouse"), DeliveryMethodID: orders.Present("delivery-method"), Lines: []orders.PostingLine{{Identity: orders.LineIdentity{SKU: "2001", OfferID: "orders-offer"}, ProductID: orders.Present("1001"), Quantity: "2", Price: orders.Present(orders.Money{Amount: "12.34", Currency: "RUB"}), VAT: orders.Present(orders.Decimal("20"))}}, Evidence: orders.EvidenceRevision{Revision: revision, Origin: orders.OriginOzon, ObservedAt: at, ProviderUpdatedAt: orders.Present(at)}}
+	requirements := &orders.PackingRequirements{Presence: orders.PresenceValue, Products: make(map[orders.PackingRequirementKind]orders.Field[[]string])}
+	for _, kind := range orders.PackingRequirementKinds() {
+		requirements.Products[kind] = orders.Present([]string{})
+	}
+	return orders.Posting{Scope: scope, CommercialOrderID: "commercial-1", PostingNumber: number, OrderNumber: orders.Present("commercial-number-1"), Status: orders.Present("awaiting_deliver"), WarehouseID: orders.Present("ozon-warehouse"), DeliveryMethodID: orders.Present("delivery-method"), Requirements: requirements, Lines: []orders.PostingLine{{Identity: orders.LineIdentity{SKU: "2001", OfferID: "orders-offer"}, ProductID: orders.Present("1001"), Quantity: "2", Price: orders.Present(orders.Money{Amount: "12.34", Currency: "RUB"}), VAT: orders.Present(orders.Decimal("20"))}}, Evidence: orders.EvidenceRevision{Revision: revision, Origin: orders.OriginOzon, ObservedAt: at, ProviderUpdatedAt: orders.Present(at)}}
 }
 
 func ordersStoreCommit(t testing.TB, fixture ordersStoreFixture, posting orders.Posting, key string) orders.Checkpoint {

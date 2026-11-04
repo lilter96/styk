@@ -12,6 +12,7 @@ import (
 func TestActionOptionsDoNotAdvertiseUnimplementedDispatch(t *testing.T) {
 	t.Parallel()
 	review := flowReview(t, "posting")
+	review.Postings[0].Requirements = plainFlowRequirements()
 	review.Postings[0].Lines[0].Identity.SKU = "123"
 	review.WarehouseMappings[0].Capability = orders.CapabilityRef{ID: "cap", Revision: 1, WarehouseID: "warehouse", DeliveryMethodID: "delivery-method", Scheme: "FBS", VerifiedDimensions: []string{"scheme", "warehouse"}, ObservedAt: flowTestNow.Add(-time.Minute), ValidUntil: flowTestNow.Add(time.Hour)}
 	store := &flowStore{review: review}
@@ -51,6 +52,7 @@ func TestCustomerMappingWithoutProtectorBlocks(t *testing.T) {
 func TestActionProposalPreviewMatchesConsoleRequestShape(t *testing.T) {
 	t.Parallel()
 	review := flowReview(t, "posting")
+	review.Postings[0].Requirements = plainFlowRequirements()
 	review.Postings[0].Lines[0].Identity.SKU = "123"
 	review.Postings[0].Status = orders.Present("awaiting_packaging")
 	review.WarehouseMappings[0].Capability = orders.CapabilityRef{ID: "cap", Revision: 1, WarehouseID: "warehouse", DeliveryMethodID: "delivery-method", Scheme: "FBS", VerifiedDimensions: []string{"scheme", "warehouse"}, ObservedAt: flowTestNow.Add(-time.Minute), ValidUntil: flowTestNow.Add(time.Hour)}

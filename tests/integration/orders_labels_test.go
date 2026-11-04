@@ -111,12 +111,17 @@ func assertStoredLabel(t *testing.T, f ordersStoreFixture, workID string, protec
 
 func assertLabelRollbackRejected(t *testing.T, f ordersStoreFixture) {
 	t.Helper()
+	dsn := f.db.Pool.Config().ConnString()
+	catalogSyncMigrate(t, dsn, "down-to", "52")
 	ctx, cancel := context.WithTimeout(f.ctx, 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", f.db.Pool.Config().ConnString(), "down")
-	if _, err := cmd.CombinedOutput(); err == nil {
-		t.Fatal("rollback erased retained encrypted PDF")
+	cmd := exec.CommandContext(ctx, "go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", dsn, "down")
+	output, err := cmd.CombinedOutput()
+	if err == nil || !bytes.Contains(output, []byte("encrypted label artifacts prevent destructive rollback")) {
+		t.Fatal("label migration did not reject destructive rollback for the expected reason")
 	}
+	assertOrdersRowCount(t, f, `SELECT count(*) FROM orders_label_artifacts`, 1)
+	catalogSyncMigrate(t, dsn, "up")
 	if err := f.db.RequireCurrentSchema(f.ctx); err != nil {
 		t.Fatal("rejected rollback changed schema")
 	}

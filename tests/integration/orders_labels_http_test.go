@@ -280,7 +280,7 @@ func (s *labelHTTPTransport) response(path string, body []byte) (string, error) 
 	switch path {
 	case "/v3/posting/fbs/get":
 		s.details++
-		return `{"result":{"posting_number":"label-http-posting","order_id":5,"order_number":"commercial-number-1","status":"awaiting_deliver","scheme":"FBS","delivery_method":{"warehouse_id":1020001323428000,"id":9007199254740993},"products":[{"sku":"2001","offer_id":"orders-offer","quantity":2,"price":"12.34","currency_code":"RUB","vat":"20"}]}}`, nil
+		return `{"result":{"posting_number":"label-http-posting","order_id":5,"order_number":"commercial-number-1","status":"awaiting_deliver","scheme":"FBS","delivery_method":{"warehouse_id":1020001323428000,"id":9007199254740993},"requirements":{"products_requiring_country":[],"products_requiring_change_country":[],"products_requiring_gtd":[],"products_requiring_mandatory_mark":[],"products_requiring_jw_uin":[],"products_requiring_rnpt":[],"products_requiring_imei":[],"products_requiring_weight":[]},"products":[{"sku":"2001","offer_id":"orders-offer","quantity":2,"price":"12.34","currency_code":"RUB","vat":"20"}]}}`, nil
 	case "/v2/warehouse/list":
 		s.discoveries++
 		return `{"warehouses":[{"warehouse_id":1020001323428000,"warehouse_type":"fbs","status":"created","is_rfbs":false,"is_express":false}],"has_next":false,"cursor":""}`, nil

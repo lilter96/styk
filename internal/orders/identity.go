@@ -148,6 +148,7 @@ func PostingFingerprint(posting Posting) (string, error) {
 		return "", fmt.Errorf("validate posting fingerprint: %w", err)
 	}
 	posting.Evidence.Revision = ""
+	posting.Requirements = posting.Requirements.Canonical()
 	if posting.DeliveryProfile != nil {
 		profile := *posting.DeliveryProfile
 		profile.ObservedAt = time.Time{}

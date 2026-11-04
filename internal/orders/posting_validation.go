@@ -7,6 +7,9 @@ import (
 )
 
 func (posting Posting) Validate() error {
+	if posting.Requirements != nil && posting.Requirements.Validate() != nil {
+		return ErrInvalid
+	}
 	if posting.Scheme.Validate() != nil {
 		return ErrInvalid
 	}

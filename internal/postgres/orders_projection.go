@@ -27,6 +27,7 @@ func mergeOrderPosting(previous, next orders.Posting) (orders.Posting, error) {
 		return orders.Posting{}, err
 	}
 	result.Evidence = next.Evidence
+	result.Requirements = orders.MergePackingRequirements(previous.Requirements, next.Requirements)
 	if next.DeliveryProfile == nil {
 		result.DeliveryProfile = previous.DeliveryProfile
 	}

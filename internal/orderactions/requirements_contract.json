@@ -1,0 +1,25 @@
+{
+  "schema_status": "official_reviewed_operation_subset",
+  "reviewed_on": "2026-11-04",
+  "source": "https://docs.ozon.ru/api/seller/zh/swagger.json",
+  "packing_requirements": {
+    "source": "/v3/posting/fbs/get:result.requirements",
+    "sku_lists": ["products_requiring_country", "products_requiring_change_country", "products_requiring_gtd", "products_requiring_mandatory_mark", "products_requiring_jw_uin", "products_requiring_rnpt", "products_requiring_imei", "products_requiring_weight"],
+    "identity": "Ozon SKU, exact positive int64; distinct from Seller product_id",
+    "missing_or_null": "UNKNOWN; not an empty requirement list",
+    "explicit_empty_array": "No outstanding requirement of this kind in this observation"
+  },
+  "ship_v4": {
+    "endpoint": "/v4/posting/fbs/ship",
+    "request": {"posting_number": "string", "packages": [{"products": [{"product_id": "SKU:int64", "quantity": "int32"}]}]},
+    "marking_values_inline": false
+  },
+  "separate_exemplar_workflow": {
+    "identify": "/v6/fbs/posting/product/exemplar/create-or-get",
+    "set": "/v6/fbs/posting/product/exemplar/set",
+    "status": "/v5/fbs/posting/product/exemplar/status",
+    "http_200_is_final_success": false,
+    "implemented_in_this_subset": false
+  },
+  "limitations": ["Not a complete Swagger download.", "The current detail requirements component omits weight, while its response example and v4 list schemas include weight; missing weight stays UNKNOWN.", "Country and exemplar obligations must be resolved by their own documented operations, then reobserved; readiness attestation cannot replace legal or per-unit data."]
+}

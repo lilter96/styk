@@ -20,6 +20,7 @@ func (c *OrdersClient) decodeOrderPosting(f orderFields, observed time.Time) (or
 	posting.Times = orderTimes(f)
 	posting.Cancellation = orderCancellation(f)
 	posting.Lines = orderLines(f, &posting)
+	posting.Requirements = decodeOrderRequirements(f)
 	decodeOrderDelivery(f, &posting)
 	decodeOrderFinancial(f, &posting)
 	decodeOrderAnalytics(f, &posting)
@@ -188,7 +189,7 @@ func orderCustomerAddress(customer orderFields) orders.Field[orders.Address] {
 }
 
 func addOrderUnsupportedGroups(f orderFields, posting *orders.Posting) {
-	for _, key := range []string{"barcodes", "legal_info", "requirements", "tariffication", "optional", "addressee", "quantum_id", "scanit", "pickup_code_verified_at"} {
+	for _, key := range []string{"barcodes", "legal_info", "tariffication", "optional", "addressee", "quantum_id", "scanit", "pickup_code_verified_at"} {
 		if _, present := f.raw[key]; present {
 			posting.Drift = append(posting.Drift, orders.Drift{Path: "$.result." + key, Code: "unsupported_typed_field"})
 		}

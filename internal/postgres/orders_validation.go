@@ -68,6 +68,9 @@ func validateOrderCommandCurrent(command orders.Command, posting orders.Posting,
 	if !command.Action.IsMirror() && command.PostingAction.ContractHash != orderactions.ExecutionContractHash() {
 		return orders.ErrStale
 	}
+	if !command.Action.IsMirror() && len(orderactions.PackingRequirementValidation(posting, command.Action)) > 0 {
+		return orders.ErrBlocked
+	}
 	if command.Scope != current.Config.Scope || command.ConfigRevision != current.Config.Revision || command.Credentials != current.Credentials || command.PostingNumber != posting.PostingNumber || command.CommercialOrderID != posting.CommercialOrderID || command.ExpectedSourceRevision != posting.Evidence.Revision || command.SourceOrigin != posting.Evidence.Origin {
 		return orders.ErrStale
 	}
