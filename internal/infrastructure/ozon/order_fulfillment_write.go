@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -100,7 +101,7 @@ func (c *OrdersClient) fulfillmentResponse(command orders.Command, path string, 
 	if readErr != nil || closeErr != nil || len(raw) > maxBody {
 		return orderReceipt(command, orders.StateUnknown, response.StatusCode, "response_uncertain"), orders.ErrStale
 	}
-	if response.StatusCode >= 400 {
+	if response.StatusCode >= 400 && response.StatusCode < 500 {
 		return orderReceipt(command, orders.StateRejected, response.StatusCode, "provider_rejected"), nil
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
@@ -143,7 +144,7 @@ func (c *OrdersClient) cancelReceipt(command orders.Command, data []byte, status
 	if json.Unmarshal(data, &response) != nil || !response.Result {
 		return orderReceipt(command, orders.StateUnknown, status, "cancellation_result_unverified"), orders.ErrStale
 	}
-	return orderReceipt(command, orders.StateReconciled, status, "provider_confirmed_cancellation"), nil
+	return orderReceipt(command, orders.StateAcknowledged, status, "provider_acknowledged_cancellation"), nil
 }
 
 func (c *OrdersClient) partialCancelReceipt(command orders.Command, data []byte, status int) (orders.Receipt, error) {
@@ -174,7 +175,7 @@ func (c *OrdersClient) trackingReceipt(command orders.Command, data []byte, stat
 		}
 		return orderReceipt(command, orders.StateRejected, status, code), nil
 	}
-	return orderReceipt(command, orders.StateReconciled, status, "provider_confirmed_tracking"), nil
+	return orderReceipt(command, orders.StateAcknowledged, status, "provider_acknowledged_tracking"), nil
 }
 
 func (c *OrdersClient) labelCreateReceipt(command orders.Command, data []byte, status int) (orders.Receipt, error) {
@@ -306,7 +307,7 @@ func trackingPayload(command orders.Command) (map[string]any, error) {
 		return nil, orders.ErrInvalid
 	}
 	return map[string]any{"tracking_numbers": []map[string]any{
-		{"posting_number": command.PostingNumber, "tracking_number": command.PostingAction.Parameters.TrackingNumber, "delivery_service": "styk"},
+		{"posting_number": command.PostingNumber, "tracking_number": command.PostingAction.Parameters.TrackingNumber},
 	}}, nil
 }
 
@@ -323,39 +324,19 @@ func statusTransitionPayload(command orders.Command) (map[string]any, error) {
 }
 
 func parseSKU(value string) (int64, error) {
-	for _, char := range value {
-		if char < '0' || char > '9' {
-			return 0, orders.ErrInvalid
-		}
-	}
-	var result int64
-	for _, char := range value {
-		result = result*10 + int64(char-'0')
-	}
-	if result <= 0 || result > 1<<63-1 {
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || parsed <= 0 || strconv.FormatInt(parsed, 10) != value {
 		return 0, orders.ErrInvalid
 	}
-	return result, nil
+	return parsed, nil
 }
 
 func parseQuantity(value orders.Decimal) (int64, error) {
-	s := string(value)
-	if strings.Contains(s, ".") || strings.HasPrefix(s, "-") || strings.Contains(s, "e") || strings.Contains(s, "E") {
+	parsed, err := strconv.ParseInt(string(value), 10, 32)
+	if err != nil || parsed <= 0 || strconv.FormatInt(parsed, 10) != string(value) {
 		return 0, orders.ErrInvalid
 	}
-	for _, char := range s {
-		if char < '0' || char > '9' {
-			return 0, orders.ErrInvalid
-		}
-	}
-	var result int64
-	for _, char := range s {
-		result = result*10 + int64(char-'0')
-	}
-	if result <= 0 || result > 2147483647 {
-		return 0, orders.ErrInvalid
-	}
-	return result, nil
+	return parsed, nil
 }
 
 func formatInt64(value int64) string {

@@ -161,11 +161,11 @@ func ExpectedPostingStatus(action Action) string {
 	case ActionPostingCancel:
 		return "cancelled"
 	case ActionPostingPartialCancel:
-		return "partially_cancelled"
+		return ""
 	case ActionPostingLastMile:
-		return "awaiting_deliver"
+		return "driver_pickup"
 	case ActionPostingSentBySeller:
-		return "awaiting_packaging"
+		return ""
 	default:
 		return ""
 	}

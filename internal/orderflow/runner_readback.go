@@ -3,7 +3,6 @@ package orderflow
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -124,59 +123,13 @@ func (r *Runner) reconcileFulfillment(ctx context.Context, work orders.Work, pos
 		return r.deferReadback(ctx, work, "STATUS_NOT_APPLIED")
 	}
 
-	// Write back confirmed status to MoySklad.
-	if err := r.writeOrderStatusToMoySklad(ctx, work, &posting); err != nil {
-		return r.deferReadback(ctx, work, "MOYSKLAD_WRITE_BACK_FAILED")
+	// Native projection is a separate reviewed durable operation. Reconciliation
+	// must never issue an unjournaled PUT or replay it after a lost response.
+	if expected == "" {
+		return r.deferReadback(ctx, work, "ACTION_SPECIFIC_READBACK_REQUIRED")
 	}
 
 	return r.complete(ctx, work, orders.Completion{State: orders.StateReconciled, Code: "FULFILLMENT_CONFIRMED", ObservedPosting: &posting, NextRunAt: r.now().Add(r.options.PollInterval)})
-}
-
-// writeOrderStatusToMoySklad updates the MoySklad customer order status to
-// match the confirmed Ozon fulfillment status. It resolves the MoySklad order
-// by correlation, finds the target state from config status mappings, and
-// issues an idempotent PUT. Unknown outcomes are reconciled on the next cycle.
-func (r *Runner) writeOrderStatusToMoySklad(ctx context.Context, work orders.Work, posting *orders.Posting) error {
-	config, err := r.options.Service.store.OrderConfig(ctx, work.Scope)
-	if err != nil {
-		return fmt.Errorf("read MoySklad config: %w", err)
-	}
-	stateID, mapped := mappedStateID(*posting, config)
-	if !mapped {
-		// No reviewed status/substatus mapping exists. Never reset the target to
-		// the configuration default state on an unverified provider status.
-		return nil
-	}
-	client, err := resolveOrderClient(ctx, r.resolver, work.Scope, "moysklad", work.Credentials.Moysklad)
-	if err != nil {
-		return fmt.Errorf("resolve MoySklad client: %w", err)
-	}
-	writer, ok := client.(orders.TargetStatusWriter)
-	if !ok {
-		return orders.ErrBlocked
-	}
-	orderID, err := r.moyskladOrderID(ctx, client, work)
-	if err != nil {
-		return err
-	}
-	if err := writer.WriteOrderStatus(ctx, work.Scope, orderID, stateID); err != nil {
-		return fmt.Errorf("write order status to MoySklad: %w", err)
-	}
-	return nil
-}
-
-func (r *Runner) moyskladOrderID(ctx context.Context, client orders.Provider, work orders.Work) (string, error) {
-	if work.Command.Correlation.CustomerOrderID != "" {
-		return work.Command.Correlation.CustomerOrderID, nil
-	}
-	correlation, err := client.ReadOrderCorrelation(ctx, work.Command.Correlation)
-	if err != nil {
-		return "", fmt.Errorf("resolve MoySklad order correlation: %w", err)
-	}
-	if correlation.CustomerOrderID == "" {
-		return "", orders.ErrInvalid
-	}
-	return correlation.CustomerOrderID, nil
 }
 
 // pollLabelTask checks the Ozon label task until it completes or fails. It
