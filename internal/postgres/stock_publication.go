@@ -201,7 +201,7 @@ func (s *Store) nextStockPublication(ctx context.Context, now time.Time, control
 	} else {
 		query += ` AND NOT EXISTS(SELECT 1 FROM outbox_tasks q WHERE q.publication_operation_id=p.id AND q.task_type='stock_publication')`
 	}
-	query += ` ORDER BY p.created_at,p.id LIMIT 1`
+	query += ` AND ` + stockPublicationProviderReadySQL + ` ORDER BY p.created_at,p.id LIMIT 1`
 	err = tx.QueryRow(ctx, query, args...).Scan(&opID, &scope.Tenant, &scope.MoyskladAccount, &scope.OzonAccount)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -276,6 +276,10 @@ func (s *Store) nextStockPublication(ctx context.Context, now time.Time, control
 		if recent {
 			return nil, nil
 		}
+	}
+	ready, err := stockPublicationProviderReady(ctx, tx, scope, opID)
+	if err != nil || !ready {
+		return nil, err
 	}
 	_, err = tx.Exec(ctx, `UPDATE stock_publication_dispatch_clock SET dispatched_at=$2 WHERE ozon_account=$1`, scope.OzonAccount, now)
 	if err != nil {
