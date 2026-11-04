@@ -35,6 +35,9 @@ func validateOrderExemplarCommand(ctx context.Context, q ordersQuerier, posting 
 func validateOrderPreviewExemplars(ctx context.Context, q ordersQuerier, preview orders.Preview, current orders.ReviewContext) error {
 	for _, d := range preview.Decisions {
 		for _, c := range d.Commands {
+			if err := validateOrderCountryCommand(ctx, q, d.Posting, c); err != nil {
+				return err
+			}
 			if err := validateOrderExemplarCommand(ctx, q, d.Posting, c); err != nil {
 				return err
 			}

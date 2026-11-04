@@ -12,7 +12,7 @@ import (
 
 // ContractVersion records the operation subset reviewed against the official
 // Chinese Swagger in the preceding lab. It is not a full Swagger download.
-const ContractVersion = "ozon-fulfillment-2026-11-04:v4:ship-v4,cancel-v2,partial-result-string,tracking-v2,delivery-v2,label-v3,hybrid-printed-label-v1,marking-requirements-v1,exemplars-v6-v5-v1"
+const ContractVersion = "ozon-fulfillment-2026-11-04:v4:ship-v4,cancel-v2,partial-result-string,tracking-v2,delivery-v2,label-v3,hybrid-printed-label-v1,marking-requirements-v1,exemplars-v6-v5-v1,country-v2-v1"
 
 //go:embed label_contract.json
 var labelContract []byte
@@ -23,15 +23,19 @@ var requirementsContract []byte
 //go:embed exemplar_contract.json
 var exemplarContract []byte
 
+//go:embed country_contract.json
+var countryContract []byte
+
 func ExecutionContractHash() string {
 	payload := append([]byte(ContractVersion), labelContract...)
 	payload = append(payload, requirementsContract...)
-	sum := sha256.Sum256(append(payload, exemplarContract...))
+	payload = append(payload, exemplarContract...)
+	sum := sha256.Sum256(append(payload, countryContract...))
 	return hex.EncodeToString(sum[:])
 }
 
 func ExecutionActions() []orders.Action {
-	return []orders.Action{orders.ActionExemplarPrepare, orders.ActionExemplarSet, orders.ActionPostingPack, orders.ActionPostingSplit, orders.ActionPostingCancel,
+	return []orders.Action{orders.ActionCountrySet, orders.ActionExemplarPrepare, orders.ActionExemplarSet, orders.ActionPostingPack, orders.ActionPostingSplit, orders.ActionPostingCancel,
 		orders.ActionPostingPartialCancel, orders.ActionPostingTracking, orders.ActionPostingShip,
 		orders.ActionPostingLastMile, orders.ActionPostingDeliver, orders.ActionPostingSentBySeller, orders.ActionPostingLabelCreate}
 }
@@ -55,6 +59,11 @@ func PlanExecutionWithProof(posting orders.Posting, cap orders.CapabilityRef, ac
 		plan.ParametersRequired = append(plan.ParametersRequired, "label_work_id", "label_printed_confirmed")
 	}
 	plan.Blockers = append(plan.Blockers, executionFacts(posting, cap, now)...)
+	if action == orders.ActionCountrySet {
+		if required, err := orders.CountryRequiredSKUs(posting); err != nil || len(required) == 0 {
+			plan.Blockers = append(plan.Blockers, actionBlock("requirements.country", "country_requirement_not_observed"))
+		}
+	}
 	plan.Blockers = append(plan.Blockers, PackingRequirementValidationWithProof(posting, action, proof, now)...)
 	if !posting.Status.IsKnown() || !executionPredecessor(action, *posting.Status.Value) {
 		plan.Blockers = append(plan.Blockers, actionBlock("status", "action_not_available_in_current_status"))
@@ -91,6 +100,8 @@ func executionFacts(posting orders.Posting, cap orders.CapabilityRef, now time.T
 func executionEdge(action orders.Action) orders.ActionOption {
 	p := orders.ActionOption{Action: action, Blockers: []orders.Validation{}, ParametersRequired: []string{}}
 	switch action {
+	case orders.ActionCountrySet:
+		p.Endpoint, p.ParametersRequired = "/v2/posting/fbs/product/country/set", []string{"country_sku", "country_iso_code", "country_confirmed"}
 	case orders.ActionExemplarPrepare:
 		p.Endpoint = "/v6/fbs/posting/product/exemplar/create-or-get"
 	case orders.ActionExemplarSet:
@@ -119,7 +130,7 @@ func executionEdge(action orders.Action) orders.ActionOption {
 
 func executionPredecessor(action orders.Action, status string) bool {
 	switch action {
-	case orders.ActionExemplarPrepare, orders.ActionExemplarSet:
+	case orders.ActionCountrySet, orders.ActionExemplarPrepare, orders.ActionExemplarSet:
 		return status == "awaiting_packaging"
 	case orders.ActionPostingPack, orders.ActionPostingSplit:
 		return status == "awaiting_packaging"
@@ -152,6 +163,9 @@ func sellerDeliveryControl(posting orders.Posting, cap orders.CapabilityRef, act
 }
 
 func actionAdvertised(actions []string, action orders.Action) bool {
+	if action == orders.ActionCountrySet {
+		return true
+	} // Required country facts, not an undocumented available_actions token, gate this operation.
 	if actions == nil {
 		return true // the optional list is not exhaustive when absent
 	}

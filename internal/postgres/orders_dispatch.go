@@ -102,6 +102,12 @@ func orderDispatchCurrent(ctx context.Context, tx pgx.Tx, work orders.Work, guar
 		}
 	}
 	if len(current.Postings) == 1 {
+		if err = validateOrderCountryCommand(ctx, tx, current.Postings[0], work.Command); err != nil {
+			if errors.Is(err, orders.ErrStale) || errors.Is(err, orders.ErrBlocked) || errors.Is(err, orders.ErrNotFound) {
+				return false, nil
+			}
+			return false, err
+		}
 		if err = validateOrderExemplarCommand(ctx, tx, current.Postings[0], work.Command); err != nil {
 			if errors.Is(err, orders.ErrStale) || errors.Is(err, orders.ErrBlocked) || errors.Is(err, orders.ErrNotFound) {
 				return false, nil

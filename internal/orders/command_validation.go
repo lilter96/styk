@@ -4,7 +4,7 @@ import "fmt"
 
 func (action Action) Valid() bool {
 	switch action {
-	case ActionExemplarPrepare, ActionExemplarSet, ActionDemandCreate, ActionSalesReturnCreate, ActionMirrorCreate, ActionMirrorUpdate, ActionMirrorPositionUpdate, ActionPostingPack, ActionPostingShip, ActionPostingCancel, ActionPostingDeliver,
+	case ActionCountrySet, ActionExemplarPrepare, ActionExemplarSet, ActionDemandCreate, ActionSalesReturnCreate, ActionMirrorCreate, ActionMirrorUpdate, ActionMirrorPositionUpdate, ActionPostingPack, ActionPostingShip, ActionPostingCancel, ActionPostingDeliver,
 		ActionPostingSplit, ActionPostingPartialCancel, ActionPostingTracking, ActionPostingLastMile, ActionPostingSentBySeller, ActionPostingLabelCreate:
 		return true
 	default:

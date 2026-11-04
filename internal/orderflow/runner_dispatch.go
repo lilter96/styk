@@ -74,6 +74,9 @@ func (r *Runner) dispatchFulfillment(ctx context.Context, work orders.Work) erro
 	if err != nil {
 		return r.stop(ctx, work, "PROTECTED_ACTION_INPUT_UNAVAILABLE")
 	}
+	if err = r.prepareCountryDispatch(ctx, work, command); err != nil {
+		return r.stop(ctx, work, "COUNTRY_DISPATCH_PREREQUISITE_CHANGED")
+	}
 	command, exemplarSecret, err := r.prepareExemplarDispatch(ctx, work, command)
 	if err != nil {
 		return r.stop(ctx, work, "EXEMPLAR_DISPATCH_PREREQUISITE_CHANGED")

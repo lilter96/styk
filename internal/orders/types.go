@@ -422,6 +422,7 @@ const (
 )
 
 type Receipt struct {
+	CountryEvidence    *CountryEvidence  `json:"country_evidence,omitempty"`
 	PreparedExemplars  *ExemplarSnapshot `json:"-"`
 	ExemplarEvidence   *ExemplarEvidence `json:"exemplar_evidence,omitempty"`
 	LabelTasksVerified bool              `json:"label_tasks_verified,omitempty"`

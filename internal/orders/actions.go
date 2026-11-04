@@ -28,6 +28,10 @@ const (
 // Private strings are accepted from the authenticated operator but sealed before
 // a preview or intent is persisted. Public flags disclose presence, never values.
 type ActionParameters struct {
+	CountrySKU             string            `json:"country_sku,omitempty"`
+	CountryISOCode         string            `json:"country_iso_code,omitempty"`
+	CountryConfirmed       bool              `json:"country_confirmed,omitempty"`
+	CountryProvided        bool              `json:"country_provided,omitempty"`
 	ExemplarWorkID         string            `json:"exemplar_work_id,omitempty"`
 	Exemplars              *ExemplarSetInput `json:"exemplars,omitempty"`
 	ExemplarsProvided      bool              `json:"exemplars_provided,omitempty"`
@@ -183,10 +187,12 @@ func ExpectedPostingStatus(action Action) string {
 }
 
 func (input ActionParameters) HasPrivateValues() bool {
-	return input.ReasonMessage != "" || input.TrackingNumber != "" || input.EventReference != "" || input.Exemplars != nil
+	return input.ReasonMessage != "" || input.TrackingNumber != "" || input.EventReference != "" || input.Exemplars != nil || input.CountryISOCode != ""
 }
 
 func (input ActionParameters) Public() ActionParameters {
+	input.CountryProvided = input.CountryISOCode != ""
+	input.CountryISOCode = ""
 	input.ExemplarsProvided = input.Exemplars != nil
 	input.Exemplars = nil
 	input.ReasonMessageProvided = input.ReasonMessage != ""

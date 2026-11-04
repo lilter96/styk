@@ -61,6 +61,7 @@ func (s *Service) planAction(ctx context.Context, review orders.ReviewContext, p
 	}
 	decision.Validation = append(decision.Validation, orderactions.ValidateExecutionWithProof(posting, warehouse.Capability, proposal, reasons, review.ExemplarProofs[posting.PostingNumber], now)...)
 	decision.Validation = append(decision.Validation, s.validateHybridLabel(ctx, posting, proposal, now)...)
+	decision.Validation = append(decision.Validation, s.validateCountryProposal(ctx, review, proposal)...)
 	decision.Validation = append(decision.Validation, s.validateExemplarProposal(ctx, posting, proposal, review.Credentials, now)...)
 	if len(decision.Validation) > 0 {
 		return decision, nil

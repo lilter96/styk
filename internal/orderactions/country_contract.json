@@ -1,0 +1,11 @@
+{
+ "schema_status":"official_reviewed_operation_subset",
+ "reviewed_on":"2026-11-04",
+ "source":"https://docs.ozon.ru/api/seller/zh/swagger.json",
+ "list":{"endpoint":"/v2/posting/fbs/product/country/list","method":"POST","request":{"name_search":"string"},"response":{"result":[{"name":"string","country_iso_code":"ISO3166-1 alpha2"}]}},
+ "set":{"endpoint":"/v2/posting/fbs/product/country/set","method":"POST","request":{"posting_number":"string","product_id":"int64","country_iso_code":"ISO3166-1 alpha2"},"response":{"product_id":"int64","is_gtd_needed":"optional boolean"}},
+ "identity":"The generic request description calls this product_id; the linked v3/v4 posting requirements explicitly identify their SKU lists as the values to submit to this method. Bind to an exact required posting SKU, never a Seller card ID.",
+ "readback":"Fresh posting requirements can prove that the country obligation no longer applies. These endpoints do not return the stored country ISO value. Reconciliation means country_requirement_resolution, never ISO value verification.",
+ "unknown":"A cleared requirement cannot resolve an unknown write or justify resending it.",
+ "weight":{"implemented":false,"source":"https://dev.ozon.ru/start/445-Vesovye-tovary-v-Seller-API/","reason":"Reviewed exemplar schema and notice describe weight and range but do not establish its measurement unit; catalog weight_unit is a different contract."}
+}

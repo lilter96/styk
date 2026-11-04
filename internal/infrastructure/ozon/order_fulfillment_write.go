@@ -22,6 +22,8 @@ import (
 // the saved operation subset does not contain a verified endpoint.
 func fulfillmentPath(action orders.Action) string {
 	switch action {
+	case orders.ActionCountrySet:
+		return countrySetPath
 	case orders.ActionExemplarPrepare:
 		return exemplarPreparePath
 	case orders.ActionExemplarSet:
@@ -124,6 +126,8 @@ func (c *OrdersClient) fulfillmentResponse(command orders.Command, path string, 
 
 func (c *OrdersClient) parseFulfillmentReceipt(command orders.Command, path string, data []byte, status int) (orders.Receipt, error) {
 	switch command.Action {
+	case orders.ActionCountrySet:
+		return c.countrySetReceipt(command, data, status)
 	case orders.ActionExemplarPrepare:
 		snapshot, err := decodeExemplarSnapshot(data, command.PostingNumber)
 		if err != nil {
@@ -301,6 +305,8 @@ func fulfillmentPayload(command orders.Command, path string) (map[string]any, er
 		command.PostingAction = &action
 	}
 	switch command.Action {
+	case orders.ActionCountrySet:
+		return countrySetPayload(command)
 	case orders.ActionExemplarPrepare:
 		return map[string]any{"posting_number": command.PostingNumber}, nil
 	case orders.ActionExemplarSet:

@@ -53,6 +53,11 @@ func completeOrderLocked(ctx context.Context, tx pgx.Tx, work orders.Work, compl
 	if err = saveOrderExemplarSecret(ctx, tx, work, completion, now); err != nil {
 		return err
 	}
+	if completion.State == orders.StateReconciled {
+		if err = validateCountryReconciliation(ctx, tx, work, completion); err != nil {
+			return err
+		}
+	}
 	if completion.State == orders.StateReconciled && work.Command.Action.IsExemplar() {
 		if err := validateExemplarReconciliation(ctx, tx, work, completion); err != nil {
 			return err
@@ -84,6 +89,9 @@ func completeOrderLocked(ctx context.Context, tx pgx.Tx, work orders.Work, compl
 }
 
 func validateOrderCompletion(work orders.Work, completion orders.Completion) error {
+	if err := validateCountryReceiptUpdate(work, completion); err != nil {
+		return err
+	}
 	receipt := completion.Receipt
 	if receipt.State != "" {
 		if work.State.ReadOnly() && work.Receipt.LabelTasksVerified != receipt.LabelTasksVerified {

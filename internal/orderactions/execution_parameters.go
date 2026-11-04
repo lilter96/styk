@@ -32,6 +32,8 @@ func ValidateExecutionWithProof(posting orders.Posting, cap orders.CapabilityRef
 
 func executionInput(posting orders.Posting, action orders.Action, input orders.ActionParameters, reasons []orders.ActionReason) error {
 	switch action {
+	case orders.ActionCountrySet:
+		return orders.ValidateCountryProposal(posting, input)
 	case orders.ActionExemplarPrepare:
 		return nil
 	case orders.ActionExemplarSet:
