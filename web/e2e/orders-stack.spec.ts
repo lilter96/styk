@@ -119,7 +119,7 @@ test("orders review reaches real API replicas and durable worker readback", asyn
       a.getByText("Связь сборки не означает, что резерв уже перенесён."),
     ).toBeVisible();
     await a
-      .locator(".orders-posting")
+      .locator(".orders-postings > .orders-posting")
       .filter({ hasText: "browser-create" })
       .screenshot({ path: "test-results/orders-related-desktop.png" });
     const query = new URLSearchParams(scope).toString();
@@ -148,7 +148,7 @@ test("orders review reaches real API replicas and durable worker readback", asyn
         .slice(0, 12),
     }));
     await a
-      .locator(".orders-posting")
+      .locator(".orders-postings > .orders-posting")
       .filter({ hasText: "browser-create" })
       .screenshot({ path: "test-results/orders-related-mobile.png" });
     expect(overflow.document, JSON.stringify(overflow)).toBeLessThanOrEqual(
