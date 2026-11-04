@@ -81,12 +81,21 @@ func TestOrdersRecoveryMigrationUpgradeRetainsOriginalUnknown(t *testing.T) {
 	}
 	checked := f.check(t)
 	f.resolve(t, checked.Evidence.ID, "recovery-upgraded")
+	// Later migrations may be safely reversible in this fixture. Exercise the
+	// recovery migration itself, rather than whichever migration is newest.
+	catalogSyncMigrate(t, dsn, "down-to", "57")
 	ctx, cancel := context.WithTimeout(f.ctx, 30*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, "go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", dsn, "down")
 	output, err := command.CombinedOutput()
 	if err == nil || !bytes.Contains(output, []byte("refusing to discard order recovery audit")) {
 		t.Fatal("destructive recovery rollback was not rejected")
+	}
+	f.assertOriginal(t)
+	assertOrdersRowCount(t, f.ordersStoreFixture, `SELECT count(*) FROM orders_recovery_resolutions`, 1)
+	catalogSyncMigrate(t, dsn, "up")
+	if err := f.db.RequireCurrentSchema(f.ctx); err != nil {
+		t.Fatal(err)
 	}
 	f.assertOriginal(t)
 }
