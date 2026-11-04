@@ -63,6 +63,9 @@ func (r *Runner) readbackFulfillment(ctx context.Context, work orders.Work) erro
 	if err != nil {
 		return r.deferReadback(ctx, work, "SCOPED_SOURCE_CREDENTIALS_UNAVAILABLE")
 	}
+	if work.Command.Action == orders.ActionPostingSplitUnassembled {
+		return r.readbackUnassembledSplit(ctx, work, client)
+	}
 	if work.Command.Action == orders.ActionPostingSplit {
 		return r.readbackSplit(ctx, work, client)
 	}
