@@ -51,7 +51,7 @@ func (command Command) Validate() error {
 }
 
 func (command Command) validateAttachments() error {
-	if command.SupersededSplitWorkID != "" && (!validID(command.SupersededSplitWorkID) || command.Action != ActionMirrorPositionUpdate || command.SplitSourceWorkID != "" || command.RetainedSplitWorkID != "" || command.SplitTransfer != nil) {
+	if command.SupersededSplitWorkID != "" && !command.validSupersededReserveMarker() {
 		return ErrInvalid
 	}
 	if command.SplitTransfer != nil && (!command.Action.IsMirror() || command.SplitSourceWorkID != "" || command.RetainedSplitWorkID != "" || !command.SplitTransfer.AllowsCommand(command)) {
@@ -73,6 +73,17 @@ func (command Command) validateAttachments() error {
 		return ErrInvalid
 	}
 	return nil
+}
+
+func (command Command) validSupersededReserveMarker() bool {
+	if !validID(command.SupersededSplitWorkID) || command.Action != ActionMirrorPositionUpdate || command.SplitSourceWorkID != "" || command.RetainedSplitWorkID != "" || command.SplitTransfer != nil {
+		return false
+	}
+	patch, write := command.PositionPatch, command.CustomerOrder
+	if patch == nil || write == nil || patch.Quantity.IsSpecified() || patch.Price.IsSpecified() || patch.Reserve.Validate() != nil || !patch.Reserve.IsKnown() || !decimalZero(*patch.Reserve.Value) {
+		return false
+	}
+	return write.Applicable.Validate() == nil && write.Applicable.IsKnown() && *write.Applicable.Value && len(write.OwnedFields) == 1 && write.OwnedFields[0] == "positions.reserve"
 }
 
 func (command Command) validateMirror() error {
