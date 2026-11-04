@@ -110,9 +110,9 @@ test("orders review reaches real API replicas and durable worker readback", asyn
     await expect(a.getByLabel("Найти отправление или заказ")).toHaveValue(
       "browser-related",
     );
-    await expect(a.locator(".orders-posting strong")).toHaveText(
+    await expect(a.locator(".orders-posting-title strong")).toHaveText([
       "browser-related",
-    );
+    ]);
     await a.getByLabel("Найти отправление или заказ").fill("browser-create");
     await a.getByText("Связанные отправления сборки", { exact: true }).click();
     await expect(
