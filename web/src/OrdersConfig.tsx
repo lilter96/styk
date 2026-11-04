@@ -1,4 +1,5 @@
 import { OrdersAddressMapping } from "./OrdersAddressMapping";
+import { OrdersReservationMapping } from "./OrdersReservationMapping";
 import { OrdersNativePolicy, nativePolicyValid } from "./OrdersNativePolicy";
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -38,16 +39,6 @@ const mappings: (OrderMapping & { label: string })[] = [
     source: "positions.price",
     target: "positions.price",
     label: "Цена продавца → цена в позициях",
-  },
-  {
-    source: "constant.zero",
-    target: "positions.reserve",
-    label: "Нулевой резерв в позициях",
-  },
-  {
-    source: "constant.false",
-    target: "applicable",
-    label: "Не проводить заказ в МойСклад",
   },
 ];
 const extraSources: { source: string; label: string; name?: boolean }[] = [
@@ -424,6 +415,11 @@ export function OrdersConfig({
             </label>
           ))}
         </fieldset>
+        <OrdersReservationMapping
+          mappings={draft.field_mappings}
+          disabled={busy}
+          onChange={(field_mappings) => change({ ...draft, field_mappings })}
+        />
         <fieldset>
           <legend>Персональные данные покупателя</legend>
           <p className="orders-note">

@@ -4,6 +4,63 @@ import type { OrderActionProposal, OrderCommand } from "../src/OrdersTypes";
 
 const origin = process.env.STYK_ORDERS_UI_ORIGIN || "http://127.0.0.1:5173";
 
+test("reserve policy is explicit and separate from document posting on desktop and mobile", async ({
+  page,
+}, testInfo) => {
+  const { errors } = await openOrders(page);
+  const saved: { config: typeof config }[] = [];
+  await page.route("**/api/orders/config", (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    const body = route.request().postDataJSON();
+    saved.push(body);
+    return fulfill(route, { ...body.config, scope, revision: 2 });
+  });
+  await page
+    .getByText("Настройки передачи в МойСклад", { exact: true })
+    .click();
+  await expect(page.getByLabel("Резерв в МойСклад")).toHaveValue("");
+  await expect(page.getByLabel("Проведение заказа МойСклад")).toHaveValue("");
+  await page
+    .getByLabel("Резерв в МойСклад")
+    .selectOption("posting.open_quantity");
+  await expect(page.getByLabel("Проведение заказа МойСклад")).toHaveValue("");
+  await expect(
+    page.getByText(/Резерв будет равен количеству только/),
+  ).toBeVisible();
+  await page
+    .getByLabel("Проведение заказа МойСклад")
+    .selectOption("posting.cancelled");
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByLabel("Резерв в МойСклад").scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: testInfo.outputPath("reservation-settings-desktop.png"),
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByLabel("Резерв в МойСклад").scrollIntoViewIfNeeded();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(390);
+  await page.screenshot({
+    path: testInfo.outputPath("reservation-settings-mobile.png"),
+  });
+  await page
+    .getByRole("button", { name: "Сохранить настройки заказов", exact: true })
+    .click();
+  await expect.poll(() => saved.length).toBe(1);
+  expect(saved[0].config.field_mappings).toContainEqual({
+    source: "posting.open_quantity",
+    target: "positions.reserve",
+  });
+  expect(saved[0].config.field_mappings).toContainEqual({
+    source: "posting.cancelled",
+    target: "applicable",
+  });
+  expect(saved[0].config.field_mappings).toContainEqual(
+    config.field_mappings[0],
+  );
+  expect(errors).toEqual([]);
+});
+
 test("label download appears after reconciliation and expires without another create", async ({
   page,
 }, testInfo) => {

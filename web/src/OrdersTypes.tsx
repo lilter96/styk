@@ -412,6 +412,26 @@ export const orderActionLabel = (action: string) =>
     posting_exemplar_set: "Передать сведения экземпляров в Ozon",
   })[action] || action;
 const issueLabels: Record<string, string> = {
+  reservation_policy_status_unknown:
+    "Неизвестен статус отправления. Получите свежие данные Ozon перед изменением резерва.",
+  reservation_policy_status_not_pending:
+    "Правило резерва действует только до передачи в доставку. Для этого статуса нужны отдельные складские действия.",
+  reservation_policy_requires_applicable_true:
+    "Для резервирования ожидающего отправления выберите проведение заказа МойСклад. Это не отправляет товар и не меняет статус Ozon.",
+  reservation_policy_split_lineage_requires_review:
+    "Отправление разделено. Проверьте родительский заказ и дочерние позиции, чтобы не зарезервировать один товар дважды.",
+  reservation_policy_partial_cancellation_unknown:
+    "Недостаточно данных о частичной отмене. STYK не угадывает оставшееся количество для резерва.",
+  reservation_policy_shipment_or_cancellation_conflict:
+    "Данные отмены или отгрузки противоречат правилу резерва. Проверьте отправление и складские документы.",
+  reservation_policy_invalid_line:
+    "Количество или идентичность позиции не подходят для резервирования. Проверьте исходные данные и соответствие товара.",
+  reservation_policy_line_identity_mismatch:
+    "Не совпадают исходные позиции и позиции заказа. Обновите данные и проверьте соответствия товаров.",
+  reservation_policy_owned_release_required:
+    "Не подтверждено, что освобождаемый резерв создан STYK. Чужие и неизвестные резервы автоматически не снимаются.",
+  reservation_policy_not_authorized:
+    "Для передачи резерва не выбрано поддерживаемое правило. Проверьте настройки резервов заказа.",
   application_frontier_ownership_unverified:
     "Нельзя изменить проведение заказа: не подтверждено, что все затронутые позиции и резервы принадлежат STYK. Проверьте ручные изменения в МойСклад и создайте новый предпросмотр.",
   shipment_address_component_too_long:
