@@ -19,7 +19,7 @@ JOIN orders_posting_identities identity ON identity.tenant_id=h.tenant_id
  AND identity.ozon_account=h.ozon_account AND identity.posting_number=h.posting_number
 JOIN LATERAL (
  SELECT split.id,split.posting_number,
- (split.state='RECONCILED' AND split.posting_number<>h.posting_number
+ (split.action='posting_split' AND split.state='RECONCILED' AND split.posting_number<>h.posting_number
   AND COALESCE(split.work#>'{receipt,posting_numbers}','[]'::jsonb) ? h.posting_number
   AND NOT EXISTS (SELECT 1 FROM orders_work parent_write
    WHERE parent_write.tenant_id=split.tenant_id AND parent_write.moysklad_account=split.moysklad_account
@@ -38,7 +38,7 @@ JOIN LATERAL (
    JOIN orders_posting_identities parent_identity ON parent_identity.tenant_id=ancestor.tenant_id
     AND parent_identity.ozon_account=ancestor.ozon_account AND parent_identity.posting_number=split.posting_number
    WHERE ancestor.tenant_id=split.tenant_id AND ancestor.moysklad_account=split.moysklad_account
-    AND ancestor.ozon_account=split.ozon_account AND ancestor.action='posting_split'
+    AND ancestor.ozon_account=split.ozon_account AND ancestor.action IN ('posting_split','posting_split_unassembled')
     AND ancestor.dispatch_count=1 AND ancestor.state NOT IN ('REJECTED','BLOCKED')
     AND ancestor.posting_number<>split.posting_number AND ancestor.dispatched_at<=split.dispatched_at
     AND (COALESCE(ancestor.work#>'{receipt,posting_numbers}','[]'::jsonb) ? split.posting_number
@@ -47,7 +47,7 @@ JOIN LATERAL (
  ) AS unencumbered
  FROM orders_work split WHERE split.tenant_id=h.tenant_id
  AND split.moysklad_account=h.moysklad_account AND split.ozon_account=h.ozon_account
- AND split.action='posting_split' AND split.dispatch_count=1
+ AND split.action IN ('posting_split','posting_split_unassembled') AND split.dispatch_count=1
  AND split.state NOT IN ('REJECTED','BLOCKED') AND (
   (split.posting_number<>h.posting_number AND (
    COALESCE(split.work#>'{receipt,posting_numbers}','[]'::jsonb) ? h.posting_number
