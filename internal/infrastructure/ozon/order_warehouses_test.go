@@ -29,7 +29,7 @@ func TestFreshFBSClassificationWithoutPostingScheme(t *testing.T) {
 			writeTestResponse(t, w, `{"warehouses":[{"warehouse_id":9007199254740993,"warehouse_type":"fbs","status":"created","is_rfbs":false,"is_express":false}],"has_next":false,"cursor":""}`)
 		case orderMethodsPath:
 			methods.Add(1)
-			assertDeliveryRequest(t, request, `{"filter":{},"limit":50,"offset":0}`)
+			assertDeliveryRequest(t, request, `{"cursor":"","filter":{"status":["NEW","EDITED","ACTIVE","DISABLED","WAITING","BROKEN"]},"limit":100,"sort_dir":"ASC"}`)
 			writeTestResponse(t, w, `{"delivery_methods":[],"has_next":false,"cursor":""}`)
 		default:
 			t.Error("unexpected provider endpoint")
@@ -56,7 +56,7 @@ func assertDeliveryRequest(t *testing.T, request *http.Request, expected string)
 	actualJSON, actualErr := json.Marshal(actual)
 	wantJSON, wantErr := json.Marshal(want)
 	if actualErr != nil || wantErr != nil || string(actualJSON) != string(wantJSON) {
-		t.Error("discovery request differs from observed current request shape")
+		t.Error("discovery request differs from documented current request shape")
 	}
 }
 
