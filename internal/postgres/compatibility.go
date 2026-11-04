@@ -15,11 +15,11 @@ func (s *Store) RequireCurrentSchema(ctx context.Context) error {
 	defer cancel()
 	var version int64
 	err := s.Pool.QueryRow(ctx, `SELECT COALESCE(max(version_id),0) FROM (SELECT DISTINCT ON(version_id) version_id,is_applied FROM goose_db_version ORDER BY version_id,id DESC) versions WHERE is_applied`).Scan(&version)
-	if err != nil || version < 59 {
+	if err != nil || version < 60 {
 		return ErrSchemaIncompatible
 	}
 	var compatible bool
-	err = s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid=to_regclass('orders_posting_heads') AND attname='projection' AND NOT attisdropped) AND to_regclass('provider_call_accounts') IS NOT NULL AND to_regclass('delivery_capability_observations') IS NOT NULL AND to_regclass('orders_work') IS NOT NULL AND to_regclass('orders_label_artifacts') IS NOT NULL AND to_regclass('orders_work_active_fulfillment_target') IS NOT NULL AND to_regclass('orders_native_document_intents') IS NOT NULL AND to_regclass('orders_exemplar_secrets') IS NOT NULL AND to_regclass('orders_target_fences') IS NOT NULL AND to_regclass('orders_recovery_resolutions') IS NOT NULL AND EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid=to_regclass('orders_work') AND conname='orders_work_action_check' AND position('posting_country_set' in pg_get_constraintdef(oid))>0 AND position('mirror_composition_update' in pg_get_constraintdef(oid))>0)`).Scan(&compatible)
+	err = s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid=to_regclass('orders_posting_heads') AND attname='projection' AND NOT attisdropped) AND to_regclass('provider_call_accounts') IS NOT NULL AND to_regclass('delivery_capability_observations') IS NOT NULL AND to_regclass('orders_work') IS NOT NULL AND to_regclass('orders_label_artifacts') IS NOT NULL AND to_regclass('orders_work_active_fulfillment_target') IS NOT NULL AND to_regclass('orders_native_document_intents') IS NOT NULL AND to_regclass('orders_exemplar_secrets') IS NOT NULL AND to_regclass('orders_target_fences') IS NOT NULL AND to_regclass('orders_recovery_resolutions') IS NOT NULL AND to_regclass('orders_native_point_snapshots') IS NOT NULL AND to_regclass('orders_native_point_reads') IS NOT NULL AND EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid=to_regclass('orders_ingestion_leases') AND attname='attempt_started_at' AND NOT attisdropped) AND EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid=to_regclass('orders_work') AND conname='orders_work_action_check' AND position('posting_country_set' in pg_get_constraintdef(oid))>0 AND position('mirror_composition_update' in pg_get_constraintdef(oid))>0)`).Scan(&compatible)
 	if err != nil || !compatible {
 		return ErrSchemaIncompatible
 	}

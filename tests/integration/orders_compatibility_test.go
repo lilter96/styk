@@ -46,3 +46,25 @@ func TestOrdersStartupRequiresCompositionActionConstraint(t *testing.T) {
 		t.Fatal("reported current version concealed missing composition action", err)
 	}
 }
+
+func TestOrdersStartupRequiresNativePointStructures(t *testing.T) {
+	for _, statement := range []string{
+		`ALTER TABLE orders_ingestion_leases RENAME COLUMN attempt_started_at TO missing_attempt_clock`,
+		`ALTER TABLE orders_native_point_reads RENAME TO missing_native_reads`,
+		`ALTER TABLE orders_native_point_snapshots RENAME TO missing_native_snapshots`,
+	} {
+		t.Run(statement, func(t *testing.T) {
+			db := catalogSyncDB(t)
+			ctx := context.Background()
+			if err := db.RequireCurrentSchema(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.Pool.Exec(ctx, statement); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.RequireCurrentSchema(ctx); !errors.Is(err, postgres.ErrSchemaIncompatible) {
+				t.Fatal("migration version concealed missing native point structure", err)
+			}
+		})
+	}
+}
