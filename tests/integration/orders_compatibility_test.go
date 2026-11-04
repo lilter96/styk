@@ -32,3 +32,17 @@ func TestOrdersStartupRequiresActualCurrentSchema(t *testing.T) {
 		t.Fatal("schema version alone concealed missing required structure", err)
 	}
 }
+
+func TestOrdersStartupRequiresCompositionActionConstraint(t *testing.T) {
+	db := catalogSyncDB(t)
+	ctx := context.Background()
+	if err := db.RequireCurrentSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Pool.Exec(ctx, `ALTER TABLE orders_work DROP CONSTRAINT orders_work_action_check; ALTER TABLE orders_work ADD CONSTRAINT orders_work_action_check CHECK(action IN ('mirror_create','posting_country_set'))`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.RequireCurrentSchema(ctx); !errors.Is(err, postgres.ErrSchemaIncompatible) {
+		t.Fatal("reported current version concealed missing composition action", err)
+	}
+}
