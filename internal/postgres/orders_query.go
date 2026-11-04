@@ -139,13 +139,13 @@ func scanOrderPosting(row pgx.Row) (orders.Posting, error) {
 func (s *Store) OrderHistory(ctx context.Context, scope orders.Scope, page orders.PageRequest) (orders.HistoryPage, error) {
 	result := orders.HistoryPage{Operations: []orders.Operation{}}
 	cursor, err := orderPageCursor(scope, page, "history")
-	if err != nil || page.Search != "" {
+	if err != nil {
 		return result, orders.ErrInvalid
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
-	args := append(ordersScopeArgs(scope), cursor.ID, cursor.At, page.Limit+1)
-	rows, err := s.Pool.Query(ctx, `SELECT o.id,o.preview_id,o.created_at,COALESCE(jsonb_agg(w.work ORDER BY w.id) FILTER(WHERE w.id IS NOT NULL),'[]'::jsonb) FROM (SELECT * FROM orders_operations WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND ($4='' OR (created_at,id)<($5,$4)) ORDER BY created_at DESC,id DESC LIMIT $6) o LEFT JOIN orders_work w ON w.operation_id=o.id GROUP BY o.id,o.preview_id,o.created_at ORDER BY o.created_at DESC,o.id DESC`, args...)
+	args := append(ordersScopeArgs(scope), cursor.ID, cursor.At, page.Limit+1, page.Search)
+	rows, err := s.Pool.Query(ctx, `SELECT o.id,o.preview_id,o.created_at,COALESCE(jsonb_agg(w.work ORDER BY w.id) FILTER(WHERE w.id IS NOT NULL),'[]'::jsonb) FROM (SELECT * FROM orders_operations candidate WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND ($4='' OR (created_at,id)<($5,$4)) AND ($7='' OR EXISTS(SELECT 1 FROM orders_work matched WHERE matched.operation_id=candidate.id AND matched.tenant_id=$1 AND matched.moysklad_account=$2 AND matched.ozon_account=$3 AND matched.posting_number=$7)) ORDER BY created_at DESC,id DESC LIMIT $6) o LEFT JOIN orders_work w ON w.operation_id=o.id GROUP BY o.id,o.preview_id,o.created_at ORDER BY o.created_at DESC,o.id DESC`, args...)
 	if err != nil {
 		return result, ordersError("select order history", err)
 	}
