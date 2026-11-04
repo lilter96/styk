@@ -547,3 +547,12 @@ key. A read-only live gate persisted two native point observations using
 reads are not complete account coverage or a source-stock baseline. Temporary
 configuration revision 26 is OFF; general publication remains disabled. See the
 [updated evidence and explicit remaining split limitations](orders-live-evidence.md).
+
+The native-point related PostgreSQL gate finished with **218 PASS / 6 SKIP /
+0 FAIL**. A further merchant-facing assembly-reference read path passed normal
+nine-process browser verification and a fresh live check: **6 Ozon reads, all
+HTTP 200, zero provider writes**, with two explicitly empty assembly groups.
+No parent retirement is inferred from these lists or from generic HTTP 404.
+The ordinary application runs clean `cdd1861`, schema 60, configuration **28 OFF**.
+Updated field-level evidence and the still-unfinished superseded-parent transfer
+are recorded in the [existing order report](orders-live-evidence.md).

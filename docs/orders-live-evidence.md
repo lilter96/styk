@@ -746,3 +746,51 @@ stock/catalog publication flags OFF, zero active calls, pending work and grants.
 Private evidence: `.local/orders-v9/native-point-read-20261104.json` and
 `.local/orders-v9/upgrade60-result.json`. No paid buyer event, physical shipment,
 new external write or UNKNOWN replay was performed in this continuation.
+
+### Assembly references and completed native-point regression gate — 2026-11-04
+
+The related PostgreSQL race gate at the native-point checkpoint completed:
+**218 passing test/subtest events, 6 explicit skips, 0 failures**; integration
+package elapsed time 1,170.572 seconds. Skips were the legacy live opt-in,
+two parent-invoked subprocess entrypoints, the native process opt-in, browser
+opt-in and the live Ozon-key test. The native and browser opt-in gates were also
+executed separately; a primary skip is not rewritten as a primary pass.
+
+Official reviewed detail fragments now support typed `related_postings` reads.
+Only `/v3/posting/fbs/get` requests the documented flag; list requests do not
+receive an unverified extra parameter. Optional container/member presence and
+explicit empty arrays are retained. These are assembly references, not parent/
+child ancestry, a complete split result or proof that another posting vanished.
+The immutable source retains them; shortened projections retain prior known
+facts, and reserve preflight still validates actual allocation/status/native
+frontiers rather than treating assembly metadata as allocation authority.
+
+The merchant can inspect assembly references and search an associated posting;
+initial large-list rendering is bounded. The updated real-process merchant
+browser gate passed in **136.783 seconds**, including both Playwright journeys,
+linked-posting navigation, confirmation, worker reconciliation, isolation and
+mobile overflow checks. Desktop and mobile source-card screenshots were inspected.
+It measured 1,083 loopback HTTP attempts, minimum observed arrival gap 18.488752 ms
+and maximum in-flight 1; these are synthetic observations. Related transfer
+PostgreSQL regressions also passed in **57.813 seconds**. Two new browser locator
+assertions were corrected after failed attempts; the failures were retained.
+The earlier alternate test-database attempt did not start a process stack.
+
+A bounded normal **live read-only** check used two complementary collector cycles:
+**6 Ozon reads, all HTTP 200; MoySklad reads 0, external writes 0**. Both known
+cancelled postings returned and persisted a present assembly group with an
+explicitly empty member list. No live nonempty member element, retired parent,
+ship/delivery transition or transferred reserve is claimed by this check.
+Private ledger: `.local/orders-v10/related-read-20261104.json`.
+Configuration 26→27→28 was restored to its exact original disabled contents.
+Clean runtime `cdd1861`, schema 60, both API replicas healthy, no pending work,
+active provider calls or automation grants; all general publication flags OFF.
+No credentials, key or historical UNKNOWN record changed. Current Go lint is 0;
+make lint/test/build, full race, frontend checks and **283 frontend tests** pass.
+The frontend retains its existing large-chunk warning (717.65 kB main chunk).
+
+The isolated superseded-parent candidate was not accepted: adversarial tests
+found deletion, source-proof mutation, drift and malformed-field defects. Its
+accidental master application `7ddc857` was immediately undone by ordinary revert
+`7cb3e04`; neither was deployed. Production dispatch for that unfinished transfer
+remains disabled pending corrected source proofs and full normal-pipeline wiring.
