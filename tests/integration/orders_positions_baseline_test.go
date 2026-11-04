@@ -87,7 +87,7 @@ func assertPositionBaselineAdvanced(t *testing.T, f ordersStoreFixture, work ord
 	if baseline.WorkID != work.ID || len(baseline.Bindings) != 1 || baseline.Bindings[0].Native.ID != "native-position" || baseline.Bindings[0].Source.Quantity != "1" {
 		t.Fatal("reconciled patch did not retain exact native/source ownership")
 	}
-	assertOrdersRowCount(t, f, `SELECT count(*) FROM orders_write_intents`, 1)
+	assertOrdersRowCount(t, f, `SELECT count(*) FROM orders_write_intents`, 2)
 }
 
 func ackPositionPatch(t *testing.T, f ordersStoreFixture, work orders.Work) orders.Work {
@@ -107,6 +107,10 @@ func initialPositionBaseline(t *testing.T) (ordersStoreFixture, orders.Posting, 
 	initial := ordersStorePreview(t, f, posting.PostingNumber)
 	ordersStoreApprove(t, f, initial)
 	first := ordersStoreClaim(t, f, time.Minute)
+	if allowed, err := f.db.GuardOrderDispatch(f.ctx, orders.DispatchGuard{Work: first, Begin: true}); err != nil || !allowed {
+		t.Fatalf("creator intent dispatch guard: %v %v", allowed, err)
+	}
+	first = ackPositionPatch(t, f, first)
 	target := scalarReadbackTarget(first)
 	target.Positions[0].Reserve = orders.Present(orders.Decimal("0"))
 	target.Positions[0].Shipped = orders.Present(orders.Decimal("0"))
