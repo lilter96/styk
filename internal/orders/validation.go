@@ -223,6 +223,9 @@ func (secret PostingSecret) Validate() error {
 }
 
 func (page SourcePage) Validate() error {
+	if err := page.validateNativePointReads(); err != nil {
+		return err
+	}
 	if page.Scope.Validate() != nil || !validID(page.Stream) || !validID(page.RefreshKey) || !validID(page.IdempotencyKey) || !validID(page.FenceToken) {
 		return ErrInvalid
 	}

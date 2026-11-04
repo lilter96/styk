@@ -88,27 +88,28 @@ type Checkpoint struct {
 // SourcePage commits observations and traversal progress in one transaction.
 // A crash cannot advance a checkpoint without persisting all accepted facts.
 type SourcePage struct {
-	Scope                      Scope               `json:"scope"`
-	ConfigRevision             int64               `json:"config_revision"`
-	Credentials                CredentialRevisions `json:"credentials"`
-	Stream                     string              `json:"stream"`
-	RefreshKey                 string              `json:"refresh_key"`
-	ExpectedCheckpointRevision int64               `json:"expected_checkpoint_revision"`
-	ExpectedCursor             string              `json:"expected_cursor"`
-	NextCursor                 string              `json:"next_cursor"`
-	WindowFrom                 time.Time           `json:"window_from"`
-	WindowTo                   time.Time           `json:"window_to"`
-	Complete                   bool                `json:"complete"`
-	Exhausted                  bool                `json:"exhausted,omitempty"`
-	Failures                   []ReadFailure       `json:"failures,omitempty"`
-	FailuresTruncated          bool                `json:"failures_truncated,omitempty"`
-	Postings                   []Posting           `json:"postings"`
-	Secrets                    []PostingSecret     `json:"-"`
-	StartedAt                  time.Time           `json:"started_at"`
-	FinishedAt                 time.Time           `json:"finished_at"`
-	IdempotencyKey             string              `json:"idempotency_key"`
-	FenceToken                 string              `json:"-"`
-	FreshDetail                bool                `json:"fresh_detail"`
+	NativeReads                []NativeOrderPointRead `json:"native_reads,omitempty"`
+	Scope                      Scope                  `json:"scope"`
+	ConfigRevision             int64                  `json:"config_revision"`
+	Credentials                CredentialRevisions    `json:"credentials"`
+	Stream                     string                 `json:"stream"`
+	RefreshKey                 string                 `json:"refresh_key"`
+	ExpectedCheckpointRevision int64                  `json:"expected_checkpoint_revision"`
+	ExpectedCursor             string                 `json:"expected_cursor"`
+	NextCursor                 string                 `json:"next_cursor"`
+	WindowFrom                 time.Time              `json:"window_from"`
+	WindowTo                   time.Time              `json:"window_to"`
+	Complete                   bool                   `json:"complete"`
+	Exhausted                  bool                   `json:"exhausted,omitempty"`
+	Failures                   []ReadFailure          `json:"failures,omitempty"`
+	FailuresTruncated          bool                   `json:"failures_truncated,omitempty"`
+	Postings                   []Posting              `json:"postings"`
+	Secrets                    []PostingSecret        `json:"-"`
+	StartedAt                  time.Time              `json:"started_at"`
+	FinishedAt                 time.Time              `json:"finished_at"`
+	IdempotencyKey             string                 `json:"idempotency_key"`
+	FenceToken                 string                 `json:"-"`
+	FreshDetail                bool                   `json:"fresh_detail"`
 }
 
 type IngestionClaimRequest struct {
