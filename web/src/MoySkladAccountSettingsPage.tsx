@@ -33,7 +33,8 @@ type Props = {
 export function MoySkladAccountSettingsPage(props: Props) {
   const navigate = useNavigate();
   const [query] = useSearchParams();
-  const account = query.get("account") || props.account;
+  const account =
+    query.get("connect") === "new" ? "" : query.get("account") || props.account;
   if (props.accountsLoading)
     return <StatePanel kind="loading">Загружаем аккаунт МойСклад…</StatePanel>;
   if (!account)
@@ -50,7 +51,15 @@ export function MoySkladAccountSettingsPage(props: Props) {
           <CredentialEditor
             scope={{ tenant: props.tenant, provider: "moysklad", account: "" }}
             registration="NOT_CONFIGURED"
-            accounts={[]}
+            accounts={props.accounts.filter(
+              (entry) => entry.source === "moysklad",
+            )}
+            onSelect={(account) =>
+              navigate(
+                `/integrations/moysklad/settings?account=${encodeURIComponent(account)}`,
+                { replace: true },
+              )
+            }
             submission={props.credentials}
             onClose={() => navigate("/integrations")}
           />
