@@ -182,6 +182,7 @@ func splitTransferPostingEqual(before, after Posting) bool {
 
 func splitTransferSafePosting(posting Posting) Posting {
 	posting.PII, posting.Customer = nil, ProtectedCustomer{}
+	posting.RelatedPostings = posting.RelatedPostings.Canonical()
 	posting.Lines = slices.Clone(posting.Lines)
 	posting.ChildPostingNumbers = slices.Clone(posting.ChildPostingNumbers)
 	return posting

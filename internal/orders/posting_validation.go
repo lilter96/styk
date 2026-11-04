@@ -57,6 +57,9 @@ func (order Order) Validate() error {
 }
 
 func (posting Posting) validateRelations() error {
+	if posting.RelatedPostings != nil && posting.RelatedPostings.Validate() != nil {
+		return ErrInvalid
+	}
 	if posting.ParentPostingNumber.IsKnown() && *posting.ParentPostingNumber.Value == posting.PostingNumber {
 		return ErrConflict
 	}

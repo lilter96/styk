@@ -88,7 +88,7 @@ func defaultMoysklad(_, secret string) (*moysklad.Client, error) {
 }
 
 func (f Factory) ozonReadOptions(ctx context.Context, scope orders.Scope) (ozon.OrderReadOptions, error) {
-	options := ozon.OrderReadOptions{AnalyticsData: true, FinancialData: true, Barcodes: true, ResolveDelivery: true, DeliveryObserver: f.DeliveryObserver}
+	options := ozon.OrderReadOptions{RelatedPostings: true, AnalyticsData: true, FinancialData: true, Barcodes: true, ResolveDelivery: true, DeliveryObserver: f.DeliveryObserver}
 	if f.Configs == nil {
 		return options, nil
 	}

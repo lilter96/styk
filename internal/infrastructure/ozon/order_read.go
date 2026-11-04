@@ -40,9 +40,9 @@ func (c *OrdersClient) ReadOrderPosting(ctx context.Context, scope orders.Scope,
 		return orders.Posting{}, orders.ErrInvalid
 	}
 	body := struct {
-		PostingNumber string           `json:"posting_number"`
-		With          OrderReadOptions `json:"with"`
-	}{number, c.options}
+		PostingNumber string                  `json:"posting_number"`
+		With          orderRelatedReadOptions `json:"with"`
+	}{number, c.orderDetailOptions()}
 	data, err := c.orderPost(ctx, orderGetPath, body)
 	if err != nil {
 		return orders.Posting{}, err

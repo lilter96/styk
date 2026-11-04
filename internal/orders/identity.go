@@ -149,6 +149,7 @@ func PostingFingerprint(posting Posting) (string, error) {
 	}
 	posting.Evidence.Revision = ""
 	posting.Requirements = posting.Requirements.Canonical()
+	posting.RelatedPostings = posting.RelatedPostings.Canonical()
 	if posting.DeliveryProfile != nil {
 		profile := *posting.DeliveryProfile
 		profile.ObservedAt = time.Time{}

@@ -29,3 +29,29 @@ func TestOrderProjectionPreservesExactCapabilityRevision(t *testing.T) {
 		t.Fatalf("unchanged projection changed fingerprint: %v", err)
 	}
 }
+
+func TestOrderProjectionRetainsRelatedGroupWithoutCallingItFresh(t *testing.T) {
+	t.Parallel()
+	previous := orders.Posting{RelatedPostings: &orders.RelatedPostingGroup{Presence: orders.PresenceValue, PostingNumbers: orders.Present([]string{"peer"})}}
+	for _, tc := range []struct {
+		name  string
+		group *orders.RelatedPostingGroup
+	}{
+		{"absent", nil},
+		{"null", &orders.RelatedPostingGroup{Presence: orders.PresenceNull}},
+		{"empty object", &orders.RelatedPostingGroup{Presence: orders.PresenceEmpty}},
+		{"missing member", &orders.RelatedPostingGroup{Presence: orders.PresenceValue}},
+		{"null member", &orders.RelatedPostingGroup{Presence: orders.PresenceValue, PostingNumbers: orders.Field[[]string]{Presence: orders.PresenceNull}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			next := orders.Posting{RelatedPostings: tc.group}
+			merged, err := mergeOrderPosting(previous, next)
+			if err != nil || merged.RelatedPostings == nil || !merged.RelatedPostings.PostingNumbers.IsKnown() || (*merged.RelatedPostings.PostingNumbers.Value)[0] != "peer" {
+				t.Fatal("shortened source erased previously known assembly relation", err)
+			}
+			if next.RelatedPostings != tc.group {
+				t.Fatal("projection rewrote actual observation presence")
+			}
+		})
+	}
+}

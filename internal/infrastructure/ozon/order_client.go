@@ -36,6 +36,7 @@ type OrdersClient struct {
 // OrderReadOptions requests separately authorized optional provider groups.
 // CustomerPII remains transient and must be protected before a page is stored.
 type OrderReadOptions struct {
+	RelatedPostings  bool              `json:"-"`
 	AnalyticsData    bool              `json:"analytics_data"`
 	FinancialData    bool              `json:"financial_data"`
 	LegalInfo        bool              `json:"legal_info"`
@@ -46,7 +47,7 @@ type OrderReadOptions struct {
 }
 
 func NewOrderClient(client *Client, scope orders.Scope) (*OrdersClient, error) {
-	return NewOrderClientWithOptions(client, scope, OrderReadOptions{AnalyticsData: true, FinancialData: true, Barcodes: true})
+	return NewOrderClientWithOptions(client, scope, OrderReadOptions{AnalyticsData: true, FinancialData: true, Barcodes: true, RelatedPostings: true})
 }
 
 func NewOrderClientWithOptions(client *Client, scope orders.Scope, options OrderReadOptions) (*OrdersClient, error) {
