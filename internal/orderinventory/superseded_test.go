@@ -41,6 +41,13 @@ func supersededInventoryFixture(t *testing.T, foreign bool) Input {
 	}
 	command.PositionPatch = patch
 	write.OwnedFields = patch.Fields()
+	sealSupersededInventoryTarget(&input, command, write, foreign)
+	return input
+}
+
+func sealSupersededInventoryTarget(input *Input, command orders.Command, write orders.CustomerOrderWrite, foreign bool) {
+	o := &input.Observations[0]
+	correlation := o.Binding
 	o.Work = &orders.Work{ID: "actual-release", Scope: correlation.Scope, State: orders.StateReconciled, DispatchCount: 1, Command: command, Receipt: orders.Receipt{CommandID: command.ID, State: orders.StateAcknowledged, HTTPStatus: 200, ExternalID: correlation.CustomerOrderID}}
 	target := *o.Target
 	target.Correlation = correlation
@@ -63,7 +70,6 @@ func supersededInventoryFixture(t *testing.T, foreign bool) Input {
 		input.Baseline.Reserve = ptr("0")
 	}
 	o.SplitSuperseded = &orders.SplitReserveTransferPermission{Scope: correlation.Scope, SplitWorkID: "actual-split", ParentWorkID: o.Work.ID, ParentPosting: o.Posting, ParentCorrelation: correlation, ParentTargetRevision: target.Revision, ParentStoreID: target.Fields.StoreID, ParentOrganizationID: target.Fields.OrganizationID, ParentPositions: append([]orders.TargetPosition(nil), target.Positions...), ConfirmedAt: target.ObservedAt}
-	return input
 }
 
 func TestSupersededInventoryUsesFreshNativeZeroWithoutDoubleSubtracting(t *testing.T) {

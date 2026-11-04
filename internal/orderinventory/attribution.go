@@ -63,6 +63,10 @@ func assessObservation(input Input, observation Observation) Obligation {
 		result.State, result.Reserve = Cancelled, "0"
 		return result
 	}
+	return assessNativeObservation(input, observation, result, quantity)
+}
+
+func assessNativeObservation(input Input, observation Observation, result Obligation, quantity int64) Obligation {
 	reserve, shipped, ok := nativeUnits(input, observation)
 	if !ok {
 		return pending(result, Unknown, "native_positions_incomplete")
@@ -71,10 +75,10 @@ func assessObservation(input Input, observation Observation) Obligation {
 	if !baselineOrdered(input, observation) {
 		return pending(result, ReserveObserved, nativeDemandOrderingBlocker(input, observation))
 	}
-	if knownStatus(posting, orders.SupersededSplitParentStatus) || observation.SplitSuperseded != nil {
+	if knownStatus(observation.Posting, orders.SupersededSplitParentStatus) || observation.SplitSuperseded != nil {
 		return assessSupersededParent(input, observation, result)
 	}
-	return classifyObligation(result, posting, quantity, reserve, shipped)
+	return classifyObligation(result, observation.Posting, quantity, reserve, shipped)
 }
 
 func classifyObligation(result Obligation, posting orders.Posting, quantity, reserve, shipped int64) Obligation {

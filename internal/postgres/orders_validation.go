@@ -77,13 +77,7 @@ func validateOrderCommandCurrent(command orders.Command, posting orders.Posting,
 	if command.Action.IsMirror() && command.SplitSourceWorkID != "" && !current.SplitReservePermissions[command.PostingNumber].Allows(posting) {
 		return orders.ErrBlocked
 	}
-	if err := validateRetainedSplitCommand(command, posting, current); err != nil {
-		return err
-	}
-	if err := validateSupersededSplitCommand(command, current); err != nil {
-		return err
-	}
-	if err := validateSplitTransferCommand(command, posting, current); err != nil {
+	if err := validateSplitReserveCommands(command, posting, current); err != nil {
 		return err
 	}
 	if !command.Action.IsMirror() && !command.Action.IsNativeMovement() && command.PostingAction.ContractHash != orderactions.ExecutionContractHash() {
@@ -125,6 +119,16 @@ func validateOrderCommandCurrent(command orders.Command, posting orders.Posting,
 		return validateOrderAutomaticCommand(command, current.Config, now)
 	}
 	return nil
+}
+
+func validateSplitReserveCommands(command orders.Command, posting orders.Posting, current orders.ReviewContext) error {
+	if err := validateRetainedSplitCommand(command, posting, current); err != nil {
+		return err
+	}
+	if err := validateSupersededSplitCommand(command, current); err != nil {
+		return err
+	}
+	return validateSplitTransferCommand(command, posting, current)
 }
 
 func validateSplitTransferCommand(command orders.Command, posting orders.Posting, current orders.ReviewContext) error {

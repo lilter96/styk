@@ -6,6 +6,17 @@ import (
 	"github.com/lilter96/styk/internal/orders"
 )
 
+func (r *Runner) bindMirrorWithSplitChecks(ctx context.Context, work orders.Work, client orders.Provider, checks orders.DispatchGuard, source orders.Posting, target *orders.TargetObservation) error {
+	if work.Command.SupersededSplitWorkID != "" {
+		var err error
+		checks, err = r.supersededSplitPreflight(ctx, work, source, target)
+		if err != nil {
+			return r.stop(ctx, work, "SPLIT_REPLACEMENT_SOURCE_OR_RESERVE_CHANGED")
+		}
+	}
+	return r.bindAndWrite(ctx, work, client, checks)
+}
+
 // A positive current parent and every recorded child are read before Begin.
 // The final DB guard rederives membership/ownership and checks these clocks;
 // these serial reads do not constitute an atomic remote snapshot.

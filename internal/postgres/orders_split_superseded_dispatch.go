@@ -8,6 +8,13 @@ import (
 	"github.com/lilter96/styk/internal/orders"
 )
 
+func validateOrderSplitDispatch(ctx context.Context, tx pgx.Tx, work orders.Work, guard orders.DispatchGuard, current orders.ReviewContext, now time.Time) error {
+	if err := validateSupersededSplitDispatch(ctx, tx, work, guard, current, now); err != nil {
+		return err
+	}
+	return validateOrderSplitTransferDispatch(ctx, tx, work, guard, now)
+}
+
 func validateSupersededSplitDispatch(ctx context.Context, tx pgx.Tx, work orders.Work, guard orders.DispatchGuard, current orders.ReviewContext, now time.Time) error {
 	if work.Command.SupersededSplitWorkID == "" || !guard.Begin {
 		return nil

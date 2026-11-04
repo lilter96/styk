@@ -51,12 +51,28 @@ func TestSupersededTransferUnlocksOnlyAfterActualEntireOwnedRelease(t *testing.T
 	}
 }
 
+type supersededTransferCase struct {
+	name  string
+	alter func(*SplitReserveTransferFacts, *SplitSupersededReserveFacts)
+}
+
 func TestSupersededTransferRejectsIncompleteOrSubstitutedProof(t *testing.T) {
 	t.Parallel()
-	cases := []struct {
-		name  string
-		alter func(*SplitReserveTransferFacts, *SplitSupersededReserveFacts)
-	}{
+	cases := append(supersededReleaseCases(), supersededFrontierCases()...)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f, r := supersededTransferFixture(t)
+			tc.alter(&f, &r)
+			if _, err := NewSupersededSplitTransfer(f, r); err == nil {
+				t.Fatal("invalid release unlocked child")
+			}
+		})
+	}
+}
+
+func supersededReleaseCases() []supersededTransferCase {
+	return []supersededTransferCase{
 		{"unknown release", func(f *SplitReserveTransferFacts, _ *SplitSupersededReserveFacts) {
 			f.ParentRelease.State = StateUnknown
 		}},
@@ -80,6 +96,11 @@ func TestSupersededTransferRejectsIncompleteOrSubstitutedProof(t *testing.T) {
 			f.Parent = Posting{}
 			r.Parent = f.Parent
 		}},
+	}
+}
+
+func supersededFrontierCases() []supersededTransferCase {
+	return []supersededTransferCase{
 		{"incomplete children", func(_ *SplitReserveTransferFacts, r *SplitSupersededReserveFacts) { r.Children = r.Children[:1] }},
 		{"changed child", func(f *SplitReserveTransferFacts, _ *SplitSupersededReserveFacts) {
 			f.Child.Status = Present("cancelled")
@@ -99,16 +120,6 @@ func TestSupersededTransferRejectsIncompleteOrSubstitutedProof(t *testing.T) {
 			f.ParentRelease.Command.CustomerOrder.Positions[0].Mapping.MoyskladID = "foreign-product"
 		}},
 		{"target revision substituted", func(_ *SplitReserveTransferFacts, r *SplitSupersededReserveFacts) { r.Target.Revision = "different" }},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			f, r := supersededTransferFixture(t)
-			tc.alter(&f, &r)
-			if _, err := NewSupersededSplitTransfer(f, r); err == nil {
-				t.Fatal("invalid release unlocked child")
-			}
-		})
 	}
 }
 
