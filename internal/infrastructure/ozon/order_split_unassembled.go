@@ -10,16 +10,19 @@ import (
 )
 
 // This is a local response/request bound, not a claimed provider maximum.
-const maxUnassembledSplitRows = 1000
+const (
+	maxUnassembledSplitRows    = 1000
+	maxUnassembledSplitEntries = 4096
+	maxUnassembledCommandBytes = 512 * 1024
+	maxUnassembledAckBytes     = 256 * 1024
+	maxUnassembledReceiptBytes = 320 * 1024
+)
 
 func unassembledSplitPayload(command orders.Command) (map[string]any, error) {
-	if command.Action != orders.ActionPostingSplitUnassembled || command.PostingAction == nil || !unassembledPostingID(command.PostingNumber) {
+	if !unassembledPayloadFits(command) {
 		return nil, orders.ErrInvalid
 	}
 	packages := command.PostingAction.Parameters.Packages
-	if len(packages) < 2 || len(packages) > maxUnassembledSplitRows {
-		return nil, orders.ErrInvalid
-	}
 	postings := make([]map[string]any, 0, len(packages))
 	for _, box := range packages {
 		if len(box.Lines) == 0 || len(box.Lines) > maxUnassembledSplitRows {
@@ -53,6 +56,10 @@ func (c *OrdersClient) unassembledSplitReceipt(command orders.Command, data []by
 	ack := &orders.UnassembledSplitAck{}
 	parentErr := unassembledResponseField(response.Parent, &ack.Parent, decodeUnassembledPosting)
 	postingsErr := unassembledResponseField(response.Postings, &ack.Postings, decodeUnassembledPostings)
+	if !unassembledAckFits(receipt, ack) {
+		receipt.Code = "SPLIT_UNASSEMBLED_ACK_TOO_LARGE"
+		return receipt, orders.ErrSchemaDrift
+	}
 	receipt.UnassembledSplit = ack
 	if parentErr != nil || postingsErr != nil || status != 200 || command.Action != orders.ActionPostingSplitUnassembled || !unassembledAckValid(command, ack) {
 		return receipt, orders.ErrSchemaDrift
@@ -168,4 +175,35 @@ func unassembledParentValid(expected string, parent orders.SplitResponsePosting)
 		return false
 	}
 	return parent.Products.IsMissing() || parent.Products.IsKnown() || parent.Products.Presence == orders.PresenceEmpty
+}
+
+// A provider mutation may already exist. Oversize evidence remains UNKNOWN
+// without a truncated allocation proof; it must never make work unpersistable.
+func unassembledAckFits(receipt orders.Receipt, ack *orders.UnassembledSplitAck) bool {
+	raw, err := json.Marshal(ack)
+	if err != nil || len(raw) > maxUnassembledAckBytes {
+		return false
+	}
+	receipt.UnassembledSplit = ack
+	raw, err = json.Marshal(receipt)
+	return err == nil && len(raw) <= maxUnassembledReceiptBytes
+}
+
+func unassembledPayloadFits(command orders.Command) bool {
+	if command.Action != orders.ActionPostingSplitUnassembled || command.PostingAction == nil || !unassembledPostingID(command.PostingNumber) {
+		return false
+	}
+	packages := command.PostingAction.Parameters.Packages
+	if len(packages) < 2 || len(packages) > maxUnassembledSplitRows {
+		return false
+	}
+	entries := 0
+	for _, box := range packages {
+		entries += len(box.Lines)
+		if len(box.Lines) == 0 || len(box.Lines) > maxUnassembledSplitRows || entries > maxUnassembledSplitEntries {
+			return false
+		}
+	}
+	raw, err := json.Marshal(command)
+	return err == nil && len(raw) <= maxUnassembledCommandBytes
 }
