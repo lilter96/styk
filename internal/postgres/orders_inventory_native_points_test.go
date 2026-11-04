@@ -35,7 +35,7 @@ func nativeInventoryPointFixture(t *testing.T) (nativeInventoryPointRow, orders.
 	}
 	at := now.Add(24 * time.Hour)
 	observed := at.Add(time.Second)
-	row := nativeInventoryPointRow{raw: raw, syncID: correlation.SyncID, marker: correlation.Marker, targetRevision: point.TargetRevision, factsHash: hash, credentialRevision: 2, currentCredentialRevision: 2, credentialEnabled: true, bindingMatches: true, startedAt: at, finishedAt: at.Add(2 * time.Second), observedAt: &observed, admittedAt: at.Add(-time.Second), recordedAt: at.Add(3 * time.Second)}
+	row := nativeInventoryPointRow{raw: raw, syncID: correlation.SyncID, marker: correlation.Marker, targetRevision: point.TargetRevision, factsHash: hash, credentialRevision: 2, currentCredentialRevision: 2, credentialEnabled: true, bindingMatches: true, eligible: true, startedAt: at, finishedAt: at.Add(2 * time.Second), observedAt: &observed, admittedAt: at.Add(-time.Second), recordedAt: at.Add(3 * time.Second)}
 	return row, point
 }
 
@@ -69,6 +69,8 @@ func TestInventoryNativePointRejectsInvalidTargetProofIndependently(t *testing.T
 		name, code string
 		mutate     func(*nativeInventoryPointRow)
 	}{
+		{"no matching proof before baseline", "NATIVE_POINT_AFTER_BASELINE", func(r *nativeInventoryPointRow) { r.eligible = false }},
+		{"latest failure fences older eligible snapshot", "NATIVE_RATE_LIMITED", func(r *nativeInventoryPointRow) { r.code = "NATIVE_RATE_LIMITED"; r.eligible = true }},
 		{"changed binding", "NATIVE_BINDING_CHANGED", func(r *nativeInventoryPointRow) { r.bindingMatches = false }},
 		{"different marker", "NATIVE_BINDING_CHANGED", func(r *nativeInventoryPointRow) { r.marker = "other" }},
 		{"rotated credential", "NATIVE_CREDENTIAL_REVISION_CHANGED", func(r *nativeInventoryPointRow) { r.currentCredentialRevision++ }},
