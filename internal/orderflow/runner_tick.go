@@ -36,12 +36,19 @@ func (r *Runner) tickScope(ctx context.Context, config orders.Config) error {
 	if grant != nil && !grant.Active(r.now(), config.Scope, config.Revision) {
 		return nil
 	}
-	if err := r.options.Collector.Collect(ctx, config.Scope); err != nil {
-		return fmt.Errorf("collect due order facts: %w", err)
+	collectErr := r.options.Collector.Collect(ctx, config.Scope)
+	if collectErr != nil {
+		collectErr = fmt.Errorf("collect due order facts: %w", collectErr)
 	}
-	if grant == nil {
-		return nil
+	if grant == nil || ctx.Err() != nil {
+		return collectErr
 	}
+	// A partial read must not hide other already-fresh targets. Every selected
+	// decision retains source freshness checks and a fresh pre-dispatch read.
+	return errors.Join(collectErr, r.reviewDueScope(ctx, config, grant))
+}
+
+func (r *Runner) reviewDueScope(ctx context.Context, config orders.Config, grant *orders.AutomationGrant) error {
 	actor := "AUTOMATION:" + grant.ID + ":" + strconv.FormatInt(grant.Revision, 10)
 	preview, err := r.options.Service.preview(ctx, orders.PreviewRequest{Scope: config.Scope, ExpectedRevision: config.Revision, Actor: actor}, true)
 	if err != nil {
