@@ -58,7 +58,7 @@ func (r *Runner) prepareExemplarSetDispatch(ctx context.Context, work orders.Wor
 }
 
 func exemplarSetInput(snapshot orders.ExemplarSnapshot) *orders.ExemplarSetInput {
-	result := &orders.ExemplarSetInput{Products: make([]orders.ExemplarProductInput, 0, len(snapshot.Products))}
+	result := &orders.ExemplarSetInput{MultiBoxQty: snapshot.MultiBoxQty, Products: make([]orders.ExemplarProductInput, 0, len(snapshot.Products))}
 	for _, p := range snapshot.Products {
 		result.Products = append(result.Products, orders.ExemplarProductInput{SKU: p.SKU, Exemplars: p.Exemplars})
 	}
@@ -157,7 +157,7 @@ func (r *Runner) pollExemplarSnapshot(ctx context.Context, work orders.Work, exp
 		return r.complete(ctx, work, orders.Completion{State: orders.StateRejected, Code: "EXEMPLAR_PROVIDER_VALIDATION_FAILED"})
 	}
 	if !orders.ExemplarStatusMatches(expected, status, validation) {
-		return r.deferReadback(ctx, work, "EXEMPLAR_VALUES_OR_VALIDATION_PENDING")
+		return r.deferReadback(ctx, work, orders.ExemplarWeightReadbackCode(expected, status))
 	}
 	if !validation && status.Status != "update_available" && status.Status != "ship_available" {
 		return r.deferReadback(ctx, work, "EXEMPLAR_IDS_PENDING")
@@ -205,9 +205,13 @@ func (r *Runner) recoverUnknownExemplarIDs(ctx context.Context, work orders.Work
 	if err != nil || hash != work.Command.PostingAction.PackingTargetFingerprint {
 		return r.deferReadback(ctx, work, "EXEMPLAR_TARGET_CHANGED")
 	}
-	snapshot := orders.ExemplarSnapshot{PostingNumber: status.PostingNumber, Products: make([]orders.ExemplarProduct, 0, len(status.Products))}
+	snapshot := orders.ExemplarSnapshot{MultiBoxQty: posting.MultiBoxQty, PostingNumber: status.PostingNumber, Products: make([]orders.ExemplarProduct, 0, len(status.Products))}
 	for _, p := range status.Products {
-		snapshot.Products = append(snapshot.Products, orders.ExemplarProduct{UnsupportedFields: append(p.UnsupportedFields, "multi_box_qty_unknown"), SKU: p.SKU, Quantity: int64(len(p.Exemplars)), Exemplars: p.Exemplars})
+		unsupported := p.UnsupportedFields
+		if !posting.MultiBoxQty.IsKnown() {
+			unsupported = append(unsupported, "multi_box_qty_unknown")
+		}
+		snapshot.Products = append(snapshot.Products, orders.ExemplarProduct{UnsupportedFields: unsupported, SKU: p.SKU, Quantity: int64(len(p.Exemplars)), Exemplars: p.Exemplars})
 	}
 	orders.CompleteExemplarRequirements(&snapshot, posting)
 	if snapshot.ValidateFor(posting) != nil {

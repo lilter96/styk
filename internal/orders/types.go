@@ -184,6 +184,7 @@ type Drift struct {
 }
 
 type Posting struct {
+	MultiBoxQty         Field[int64]         `json:"multi_box_qty,omitzero"`
 	Scope               Scope                `json:"scope"`
 	CommercialOrderID   string               `json:"commercial_order_id"`
 	PostingNumber       string               `json:"posting_number"`

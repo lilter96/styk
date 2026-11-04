@@ -22,6 +22,9 @@ func (s *Service) validateExemplarProposal(ctx context.Context, posting orders.P
 	if err != nil || secret.TargetFingerprint != hash {
 		return []orders.Validation{{Field: "exemplar_work_id", Code: "exemplar_target_or_units_changed"}}
 	}
+	if validations := orders.ExemplarPreservationInputValidation(*proposal.Parameters.Exemplars); len(validations) > 0 {
+		return validations
+	}
 	complete, err := orders.ApplyExemplarInput(base, *proposal.Parameters.Exemplars, posting)
 	if err != nil {
 		return []orders.Validation{{Field: "exemplars", Code: "exemplar_unknown_or_duplicate_identifier"}}

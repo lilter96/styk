@@ -1,10 +1,16 @@
 package ozon
 
-import "github.com/lilter96/styk/internal/orders"
+import (
+	"encoding/json"
+	"github.com/lilter96/styk/internal/orders"
+)
 
 func exemplarSetPayload(command orders.Command) (map[string]any, error) {
 	input := command.PostingAction.Parameters.Exemplars
 	if input == nil || len(input.Products) == 0 || len(input.Products) > 1000 {
+		return nil, orders.ErrInvalid
+	}
+	if input.MultiBoxQty.Validate() != nil || input.MultiBoxQty.IsKnown() && (*input.MultiBoxQty.Value < 0 || *input.MultiBoxQty.Value > 2147483647) {
 		return nil, orders.ErrInvalid
 	}
 	products := make([]map[string]any, 0, len(input.Products))
@@ -23,7 +29,11 @@ func exemplarSetPayload(command orders.Command) (map[string]any, error) {
 		}
 		products = append(products, map[string]any{"product_id": sku, "exemplars": units})
 	}
-	return map[string]any{"posting_number": command.PostingNumber, "products": products}, nil
+	payload := map[string]any{"posting_number": command.PostingNumber, "products": products}
+	if input.MultiBoxQty.IsKnown() {
+		payload["multi_box_qty"] = *input.MultiBoxQty.Value
+	}
+	return payload, nil
 }
 
 func exemplarUnitPayload(u orders.ExemplarInput) (map[string]any, error) {
@@ -35,6 +45,9 @@ func exemplarUnitPayload(u orders.ExemplarInput) (map[string]any, error) {
 		return nil, orders.ErrInvalid
 	}
 	value := map[string]any{"exemplar_id": id}
+	if u.Weight.IsKnown() {
+		value["weight"] = json.Number(*u.Weight.Value)
+	}
 	if u.GTD.IsKnown() {
 		value["gtd"] = *u.GTD.Value
 	}

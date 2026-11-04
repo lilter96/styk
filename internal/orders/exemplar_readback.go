@@ -28,7 +28,7 @@ func ExemplarStatusMatches(expected ExemplarSnapshot, status ExemplarStatus, val
 				return false
 			}
 			seen[unit.ID] = true
-			if validation && (j >= len(actual.Checks) || !exemplarChecksPassed(unit, actual.Checks[j])) {
+			if validation && (j >= len(actual.Checks) || !exemplarChecksPassed(unit, actual.Checks[j], product.Required[RequirementWeight])) {
 				return false
 			}
 		}
@@ -37,6 +37,9 @@ func ExemplarStatusMatches(expected ExemplarSnapshot, status ExemplarStatus, val
 }
 
 func exemplarUnitMatches(want, actual ExemplarInput) bool {
+	if !observedExemplarWeightEqual(want.Weight, actual.Weight) {
+		return false
+	}
 	for _, pair := range [][2]Field[string]{{want.GTD, actual.GTD}, {want.RNPT, actual.RNPT}} {
 		if pair[0].IsKnown() && (!pair[1].IsKnown() || *pair[0].Value != *pair[1].Value) {
 			return false
@@ -78,7 +81,10 @@ func compareExemplarMark(a, b ExemplarMark) int {
 	return 1
 }
 
-func exemplarChecksPassed(u ExemplarInput, c ExemplarCheck) bool {
+func exemplarChecksPassed(u ExemplarInput, c ExemplarCheck, weightRequired Field[bool]) bool {
+	if weightRequired.IsKnown() && *weightRequired.Value && (!u.Weight.IsKnown() || !positiveDecimal(*u.Weight.Value) || c.Weight != "passed") {
+		return false
+	}
 	if u.ID != c.ID || len(c.Errors) != 0 {
 		return false
 	}
@@ -104,7 +110,7 @@ func exemplarChecksPassed(u ExemplarInput, c ExemplarCheck) bool {
 func ExemplarValidationFailed(s ExemplarStatus) bool {
 	for _, p := range s.Products {
 		for _, c := range p.Checks {
-			if c.GTD == "failed" || c.RNPT == "failed" || slices.Contains(c.Marks, "failed") {
+			if c.Weight == "failed" || c.GTD == "failed" || c.RNPT == "failed" || slices.Contains(c.Marks, "failed") {
 				return true
 			}
 		}

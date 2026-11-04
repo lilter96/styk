@@ -13,6 +13,9 @@ func exemplarID(s string) bool {
 }
 
 func (s ExemplarSnapshot) ValidateFor(p Posting) error {
+	if !validObservedBoxCount(s.MultiBoxQty) {
+		return ErrInvalid
+	}
 	if s.PostingNumber != p.PostingNumber || len(s.Products) == 0 || len(s.Products) > 1000 {
 		return ErrStale
 	}
@@ -54,6 +57,9 @@ func (s ExemplarSnapshot) ValidateFor(p Posting) error {
 }
 
 func validateExemplar(u ExemplarInput) error {
+	if u.Weight.Validate() != nil || u.Weight.IsKnown() && !nonnegativeDecimal(*u.Weight.Value) {
+		return ErrInvalid
+	}
 	clear := make(map[string]bool, len(u.ClearMarkTypes))
 	for _, kind := range u.ClearMarkTypes {
 		if clear[kind] || !slices.Contains([]string{"mandatory_mark", "jw_uin", "imei"}, kind) {
@@ -101,6 +107,9 @@ func exemplarText(s string) bool {
 // ApplyExemplarInput preserves provider values for fields the merchant did not
 // select. Every identifier must already belong to the exact prepared snapshot.
 func ApplyExemplarInput(base ExemplarSnapshot, input ExemplarSetInput, p Posting) (ExemplarSnapshot, error) {
+	if input.MultiBoxQty.Validate() != nil || input.MultiBoxQty.IsSpecified() {
+		return base, ErrBlocked
+	}
 	if base.ValidateFor(p) != nil {
 		return base, ErrStale
 	}
@@ -120,6 +129,9 @@ func ApplyExemplarInput(base ExemplarSnapshot, input ExemplarSetInput, p Posting
 		}
 		for _, patch := range product.Exemplars {
 			key := product.SKU + ":" + patch.ID
+			if patch.Weight.IsSpecified() {
+				return base, ErrBlocked
+			}
 			if seen[key] || validateExemplar(patch) != nil {
 				return base, ErrInvalid
 			}

@@ -7,6 +7,9 @@ import (
 )
 
 func (posting Posting) Validate() error {
+	if !validObservedBoxCount(posting.MultiBoxQty) {
+		return ErrInvalid
+	}
 	if posting.Requirements != nil && posting.Requirements.Validate() != nil {
 		return ErrInvalid
 	}

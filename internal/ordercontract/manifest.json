@@ -163,6 +163,15 @@
       "sha256": "810fd90aa4913c850f4916340f5c2005ccc4bc247ccf507e62e13592b94ee52d",
       "hash_basis": "reviewed_subset_summary_utf8",
       "evidence": "Reviewed current official Swagger DeliveryMethodListV2ResponseDeliveryMethod.tpl_integration_type on 2026-11-04: optional string with documented values aggregator (third-party delivery, Ozon registration), 3pl_tracking (third-party delivery, seller registration), non_integrated (seller delivery), hybrid (mixed integration). Exact known method/posting values must agree. Preserve 3pl_tracking/hybrid raw facts without inferring seller transition authority, destination, or provider identity. Normalize only non_integrated and aggregator to the same named carrier classes. Review includes current posting available_actions non_int_delivering/non_int_last_mile/non_int_delivered and fresh-GET asynchronous third-party endpoint semantics. Evidence summary hash is not remote Swagger bytes or a claim of complete schema coverage."
+    },
+    {
+      "id": "ozon_exemplar_native_preservation_20261104",
+      "url": "https://docs.ozon.ru/api/seller/zh/swagger.json",
+      "checked_at": "2026-11-04",
+      "status": "official_selected_fields_reviewed",
+      "sha256": "80cf89961a05753a2a963f4dd5212abc14811acb022fb222f498f2400f70b488",
+      "hash_basis": "reviewed_subset_summary_utf8",
+      "evidence": "Reviewed official Seller Swagger 2026-11-04: v6FbsPostingProductExemplarSetV6Request.multi_box_qty integer int32, v6FbsPostingProductExemplarCreateOrGetV6Response.multi_box_qty same type; v3 detail result.multi_box_qty integer int32. v5 exemplar status contains no documented multi_box_qty, so the existing fresh detail read is separate evidence, not a fabricated v5 field. Weight absent from formal exemplar components but present in official v6 set/create and v5 status examples. Official article445 explicitly documents sending weight via v6 set and checking v5 status; no authoritative measurement unit established. This implementation preserves only exact unchanged provider-observed native numeric weights and grouping with fresh matching evidence; no merchant measurement, edits, unit conversion or new grouping. Evidence hash summarizes reviewed facts, not remote schema bytes."
     }
   ],
   "contracts": [
@@ -550,9 +559,10 @@
       "sources": [
         "ozon_schema",
         "ozon_sdk",
-        "ozon_news800"
+        "ozon_news800",
+        "ozon_exemplar_native_preservation_20261104"
       ],
-      "sha256": "f47cfc8e7c1d8a2259e211c38b0ef6b8769fe333e58281d3ebc5cc71486e41f1",
+      "sha256": "c273f6d498a90538265843807bceb0c5e89a7283a67a57c12bbca889e17ca361",
       "fixture": "ozon-get-response.json",
       "fields": [
         {
@@ -2435,11 +2445,11 @@
           "presence": "optional",
           "nullable": false,
           "sources": [
-            "ozon_sdk"
+            "ozon_exemplar_native_preservation_20261104"
           ],
-          "verification": "secondary_snapshot_unverified",
-          "semantics": "Exact source field $.result.multi_box_qty; retain presence independently of zero and empty values",
-          "destination": "STYK allowlisted structured observation; never concatenate into description",
+          "verification": "official_field_verified",
+          "semantics": "Exact optional provider int32 box grouping; distinguish missing/null/zero; separate fresh detail evidence, not v5 exemplar status",
+          "destination": "Typed posting grouping and packing fingerprint; unchanged preservation only, never inferred box creation",
           "classification": "structured",
           "read_only": false,
           "privacy": "operational",

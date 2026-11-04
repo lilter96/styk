@@ -1,11 +1,66 @@
 {
- "schema_status":"official_reviewed_operation_subset",
- "reviewed_on":"2026-11-04",
- "source":"https://docs.ozon.ru/api/seller/zh/swagger.json",
- "prepare":{"endpoint":"/v6/fbs/posting/product/exemplar/create-or-get","request":{"posting_number":"string"},"response_identity":"provider-generated exemplar_id:int64; product_id is SKU:int64"},
- "set":{"endpoint":"/v6/fbs/posting/product/exemplar/set","complete_products_and_units":true,"response_http_200":"accepted for asynchronous validation; no task identifier"},
- "status":{"endpoint":"/v5/fbs/posting/product/exemplar/status","request":{"posting_number":"string"},"states":["ship_available","ship_not_available","validation_in_process","update_available","update_not_available"],"checks":["processing","failed","passed"]},
- "mark_types":["mandatory_mark","jw_uin","imei"],
- "private_fields":["gtd","rnpt","marks.mark"],
- "limitations":["Formal enum definitions conflict with some Swagger examples; unknown enums remain schema drift, never success.","Weight writes are not implemented because reviewed weight notice does not establish authoritative unit.","Country values require a separate operation; not inferred.","Observed unowned weight or nonzero multi_box_qty blocks set; status-only recovered IDs cannot establish absent multibox metadata for set.","Exemplar values are never included inline in ship-v4."]
+  "schema_status": "official_reviewed_operation_subset",
+  "reviewed_on": "2026-11-04",
+  "source": "https://docs.ozon.ru/api/seller/zh/swagger.json",
+  "prepare": {
+    "endpoint": "/v6/fbs/posting/product/exemplar/create-or-get",
+    "request": {
+      "posting_number": "string"
+    },
+    "response_identity": "provider-generated exemplar_id:int64; product_id is SKU:int64"
+  },
+  "set": {
+    "endpoint": "/v6/fbs/posting/product/exemplar/set",
+    "complete_products_and_units": true,
+    "response_http_200": "accepted for asynchronous validation; no task identifier"
+  },
+  "status": {
+    "endpoint": "/v5/fbs/posting/product/exemplar/status",
+    "request": {
+      "posting_number": "string"
+    },
+    "states": [
+      "ship_available",
+      "ship_not_available",
+      "validation_in_process",
+      "update_available",
+      "update_not_available"
+    ],
+    "checks": [
+      "processing",
+      "failed",
+      "passed"
+    ]
+  },
+  "mark_types": [
+    "mandatory_mark",
+    "jw_uin",
+    "imei"
+  ],
+  "private_fields": [
+    "gtd",
+    "rnpt",
+    "marks.mark"
+  ],
+  "limitations": [
+    "Formal component properties omit weight while the official operation examples and weighted-goods article explicitly support it. This subset does not claim a complete Swagger download.",
+    "New or edited weight remains unsupported without a verified unit contract; only unchanged fresh provider values are preserved.",
+    "Country values require a separate operation; not inferred.",
+    "Missing fresh weight or grouping remains UNKNOWN and blocks affected mutation; no compensating write or automatic replay.",
+    "Exemplar values are never included inline in ship-v4."
+  ],
+  "preservation_only": {
+    "weight": {
+      "read": "v6 create-or-get and v5 status official examples; official Ozon weighted-goods article445",
+      "write": "v6 set example + official article445",
+      "unit": "unspecified; do not measure, convert, invent or accept merchant edits",
+      "rule": "exact unchanged provider-observed numeric value per SKU and exemplar ID, freshly equal v5 status; missing/null/zero are distinct"
+    },
+    "multi_box_qty": {
+      "read": "v6 create-or-get int32 and separate fresh v3 posting/get.result.multi_box_qty int32",
+      "write": "v6 set top-level int32",
+      "v5_status": "not a documented box observation",
+      "rule": "same known count only; freeze it in posting and packing fingerprints; reject merchant edits and missing fresh evidence"
+    }
+  }
 }

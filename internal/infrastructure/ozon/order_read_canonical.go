@@ -16,6 +16,10 @@ func (c *OrdersClient) decodeOrderPosting(f orderFields, observed time.Time) (or
 		Evidence: orders.EvidenceRevision{Revision: "pending", Origin: orders.OriginOzon, ObservedAt: observed, CheckedAt: observed,
 			ProviderUpdatedAt: f.timestamp("updated_at"), ProviderVersion: f.text("version"), CollectionKind: orders.CollectionSnapshot},
 	}
+	count := orderField(f, "multi_box_qty", decodeExemplarBoxCount)
+	if !count.IsMissing() {
+		posting.MultiBoxQty = count
+	}
 	posting.Scheme = orderScheme(f, &posting)
 	posting.Times = orderTimes(f)
 	posting.Cancellation = orderCancellation(f)

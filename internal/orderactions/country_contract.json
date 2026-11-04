@@ -7,5 +7,5 @@
  "identity":"The generic request description calls this product_id; the linked v3/v4 posting requirements explicitly identify their SKU lists as the values to submit to this method. Bind to an exact required posting SKU, never a Seller card ID.",
  "readback":"Fresh posting requirements can prove that the country obligation no longer applies. These endpoints do not return the stored country ISO value. Reconciliation means country_requirement_resolution, never ISO value verification.",
  "unknown":"A cleared requirement cannot resolve an unknown write or justify resending it.",
- "weight":{"implemented":false,"source":"https://dev.ozon.ru/start/445-Vesovye-tovary-v-Seller-API/","reason":"Reviewed exemplar schema and notice describe weight and range but do not establish its measurement unit; catalog weight_unit is a different contract."}
+ "weight":{"implemented":false,"source":"https://dev.ozon.ru/start/445-Vesovye-tovary-v-Seller-API/","reason":"No verified measurement unit for new/edited weight. Existing exact native numeric values may be preserved only with fresh per-unit provider observation, never converted or supplied by the merchant.","preservation_only_implemented":true}
 }

@@ -21,6 +21,7 @@ type ExemplarMark struct {
 	Value string `json:"value"`
 }
 type ExemplarInput struct {
+	Weight         Field[Decimal]        `json:"weight,omitzero"`
 	ClearMarkTypes []string              `json:"clear_mark_types,omitempty"`
 	ID             string                `json:"id"`
 	GTD            Field[string]         `json:"gtd"`
@@ -34,7 +35,8 @@ type ExemplarProductInput struct {
 	Exemplars []ExemplarInput `json:"exemplars"`
 }
 type ExemplarSetInput struct {
-	Products []ExemplarProductInput `json:"products"`
+	MultiBoxQty Field[int64]           `json:"multi_box_qty,omitzero"`
+	Products    []ExemplarProductInput `json:"products"`
 }
 type ExemplarProduct struct {
 	UnsupportedFields []string                               `json:"unsupported_fields,omitempty"`
@@ -44,6 +46,7 @@ type ExemplarProduct struct {
 	Exemplars         []ExemplarInput                        `json:"exemplars"`
 }
 type ExemplarSnapshot struct {
+	MultiBoxQty   Field[int64]      `json:"multi_box_qty,omitzero"`
 	PostingNumber string            `json:"posting_number"`
 	Products      []ExemplarProduct `json:"products"`
 }
@@ -77,6 +80,7 @@ type ExemplarSecret struct {
 type ExemplarCheck struct {
 	ID        string `json:"id"`
 	GTD, RNPT string
+	Weight    string
 	Marks     []string
 	Errors    []string `json:"errors,omitempty"`
 }
@@ -138,7 +142,8 @@ func PackingTargetFingerprint(p Posting) (string, error) {
 		Scope                             Scope
 		Order, Posting, Warehouse, Method string
 		Lines                             []line
-	}{p.Scope, p.CommercialOrderID, p.PostingNumber, *p.WarehouseID.Value, *p.DeliveryMethodID.Value, values})
+		MultiBoxQty                       Field[int64] `json:"multi_box_qty,omitzero"`
+	}{p.Scope, p.CommercialOrderID, p.PostingNumber, *p.WarehouseID.Value, *p.DeliveryMethodID.Value, values, p.MultiBoxQty})
 	if err != nil {
 		return "", ErrInvalid
 	}

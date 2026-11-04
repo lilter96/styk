@@ -31,7 +31,7 @@ func ValidateExemplarSet(s ExemplarSnapshot, p Posting) []Validation {
 	if s.ValidateFor(p) != nil {
 		return []Validation{{Field: "exemplars", Code: "exemplar_target_or_units_changed"}}
 	}
-	result := make([]Validation, 0)
+	result := exemplarBoxPreservationValidation(s, p)
 	for _, product := range s.Products {
 		for _, field := range product.UnsupportedFields {
 			result = append(result, Validation{Field: "products[sku=" + product.SKU + "]." + field, Code: "exemplar_unowned_field_not_supported"})
@@ -52,7 +52,11 @@ func ValidateExemplarSet(s ExemplarSnapshot, p Posting) []Validation {
 				continue
 			}
 			if kind == RequirementWeight {
-				result = append(result, Validation{Field: field, Code: "exemplar_weight_unit_unverified"})
+				for _, unit := range product.Exemplars {
+					if !unit.Weight.IsKnown() || !positiveDecimal(*unit.Weight.Value) {
+						result = append(result, Validation{Field: field + ".exemplar[" + unit.ID + "]", Code: "exemplar_weight_observed_value_required"})
+					}
+				}
 				continue
 			}
 			if kind == RequirementCountry || kind == RequirementChangeCountry {

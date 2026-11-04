@@ -28,6 +28,7 @@ type exemplarHTTPTransport struct {
 	sets, prepares int
 	marked         bool
 	loseSet        bool
+	preserveNative bool
 	losePrepare    bool
 }
 
@@ -54,6 +55,9 @@ func (s *exemplarHTTPTransport) RoundTrip(r *http.Request) (*http.Response, erro
 		if !strings.Contains(string(raw), `"exemplar_id":9007199254740993`) || !strings.Contains(string(raw), `"product_id":2001`) {
 			return nil, fmt.Errorf("wrong exemplar identity")
 		}
+		if s.preserveNative && (!strings.Contains(string(raw), `"weight":0.000`) || !strings.Contains(string(raw), `"multi_box_qty":1`)) {
+			return nil, fmt.Errorf("observed native metadata was not preserved exactly")
+		}
 		s.marked = true
 		if s.loseSet {
 			return nil, io.ErrUnexpectedEOF
@@ -70,6 +74,13 @@ func (s *exemplarHTTPTransport) RoundTrip(r *http.Request) (*http.Response, erro
 		}
 		body = strings.ReplaceAll(result, "awaiting_deliver", "awaiting_packaging")
 		body = strings.ReplaceAll(body, `"products_requiring_mandatory_mark":[]`, `"products_requiring_mandatory_mark":[2001]`)
+	}
+	if s.preserveNative {
+		var err error
+		body, err = exemplarPreservedHTTPBody(body, r.URL.Path)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return labelHTTPResponse(r, "application/json", body), nil
 }
@@ -104,7 +115,7 @@ func TestOrdersExemplarHTTPSealedPreparationAndSetReconcile(t *testing.T) {
 
 func runExemplarHTTP(t *testing.T, mode string) {
 	f := newLabelHTTPFixture(t)
-	transport := &exemplarHTTPTransport{base: &labelHTTPTransport{account: f.config.Scope.OzonAccount}, loseSet: mode == "lost_set_response", losePrepare: mode == "lost_prepare_response"}
+	transport := &exemplarHTTPTransport{base: &labelHTTPTransport{account: f.config.Scope.OzonAccount}, loseSet: mode == "lost_set_response", losePrepare: mode == "lost_prepare_response", preserveNative: mode == "preserved_native_values"}
 	factory, labelProtector := labelHTTPFactory(t, f, transport.base)
 	factory.NewOzon = func(account, secret string) (*ozon.Client, error) {
 		return ozon.New(ozon.Options{BaseURL: ozon.BaseURL, ClientID: account, APIKey: secret, Timeout: 3 * time.Second, Interval: time.Millisecond, Backoff: time.Millisecond, MaxRetryAfter: time.Second, PageSize: 100, Attempts: 1, HTTPClient: &http.Client{Transport: transport}})
@@ -190,7 +201,7 @@ func runExemplarHTTP(t *testing.T, mode string) {
 	assertOrdersRowCount(t, f, `SELECT count(*) FROM orders_work WHERE action IN ('posting_exemplar_prepare','posting_exemplar_set') AND state='RECONCILED' AND dispatch_count=1`, count)
 	assertOrdersRowCount(t, f, `SELECT count(*) FROM orders_work WHERE work::text LIKE '%SYNTHETIC-MARK%'`, 0)
 	assertOrdersRowCount(t, f, `SELECT count(*) FROM orders_receipts WHERE receipt::text LIKE '%SYNTHETIC-MARK%'`, 0)
-	if mode != "acknowledged" {
+	if mode == "lost_set_response" || mode == "lost_prepare_response" {
 		assertOrdersRowCount(t, f, `SELECT count(*) FROM orders_receipts WHERE receipt->>'state'='UNKNOWN'`, 1)
 	}
 	wantPrepares := 1
