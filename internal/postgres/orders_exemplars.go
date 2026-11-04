@@ -66,8 +66,25 @@ func (s *Store) OrderExemplarPublic(ctx context.Context, scope orders.Scope, pos
 	if _, err = ordersActor(ctx, tx, scope.Tenant, session.AuditID); err != nil {
 		return orders.ExemplarPublic{}, orders.ErrNotFound
 	}
+	credentials, credentialErr := ordersCredentials(ctx, tx, scope)
+	if credentialErr != nil {
+		return orders.ExemplarPublic{}, credentialErr
+	}
+	result, err := readOrderExemplarPublic(ctx, tx, scope, posting, credentials.Ozon)
+	if err != nil {
+		return result, err
+	}
+	return result, ordersRowsError("commit exemplar evidence inspection", tx.Commit(ctx))
+}
+
+func (s *Store) deleteExpiredOrderExemplars(ctx context.Context, limit int) (int, error) {
+	tag, err := s.Pool.Exec(ctx, `WITH expired AS (SELECT work_id FROM orders_exemplar_secrets WHERE expires_at<=clock_timestamp() ORDER BY expires_at LIMIT $1 FOR UPDATE SKIP LOCKED) DELETE FROM orders_exemplar_secrets s USING expired e WHERE s.work_id=e.work_id`, limit)
+	return int(tag.RowsAffected()), ordersRowsError("expire protected exemplar values", err)
+}
+
+func readOrderExemplarPublic(ctx context.Context, tx pgx.Tx, scope orders.Scope, posting string, revision int64) (orders.ExemplarPublic, error) {
 	var raw []byte
-	err = tx.QueryRow(ctx, `SELECT e.public_snapshot FROM orders_exemplar_secrets e JOIN orders_work w ON w.id=e.work_id WHERE e.tenant_id=$1 AND e.moysklad_account=$2 AND e.ozon_account=$3 AND e.posting_number=$4 AND w.state='RECONCILED' AND w.action='posting_exemplar_prepare' AND e.expires_at>clock_timestamp() ORDER BY e.created_at DESC,e.work_id DESC LIMIT 1`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, posting).Scan(&raw)
+	err := tx.QueryRow(ctx, `SELECT e.public_snapshot FROM orders_exemplar_secrets e JOIN orders_work w ON w.id=e.work_id WHERE e.tenant_id=$1 AND e.moysklad_account=$2 AND e.ozon_account=$3 AND e.posting_number=$4 AND w.state='RECONCILED' AND w.action='posting_exemplar_prepare' AND e.credential_revision=$5 AND e.expires_at>clock_timestamp() ORDER BY e.created_at DESC,e.work_id DESC LIMIT 1`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, posting, revision).Scan(&raw)
 	if err != nil {
 		return orders.ExemplarPublic{}, ordersError("read owned exemplar inspection", err)
 	}
@@ -77,7 +94,7 @@ func (s *Store) OrderExemplarPublic(ctx context.Context, scope orders.Scope, pos
 	}
 	var proofID string
 	var proofUntil time.Time
-	err = tx.QueryRow(ctx, `SELECT e.work_id,LEAST(e.expires_at,(w.work#>>'{receipt,exemplar_evidence,checked_at}')::timestamptz+interval '5 minutes') FROM orders_exemplar_secrets e JOIN orders_work w ON w.id=e.work_id WHERE e.tenant_id=$1 AND e.moysklad_account=$2 AND e.ozon_account=$3 AND e.posting_number=$4 AND e.target_fingerprint=$5 AND w.state='RECONCILED' AND w.action IN ('posting_exemplar_set','posting_exemplar_prepare') AND w.work#>>'{receipt,exemplar_evidence,packing_ready}'='true' AND e.expires_at>clock_timestamp() AND (w.work#>>'{receipt,exemplar_evidence,checked_at}')::timestamptz>clock_timestamp()-interval '5 minutes' ORDER BY w.finished_at DESC,w.id DESC LIMIT 1`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, posting, result.TargetFingerprint).Scan(&proofID, &proofUntil)
+	err = tx.QueryRow(ctx, `SELECT e.work_id,LEAST(e.expires_at,(w.work#>>'{receipt,exemplar_evidence,checked_at}')::timestamptz+interval '5 minutes') FROM orders_exemplar_secrets e JOIN orders_work w ON w.id=e.work_id WHERE e.tenant_id=$1 AND e.moysklad_account=$2 AND e.ozon_account=$3 AND e.posting_number=$4 AND e.target_fingerprint=$5 AND e.credential_revision=$6 AND w.state='RECONCILED' AND w.action IN ('posting_exemplar_set','posting_exemplar_prepare') AND w.work#>>'{receipt,exemplar_evidence,packing_ready}'='true' AND e.expires_at>clock_timestamp() AND (w.work#>>'{receipt,exemplar_evidence,checked_at}')::timestamptz>clock_timestamp()-interval '5 minutes' ORDER BY w.finished_at DESC,w.id DESC LIMIT 1`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, posting, result.TargetFingerprint, revision).Scan(&proofID, &proofUntil)
 	if err != nil && err != pgx.ErrNoRows {
 		return result, ordersError("read exemplar packing proof identity", err)
 	}
@@ -85,10 +102,5 @@ func (s *Store) OrderExemplarPublic(ctx context.Context, scope orders.Scope, pos
 	if proofID != "" {
 		result.ProofValidUntil = &proofUntil
 	}
-	return result, ordersRowsError("commit exemplar evidence inspection", tx.Commit(ctx))
-}
-
-func (s *Store) deleteExpiredOrderExemplars(ctx context.Context, limit int) (int, error) {
-	tag, err := s.Pool.Exec(ctx, `WITH expired AS (SELECT work_id FROM orders_exemplar_secrets WHERE expires_at<=clock_timestamp() ORDER BY expires_at LIMIT $1 FOR UPDATE SKIP LOCKED) DELETE FROM orders_exemplar_secrets s USING expired e WHERE s.work_id=e.work_id`, limit)
-	return int(tag.RowsAffected()), ordersRowsError("expire protected exemplar values", err)
+	return result, nil
 }

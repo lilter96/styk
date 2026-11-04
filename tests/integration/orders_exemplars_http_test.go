@@ -44,7 +44,7 @@ func (s *exemplarHTTPTransport) RoundTrip(r *http.Request) (*http.Response, erro
 		if s.losePrepare {
 			return nil, io.ErrUnexpectedEOF
 		}
-		body = exemplarHTTPResponse(false, false)
+		body = exemplarHTTPResponse(s.marked, false)
 	case "/v6/fbs/posting/product/exemplar/set":
 		s.sets++
 		raw, err := io.ReadAll(r.Body)
@@ -184,6 +184,17 @@ func runExemplarHTTP(t *testing.T, mode string) {
 	if mode == "acknowledged" {
 		proof := review.ExemplarProofs[posting.PostingNumber]
 		exemplarHTTPPreview(t, f, service, orders.ActionPostingPack, orders.ActionParameters{ExemplarWorkID: proof.SnapshotID, ReadinessConfirmed: true, Packages: []orders.ActionPackage{{Lines: []orders.ActionQuantity{{Identity: posting.Lines[0].Identity, Quantity: "2"}}}}})
+		renewed := exemplarHTTPPreview(t, f, service, orders.ActionExemplarPrepare, orders.ActionParameters{})
+		renewal := ordersStoreApprove(t, f, renewed)
+		exemplarHTTPRun(t, f, runner, renewal.ID, orders.StateAcknowledged)
+		exemplarHTTPRun(t, f, runner, renewal.ID, orders.StateReconciled)
+		current, readErr := f.db.OrderExemplarPublic(f.ctx, f.config.Scope, posting.PostingNumber)
+		if readErr != nil || current.WorkID == summary.WorkID || current.ProofWorkID != current.WorkID || current.ProofValidUntil == nil || !current.ProofValidUntil.After(time.Now()) {
+			t.Fatal("explicit prepare did not renew validated proof", readErr)
+		}
+		if transport.prepares != 2 || transport.sets != 1 {
+			t.Fatal("renewal replayed a set or old prepare")
+		}
 		assertExemplarRollbackRejected(t, f)
 	}
 	foreign := f.config.Scope

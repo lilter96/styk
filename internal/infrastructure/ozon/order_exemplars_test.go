@@ -49,3 +49,20 @@ func TestExemplarSetUsesExactSKUAndProviderUnitID(t *testing.T) {
 		t.Fatal("unknown exemplar field silently lost")
 	}
 }
+
+func TestExemplarExplicitAbsenceSerializesClearAndFlag(t *testing.T) {
+	t.Parallel()
+	u := orders.ExemplarInput{ID: "9007199254740993", GTD: orders.Present(""), GTDAbsent: orders.Present(true), RNPT: orders.Present(""), RNPTAbsent: orders.Present(true)}
+	payload, err := exemplarUnitPayload(u)
+	if err != nil || payload["gtd"] != "" || payload["is_gtd_absent"] != true || payload["rnpt"] != "" || payload["is_rnpt_absent"] != true {
+		t.Fatal("explicit seller clear was omitted", err)
+	}
+}
+
+func TestExemplarMalformedPresentValueDoesNotPanicOrSerialize(t *testing.T) {
+	t.Parallel()
+	unit := orders.ExemplarInput{ID: "3", Marks: orders.Field[[]orders.ExemplarMark]{Presence: orders.PresenceValue}}
+	if _, err := exemplarUnitPayload(unit); err == nil {
+		t.Fatal("malformed present pointer serialized")
+	}
+}

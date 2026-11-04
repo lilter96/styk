@@ -27,6 +27,9 @@ func exemplarSetPayload(command orders.Command) (map[string]any, error) {
 }
 
 func exemplarUnitPayload(u orders.ExemplarInput) (map[string]any, error) {
+	if u.Validate() != nil || len(u.ClearMarkTypes) > 0 {
+		return nil, orders.ErrInvalid
+	}
 	id, err := parseSKU(u.ID)
 	if err != nil {
 		return nil, orders.ErrInvalid

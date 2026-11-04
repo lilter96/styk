@@ -1,7 +1,7 @@
 -- +goose Up
 ALTER TABLE orders_work DROP CONSTRAINT orders_work_action_check;
 ALTER TABLE orders_work ADD CONSTRAINT orders_work_action_check CHECK(action IN
- ('mirror_create','mirror_update','mirror_position_update','posting_pack','posting_ship','posting_cancel','posting_deliver',
+ ('demand_create','salesreturn_create','mirror_create','mirror_update','mirror_position_update','posting_pack','posting_ship','posting_cancel','posting_deliver',
  'posting_split','posting_partial_cancel','posting_tracking','posting_last_mile','posting_sent_by_seller','posting_label_create',
  'posting_exemplar_prepare','posting_exemplar_set'));
 CREATE TABLE orders_exemplar_secrets (
@@ -34,5 +34,5 @@ END $$;
 DROP TABLE orders_exemplar_secrets;
 ALTER TABLE orders_work DROP CONSTRAINT orders_work_action_check;
 ALTER TABLE orders_work ADD CONSTRAINT orders_work_action_check CHECK(action IN
- ('mirror_create','mirror_update','mirror_position_update','posting_pack','posting_ship','posting_cancel','posting_deliver',
+ ('demand_create','salesreturn_create','mirror_create','mirror_update','mirror_position_update','posting_pack','posting_ship','posting_cancel','posting_deliver',
  'posting_split','posting_partial_cancel','posting_tracking','posting_last_mile','posting_sent_by_seller','posting_label_create'));

@@ -141,18 +141,8 @@ func ApplyExemplarInput(base ExemplarSnapshot, input ExemplarSetInput, p Posting
 }
 
 func mergeExemplar(base, patch ExemplarInput) ExemplarInput {
-	if patch.GTD.IsSpecified() {
-		base.GTD = patch.GTD
-	}
-	if patch.GTDAbsent.IsSpecified() {
-		base.GTDAbsent = patch.GTDAbsent
-	}
-	if patch.RNPT.IsSpecified() {
-		base.RNPT = patch.RNPT
-	}
-	if patch.RNPTAbsent.IsSpecified() {
-		base.RNPTAbsent = patch.RNPTAbsent
-	}
+	base.GTD, base.GTDAbsent = mergeExemplarDeclaration(base.GTD, base.GTDAbsent, patch.GTD, patch.GTDAbsent)
+	base.RNPT, base.RNPTAbsent = mergeExemplarDeclaration(base.RNPT, base.RNPTAbsent, patch.RNPT, patch.RNPTAbsent)
 	base.Marks = mergeExemplarMarks(base.Marks, patch.Marks, patch.ClearMarkTypes)
 	base.ClearMarkTypes = nil
 	return base
@@ -203,4 +193,30 @@ func ExemplarValuesEqual(a, b ExemplarSnapshot) bool {
 		right.Products[i].Required = nil
 	}
 	return reflect.DeepEqual(left, right)
+}
+
+// An explicit absence declaration clears the previous value. A new factual
+// value implies presence unless the merchant supplied a contradictory flag;
+// contradictory explicit input is rejected before merging.
+func mergeExemplarDeclaration(value Field[string], absent Field[bool], patch Field[string], flag Field[bool]) (Field[string], Field[bool]) {
+	if patch.IsSpecified() {
+		value = patch
+	}
+	if flag.IsSpecified() {
+		absent = flag
+	}
+	if flag.IsKnown() && *flag.Value && !patch.IsSpecified() {
+		value = Present("")
+	}
+	if patch.IsKnown() && !flag.IsSpecified() {
+		absent = Present(false)
+	}
+	return value, absent
+}
+
+func (u ExemplarInput) Validate() error {
+	if !exemplarID(u.ID) {
+		return ErrInvalid
+	}
+	return validateExemplar(u)
 }

@@ -73,3 +73,26 @@ func TestExemplarNoopAndExplicitTypeClear(t *testing.T) {
 		t.Fatal("explicit optional-type clearing lost")
 	}
 }
+
+func TestExemplarExplicitAbsenceClearsPriorDeclaration(t *testing.T) {
+	t.Parallel()
+	p, base := exemplarFixture()
+	patch := ExemplarSetInput{Products: []ExemplarProductInput{{SKU: "2001", Exemplars: []ExemplarInput{{ID: "9007199254740993", GTDAbsent: Present(true)}}}}}
+	next, err := ApplyExemplarInput(base, patch, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := next.Products[0].Exemplars[0]
+	if u.GTD.Presence != PresenceEmpty || !u.GTDAbsent.IsKnown() || !*u.GTDAbsent.Value || next.ValidateFor(p) != nil {
+		t.Fatal("explicit absence retained old declaration")
+	}
+	patch.Products[0].Exemplars[0].GTD = Present("SYNTHETIC-CONTRADICTORY")
+	if _, err = ApplyExemplarInput(base, patch, p); err == nil {
+		t.Fatal("contradictory seller declarations accepted")
+	}
+	patch.Products[0].Exemplars[0] = ExemplarInput{ID: "9007199254740993", RNPT: Present("SYNTHETIC-RNPT")}
+	next, err = ApplyExemplarInput(base, patch, p)
+	if err != nil || !next.Products[0].Exemplars[0].RNPTAbsent.IsKnown() || *next.Products[0].Exemplars[0].RNPTAbsent.Value {
+		t.Fatal("new factual value retained old absence flag")
+	}
+}
