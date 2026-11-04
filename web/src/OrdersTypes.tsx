@@ -183,6 +183,7 @@ export type OrderActionOptions = {
   label_types: ("big_label" | "small_label")[];
 };
 export type OrderNativeWrite = {
+  pii_mappings?: { source: string; attribute_id?: string }[];
   organization_id: string;
   agent_id: string;
   store_id: string;
@@ -398,6 +399,11 @@ export const orderActionLabel = (action: string) =>
     posting_exemplar_set: "Передать сведения экземпляров в Ozon",
   })[action] || action;
 const issueLabels: Record<string, string> = {
+  shipment_address_component_too_long:
+    "Поле адреса превышает ограничение МойСклад. Сокращение автоматически не выполняется: проверьте исходные данные или выберите передачу адреса одной строкой.",
+  shipment_address_component_invalid:
+    "Поле адреса не соответствует контракту МойСклад. Проверьте исходные данные; неизвестное значение не считается пустым.",
+
   position_ownership_unverified:
     "Нет подтверждённой связи позиции с ранее созданной строкой МойСклад. Автоматическая замена состава не выполняется.",
   position_ownership_or_replacement_unverified:

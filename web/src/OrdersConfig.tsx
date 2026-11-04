@@ -1,3 +1,4 @@
+import { OrdersAddressMapping } from "./OrdersAddressMapping";
 import { OrdersNativePolicy, nativePolicyValid } from "./OrdersNativePolicy";
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -495,23 +496,13 @@ export function OrdersConfig({
                   </select>
                 </label>
               ))}
-              <label className="orders-check">
-                <input
-                  type="checkbox"
-                  checked={
-                    mappingFor("customer.address")?.target ===
-                    "shipment_address"
-                  }
-                  disabled={busy}
-                  onChange={(event) =>
-                    setSourceMapping(
-                      "customer.address",
-                      event.target.checked ? "shipment_address" : "",
-                    )
-                  }
-                />
-                Адрес доставки → нативное поле «Адрес отгрузки»
-              </label>
+              <OrdersAddressMapping
+                value={draft.field_mappings}
+                disabled={busy}
+                onChange={(field_mappings) =>
+                  change({ ...draft, field_mappings })
+                }
+              />
             </>
           )}
         </fieldset>

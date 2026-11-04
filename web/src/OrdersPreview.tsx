@@ -95,6 +95,13 @@ function ProposedOrder({
           : {orderFieldText(attribute.value)}
         </p>
       ))}
+      {!!value.pii_mappings?.length && (
+        <p className="orders-note">
+          Будут переданы только разрешённые сведения получателя. Адрес и
+          контактные данные скрыты в предпросмотре и журнале; в МойСклад
+          сохраняются выбранные поля.
+        </p>
+      )}
       {value.owned_fields && (
         <p className="orders-note">
           Разрешённые поля: {value.owned_fields.join(", ")}
