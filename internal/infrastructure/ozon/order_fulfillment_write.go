@@ -30,6 +30,8 @@ func fulfillmentPath(action orders.Action) string {
 		return exemplarSetPath
 	case orders.ActionPostingPack, orders.ActionPostingSplit:
 		return "/v4/posting/fbs/ship"
+	case orders.ActionPostingSplitUnassembled:
+		return "/v1/posting/fbs/split"
 	case orders.ActionPostingCancel:
 		return "/v2/posting/fbs/cancel"
 	case orders.ActionPostingPartialCancel:
@@ -143,6 +145,8 @@ func (c *OrdersClient) parseFulfillmentReceipt(command orders.Command, path stri
 		return orderReceipt(command, orders.StatePolling, status, "EXEMPLAR_VALIDATION_PENDING"), nil
 	case orders.ActionPostingPack, orders.ActionPostingSplit:
 		return c.shipReceipt(command, data, status)
+	case orders.ActionPostingSplitUnassembled:
+		return c.unassembledSplitReceipt(command, data, status)
 	case orders.ActionPostingCancel:
 		return c.cancelReceipt(command, data, status)
 	case orders.ActionPostingPartialCancel:
@@ -313,6 +317,8 @@ func fulfillmentPayload(command orders.Command, path string) (map[string]any, er
 		return exemplarSetPayload(command)
 	case orders.ActionPostingPack, orders.ActionPostingSplit:
 		return shipPayload(command)
+	case orders.ActionPostingSplitUnassembled:
+		return unassembledSplitPayload(command)
 	case orders.ActionPostingCancel:
 		return cancelPayload(command)
 	case orders.ActionPostingPartialCancel:
