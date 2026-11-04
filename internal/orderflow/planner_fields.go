@@ -149,7 +149,7 @@ func applyPositionMapping(write *orders.CustomerOrderWrite, mapping orders.Field
 	if mapping.Target != "positions.reserve" {
 		field := strings.TrimPrefix(mapping.Target, "positions.")
 		source := strings.TrimPrefix(mapping.Source, "posting.")
-		if source == "lines."+field || source == "products."+field {
+		if source == "lines."+field || source == "products."+field || source == "positions."+field {
 			return orders.Validation{}
 		}
 		return unsupportedMapping(mapping)
