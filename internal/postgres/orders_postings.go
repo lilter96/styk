@@ -13,11 +13,17 @@ func orderPostingHash(posting orders.Posting) (string, error) {
 	return orders.PostingFingerprint(posting)
 }
 
+type orderObservationClock struct{ RecordedAt, CheckedAt time.Time }
+
 func insertOrderPosting(ctx context.Context, tx pgx.Tx, posting orders.Posting, now time.Time) (string, error) {
+	return insertTimedOrderPosting(ctx, tx, posting, orderObservationClock{RecordedAt: now, CheckedAt: now})
+}
+
+func insertTimedOrderPosting(ctx context.Context, tx pgx.Tx, posting orders.Posting, clock orderObservationClock) (string, error) {
 	if err := posting.Validate(); err != nil {
 		return "", err
 	}
-	if err := insertOrderPostingIdentity(ctx, tx, posting, now); err != nil {
+	if err := insertOrderPostingIdentity(ctx, tx, posting, clock.RecordedAt); err != nil {
 		return "", err
 	}
 	hash, err := orderPostingHash(posting)
@@ -26,12 +32,12 @@ func insertOrderPosting(ctx context.Context, tx pgx.Tx, posting orders.Posting, 
 	}
 	id, err := replayOrderPosting(ctx, tx, posting, hash)
 	if err == nil {
-		return id, refreshOrderPostingHead(ctx, tx, posting, id, now)
+		return id, refreshOrderPostingHead(ctx, tx, posting, id, clock)
 	}
 	if !errors.Is(err, orders.ErrNotFound) {
 		return "", err
 	}
-	return writeOrderPosting(ctx, tx, posting, hash, now)
+	return writeOrderPosting(ctx, tx, posting, hash, clock)
 }
 
 func insertOrderPostingIdentity(ctx context.Context, tx pgx.Tx, posting orders.Posting, now time.Time) error {
@@ -82,7 +88,7 @@ func replayOrderPosting(ctx context.Context, tx pgx.Tx, posting orders.Posting, 
 	return id, nil
 }
 
-func writeOrderPosting(ctx context.Context, tx pgx.Tx, posting orders.Posting, hash string, now time.Time) (string, error) {
+func writeOrderPosting(ctx context.Context, tx pgx.Tx, posting orders.Posting, hash string, clock orderObservationClock) (string, error) {
 	id, err := ordersID()
 	if err != nil {
 		return "", err
@@ -95,17 +101,17 @@ func writeOrderPosting(ctx context.Context, tx pgx.Tx, posting orders.Posting, h
 	if posting.Evidence.ProviderUpdatedAt.IsKnown() {
 		updated = posting.Evidence.ProviderUpdatedAt.Value
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO orders_posting_observations(id,tenant_id,moysklad_account,ozon_account,posting_number,commercial_order_id,source_revision,observation_hash,posting,observed_at,provider_updated_at,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, id, posting.Scope.Tenant, posting.Scope.MoyskladAccount, posting.Scope.OzonAccount, posting.PostingNumber, posting.CommercialOrderID, posting.Evidence.Revision, hash, raw, posting.Evidence.ObservedAt, updated, now)
+	_, err = tx.Exec(ctx, `INSERT INTO orders_posting_observations(id,tenant_id,moysklad_account,ozon_account,posting_number,commercial_order_id,source_revision,observation_hash,posting,observed_at,provider_updated_at,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, id, posting.Scope.Tenant, posting.Scope.MoyskladAccount, posting.Scope.OzonAccount, posting.PostingNumber, posting.CommercialOrderID, posting.Evidence.Revision, hash, raw, posting.Evidence.ObservedAt, updated, clock.RecordedAt)
 	if err != nil {
 		return "", ordersError("save immutable order observation", err)
 	}
-	if err = refreshOrderPostingHead(ctx, tx, posting, id, now); err != nil {
+	if err = refreshOrderPostingHead(ctx, tx, posting, id, clock); err != nil {
 		return "", err
 	}
-	return id, reserveOrderProjection(ctx, tx, posting.Scope, posting.PostingNumber, now)
+	return id, reserveOrderProjection(ctx, tx, posting.Scope, posting.PostingNumber, clock.RecordedAt)
 }
 
-func refreshOrderPostingHead(ctx context.Context, tx pgx.Tx, posting orders.Posting, id string, now time.Time) error {
+func refreshOrderPostingHead(ctx context.Context, tx pgx.Tx, posting orders.Posting, id string, clock orderObservationClock) error {
 	previous, err := readOrderPosting(ctx, tx, posting.Scope, posting.PostingNumber)
 	if err != nil && !errors.Is(err, orders.ErrNotFound) {
 		return err
@@ -117,26 +123,26 @@ func refreshOrderPostingHead(ctx context.Context, tx pgx.Tx, posting orders.Post
 			return compareErr
 		}
 		if same {
-			return touchOrderPosting(ctx, tx, posting.Scope, posting.PostingNumber, now)
+			return touchOrderPosting(ctx, tx, posting.Scope, posting.PostingNumber, clock.CheckedAt)
 		}
 		ordering = orders.CompareEvidence(previous.Evidence, posting.Evidence)
 		if ordering == orders.EvidenceSame {
-			return touchOrderPosting(ctx, tx, posting.Scope, posting.PostingNumber, now)
+			return touchOrderPosting(ctx, tx, posting.Scope, posting.PostingNumber, clock.CheckedAt)
 		}
 		if ordering == orders.EvidenceConflict {
-			return quarantineOrderPosting(ctx, tx, posting, id, "ORDERING_PROVIDER_REVISION_CONFLICT", now)
+			return quarantineOrderPosting(ctx, tx, posting, id, "ORDERING_PROVIDER_REVISION_CONFLICT", clock)
 		}
 		if ordering == orders.EvidenceOlder {
 			return nil
 		}
 		if ordering == orders.EvidenceUnknown {
-			return advanceUnversionedOrderPosting(ctx, tx, posting, id, now)
+			return advanceUnversionedOrderPosting(ctx, tx, posting, id, clock)
 		}
 	}
-	return writeOrderPostingHead(ctx, tx, posting, id, ordering, now)
+	return writeOrderPostingHead(ctx, tx, posting, id, ordering, clock)
 }
 
-func writeOrderPostingHead(ctx context.Context, tx pgx.Tx, posting orders.Posting, id string, ordering orders.EvidenceOrder, now time.Time) error {
+func writeOrderPostingHead(ctx context.Context, tx pgx.Tx, posting orders.Posting, id string, ordering orders.EvidenceOrder, clock orderObservationClock) error {
 	previous, err := readOrderPosting(ctx, tx, posting.Scope, posting.PostingNumber)
 	if err == nil {
 		previous.Drift = withoutOrderChronologyDrift(previous.Drift)
@@ -149,12 +155,12 @@ func writeOrderPostingHead(ctx context.Context, tx pgx.Tx, posting orders.Postin
 	if err != nil {
 		return err
 	}
-	args := append(ordersScopeArgs(posting.Scope), posting.PostingNumber, id, posting.Active(), ordering, now, raw)
-	_, err = tx.Exec(ctx, `INSERT INTO orders_posting_heads(tenant_id,moysklad_account,ozon_account,posting_number,observation_id,active,ordering,checked_at,updated_at,projection) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$8,$9) ON CONFLICT(tenant_id,moysklad_account,ozon_account,posting_number) DO UPDATE SET observation_id=EXCLUDED.observation_id,active=EXCLUDED.active,ordering=EXCLUDED.ordering,checked_at=EXCLUDED.checked_at,updated_at=EXCLUDED.updated_at,projection=EXCLUDED.projection`, args...)
+	args := append(ordersScopeArgs(posting.Scope), posting.PostingNumber, id, posting.Active(), ordering, clock.RecordedAt, raw, clock.CheckedAt)
+	_, err = tx.Exec(ctx, `INSERT INTO orders_posting_heads(tenant_id,moysklad_account,ozon_account,posting_number,observation_id,active,ordering,checked_at,updated_at,projection) VALUES($1,$2,$3,$4,$5,$6,$7,$10,$8,$9) ON CONFLICT(tenant_id,moysklad_account,ozon_account,posting_number) DO UPDATE SET observation_id=EXCLUDED.observation_id,active=EXCLUDED.active,ordering=EXCLUDED.ordering,checked_at=CASE WHEN orders_posting_heads.observation_id=EXCLUDED.observation_id THEN GREATEST(orders_posting_heads.checked_at,EXCLUDED.checked_at) ELSE EXCLUDED.checked_at END,updated_at=EXCLUDED.updated_at,projection=EXCLUDED.projection`, args...)
 	if err != nil {
 		return ordersError("advance dated order posting facts", err)
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO orders_posting_head_events(tenant_id,moysklad_account,ozon_account,posting_number,observation_id,ordering,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)`, append(ordersScopeArgs(posting.Scope), posting.PostingNumber, id, ordering, now)...)
+	_, err = tx.Exec(ctx, `INSERT INTO orders_posting_head_events(tenant_id,moysklad_account,ozon_account,posting_number,observation_id,ordering,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)`, append(ordersScopeArgs(posting.Scope), posting.PostingNumber, id, ordering, clock.RecordedAt)...)
 	return ordersRowsError("journal accepted order observation", err)
 }
 
@@ -180,37 +186,37 @@ func withoutOrderChronologyDrift(drift []orders.Drift) []orders.Drift {
 
 func touchOrderPosting(ctx context.Context, tx pgx.Tx, scope orders.Scope, number string, now time.Time) error {
 	args := append(ordersScopeArgs(scope), number, now)
-	_, err := tx.Exec(ctx, `UPDATE orders_posting_heads SET checked_at=$5 WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND posting_number=$4`, args...)
+	_, err := tx.Exec(ctx, `UPDATE orders_posting_heads SET checked_at=GREATEST(checked_at,$5) WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND posting_number=$4`, args...)
 	return ordersRowsError("refresh current order observation check", err)
 }
 
-func advanceUnversionedOrderPosting(ctx context.Context, tx pgx.Tx, posting orders.Posting, id string, now time.Time) error {
+func advanceUnversionedOrderPosting(ctx context.Context, tx pgx.Tx, posting orders.Posting, id string, clock orderObservationClock) error {
 	if posting.Evidence.CollectionKind != orders.CollectionSerialDetail || posting.Evidence.LocalSequence < 1 {
 		return nil
 	}
 	var prior bool
 	args := append(ordersScopeArgs(posting.Scope), posting.PostingNumber, id)
-	err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM orders_posting_observations o JOIN orders_posting_head_events e ON e.observation_id=o.id WHERE o.tenant_id=$1 AND o.moysklad_account=$2 AND o.ozon_account=$3 AND o.posting_number=$4 AND o.observation_hash=(SELECT observation_hash FROM orders_posting_observations WHERE id=$5) AND e.created_at<$6)`, append(args, now)...).Scan(&prior)
+	err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM orders_posting_observations o JOIN orders_posting_head_events e ON e.observation_id=o.id WHERE o.tenant_id=$1 AND o.moysklad_account=$2 AND o.ozon_account=$3 AND o.posting_number=$4 AND o.observation_hash=(SELECT observation_hash FROM orders_posting_observations WHERE id=$5) AND e.created_at<$6)`, append(args, clock.RecordedAt)...).Scan(&prior)
 	if err != nil {
 		return ordersError("check superseded order observation", err)
 	}
 	if prior {
-		return quarantineOrderPosting(ctx, tx, posting, id, "ORDERING_SUPERSEDED_OBSERVATION", now)
+		return quarantineOrderPosting(ctx, tx, posting, id, "ORDERING_SUPERSEDED_OBSERVATION", clock)
 	}
-	return writeOrderPostingHead(ctx, tx, posting, id, orders.EvidenceUnknown, now)
+	return writeOrderPostingHead(ctx, tx, posting, id, orders.EvidenceUnknown, clock)
 }
 
-func quarantineOrderPosting(ctx context.Context, tx pgx.Tx, posting orders.Posting, incoming, code string, now time.Time) error {
+func quarantineOrderPosting(ctx context.Context, tx pgx.Tx, posting orders.Posting, incoming, code string, clock orderObservationClock) error {
 	id, err := ordersID()
 	if err != nil {
 		return err
 	}
-	args := append(ordersScopeArgs(posting.Scope), posting.PostingNumber, id, incoming, posting.Evidence.LocalSequence, now, code)
+	args := append(ordersScopeArgs(posting.Scope), posting.PostingNumber, id, incoming, posting.Evidence.LocalSequence, clock.RecordedAt, code)
 	_, err = tx.Exec(ctx, `INSERT INTO orders_posting_conflicts(id,tenant_id,moysklad_account,ozon_account,posting_number,current_observation_id,incoming_observation_id,collection_sequence,code,created_at) SELECT $5,h.tenant_id,h.moysklad_account,h.ozon_account,h.posting_number,h.observation_id,$6,$7,$9,$8 FROM orders_posting_heads h WHERE h.tenant_id=$1 AND h.moysklad_account=$2 AND h.ozon_account=$3 AND h.posting_number=$4`, args...)
 	if err != nil {
 		return ordersError("journal order chronology conflict", err)
 	}
-	_, err = tx.Exec(ctx, `UPDATE orders_posting_heads SET quarantined=true,checked_at=$5 WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND posting_number=$4`, append(ordersScopeArgs(posting.Scope), posting.PostingNumber, now)...)
+	_, err = tx.Exec(ctx, `UPDATE orders_posting_heads SET quarantined=true,checked_at=GREATEST(checked_at,$5) WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND posting_number=$4`, append(ordersScopeArgs(posting.Scope), posting.PostingNumber, clock.CheckedAt)...)
 	return ordersRowsError("quarantine superseded order observation", err)
 }
 

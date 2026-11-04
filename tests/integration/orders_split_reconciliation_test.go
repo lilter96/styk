@@ -4,6 +4,7 @@ package integration
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -36,6 +37,8 @@ func TestOrdersSplitReconciliationPreservesChildEvidence(t *testing.T) {
 		children[i].Status = orders.Present("awaiting_deliver")
 		children[i].Evidence.ObservedAt = time.Now().UTC()
 		children[i].Evidence.CheckedAt = children[i].Evidence.ObservedAt
+		children[i].Evidence.Revision = fmt.Sprintf("split-detail-%d", i)
+		children[i].Evidence.ProviderUpdatedAt = orders.Present(children[i].Evidence.ObservedAt)
 	}
 	receipt.State, receipt.ObservedPostings = orders.StateReconciled, children
 	done := orders.Completion{WorkID: w.ID, Scope: w.Scope, ClaimToken: w.ClaimToken, ExpectedState: w.State, State: orders.StateReconciled, Receipt: receipt}
@@ -43,11 +46,39 @@ func TestOrdersSplitReconciliationPreservesChildEvidence(t *testing.T) {
 	if err = f.db.CompleteOrderWork(f.ctx, done); !errors.Is(err, orders.ErrStale) {
 		t.Fatalf("incorrect allocation reconciled: %v", err)
 	}
+	assertOrdersRowCount(t, f, `SELECT count(*) FROM orders_posting_observations`, 1)
 	children[0].Lines[0].Quantity = "1"
+	done.Receipt.ObservedPostings = children[:1]
+	if err = f.db.CompleteOrderWork(f.ctx, done); !errors.Is(err, orders.ErrStale) && !errors.Is(err, orders.ErrInvalid) {
+		t.Fatalf("partial child array reconciled: %v", err)
+	}
+	assertOrdersRowCount(t, f, `SELECT count(*) FROM orders_posting_observations`, 1)
+	done.Receipt.ObservedPostings = children
+	originalScope := children[1].Scope
+	children[1].Scope.Tenant = "unrelated-merchant"
+	if err = f.db.CompleteOrderWork(f.ctx, done); !errors.Is(err, orders.ErrStale) {
+		t.Fatalf("foreign child facts admitted: %v", err)
+	}
+	assertOrdersRowCount(t, f, `SELECT count(*) FROM orders_posting_observations`, 1)
+	children[1].Scope = originalScope
 	if err = f.db.CompleteOrderWork(f.ctx, done); err != nil {
 		t.Fatal(err)
 	}
 	assertOrdersRowCount(t, f, `SELECT count(*) FROM orders_receipts WHERE jsonb_array_length(receipt->'observed_postings')=2`, 1)
+	assertOrdersRowCount(t, f, `SELECT count(*) FROM orders_posting_observations`, 3)
+	assertOrdersRowCount(t, f, `SELECT count(*) FROM orders_posting_heads`, 2)
+	assertOrdersRowCount(t, f, `SELECT count(*) FROM orders_projection_bindings`, 2)
+	for _, child := range children {
+		var quantity string
+		var checked time.Time
+		if err = f.db.Pool.QueryRow(f.ctx, `SELECT projection#>>'{lines,0,quantity}',checked_at FROM orders_posting_heads WHERE posting_number=$1`, child.PostingNumber).Scan(&quantity, &checked); err != nil || quantity != "1" || !checked.Equal(child.Evidence.CheckedAt.Truncate(time.Microsecond)) {
+			t.Fatal("verified split child missing or given false fresh time", err)
+		}
+	}
+	var checkpointRevision int64
+	if err = f.db.Pool.QueryRow(f.ctx, `SELECT revision FROM orders_checkpoints WHERE stream='detail'`).Scan(&checkpointRevision); err != nil || checkpointRevision != 1 {
+		t.Fatal("split point details advanced full-window checkpoint", err)
+	}
 	if err = f.db.CompleteOrderWork(f.ctx, done); err == nil {
 		t.Fatal("terminal claim reused")
 	}

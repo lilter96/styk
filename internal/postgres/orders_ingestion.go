@@ -187,20 +187,18 @@ func validateOrderCheckpoint(page orders.SourcePage, previous orders.Checkpoint)
 }
 
 func insertOrderPagePostings(ctx context.Context, tx pgx.Tx, page orders.SourcePage, now time.Time) ([]string, error) {
-	var sequence int64
-	err := tx.QueryRow(ctx, `UPDATE orders_ingestion_leases SET collection_sequence=collection_sequence+1 WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 RETURNING collection_sequence`, ordersScopeArgs(page.Scope)...).Scan(&sequence)
+	sequence, err := nextOrderObservationSequence(ctx, tx, page.Scope)
 	if err != nil {
 		return nil, ordersError("sequence order collection", err)
 	}
 	ids := make([]string, 0, len(page.Postings))
 	for _, posting := range page.Postings {
-		posting.Evidence.CollectionID = fmt.Sprintf("collection:%d", sequence)
-		posting.Evidence.LocalSequence = sequence
-		posting.Evidence.CheckedAt = now
-		posting.Evidence.CollectionKind = orders.CollectionSnapshot
+		kind := orders.CollectionSnapshot
 		if page.FreshDetail {
-			posting.Evidence.CollectionKind = orders.CollectionSerialDetail
+			kind = orders.CollectionSerialDetail
 		}
+		posting = orderSequencedObservation(posting, sequence, kind)
+		posting.Evidence.CheckedAt = now
 		id, err := insertOrderPosting(ctx, tx, posting, now)
 		if err != nil {
 			return nil, err
@@ -248,4 +246,20 @@ func mergeOrderCheckpointFailures(checkpoint *orders.Checkpoint, previous orders
 	}
 	checkpoint.Failures, checkpoint.FailuresTruncated = orders.MergeReadFailures(failures, page.Failures, page.Postings, truncated)
 	checkpoint.Complete = checkpoint.Complete && len(checkpoint.Failures) == 0 && !checkpoint.FailuresTruncated
+}
+
+func nextOrderObservationSequence(ctx context.Context, tx pgx.Tx, scope orders.Scope) (int64, error) {
+	var sequence int64
+	err := tx.QueryRow(ctx, `UPDATE orders_ingestion_leases SET collection_sequence=collection_sequence+1 WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 RETURNING collection_sequence`, ordersScopeArgs(scope)...).Scan(&sequence)
+	return sequence, err
+}
+
+func orderSequencedObservation(posting orders.Posting, sequence int64, kind orders.CollectionKind) orders.Posting {
+	posting.Evidence.CollectionID = ""
+	posting.Evidence.LocalSequence = sequence
+	posting.Evidence.CollectionKind = kind
+	if sequence > 0 {
+		posting.Evidence.CollectionID = fmt.Sprintf("collection:%d", sequence)
+	}
+	return posting
 }

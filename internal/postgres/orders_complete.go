@@ -65,6 +65,9 @@ func completeOrderLocked(ctx context.Context, tx pgx.Tx, work orders.Work, compl
 	}
 	completion.Code = ordersSafeCode(completion.Code)
 	completion.Receipt.Code = ordersSafeCode(completion.Receipt.Code)
+	if err = commitFulfillmentReadbackFacts(ctx, tx, work, completion, now); err != nil {
+		return err
+	}
 	if err = saveOrderCompletionEvidence(ctx, tx, work, completion, now); err != nil {
 		return err
 	}
