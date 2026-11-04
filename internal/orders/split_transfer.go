@@ -122,17 +122,31 @@ func splitTransferParentVerified(facts SplitReserveTransferFacts) bool {
 
 func splitTransferAllParentLinesReserved(parent Posting, baseline PositionBaseline) bool {
 	wanted, invalid := reservationLineQuantities(parent.Lines)
-	if invalid.Code != "" || len(wanted) != len(baseline.Bindings) {
+	if invalid.Code != "" || len(wanted) != len(baseline.Bindings) || !splitTransferCancellationKnown(parent) {
 		return false
 	}
+	expected := CustomerOrderWrite{Applicable: Present(true), Positions: make([]PositionWrite, 0, len(baseline.Bindings))}
 	for _, binding := range baseline.Bindings {
+		expected.Positions = append(expected.Positions, binding.Source)
+	}
+	if invalid = applyOpenQuantityReserve(parent, &expected, baseline, true); invalid.Code != "" {
+		return false
+	}
+	for i, binding := range baseline.Bindings {
 		quantity, found := wanted[binding.Source.Identity.Key()]
-		if !found || !ExactDecimalEqual(quantity, binding.Source.Quantity) || !binding.Source.Reserve.IsKnown() || !ExactDecimalEqual(quantity, *binding.Source.Reserve.Value) || !binding.Native.Reserve.IsKnown() || !ExactDecimalEqual(quantity, *binding.Native.Reserve.Value) || !binding.Native.Shipped.IsKnown() || !decimalZero(*binding.Native.Shipped.Value) {
+		if !found || !ExactDecimalEqual(quantity, binding.Source.Quantity) || !SameObservedDecimal(expected.Positions[i].Reserve, binding.Source.Reserve) || !SameObservedDecimal(expected.Positions[i].Reserve, binding.Native.Reserve) || !binding.Native.Shipped.IsKnown() || !decimalZero(*binding.Native.Shipped.Value) {
 			return false
 		}
 		delete(wanted, binding.Source.Identity.Key())
 	}
 	return len(wanted) == 0
+}
+
+func splitTransferCancellationKnown(parent Posting) bool {
+	if !parent.Status.IsKnown() || *parent.Status.Value != "cancelled" {
+		return true
+	}
+	return parent.Cancellation.IsKnown() && parent.Cancellation.Value.AfterShipment.IsKnown() && !*parent.Cancellation.Value.AfterShipment.Value
 }
 
 func (permission SplitReserveTransferPermission) Allows(posting Posting) bool {

@@ -289,3 +289,64 @@ func TestSplitTransferSealedChildCommandCannotUseParentNativeOrderOrMissingReser
 		t.Fatal("missing sealed reserve silently filled")
 	}
 }
+
+func cancelledRetainedTransferFixture(t *testing.T) SplitReserveTransferFacts {
+	t.Helper()
+	facts := splitTransferFixture(t)
+	facts.Parent.Status = Present("cancelled")
+	facts.Parent.Evidence.Revision = "actual-retained-cancellation"
+	facts.Parent.Cancellation = Present(Cancellation{AfterShipment: Present(false)})
+	facts.ParentRelease.Command.ExpectedSourceRevision = facts.Parent.Evidence.Revision
+	facts.ParentRelease.Command.PositionPatch.Reserve = Present(Decimal("0"))
+	facts.ParentRelease.Command.CustomerOrder.Positions[0].Reserve = Present(Decimal("0"))
+	facts.ParentTarget.Positions[0].Reserve = Present(Decimal("0"))
+	return facts
+}
+
+func TestSplitTransferAcceptsConfirmedBeforeShipmentCancellationRelease(t *testing.T) {
+	t.Parallel()
+	facts := cancelledRetainedTransferFixture(t)
+	proof, err := NewSplitReserveTransfer(facts)
+	if err != nil || !proof.Allows(facts.Child) {
+		t.Fatal("known unshipped cancelled parent still blocks independent child", err)
+	}
+	write := *facts.ParentRelease.Command.CustomerOrder
+	write.Positions = slices.Clone(write.Positions)
+	write.Positions[0].Reserve = Field[Decimal]{}
+	if invalid := ApplyTransferredSplitOpenQuantityReserve(facts.Child, &write, PositionBaseline{}, proof); invalid.Code != "" || !write.Positions[0].Reserve.IsKnown() || *write.Positions[0].Reserve.Value != "2" {
+		t.Fatal("child did not retain its independent pending obligation", invalid)
+	}
+	if *facts.ParentTarget.Positions[0].Reserve.Value != "0" || *facts.ParentTarget.Positions[1].Reserve.Value != "2" {
+		t.Fatal("cancelled parent or foreign reserve changed")
+	}
+}
+
+func TestSplitTransferCancelledParentRequiresExplicitUnshippedEvidence(t *testing.T) {
+	t.Parallel()
+	cases := []splitTransferMutation{
+		{"after shipment", func(f *SplitReserveTransferFacts) {
+			f.Parent.Cancellation = Present(Cancellation{AfterShipment: Present(true)})
+		}},
+		{"missing cancellation", func(f *SplitReserveTransferFacts) { f.Parent.Cancellation = Field[Cancellation]{} }},
+		{"null cancellation", func(f *SplitReserveTransferFacts) {
+			f.Parent.Cancellation = Field[Cancellation]{Presence: PresenceNull}
+		}},
+		{"unknown shipment attribution", func(f *SplitReserveTransferFacts) { f.Parent.Cancellation = Present(Cancellation{}) }},
+		{"partial cancellation", func(f *SplitReserveTransferFacts) {
+			f.Parent.Lines = slices.Clone(f.Parent.Lines)
+			f.Parent.Lines[0].CancelledQuantity = Present(Decimal("1"))
+		}},
+		{"actual physical shipment", func(f *SplitReserveTransferFacts) { f.ParentTarget.Positions[0].Shipped = Present(Decimal("1")) }},
+		{"unknown release receipt", func(f *SplitReserveTransferFacts) { f.ParentRelease.Receipt.State = StateUnknown }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			facts := cancelledRetainedTransferFixture(t)
+			tc.alter(&facts)
+			if _, err := NewSplitReserveTransfer(facts); err == nil {
+				t.Fatal("unknown or shipped cancellation unlocked child")
+			}
+		})
+	}
+}
