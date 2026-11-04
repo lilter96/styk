@@ -2,6 +2,7 @@ package orderactions
 
 import (
 	"crypto/sha256"
+	_ "embed"
 	"encoding/hex"
 	"slices"
 	"time"
@@ -13,8 +14,11 @@ import (
 // Chinese Swagger in the preceding lab. It is not a full Swagger download.
 const ContractVersion = "ozon-fulfillment-2026-10-30:v2:ship-v4,cancel-v2,partial-result-string,tracking-v2,delivery-v2,label-v3"
 
+//go:embed label_contract.json
+var labelContract []byte
+
 func ExecutionContractHash() string {
-	sum := sha256.Sum256([]byte(ContractVersion))
+	sum := sha256.Sum256(append([]byte(ContractVersion), labelContract...))
 	return hex.EncodeToString(sum[:])
 }
 

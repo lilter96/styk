@@ -26,9 +26,10 @@ type RunnerOptions struct {
 	Collector      Collector
 	CustomerReader orders.CustomerReader
 	ActionReader   orders.ActionInputReader
-	// LabelDownloader downloads a provider label PDF from a validated URL.
-	// It is invoked after a label creation task completes. The caller is
-	// responsible for durable storage of the returned bytes.
+	LabelSealer    orders.LabelSealer
+	// LabelDownloader supplies deterministic transports for test providers.
+	// Real adapters implement LabelPDFReader using account-coordinated HTTP.
+	// LabelSealer and the completion transaction persist every returned PDF.
 	LabelDownloader func(ctx context.Context, url string) ([]byte, error)
 }
 

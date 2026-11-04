@@ -59,9 +59,10 @@ type ActionTask struct {
 }
 
 type OrderArtifact struct {
-	Available   bool   `json:"available"`
-	DownloadURL string `json:"download_url,omitempty"`
-	LabelType   string `json:"label_type,omitempty"`
+	Available   bool      `json:"available"`
+	DownloadURL string    `json:"download_url,omitempty"`
+	LabelType   string    `json:"label_type,omitempty"`
+	ExpiresAt   time.Time `json:"expires_at,omitempty"`
 }
 
 type CustomerReader interface {
@@ -101,20 +102,21 @@ type ActionReasonReader interface {
 	ReadOrderActionReasons(context.Context, Scope, string) ([]ActionReason, error)
 }
 
-// LabelTask is the bounded provider task result. A completed task carries one
-// validated provider PDF URL; the URL is sealed before durable persistence.
+// LabelTask is the bounded provider task result. FileURL and error text stay
+// transient. Only a validated, downloaded PDF may become an encrypted artifact.
 type LabelTask struct {
-	ID                   string `json:"id"`
-	Code                 string `json:"code"`
-	FileURL              string `json:"-"`
-	PostingsCount        int    `json:"postings_count"`
-	PrintedPostingsCount int    `json:"printed_postings_count"`
-	ErrorCode            string `json:"error_code,omitempty"`
-	ErrorMessage         string `json:"error_message,omitempty"`
+	CountsKnown             bool     `json:"counts_known"`
+	UnprintedPostingNumbers []string `json:"unprinted_posting_numbers,omitempty"`
+	ID                      string   `json:"id"`
+	Code                    string   `json:"code"`
+	FileURL                 string   `json:"-"`
+	PostingsCount           int      `json:"postings_count"`
+	PrintedPostingsCount    int      `json:"printed_postings_count"`
+	ErrorCode               string   `json:"error_code,omitempty"`
+	ErrorMessage            string   `json:"-"`
 }
 
-// LabelTaskReader is the bounded provider task reader. The URL of a completed
-// task is sealed before durable persistence.
+// LabelTaskReader retrieves the exact, previously acknowledged provider task.
 type LabelTaskReader interface {
 	ReadOrderLabelTask(context.Context, Scope, string) (LabelTask, error)
 }

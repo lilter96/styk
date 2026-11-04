@@ -44,6 +44,9 @@ func (r *Runner) readback(ctx context.Context, work orders.Work) error {
 }
 
 func (r *Runner) readbackFulfillment(ctx context.Context, work orders.Work) error {
+	if work.Command.Action == orders.ActionPostingLabelCreate {
+		return r.pollLabelTask(ctx, work, work.Receipt.TaskID)
+	}
 	client, err := resolveOrderClient(ctx, r.resolver, work.Scope, "ozon", work.Credentials.Ozon)
 	if err != nil {
 		return r.deferReadback(ctx, work, "SCOPED_SOURCE_CREDENTIALS_UNAVAILABLE")
@@ -115,12 +118,6 @@ func (r *Runner) reconcileFulfillment(ctx context.Context, work orders.Work, pos
 	}
 	expected := orders.ExpectedPostingStatus(work.Command.Action)
 
-	// Label creation is verified through a separate provider task, not posting
-	// status. Delegate to label task polling when the receipt is still polling.
-	if work.Command.Action == orders.ActionPostingLabelCreate && work.Receipt.TaskID != "" && work.Receipt.State == orders.StatePolling {
-		return r.pollLabelTask(ctx, work, work.Receipt.TaskID)
-	}
-
 	if expected != "" && posting.Status.Presence == orders.PresenceValue && posting.Status.Value != nil && *posting.Status.Value != expected {
 		return r.deferReadback(ctx, work, "STATUS_NOT_APPLIED")
 	}
@@ -157,43 +154,6 @@ func (r *Runner) trackingConfirmed(ctx context.Context, command orders.Command, 
 		return false
 	}
 	return *posting.Delivery.TrackingNumber.Value == hydrated.ActionInput.TrackingNumber
-}
-
-// pollLabelTask checks the Ozon label task until it completes or fails. It
-// never retries the label creation itself; it only reads the task result.
-func (r *Runner) pollLabelTask(ctx context.Context, work orders.Work, taskID string) error {
-	client, err := resolveOrderClient(ctx, r.resolver, work.Scope, "ozon", work.Credentials.Ozon)
-	if err != nil {
-		return r.deferReadback(ctx, work, "SCOPED_SOURCE_CREDENTIALS_UNAVAILABLE")
-	}
-	reader, ok := client.(orders.LabelTaskReader)
-	if !ok {
-		return r.deferReadback(ctx, work, "LABEL_TASK_READER_UNAVAILABLE")
-	}
-	task, err := reader.ReadOrderLabelTask(ctx, work.Scope, taskID)
-	if err != nil {
-		return r.deferReadback(ctx, work, "LABEL_TASK_READBACK_UNAVAILABLE")
-	}
-	if task.Code == "completed" || task.ErrorCode != "" {
-		if task.ErrorCode != "" {
-			return r.complete(ctx, work, orders.Completion{State: orders.StateRejected, Code: "LABEL_TASK_FAILED:" + ordersSafeCode(task.ErrorCode), ObservedPosting: nil})
-		}
-		// Download the label PDF after task completion for durable storage.
-		if task.FileURL != "" && r.options.LabelDownloader != nil {
-			if _, err := r.options.LabelDownloader(ctx, task.FileURL); err != nil {
-				return r.deferReadback(ctx, work, "LABEL_DOWNLOAD_FAILED")
-			}
-		}
-		return r.complete(ctx, work, orders.Completion{State: orders.StateReconciled, Code: "LABEL_TASK_COMPLETED", ObservedPosting: nil})
-	}
-	return r.deferReadback(ctx, work, "LABEL_TASK_PENDING")
-}
-
-func ordersSafeCode(value string) string {
-	if len(value) > 64 {
-		return value[:64]
-	}
-	return value
 }
 
 func (r *Runner) deferReadback(ctx context.Context, work orders.Work, code string) error {

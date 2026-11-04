@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lilter96/styk/internal/orderactions"
 	"github.com/lilter96/styk/internal/orders"
 )
 
@@ -64,7 +65,7 @@ func splitStorePreview(t *testing.T, f ordersStoreFixture, before orders.Posting
 	cap := orders.CapabilityRef{ID: "synthetic-capability", Revision: 1, WarehouseID: *before.WarehouseID.Value, DeliveryMethodID: *before.DeliveryMethodID.Value, Scheme: "FBS", ObservedAt: time.Now().UTC(), ValidUntil: time.Now().UTC().Add(time.Hour)}
 	c.Warehouse.Capability = cap
 	line := orders.ActionQuantity{Identity: before.Lines[0].Identity, Quantity: "1"}
-	c.PostingAction = &orders.PostingAction{Capability: cap, Parameters: orders.ActionParameters{Packages: []orders.ActionPackage{{Lines: []orders.ActionQuantity{line}}, {Lines: []orders.ActionQuantity{line}}}, ReadinessConfirmed: true}}
+	c.PostingAction = &orders.PostingAction{Capability: cap, ContractHash: orderactions.ExecutionContractHash(), Parameters: orders.ActionParameters{Packages: []orders.ActionPackage{{Lines: []orders.ActionQuantity{line}}, {Lines: []orders.ActionQuantity{line}}}, ReadinessConfirmed: true}}
 	p, err := f.db.SaveOrderPreview(f.ctx, p)
 	if err != nil {
 		t.Fatal(err)

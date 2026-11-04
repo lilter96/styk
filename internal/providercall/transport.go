@@ -18,6 +18,13 @@ func IsNotDispatched(err error) bool        { var local *NotDispatchedError; ret
 
 type guardKey struct{}
 type targetKey struct{}
+type labelDownloadKey struct{}
+
+// WithLabelDownload keeps signed file paths out of durable admission records.
+// It is only used after a scoped provider task authorizes the transient URL.
+func WithLabelDownload(ctx context.Context) context.Context {
+	return context.WithValue(ctx, labelDownloadKey{}, true)
+}
 
 // WithGuard performs the final database authorization after rate-limit waiting.
 // It must not dispatch a request itself.
@@ -40,6 +47,9 @@ func (t Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, &NotDispatchedError{Cause: ErrInvalid}
 	}
 	operation := operationKey(req.URL.Path)
+	if label, _ := req.Context().Value(labelDownloadKey{}).(bool); label && req.Method == http.MethodGet {
+		operation = "orders/label/pdf"
+	}
 	target, _ := req.Context().Value(targetKey{}).(string)
 	permit, err := t.Gate.Begin(req.Context(), Request{Scope: t.Scope, Method: req.Method, Operation: operation, Timeout: t.Timeout, IsWrite: isMutation(req), TargetKey: target, Endpoint: req.URL.Scheme + "://" + req.URL.Host})
 	if err != nil {

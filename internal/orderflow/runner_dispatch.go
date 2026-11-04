@@ -222,7 +222,10 @@ func (r *Runner) recordWrite(ctx context.Context, work orders.Work, receipt orde
 		receipt = orders.Receipt{CommandID: work.Command.ID, State: orders.StateUnknown, Code: "WRITE_OUTCOME_UNKNOWN", ObservedAt: r.now()}
 	}
 	if writeErr != nil && receipt.State != orders.StateRejected {
-		receipt.State, receipt.Code = orders.StateUnknown, "WRITE_OUTCOME_UNKNOWN"
+		if receipt.State != orders.StateUnknown || receipt.Code == "" {
+			receipt.Code = "WRITE_OUTCOME_UNKNOWN"
+		}
+		receipt.State = orders.StateUnknown
 	}
 	if receipt.State == orders.StateReconciled {
 		receipt.State = orders.StateAcknowledged

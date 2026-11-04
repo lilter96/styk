@@ -55,6 +55,9 @@ func completeOrderLocked(ctx context.Context, tx pgx.Tx, work orders.Work, compl
 	if err = saveOrderCompletionEvidence(ctx, tx, work, completion, now); err != nil {
 		return err
 	}
+	if err = saveOrderLabelArtifact(ctx, tx, work, completion, now); err != nil {
+		return err
+	}
 	work.State, work.Code, work.NextRunAt = completion.State, completion.Code, completion.NextRunAt
 	if completion.Receipt.State != "" {
 		work.Receipt = completion.Receipt
@@ -72,6 +75,9 @@ func completeOrderLocked(ctx context.Context, tx pgx.Tx, work orders.Work, compl
 func validateOrderCompletion(work orders.Work, completion orders.Completion) error {
 	receipt := completion.Receipt
 	if receipt.State != "" {
+		if work.State.ReadOnly() && work.Receipt.LabelTasksVerified != receipt.LabelTasksVerified {
+			return orders.ErrStale
+		}
 		if receipt.CommandID != work.Command.ID || len(receipt.TaskID) > 256 || len(receipt.ExternalID) > 256 || (receipt.HTTPStatus != 0 && (receipt.HTTPStatus < 100 || receipt.HTTPStatus > 599)) {
 			return orders.ErrInvalid
 		}
@@ -79,6 +85,9 @@ func validateOrderCompletion(work orders.Work, completion orders.Completion) err
 			return orders.ErrStale
 		}
 		if len(work.Receipt.PostingNumbers) > 0 && !slices.Equal(work.Receipt.PostingNumbers, receipt.PostingNumbers) {
+			return orders.ErrStale
+		}
+		if len(work.Receipt.TaskIDs) > 0 && !slices.Equal(work.Receipt.TaskIDs, receipt.TaskIDs) {
 			return orders.ErrStale
 		}
 	}
@@ -104,6 +113,12 @@ func validateOrderCompletion(work orders.Work, completion orders.Completion) err
 }
 
 func validateOrderReconciliation(work orders.Work, completion orders.Completion) error {
+	if work.Command.Action == orders.ActionPostingLabelCreate {
+		if completion.LabelArtifact == nil || completion.Receipt.LabelTask == nil || !orders.LabelTaskComplete(work.Command, work.Receipt, *completion.Receipt.LabelTask) {
+			return orders.ErrStale
+		}
+		return nil
+	}
 	if work.Command.Action.IsMirror() {
 		if completion.Correlation == nil || completion.Correlation.CustomerOrderID == "" || completion.ObservedTarget == nil {
 			return orders.ErrInvalid

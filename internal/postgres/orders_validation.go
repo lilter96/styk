@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/lilter96/styk/internal/orderactions"
 	"github.com/lilter96/styk/internal/orders"
 )
 
@@ -63,6 +64,9 @@ func validateOrderDecision(decision orders.Decision, current orders.ReviewContex
 func validateOrderCommandCurrent(command orders.Command, posting orders.Posting, current orders.ReviewContext, automatic bool, now time.Time) error {
 	if err := command.Validate(); err != nil {
 		return err
+	}
+	if !command.Action.IsMirror() && command.PostingAction.ContractHash != orderactions.ExecutionContractHash() {
+		return orders.ErrStale
 	}
 	if command.Scope != current.Config.Scope || command.ConfigRevision != current.Config.Revision || command.Credentials != current.Credentials || command.PostingNumber != posting.PostingNumber || command.CommercialOrderID != posting.CommercialOrderID || command.ExpectedSourceRevision != posting.Evidence.Revision || command.SourceOrigin != posting.Evidence.Origin {
 		return orders.ErrStale

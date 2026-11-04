@@ -92,6 +92,17 @@ func TestFulfillmentServerErrorRemainsUnknown(t *testing.T) {
 	}
 }
 
+func TestFulfillmentGatewayTimeoutCannotBecomeSafeRejection(t *testing.T) {
+	t.Parallel()
+	for _, status := range []int{408, 425, 499, 502, 504} {
+		response := &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(`{"message":"uncertain"}`))}
+		receipt, err := (&OrdersClient{}).fulfillmentResponse(orders.Command{ID: "intent"}, "", response)
+		if err == nil || receipt.State != orders.StateUnknown {
+			t.Fatalf("HTTP %d released uncertain target", status)
+		}
+	}
+}
+
 func TestFulfillmentAcknowledgementIsNotReconciliation(t *testing.T) {
 	t.Parallel()
 	c := &OrdersClient{}

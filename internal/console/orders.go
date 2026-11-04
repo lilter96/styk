@@ -24,6 +24,7 @@ type ordersAPI struct {
 	initializer *orderflow.MetadataInitializer
 	factory     orderprovider.Factory
 	simulated   bool
+	labels      orderprivacy.LabelProtector
 }
 
 func registerOrdersRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c *connections) error {
@@ -36,7 +37,7 @@ func registerOrdersRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c *co
 		factory.NewMoysklad = func(_, secret string) (*moysklad.Client, error) { return c.moyFactory(secret) }
 	}
 	factory.NewOzon = c.ozonFactory
-	api := &ordersAPI{db: db, factory: factory, simulated: c.catalogSimulator}
+	api := &ordersAPI{db: db, factory: factory, simulated: c.catalogSimulator, labels: orderprivacy.LabelProtector{Vault: c.vault}}
 	api.service, err = orderflow.NewService(db, factory, orderflow.ServiceOptions{AllowScope: api.allowed, CustomerReader: orderprivacy.Protector{Vault: c.vault, Store: db}, ActionProtector: orderprivacy.ActionProtector{Vault: c.vault, Store: db}})
 	if err != nil {
 		return err
@@ -54,6 +55,7 @@ func registerOrdersRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c *co
 		{"GET /api/orders/postings", api.postings, false}, {"GET /api/orders/operations", api.history, false},
 		{"GET /api/orders/action-options", api.actionOptions, false},
 		{"GET /api/orders/reverse-suggestion", api.reverseSuggestion, false},
+		{"GET /api/orders/artifacts/{workid}", api.labelArtifact, false},
 		{"GET /api/orders/metadata", api.metadata, false}, {"POST /api/orders/preview", api.preview, true},
 		{"GET /api/orders/metadata/registry", api.metadataRegistry, false}, {"POST /api/orders/metadata/attributes", api.createMetadata, true},
 		{"POST /api/orders/metadata/reconcile", api.reconcileMetadata, true},

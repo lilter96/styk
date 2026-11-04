@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lilter96/styk/internal/orderactions"
 	"github.com/lilter96/styk/internal/orders"
 	"github.com/lilter96/styk/internal/providercall"
 )
@@ -108,7 +109,7 @@ func (c *OrdersClient) fulfillmentResponse(command orders.Command, path string, 
 	if readErr != nil || closeErr != nil || len(raw) > maxBody {
 		return orderReceipt(command, orders.StateUnknown, response.StatusCode, "response_uncertain"), orders.ErrStale
 	}
-	if response.StatusCode >= 400 && response.StatusCode < 500 {
+	if slices.Contains([]int{400, 401, 403, 404, 409, 429}, response.StatusCode) {
 		return orderReceipt(command, orders.StateRejected, response.StatusCode, "provider_rejected"), nil
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
@@ -201,21 +202,6 @@ func (c *OrdersClient) trackingReceipt(command orders.Command, data []byte, stat
 	return orderReceipt(command, orders.StateAcknowledged, status, "provider_acknowledged_tracking"), nil
 }
 
-func (c *OrdersClient) labelCreateReceipt(command orders.Command, data []byte, status int) (orders.Receipt, error) {
-	var response struct {
-		Tasks []struct {
-			TaskID   int64  `json:"task_id"`
-			TaskType string `json:"task_type"`
-		} `json:"tasks"`
-	}
-	if json.Unmarshal(data, &response) != nil || len(response.Tasks) == 0 {
-		return orderReceipt(command, orders.StateUnknown, status, "label_task_unverified"), orders.ErrStale
-	}
-	receipt := orderReceipt(command, orders.StatePolling, status, "provider_label_pending")
-	receipt.TaskID = formatInt64(response.Tasks[0].TaskID)
-	return receipt, nil
-}
-
 func (c *OrdersClient) statusTransitionReceipt(command orders.Command, data []byte, status int) (orders.Receipt, error) {
 	var response struct {
 		Result []struct {
@@ -244,6 +230,9 @@ func (c *OrdersClient) statusTransitionReceipt(command orders.Command, data []by
 func (c *OrdersClient) BindOrderIntent(command orders.Command, authorize func(context.Context) (bool, error)) error {
 	if authorize == nil || command.Scope != c.scope || command.Action.IsMirror() {
 		return orders.ErrInvalid
+	}
+	if command.PostingAction == nil || command.PostingAction.ContractHash != orderactions.ExecutionContractHash() {
+		return orders.ErrStale
 	}
 	fingerprint, err := orders.CommandFingerprint(command)
 	if err != nil {
@@ -373,11 +362,7 @@ func trackingPayload(command orders.Command) (map[string]any, error) {
 }
 
 func labelCreatePayload(command orders.Command) (map[string]any, error) {
-	body := map[string]any{"posting_numbers": []string{command.PostingNumber}}
-	if command.PostingAction != nil && command.PostingAction.Parameters.LabelType != "" {
-		body["label_type"] = command.PostingAction.Parameters.LabelType
-	}
-	return body, nil
+	return map[string]any{"posting_numbers": []string{command.PostingNumber}}, nil
 }
 
 func statusTransitionPayload(command orders.Command) (map[string]any, error) {

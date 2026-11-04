@@ -217,3 +217,47 @@ browser journeys. Desktop/mobile split screenshots inspected. No new live provid
 requests occurred in this follow-up. Live split remains NOT_OBSERVED_LIVE.
 The legacy live-order diagnostic is explicitly opt-in and does not qualify as
 normal-pipeline E2E evidence because it still contains direct-provider/SQL fallbacks.
+
+### 2026-11-04: protected label downloads and projection regression fixes
+
+Implemented the reviewed official label-create v3 / task-get v2 response shapes:
+create sends posting numbers only, retains both returned format/task identities,
+and polls the selected task without replaying creation. Missing print counts stay
+unknown. Acknowledgment is not reconciliation: one requested and printed posting,
+no target errors, a validated PDF, and atomic encrypted artifact persistence are
+required. Download requires a current merchant session and exact account ownership.
+Artifacts expire within 24 hours, or the shorter configured PII retention; cleanup
+also runs when automation is disabled. Open browser pages expire their links locally.
+
+Task-authorized CDN URLs are transient, exact and single-use. Public DNS addresses
+are checked and pinned, TLS retains the original hostname, redirects/proxies/client
+credentials are excluded, and the download shares the PostgreSQL account budget.
+File paths, signed URLs, provider free-text errors and PDF contents are excluded
+from ordinary receipts. Contract subset: `internal/orderactions/label_contract.json`,
+reviewed against the [official Swagger](https://docs.ozon.ru/api/seller/zh/swagger.json).
+This is an explicit subset, not a claim of complete fulfillment schema coverage.
+
+Migration 52 adds encrypted artifacts with scoped foreign keys and immutable rows;
+rollback refuses to delete retained artifacts. The historical local database was
+backed up with the existing encryption key before upgrading 48 to 52. Comparisons
+of original columns/rows in 114 tables preserved historical data; the encryption
+key was retained. Stock, catalog and order automation remained disabled.
+
+Verification: complete prepared PostgreSQL/race run, **630 passed test events,
+64 skipped, zero failures**. Skips retain their original reasons; supplemental
+stock regression run had **60 passes / 2 skips**, and the nine-process browser
+follow-up **12 passes / zero skips**. These counts include subtests and are not
+additive unique-test totals. Nine-process testing uses 3 APIs, 2 schedulers,
+4 workers, one PostgreSQL and deterministic providers. Label-specific PostgreSQL
+checks cover atomicity, wrong-account rejection, shorter retention, session
+revocation, HTTP access by two merchants, and non-destructive rollback.
+Six synthetic order-console browser journeys pass, including actual downloaded
+PDF byte comparison and clock-driven expiry; desktop/mobile screenshots reviewed.
+Those browser label routes are simulated; they are not live Ozon evidence.
+
+A separate service-preview regression exposed and fixed customer attribute
+allowlist collisions: valid protected customer mappings no longer fail their own
+validation, while duplicate/unapproved fields remain rejected. No new live
+fulfillment commands or real buyer/delivery events occurred in these checks.
+Live labels and delivery transitions remain **NOT_OBSERVED_LIVE**; native demand,
+salesreturn and safe structural line replacement are not established by this work.

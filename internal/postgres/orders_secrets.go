@@ -87,5 +87,10 @@ func (s *Store) DeleteExpiredOrderSecrets(ctx context.Context, _ time.Time, limi
 	if err != nil {
 		return 0, ordersError("expire encrypted order secrets", err)
 	}
-	return int(tag.RowsAffected()), nil
+	labels, err := deleteExpiredOrderLabels(ctx, s.Pool, limit)
+	if err != nil {
+		return int(tag.RowsAffected()), err
+	}
+	actions, err := s.deleteExpiredOrderActionInputs(ctx, limit)
+	return int(tag.RowsAffected()) + labels + actions, err
 }

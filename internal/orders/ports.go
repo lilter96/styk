@@ -132,6 +132,7 @@ type DispatchGuard struct {
 // Completion is a state+claim-token CAS. Unknown and acknowledged work may only
 // schedule reads. Reconciled persists correlation and outcome atomically.
 type Completion struct {
+	LabelArtifact   *LabelArtifact
 	WorkID          string
 	Scope           Scope
 	ClaimToken      string

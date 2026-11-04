@@ -14,6 +14,7 @@ var (
 	ErrStale         = errors.New("order synchronization evidence changed")
 	ErrBlocked       = errors.New("order synchronization is blocked")
 	ErrAmbiguousLine = errors.New("ambiguous order line identity")
+	ErrSchemaDrift   = errors.New("order provider schema changed")
 )
 
 type Scope struct {
@@ -415,15 +416,19 @@ const (
 )
 
 type Receipt struct {
-	ObservedPostings []Posting `json:"observed_postings,omitempty"`
-	PostingNumbers   []string  `json:"posting_numbers,omitempty"`
-	CommandID        string    `json:"command_id"`
-	State            State     `json:"state"`
-	HTTPStatus       int       `json:"http_status,omitempty"`
-	TaskID           string    `json:"task_id,omitempty"`
-	ExternalID       string    `json:"external_id,omitempty"`
-	Code             string    `json:"code,omitempty"`
-	ObservedAt       time.Time `json:"observed_at"`
+	LabelTasksVerified bool           `json:"label_tasks_verified,omitempty"`
+	LabelTask          *LabelTask     `json:"label_task,omitempty"`
+	TaskIDs            []ActionTask   `json:"task_ids,omitempty"`
+	Artifact           *OrderArtifact `json:"artifact,omitempty"`
+	ObservedPostings   []Posting      `json:"observed_postings,omitempty"`
+	PostingNumbers     []string       `json:"posting_numbers,omitempty"`
+	CommandID          string         `json:"command_id"`
+	State              State          `json:"state"`
+	HTTPStatus         int            `json:"http_status,omitempty"`
+	TaskID             string         `json:"task_id,omitempty"`
+	ExternalID         string         `json:"external_id,omitempty"`
+	Code               string         `json:"code,omitempty"`
+	ObservedAt         time.Time      `json:"observed_at"`
 }
 
 type Validation struct {

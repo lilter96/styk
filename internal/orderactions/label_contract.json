@@ -1,0 +1,25 @@
+{
+  "schema_status": "official_reviewed_operation_subset",
+  "reviewed_on": "2026-11-04",
+  "source": "https://docs.ozon.ru/api/seller/zh/swagger.json",
+  "operations": {
+    "/v3/posting/fbs/package-label/create": {
+      "request": {"posting_numbers": "array<string>:1..1000"},
+      "response": {"tasks": [{"task_id": "int64", "task_type": "big_label|small_label"}]}
+    },
+    "/v2/posting/fbs/package-label/get": {
+      "request": {"task_id": "int64"},
+      "response": {
+        "error": {"code": "string", "message": "string:transient"},
+        "file_url": "string:transient",
+        "status": {
+          "code": "pending|in_progress|completed|error",
+          "postings_count": "int32",
+          "printed_postings_count": "int32",
+          "unprinted_postings": [{"posting_number": "string", "message": "string:transient"}]
+        }
+      }
+    }
+  },
+  "limitations": ["Selected fields, not a complete Swagger download.", "STYK submits one exact posting and requires explicit counts of one requested and one printed.", "Label format selects a returned task; it is not a create-request field."]
+}

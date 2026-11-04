@@ -61,3 +61,11 @@ func readOrderActionSecret(ctx context.Context, q ordersQuerier, scope orders.Sc
 	}
 	return secret, nil
 }
+
+func (s *Store) deleteExpiredOrderActionInputs(ctx context.Context, limit int) (int, error) {
+	tag, err := s.Pool.Exec(ctx, `WITH expired AS (SELECT tenant_id,moysklad_account,ozon_account,posting_number,action,reference,config_revision FROM orders_action_secrets WHERE expires_at<=clock_timestamp() ORDER BY expires_at LIMIT $1 FOR UPDATE SKIP LOCKED) DELETE FROM orders_action_secrets s USING expired e WHERE (s.tenant_id,s.moysklad_account,s.ozon_account,s.posting_number,s.action,s.reference,s.config_revision)=(e.tenant_id,e.moysklad_account,e.ozon_account,e.posting_number,e.action,e.reference,e.config_revision)`, limit)
+	if err != nil {
+		return 0, ordersError("expire protected order action inputs", err)
+	}
+	return int(tag.RowsAffected()), nil
+}
