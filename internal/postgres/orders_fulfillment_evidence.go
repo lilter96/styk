@@ -37,9 +37,21 @@ func validateFulfillmentQuantityEvidence(ctx context.Context, q ordersQuerier, w
 		if !orders.PartialCancellationObserved(decision.Posting, *completion.ObservedPosting, work.Command.PostingAction.Parameters.Lines) {
 			return orders.ErrStale
 		}
+		if !partialObservationFollowsAttempt(work, *completion.ObservedPosting) {
+			return orders.ErrStale
+		}
 		return nil
 	}
 	return orders.ErrNotFound
+}
+
+func partialObservationFollowsAttempt(work orders.Work, posting orders.Posting) bool {
+	checked := posting.Evidence.CheckedAt
+	if checked.IsZero() {
+		checked = posting.Evidence.ObservedAt
+	}
+	attempted := work.Receipt.ObservedAt
+	return work.DispatchCount == 1 && !attempted.IsZero() && !checked.Before(attempted)
 }
 
 func splitObservationsFollowAttempt(work orders.Work, receipt orders.Receipt) bool {

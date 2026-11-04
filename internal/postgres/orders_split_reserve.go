@@ -24,7 +24,7 @@ WHERE h.tenant_id=$1 AND h.moysklad_account=$2 AND h.ozon_account=$3
  AND split.state NOT IN ('REJECTED','BLOCKED') AND (
   (split.posting_number<>h.posting_number AND (
    COALESCE(split.work#>'{receipt,posting_numbers}','[]'::jsonb) ? h.posting_number
-   OR (split.state<>'RECONCILED' AND identity.created_at>=split.created_at
+   OR (split.state<>'RECONCILED' AND identity.created_at>=split.dispatched_at
     AND source.commercial_order_id=split.work#>>'{command,commercial_order_id}')))
   OR (split.posting_number=h.posting_number AND split.state='RECONCILED'
    AND NOT (COALESCE(split.work#>'{receipt,posting_numbers}','[]'::jsonb) ? h.posting_number))

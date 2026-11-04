@@ -25,6 +25,8 @@ func splitReserveFixture(t *testing.T) (ordersStoreFixture, orders.Posting, orde
 	ordersStoreCommit(t, f, sibling, "sibling-source")
 	preview := splitStorePreview(t, f, before)
 	ordersStoreApprove(t, f, preview)
+	queuedSibling := ordersStorePosting(f.config.Scope, "queued-sibling", "queued-sibling-source", time.Now().UTC())
+	ordersStoreCommit(t, f, queuedSibling, "queued-sibling-admission")
 	work := ordersStoreClaim(t, f, time.Minute)
 	allowed, err := f.db.GuardOrderDispatch(f.ctx, orders.DispatchGuard{Work: work, Begin: true, Now: time.Now()})
 	if err != nil || !allowed {
@@ -53,11 +55,11 @@ func TestOrdersSplitReserveGuardDoesNotInventProviderParentOrBlockExistingSiblin
 				t.Fatal("fixture must not supply provider lineage")
 			}
 			ordersStoreCommit(t, f, child, "new-child-source")
-			review, err := f.db.OrderReviewContextFor(f.ctx, f.config.Scope, []string{before.PostingNumber, child.PostingNumber, "existing-sibling"}, false)
+			review, err := f.db.OrderReviewContextFor(f.ctx, f.config.Scope, []string{before.PostingNumber, child.PostingNumber, "existing-sibling", "queued-sibling"}, false)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !review.SplitReserveBlocked[child.PostingNumber] || review.SplitReserveBlocked[before.PostingNumber] || review.SplitReserveBlocked["existing-sibling"] {
+			if !review.SplitReserveBlocked[child.PostingNumber] || review.SplitReserveBlocked[before.PostingNumber] || review.SplitReserveBlocked["existing-sibling"] || review.SplitReserveBlocked["queued-sibling"] {
 				t.Fatalf("split dependency crossed independent posting: %+v", review.SplitReserveBlocked)
 			}
 			observed, err := f.db.OrderPostings(f.ctx, f.config.Scope, orders.PageRequest{Limit: 10, Search: child.PostingNumber})
