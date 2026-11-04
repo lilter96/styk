@@ -272,6 +272,8 @@ func exemplarHTTPRun(t *testing.T, f ordersStoreFixture, r *orderflow.Runner, id
 
 func assertExemplarRollbackRejected(t *testing.T, f ordersStoreFixture) {
 	t.Helper()
+	dsn := f.db.Pool.Config().ConnString()
+	catalogSyncMigrate(t, dsn, "down-to", "56")
 	ctx, cancel := context.WithTimeout(f.ctx, 30*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, "go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", f.db.Pool.Config().ConnString(), "down")
@@ -279,6 +281,7 @@ func assertExemplarRollbackRejected(t *testing.T, f ordersStoreFixture) {
 	if err == nil || !bytes.Contains(output, []byte("exemplar intent history prevents destructive rollback")) {
 		t.Fatal("exemplar migration allowed history loss or failed for unrelated reason")
 	}
+	catalogSyncMigrate(t, dsn, "up")
 	if err = f.db.RequireCurrentSchema(f.ctx); err != nil {
 		t.Fatal("failed rollback changed schema", err)
 	}
