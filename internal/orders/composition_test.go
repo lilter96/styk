@@ -24,7 +24,7 @@ func compositionFixture(t *testing.T) (Command, PositionBaseline) {
 	added.Mapping.OfferID = added.Identity.OfferID
 	added.Mapping.SKU = added.Identity.SKU
 	command.CustomerOrder.Positions = append(command.CustomerOrder.Positions, added)
-	replacement, err := PlanPositionReplacement(command, baseline, Present(false))
+	replacement, err := PlanPositionReplacement(command, baseline, Present(false), Present(false))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func compositionResult(command Command) TargetObservation {
 	positions := slices.Clone(command.TargetPositions)
 	added := command.CustomerOrder.Positions[1]
 	positions = append(positions, TargetPosition{ID: "new-native-position", CompositionSafe: Present(true), MoyskladKind: added.Mapping.MoyskladKind, MoyskladID: added.Mapping.MoyskladID, Quantity: added.Quantity, Reserve: added.Reserve, Price: added.Price, VAT: added.VAT, VATEnabled: Present(false), Discount: Present(Decimal("0")), Shipped: Present(Decimal("0"))})
-	return TargetObservation{Scope: command.Scope, Correlation: command.Correlation, Complete: true, Revision: "after", ObservedAt: time.Now(), Positions: positions}
+	return TargetObservation{Scope: command.Scope, Correlation: command.Correlation, Complete: true, Revision: "after", ObservedAt: time.Now(), Positions: positions, Fields: CustomerOrderWrite{Applicable: Present(false), VATEnabled: Present(false)}}
 }
 
 func TestCompositionAcknowledgedReadbackLearnsOnlyExactNewUUIDs(t *testing.T) {
@@ -81,7 +81,7 @@ func TestCompositionAcknowledgedReadbackLearnsOnlyExactNewUUIDs(t *testing.T) {
 	if !CompositionTargetObserved(command, target) {
 		t.Fatal("complete exact result rejected")
 	}
-	work := Work{ID: "composition-work", Scope: command.Scope, State: StateReconciled, DispatchCount: 1, Command: command, Receipt: Receipt{State: StateAcknowledged}}
+	work := Work{ID: "composition-work", Scope: command.Scope, State: StateReconciled, DispatchCount: 1, Command: command, Receipt: Receipt{State: StateAcknowledged, CommandID: command.ID, ExternalID: command.Correlation.CustomerOrderID, HTTPStatus: 200}}
 	baseline, err := ProjectionPositionBaseline(work, target)
 	if err != nil || len(baseline.Bindings) != 2 {
 		t.Fatalf("baseline=%+v err=%v", baseline, err)
@@ -104,7 +104,7 @@ func TestCompositionAcknowledgedReadbackLearnsOnlyExactNewUUIDs(t *testing.T) {
 func TestCompositionExactPreflightAndUnsupportedReadback(t *testing.T) {
 	t.Parallel()
 	command, _ := compositionFixture(t)
-	target := TargetObservation{Scope: command.Scope, Correlation: command.Correlation, Complete: true, Revision: command.ExpectedTargetRevision, Positions: slices.Clone(command.TargetPositions), Fields: CustomerOrderWrite{VATEnabled: Present(false)}}
+	target := TargetObservation{Scope: command.Scope, Correlation: command.Correlation, Complete: true, Revision: command.ExpectedTargetRevision, Positions: slices.Clone(command.TargetPositions), Fields: CustomerOrderWrite{VATEnabled: Present(false), Applicable: Present(false)}}
 	if err := CompositionTargetCurrent(command, target); err != nil {
 		t.Fatal(err)
 	}
@@ -116,5 +116,55 @@ func TestCompositionExactPreflightAndUnsupportedReadback(t *testing.T) {
 	target.Positions[1].CompositionSafe = Present(false)
 	if CompositionTargetObserved(command, target) {
 		t.Fatal("unsupported result adopted")
+	}
+}
+
+func TestCompositionRemovalPreservesRetainedUUIDAndDoesNotRecreate(t *testing.T) {
+	t.Parallel()
+	command, _ := compositionFixture(t)
+	first := compositionResult(command)
+	work := Work{ID: "first-composition", Scope: command.Scope, State: StateReconciled, DispatchCount: 1, Command: command, Receipt: Receipt{State: StateAcknowledged, HTTPStatus: 200, CommandID: command.ID, ExternalID: command.Correlation.CustomerOrderID}}
+	baseline, err := ProjectionPositionBaseline(work, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command.CustomerOrder.Positions = command.CustomerOrder.Positions[:1]
+	command.TargetPositions = first.Positions
+	command.ExpectedTargetRevision = first.Revision
+	command.PositionReplacement, err = PlanPositionReplacement(command, baseline, Present(false), Present(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(command.PositionReplacement.Added) != 0 || len(command.PositionReplacement.Removed) != 1 || command.PositionReplacement.Removed[0].NativePositionID != "new-native-position" {
+		t.Fatalf("replacement=%+v", command.PositionReplacement)
+	}
+	final := first
+	final.Positions = final.Positions[:1]
+	if !CompositionTargetObserved(command, final) {
+		t.Fatal("exact removal not observed")
+	}
+	if CompositionTargetObserved(command, first) {
+		t.Fatal("removed row still present accepted")
+	}
+}
+
+func TestCompositionRejectsNonzeroTaxAndOverReservation(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		change func(*Command)
+	}{
+		{"fractionalOzonVAT", func(c *Command) { c.CustomerOrder.Positions[1].VAT = Present(Decimal("0.2")) }},
+		{"nativeVATpercent", func(c *Command) { c.CustomerOrder.Positions[1].VAT = Present(Decimal("20")) }},
+		{"overreservation", func(c *Command) { c.CustomerOrder.Positions[1].Reserve = Present(Decimal("999")) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			command, _ := compositionFixture(t)
+			tc.change(&command)
+			if command.Validate() == nil {
+				t.Fatal("unsafe source/native value accepted")
+			}
+		})
 	}
 }

@@ -95,6 +95,11 @@ func readbackProven(observation Observation) bool {
 	if work.Command.Action == orders.ActionMirrorCreate && work.DispatchCount != 1 {
 		return false
 	}
+	if work.Command.Action == orders.ActionMirrorCompositionUpdate {
+		if _, err := orders.ProjectionPositionBaseline(*work, *target); err != nil {
+			return false
+		}
+	}
 	if work.Command.Action == orders.ActionMirrorUpdate && !scalarOwnershipProven(observation) {
 		return false
 	}

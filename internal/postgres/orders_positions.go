@@ -47,6 +47,11 @@ func validateOrderPositionBaseline(command orders.Command, current orders.Review
 		if !found || command.PositionReplacement == nil || !baseline.Equal(command.PositionReplacement.Baseline) {
 			return orders.ErrStale
 		}
+		for _, binding := range baseline.Bindings {
+			if !orderProductMappingPresent(binding.Source.Mapping, current.ProductMappings) {
+				return orders.ErrStale
+			}
+		}
 		return command.PositionReplacement.Validate(command)
 	}
 	if command.PositionBaseline != nil || command.WritesApplication() {

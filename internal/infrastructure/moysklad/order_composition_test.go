@@ -97,7 +97,7 @@ func compositionAdapterCommand(t *testing.T, s *orderSimulator, client *OrderCli
 	added.Mapping.OfferID = added.Identity.OfferID
 	added.Mapping.SKU = added.Identity.SKU
 	command.CustomerOrder.Positions = append(command.CustomerOrder.Positions, added)
-	replacement, err := orders.PlanPositionReplacement(command, baseline, target.Fields.VATEnabled)
+	replacement, err := orders.PlanPositionReplacement(command, baseline, target.Fields.VATEnabled, target.Fields.Applicable)
 	if err != nil {
 		t.Fatal(err)
 	}

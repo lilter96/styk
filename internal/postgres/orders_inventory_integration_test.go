@@ -151,7 +151,7 @@ func inventoryPtr[T any](value T) *T { return &value }
 
 func orderInventoryPosting(t *testing.T, fixture orderInventoryFixture, number, status string) orders.Posting {
 	t.Helper()
-	posting := orders.Posting{Scope: fixture.config.Scope, CommercialOrderID: "commercial", PostingNumber: number, Status: orders.Present(status), Scheme: orders.Present("FBS"), WarehouseID: orders.Present("1002"), Lines: []orders.PostingLine{{Identity: orders.LineIdentity{OfferID: "inventory-offer", SKU: "2001"}, ProductID: orders.Present("1001"), Quantity: "3"}}, Evidence: orders.EvidenceRevision{Revision: "source-" + number, Origin: orders.OriginOzon, ObservedAt: fixture.now.Add(-6 * time.Minute)}}
+	posting := orders.Posting{Scope: fixture.config.Scope, CommercialOrderID: "commercial", PostingNumber: number, Status: orders.Present(status), Scheme: orders.Present("FBS"), WarehouseID: orders.Present("1002"), Lines: []orders.PostingLine{{Identity: orders.LineIdentity{OfferID: "inventory-offer", SKU: "2001"}, ProductID: orders.Present("1001"), Quantity: "3"}}, Evidence: orders.EvidenceRevision{Revision: "source-" + number, Origin: orders.OriginOzon, ProviderUpdatedAt: orders.Present(fixture.now.Add(-6 * time.Minute)), ObservedAt: fixture.now.Add(-6 * time.Minute)}}
 	tx, err := fixture.db.Pool.Begin(fixture.ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -218,6 +218,11 @@ func orderInventoryReconciled(t *testing.T, fixture orderInventoryFixture, posti
 	binding := bindings[0]
 	binding.CustomerOrderID = "native-order"
 	command := orders.Command{ID: "native-command", Scope: posting.Scope, Action: orders.ActionMirrorCreate, PostingNumber: posting.PostingNumber, Correlation: bindings[0], ExpectedSourceRevision: posting.Evidence.Revision}
+	mappings, err := readOrderProductMappings(fixture.ctx, fixture.db.Pool, posting.Scope)
+	if err != nil || len(mappings) != 1 {
+		t.Fatalf("read actual fixture mapping: %v", err)
+	}
+	command.CustomerOrder = &orders.CustomerOrderWrite{StoreID: fixture.config.StoreID, Positions: []orders.PositionWrite{{Identity: posting.Lines[0].Identity, Mapping: mappings[0], Quantity: "3", Reserve: orders.Present(orders.Decimal(reserve))}}}
 	work := orders.Work{ID: "native-work", OperationID: "native-operation", Scope: posting.Scope, ConfigRevision: fixture.config.Revision, State: orders.StateReconciled, DispatchCount: 1, Command: command, CommandFingerprint: strings.Repeat("a", 64)}
 	target := orders.TargetObservation{Scope: posting.Scope, Correlation: binding, Revision: "native-revision", Complete: true, ObservedAt: fixture.now.Add(-5 * time.Minute), Fields: orders.CustomerOrderWrite{StoreID: fixture.config.StoreID, Applicable: orders.Present(true)}, Positions: []orders.TargetPosition{{ID: "native-position", MoyskladKind: "product", MoyskladID: "native-product", Quantity: "3", Reserve: orders.Present(orders.Decimal(reserve))}}}
 	tx, err := fixture.db.Pool.Begin(fixture.ctx)

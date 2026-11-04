@@ -100,6 +100,12 @@ func TestCoverageBlockedNativeUpdatesAreNotAdvertisedAsImplemented(t *testing.T)
 		if row.Direction != "request" || row.Endpoint != "/entity/customerorder/{id}" {
 			continue
 		}
+		if strings.HasPrefix(row.Path, "$.positions") && row.Proof.Implemented {
+			if row.Proof.LiveWrite || !strings.Contains(row.Owner, "order_composition.go") || !strings.Contains(strings.Join(row.Prerequisites, ";"), "explicit_collection_replacement_consent") {
+				t.Fatalf("collection update exceeded scoped composition coverage: %+v", row)
+			}
+			continue
+		}
 		blocked := strings.HasPrefix(row.Path, "$.positions") || strings.HasPrefix(row.Path, "$.organization") || strings.HasPrefix(row.Path, "$.agent")
 		if blocked && (row.Fate != FateUnsupported || row.Proof.Implemented || row.Proof.LiveWrite) {
 			t.Fatalf("blocked native update gained coverage: %s", row.Path)

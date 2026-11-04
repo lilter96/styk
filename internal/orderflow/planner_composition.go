@@ -31,6 +31,7 @@ func validateCompositionProposals(request orders.PreviewRequest) error {
 }
 
 func (s *Service) planComposition(ctx context.Context, review orders.ReviewContext, posting orders.Posting, automatic bool, now time.Time) (orders.Decision, error) {
+	posting.PII = nil
 	decision := orders.Decision{Posting: posting, Commands: []orders.Command{}, Validation: sourceValidation(posting, review, now)}
 	if automatic {
 		return compositionBlocked(decision, "composition_manual_confirmation_required"), nil
@@ -70,7 +71,7 @@ func finishComposition(review orders.ReviewContext, decision orders.Decision, co
 	}
 	command.ExpectedTargetRevision = target.Revision
 	command.TargetPositions, command.TargetPositionsComplete = slices.Clone(target.Positions), target.Complete
-	replacement, err := orders.PlanPositionReplacement(command, baseline, target.Fields.VATEnabled)
+	replacement, err := orders.PlanPositionReplacement(command, baseline, target.Fields.VATEnabled, target.Fields.Applicable)
 	if err != nil {
 		return compositionBlocked(decision, "composition_frontier_or_values_unverified")
 	}

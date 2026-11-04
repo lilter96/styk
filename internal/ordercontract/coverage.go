@@ -228,6 +228,9 @@ func nativeCoverageBlocked(row *FieldCoverageRow, path string) bool {
 		return false
 	}
 	if strings.HasPrefix(path, "$.positions") {
+		if coverNativeComposition(row, path) {
+			return true
+		}
 		row.Reason = "native_position_collection_replacement_blocked"
 		row.Owner = "internal/infrastructure/moysklad/order_payload.go:addOrderCollections"
 		return true
@@ -248,4 +251,17 @@ func markAttributeLive(row *FieldCoverageRow, path string) {
 	row.Proof.LiveWrite = row.Direction == "request"
 	row.Proof.LiveRead = row.Direction == "response"
 	row.LiveScope = "owner_reported_2026_10_30_three_registered_string_attributes_commercial_order_id_status_substatus; two_existing_order_single_PUT200_each_RECONCILED_native_IDs_unchanged; fresh_normal_preview_command_counts_0_0"
+}
+
+// The parent collection path is a separate explicit-consent action; ordinary
+// scalar updates still cannot replace positions or claim unknown UUIDs.
+func coverNativeComposition(row *FieldCoverageRow, path string) bool {
+	supported := []string{"$.positions", "$.positions[]", "$.positions[].id", "$.positions[].quantity", "$.positions[].reserve", "$.positions[].price", "$.positions[].discount", "$.positions[].vat", "$.positions[].vatEnabled"}
+	if !slices.Contains(supported, path) && !coverageReference(path, "$.positions[].assortment") {
+		return false
+	}
+	supportedCoverage(row, FateNativeField, "internal/infrastructure/moysklad/order_composition.go:compositionPayload", "Manual-only exact full-owned unshipped collection; retain known native UUID and supported writable fields; no raw JSON roundtrip, no scalar or physical-stock writes.")
+	row.Prerequisites = append(row.Prerequisites, "explicit_collection_replacement_consent", "independent_all_position_ownership", "fresh_complete_supported_native_frontier", "known_zero_VAT_only", "acknowledged_dispatch_and_complete_readback_for_new_UUID_ownership")
+	row.Proof.LiveWrite = false
+	return true
 }

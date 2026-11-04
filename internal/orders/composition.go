@@ -22,37 +22,20 @@ type PositionReplacement struct {
 	Retained           []PositionIdentityRef `json:"retained"`
 	Added              []LineIdentity        `json:"added"`
 	Removed            []PositionIdentityRef `json:"removed"`
+	Applicable         Field[bool]           `json:"applicable"`
 	VATEnabled         Field[bool]           `json:"vat_enabled"`
 }
 
-func PlanPositionReplacement(command Command, baseline PositionBaseline, vatEnabled Field[bool]) (*PositionReplacement, error) {
-	if command.CustomerOrder == nil || baseline.Validate() != nil || baseline.Scope != command.Scope || baseline.Correlation != command.Correlation || baseline.RecoveryID != "" || baseline.EvidenceClass != "" && baseline.EvidenceClass != NativeDemandReadback || !command.TargetPositionsComplete || len(baseline.Bindings) != len(command.TargetPositions) || len(command.TargetPositions) == 0 || !vatEnabled.IsKnown() {
+func PlanPositionReplacement(command Command, baseline PositionBaseline, vatEnabled, applicable Field[bool]) (*PositionReplacement, error) {
+	if command.CustomerOrder == nil || baseline.Validate() != nil || baseline.Scope != command.Scope || baseline.Correlation != command.Correlation || baseline.RecoveryID != "" || baseline.EvidenceClass != "" && baseline.EvidenceClass != NativeDemandReadback || !command.TargetPositionsComplete || len(baseline.Bindings) != len(command.TargetPositions) || len(command.TargetPositions) == 0 || !vatEnabled.IsKnown() || !applicable.IsKnown() {
 		return nil, ErrBlocked
 	}
-	result := &PositionReplacement{Baseline: baseline, ConfirmReplacement: true, VATEnabled: vatEnabled, Retained: []PositionIdentityRef{}, Added: []LineIdentity{}, Removed: []PositionIdentityRef{}}
+	result := &PositionReplacement{Baseline: baseline, ConfirmReplacement: true, VATEnabled: vatEnabled, Applicable: applicable, Retained: []PositionIdentityRef{}, Added: []LineIdentity{}, Removed: []PositionIdentityRef{}}
 	if err := replacementFrontier(command, baseline); err != nil {
 		return nil, err
 	}
-	seen := make(map[string]bool, len(command.CustomerOrder.Positions))
-	for _, wanted := range command.CustomerOrder.Positions {
-		key := wanted.Mapping.MoyskladKind + ":" + wanted.Mapping.MoyskladID
-		if seen[key] || !wanted.Price.IsKnown() || !wanted.Reserve.IsKnown() || !wanted.VAT.IsKnown() || !ExactDecimalEqual(*wanted.VAT.Value, "0") {
-			return nil, ErrBlocked
-		}
-		seen[key] = true
-		binding, found := replacementBinding(baseline, wanted.Identity)
-		if !found {
-			result.Added = append(result.Added, wanted.Identity)
-			continue
-		}
-		if !positionMappingsEqual(binding.Source.Mapping, wanted.Mapping) {
-			return nil, ErrStale
-		}
-		current, _ := nativePositionByID(command.TargetPositions, binding.Native.ID)
-		if !ExactDecimalEqual(*current.Discount.Value, "0") && !desiredMoney(wanted.Price, current.Price) {
-			return nil, ErrBlocked
-		}
-		result.Retained = append(result.Retained, PositionIdentityRef{wanted.Identity, binding.Native.ID})
+	if err := replacementWanted(command, result); err != nil {
+		return nil, err
 	}
 	for _, binding := range baseline.Bindings {
 		if !slices.ContainsFunc(command.CustomerOrder.Positions, func(w PositionWrite) bool { return w.Identity.Key() == binding.Source.Identity.Key() }) {
@@ -63,6 +46,32 @@ func PlanPositionReplacement(command Command, baseline PositionBaseline, vatEnab
 		return nil, ErrBlocked
 	}
 	return result, nil
+}
+
+func replacementWanted(command Command, result *PositionReplacement) error {
+	baseline := result.Baseline
+	seen := make(map[string]bool, len(command.CustomerOrder.Positions))
+	for _, wanted := range command.CustomerOrder.Positions {
+		key := wanted.Mapping.MoyskladKind + ":" + wanted.Mapping.MoyskladID
+		if seen[key] || !wanted.Price.IsKnown() || !wanted.Reserve.IsKnown() || !wanted.VAT.IsKnown() || !ExactDecimalEqual(*wanted.VAT.Value, "0") || !nonnegativeNotGreater(*wanted.Reserve.Value, wanted.Quantity) {
+			return ErrBlocked
+		}
+		seen[key] = true
+		binding, found := replacementBinding(baseline, wanted.Identity)
+		if !found {
+			result.Added = append(result.Added, wanted.Identity)
+			continue
+		}
+		if !positionMappingsEqual(binding.Source.Mapping, wanted.Mapping) {
+			return ErrStale
+		}
+		current, _ := nativePositionByID(command.TargetPositions, binding.Native.ID)
+		if !ExactDecimalEqual(*current.Discount.Value, "0") && !desiredMoney(wanted.Price, current.Price) {
+			return ErrBlocked
+		}
+		result.Retained = append(result.Retained, PositionIdentityRef{wanted.Identity, binding.Native.ID})
+	}
+	return nil
 }
 
 func replacementFrontier(command Command, baseline PositionBaseline) error {
@@ -91,7 +100,7 @@ func (replacement PositionReplacement) Validate(command Command) error {
 	if command.Action != ActionMirrorCompositionUpdate || !replacement.ConfirmReplacement || command.PositionBaseline != nil || command.PositionPatch != nil || command.AutomationGrantRevision != 0 || command.CustomerOrder == nil || !slices.Equal(command.CustomerOrder.OwnedFields, []string{"positions.quantity", "positions.reserve", "positions.price", "positions.vat"}) {
 		return ErrBlocked
 	}
-	expected, err := PlanPositionReplacement(command, replacement.Baseline, replacement.VATEnabled)
+	expected, err := PlanPositionReplacement(command, replacement.Baseline, replacement.VATEnabled, replacement.Applicable)
 	if err != nil || !positionJSONEqual(expected, &replacement) {
 		return ErrStale
 	}
@@ -102,7 +111,7 @@ func CompositionTargetCurrent(command Command, target TargetObservation) error {
 	if command.PositionReplacement == nil || command.PositionReplacement.Validate(command) != nil {
 		return ErrBlocked
 	}
-	if !target.Complete || target.Scope != command.Scope || target.Correlation != command.Correlation || target.Revision != command.ExpectedTargetRevision || !NativePositionsEqual(target.Positions, command.TargetPositions) || !nativeBoolEqual(command.PositionReplacement.VATEnabled, target.Fields.VATEnabled) {
+	if !target.Complete || target.Scope != command.Scope || target.Correlation != command.Correlation || target.Revision != command.ExpectedTargetRevision || !NativePositionsEqual(target.Positions, command.TargetPositions) || !nativeBoolEqual(command.PositionReplacement.VATEnabled, target.Fields.VATEnabled) || !nativeBoolEqual(command.PositionReplacement.Applicable, target.Fields.Applicable) {
 		return ErrStale
 	}
 	for _, current := range target.Positions {
@@ -115,7 +124,7 @@ func CompositionTargetCurrent(command Command, target TargetObservation) error {
 
 // Complete readback keeps retained UUIDs and refuses any extra or stale row.
 func CompositionTargetObserved(command Command, target TargetObservation) bool {
-	if command.PositionReplacement == nil || command.PositionReplacement.Validate(command) != nil || !target.Complete || target.Scope != command.Scope || target.Correlation != command.Correlation || len(target.Positions) != len(command.CustomerOrder.Positions) {
+	if command.PositionReplacement == nil || command.PositionReplacement.Validate(command) != nil || !target.Complete || target.Scope != command.Scope || target.Correlation != command.Correlation || len(target.Positions) != len(command.CustomerOrder.Positions) || !nativeBoolEqual(command.PositionReplacement.Applicable, target.Fields.Applicable) || !nativeBoolEqual(command.PositionReplacement.VATEnabled, target.Fields.VATEnabled) {
 		return false
 	}
 	for _, wanted := range command.CustomerOrder.Positions {
@@ -145,4 +154,9 @@ func CompositionTargetObserved(command Command, target TargetObservation) bool {
 		}
 	}
 	return true
+}
+
+func CompositionDispatchAcknowledged(work Work) bool {
+	receipt := work.Receipt
+	return work.DispatchCount == 1 && receipt.State == StateAcknowledged && receipt.HTTPStatus >= 200 && receipt.HTTPStatus < 300 && receipt.CommandID == work.Command.ID && receipt.ExternalID == work.Command.Correlation.CustomerOrderID && receipt.ExternalID != ""
 }
