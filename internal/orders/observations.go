@@ -12,11 +12,12 @@ type OrderWindow struct {
 	Limit    int
 }
 type OrderSourcePage struct {
-	Postings   []Posting
-	NextCursor string
-	Complete   bool
-	Exhausted  bool
-	Failures   []ReadFailure
+	NativeReads []NativeOrderPointRead
+	Postings    []Posting
+	NextCursor  string
+	Complete    bool
+	Exhausted   bool
+	Failures    []ReadFailure
 }
 type SourceReader interface {
 	ReadOrderPage(context.Context, Scope, OrderWindow, string) (OrderSourcePage, error)
@@ -87,6 +88,7 @@ type TargetPosition struct {
 // TargetObservation contains sanitized native facts, not raw customerorder JSON.
 // Complete requires every position page, not a truncated embedded collection.
 type TargetObservation struct {
+	SourceDeleted     Field[string]      `json:"source_deleted,omitzero"`
 	ProviderUpdatedAt Field[string]      `json:"provider_updated_at,omitzero"`
 	RedactedFields    []string           `json:"redacted_fields,omitempty"`
 	Scope             Scope              `json:"scope"`

@@ -121,6 +121,9 @@ func validTarget(correlation orders.Correlation, target orders.TargetObservation
 	if !target.Complete || target.Scope != correlation.Scope || target.Revision == "" || target.ObservedAt.IsZero() || actual.Validate() != nil {
 		return false
 	}
+	if target.SourceDeleted.Validate() != nil || target.SourceDeleted.IsKnown() && *target.SourceDeleted.Value != "" {
+		return false
+	}
 	if !validTargetFields(target.Fields) || !validTargetPositions(target.Positions) {
 		return false
 	}

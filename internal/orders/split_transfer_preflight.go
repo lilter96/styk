@@ -16,5 +16,8 @@ func (permission SplitReserveTransferPermission) ParentSourceMatches(posting Pos
 // ParentTargetMatches requires the entire native position frontier, including
 // foreign reserves, to remain exactly as observed after the owned reduction.
 func (permission SplitReserveTransferPermission) ParentTargetMatches(target TargetObservation) bool {
+	if target.SourceDeleted.Validate() != nil || target.SourceDeleted.IsKnown() && *target.SourceDeleted.Value != "" {
+		return false
+	}
 	return target.Scope == permission.Scope && target.Complete && target.Correlation == permission.ParentCorrelation && target.Revision == permission.ParentTargetRevision && target.Fields.StoreID == permission.ParentStoreID && target.Fields.OrganizationID == permission.ParentOrganizationID && target.Fields.Applicable.IsKnown() && *target.Fields.Applicable.Value && NativePositionsEqual(permission.ParentPositions, target.Positions)
 }

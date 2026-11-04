@@ -22,6 +22,7 @@ type NativeOrderPoint struct {
 	Moment             Field[time.Time] `json:"moment"`
 	// The provider's timezone-less native timestamp remains an exact string fact.
 	ProviderUpdatedAt Field[string]    `json:"provider_updated_at,omitzero"`
+	SourceDeleted     Field[string]    `json:"source_deleted,omitzero"`
 	Positions         []TargetPosition `json:"positions"`
 }
 
@@ -30,6 +31,7 @@ func NewNativeOrderPoint(target TargetObservation, credentialRevision int64, sta
 		return NativeOrderPoint{}, ErrBlocked
 	}
 	point := NativeOrderPoint{Scope: target.Scope, Correlation: target.Correlation, CredentialRevision: credentialRevision, StartedAt: startedAt, FinishedAt: finishedAt, ObservedAt: target.ObservedAt, TargetRevision: target.Revision, StoreID: target.Fields.StoreID, StateID: target.Fields.StateID, Applicable: nativePointFieldCopy(target.Fields.Applicable), Moment: nativePointFieldCopy(target.Fields.Moment), ProviderUpdatedAt: nativePointFieldCopy(target.ProviderUpdatedAt), Positions: nativePointPositions(target.Positions)}
+	point.SourceDeleted = nativePointFieldCopy(target.SourceDeleted)
 	if err := point.Validate(); err != nil {
 		return NativeOrderPoint{}, err
 	}
@@ -44,6 +46,9 @@ func (point NativeOrderPoint) Validate() error {
 		return ErrInvalid
 	}
 	if point.Applicable.Validate() != nil || point.Moment.Validate() != nil || point.Moment.IsKnown() && point.Moment.Value.IsZero() || point.ProviderUpdatedAt.Validate() != nil || point.ProviderUpdatedAt.IsKnown() && validText(*point.ProviderUpdatedAt.Value) != nil {
+		return ErrInvalid
+	}
+	if point.SourceDeleted.Validate() != nil || point.SourceDeleted.IsKnown() && validText(*point.SourceDeleted.Value) != nil {
 		return ErrInvalid
 	}
 	if len(point.Positions) > MaxNativeOrderPointPositions {
