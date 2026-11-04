@@ -36,7 +36,7 @@ func PlanPositionReplacement(command Command, baseline PositionBaseline, vatEnab
 	seen := make(map[string]bool, len(command.CustomerOrder.Positions))
 	for _, wanted := range command.CustomerOrder.Positions {
 		key := wanted.Mapping.MoyskladKind + ":" + wanted.Mapping.MoyskladID
-		if seen[key] || !wanted.Price.IsKnown() || !wanted.Reserve.IsKnown() || !wanted.VAT.IsKnown() {
+		if seen[key] || !wanted.Price.IsKnown() || !wanted.Reserve.IsKnown() || !wanted.VAT.IsKnown() || !ExactDecimalEqual(*wanted.VAT.Value, "0") {
 			return nil, ErrBlocked
 		}
 		seen[key] = true
@@ -68,7 +68,7 @@ func PlanPositionReplacement(command Command, baseline PositionBaseline, vatEnab
 func replacementFrontier(command Command, baseline PositionBaseline) error {
 	for _, binding := range baseline.Bindings {
 		current, found := nativePositionByID(command.TargetPositions, binding.Native.ID)
-		if !found || !OwnedPositionFrontierMatches(binding.Native, current) || !current.CompositionSafe.IsKnown() || !*current.CompositionSafe.Value || !current.Shipped.IsKnown() || !ExactDecimalEqual(*current.Shipped.Value, "0") || !current.Reserve.IsKnown() || !current.Discount.IsKnown() || !current.VAT.IsKnown() || !current.VATEnabled.IsKnown() || !current.Price.IsKnown() {
+		if !found || !OwnedPositionFrontierMatches(binding.Native, current) || !current.CompositionSafe.IsKnown() || !*current.CompositionSafe.Value || !current.Shipped.IsKnown() || !ExactDecimalEqual(*current.Shipped.Value, "0") || !current.Reserve.IsKnown() || !current.Discount.IsKnown() || !current.VAT.IsKnown() || !current.VATEnabled.IsKnown() || !current.Price.IsKnown() || !ExactDecimalEqual(*current.VAT.Value, "0") {
 			return ErrBlocked
 		}
 		if !ExactDecimalEqual(*current.Reserve.Value, "0") && (!binding.Source.Reserve.IsKnown() || !desiredDecimal(binding.Source.Reserve, current.Reserve)) {

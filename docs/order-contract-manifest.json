@@ -14145,7 +14145,7 @@
         "moy_customerorder",
         "moy_general"
       ],
-      "sha256": "b397be845edd10a59a581cf31dce93329439e120132037268e698904b3e55fda",
+      "sha256": "8c7029f94f05eb565ea0258cf19c2d78d7147c66c02bf5e50f459cb259ee9e62",
       "fixture": "moy-customerorder-update-request.json",
       "fields": [
         {
@@ -15912,6 +15912,24 @@
           "classification": "native",
           "read_only": false,
           "privacy": "financial",
+          "fixture": "moy-customerorder-update-request.json"
+        },
+        {
+          "path": "$.positions[].id",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "moy_customerorder"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Existing native customerorder position UUID identifies a retained row during the documented parent positions replacement; never adopt an unrelated UUID.",
+          "destination": "customerorder native projection (explicit reviewed mapping)",
+          "classification": "native",
+          "read_only": false,
+          "privacy": "operational_identifier",
           "fixture": "moy-customerorder-update-request.json"
         }
       ]

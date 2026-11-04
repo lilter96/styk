@@ -61,7 +61,8 @@
       "reserve": 1,
       "taxSystem": "TEST",
       "vat": 1,
-      "vatEnabled": false
+      "vatEnabled": false,
+      "id": "00000000-0000-4000-8000-000000000099"
     }
   ],
   "rate": {
