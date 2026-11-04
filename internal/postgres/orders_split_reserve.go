@@ -26,11 +26,13 @@ JOIN LATERAL (
     AND parent_write.ozon_account=split.ozon_account AND parent_write.posting_number=split.posting_number
     AND parent_write.action IN ('mirror_create','mirror_update','mirror_position_update','mirror_composition_update')
     AND parent_write.dispatch_count=1 AND parent_write.dispatched_at<=split.dispatched_at)
-  AND EXISTS (SELECT 1 FROM orders_posting_observations original
-   WHERE original.tenant_id=split.tenant_id AND original.moysklad_account=split.moysklad_account
-    AND original.ozon_account=split.ozon_account AND original.posting_number=split.posting_number
-    AND original.source_revision=split.work#>>'{command,expected_source_revision}'
-    AND original.posting#>>'{parent_posting_number,presence}' IN ('missing','null'))
+  AND EXISTS (SELECT 1 FROM orders_previews original,
+   LATERAL jsonb_array_elements(original.preview->'decisions') decision
+   WHERE original.id=split.work->>'preview_id' AND original.tenant_id=split.tenant_id
+    AND original.moysklad_account=split.moysklad_account AND original.ozon_account=split.ozon_account
+    AND decision#>>'{posting,posting_number}'=split.posting_number
+    AND decision#>>'{posting,evidence,revision}'=split.work#>>'{command,expected_source_revision}'
+    AND decision#>>'{posting,parent_posting_number,presence}' IN ('missing','null'))
   AND NOT EXISTS (SELECT 1 FROM orders_work ancestor
    JOIN orders_posting_identities parent_identity ON parent_identity.tenant_id=ancestor.tenant_id
     AND parent_identity.ozon_account=ancestor.ozon_account AND parent_identity.posting_number=split.posting_number
