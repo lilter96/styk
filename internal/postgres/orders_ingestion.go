@@ -252,7 +252,7 @@ func insertOrderCheckpoint(ctx context.Context, tx pgx.Tx, page orders.SourcePag
 }
 
 func mergeOrderCheckpointFailures(checkpoint *orders.Checkpoint, previous orders.Checkpoint, page orders.SourcePage) {
-	if page.Stream != "ozon-orders-active" {
+	if page.Stream != "ozon-orders-active" && page.Stream != orders.NativePointStream {
 		return
 	}
 	var failures []orders.ReadFailure
@@ -261,7 +261,11 @@ func mergeOrderCheckpointFailures(checkpoint *orders.Checkpoint, previous orders
 		failures = previous.Failures
 		truncated = truncated || previous.FailuresTruncated
 	}
-	checkpoint.Failures, checkpoint.FailuresTruncated = orders.MergeReadFailures(failures, page.Failures, page.Postings, truncated)
+	if page.Stream == orders.NativePointStream {
+		checkpoint.Failures, checkpoint.FailuresTruncated = orders.MergeNativePointFailures(failures, page.Failures, page.NativeReads, truncated)
+	} else {
+		checkpoint.Failures, checkpoint.FailuresTruncated = orders.MergeReadFailures(failures, page.Failures, page.Postings, truncated)
+	}
 	checkpoint.Complete = checkpoint.Complete && len(checkpoint.Failures) == 0 && !checkpoint.FailuresTruncated
 }
 

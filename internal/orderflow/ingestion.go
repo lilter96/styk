@@ -28,6 +28,10 @@ type ActivePostingReader interface {
 	ActiveOrderPostings(context.Context, orders.Scope, int, string) (orders.PostingPage, error)
 }
 
+type NativePointCandidateReader interface {
+	NativeOrderCandidates(context.Context, orders.Scope, int, string) (orders.NativePointCandidates, error)
+}
+
 type OrderConfigReader interface {
 	OrderConfig(context.Context, orders.Scope) (orders.Config, error)
 }
@@ -44,7 +48,9 @@ type PageProtector interface {
 }
 
 type IngestionOptions struct {
-	WorkerID string
+	WorkerID       string
+	NativeResolver orders.Resolver
+	NativeBatch    int
 	// UnfulfilledLookahead is a local discovery horizon, not a provider maximum.
 	// Zero selects seven days; values above thirty days are rejected locally.
 	UnfulfilledLookahead time.Duration
@@ -68,10 +74,18 @@ func NewIngestor(store IngestionStore, source SourceReader, options IngestionOpt
 	if store == nil || source == nil || !validIngestionOptions(options) {
 		return nil, orders.ErrInvalid
 	}
+	if options.NativeResolver != nil {
+		if _, ok := store.(NativePointCandidateReader); !ok {
+			return nil, orders.ErrInvalid
+		}
+	}
 	return &Ingestor{store: store, source: source, options: options}, nil
 }
 
 func defaultIngestionOptions(options IngestionOptions) IngestionOptions {
+	if options.NativeBatch == 0 {
+		options.NativeBatch = 10
+	}
 	if options.UnfulfilledLookahead == 0 {
 		options.UnfulfilledLookahead = 7 * 24 * time.Hour
 	}
@@ -97,7 +111,7 @@ func defaultIngestionOptions(options IngestionOptions) IngestionOptions {
 }
 
 func validIngestionOptions(options IngestionOptions) bool {
-	return options.UnfulfilledLookahead > 0 && options.UnfulfilledLookahead <= 30*24*time.Hour &&
+	return options.NativeBatch > 0 && options.NativeBatch <= orders.MaxPagePostings && options.UnfulfilledLookahead > 0 && options.UnfulfilledLookahead <= 30*24*time.Hour &&
 		options.WorkerID != "" && options.Lookback > 0 && options.Lookback <= 31*24*time.Hour &&
 		options.Overlap > 0 && options.Overlap < options.Lookback && options.LeaseDuration > 0 && options.LeaseDuration <= 5*time.Minute &&
 		options.PageSize > 0 && options.PageSize <= orders.MaxPagePostings && options.ActiveBatch > 0 && options.ActiveBatch <= orders.MaxPagePostings

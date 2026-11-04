@@ -83,7 +83,7 @@ func refreshStatusFailure(status int) (string, bool) {
 }
 
 func retainRefreshFailures(page *orders.SourcePage, previous orders.Checkpoint) {
-	if page.Stream != ActiveStream {
+	if page.Stream != ActiveStream && page.Stream != orders.NativePointStream {
 		return
 	}
 	var failures []orders.ReadFailure
@@ -91,6 +91,10 @@ func retainRefreshFailures(page *orders.SourcePage, previous orders.Checkpoint) 
 	if page.RefreshKey == previous.RefreshKey {
 		failures, truncated = previous.Failures, previous.FailuresTruncated
 	}
-	page.Failures, page.FailuresTruncated = orders.MergeReadFailures(failures, page.Failures, page.Postings, truncated)
+	if page.Stream == orders.NativePointStream {
+		page.Failures, page.FailuresTruncated = orders.MergeNativePointFailures(failures, page.Failures, page.NativeReads, truncated)
+	} else {
+		page.Failures, page.FailuresTruncated = orders.MergeReadFailures(failures, page.Failures, page.Postings, truncated)
+	}
 	page.Complete = page.Complete && len(page.Failures) == 0 && !page.FailuresTruncated
 }

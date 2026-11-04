@@ -135,7 +135,7 @@ const nativeOrderCandidatesSQL = `SELECT b.posting_number,b.customer_order_id,b.
  LEFT JOIN orders_native_point_snapshots snapshot ON snapshot.id=latest.snapshot_id
  LEFT JOIN LATERAL(SELECT r.created_at,r.observed_target->>'revision' AS target_revision FROM orders_reconciliations r WHERE r.tenant_id=b.tenant_id AND r.moysklad_account=b.moysklad_account AND r.ozon_account=b.ozon_account AND r.correlation->>'posting_number'=b.posting_number AND r.correlation->>'customer_order_id'=b.customer_order_id AND r.observed_target IS NOT NULL ORDER BY r.created_at DESC,r.work_id DESC LIMIT 1) reconciliation ON true
  WHERE b.tenant_id=$1 AND b.moysklad_account=$2 AND b.ozon_account=$3 AND b.posting_number>$4 AND b.customer_order_id IS NOT NULL
- AND (latest.finished_at IS NULL OR latest.native_order_id<>b.customer_order_id OR latest.credential_revision<>credential.revision OR latest.finished_at<=clock_timestamp()-make_interval(secs=>(cfg.config->>'interval_seconds')::int)
+ AND (latest.finished_at IS NULL OR latest.native_order_id<>b.customer_order_id OR latest.credential_revision<>credential.revision OR latest.admitted_at<=clock_timestamp()-make_interval(secs=>(cfg.config->>'interval_seconds')::int)
  OR reconciliation.created_at>latest.admitted_at
  OR (latest.snapshot_id IS NOT NULL AND reconciliation.target_revision<>snapshot.target_revision))
  ORDER BY b.posting_number LIMIT $5`

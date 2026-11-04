@@ -22,7 +22,11 @@ func (i *Ingestor) Collect(ctx context.Context, scope orders.Scope) error {
 	}
 	discoveryErr := i.CollectStream(ctx, scope, stream)
 	activeErr := i.CollectStream(ctx, scope, ActiveStream)
-	return errors.Join(discoveryErr, activeErr)
+	var nativeErr error
+	if i.options.NativeResolver != nil {
+		nativeErr = i.CollectStream(ctx, scope, orders.NativePointStream)
+	}
+	return errors.Join(discoveryErr, activeErr, nativeErr)
 }
 
 func (i *Ingestor) nextDiscoveryStream(ctx context.Context, scope orders.Scope) (string, error) {
@@ -62,6 +66,8 @@ func (i *Ingestor) CollectStream(ctx context.Context, scope orders.Scope, stream
 	}
 	ctx, cancel := ingestionContext(ctx, config, *lease)
 	defer cancel()
+	ctx, stopReadAuthority := i.ingestionReadAuthority(ctx, *lease)
+	defer stopReadAuthority()
 	return i.collectLeasedPage(ctx, config, plan.checkpoint, window, *lease)
 }
 
@@ -146,7 +152,7 @@ func (i *Ingestor) releaseLease(ctx context.Context, lease orders.IngestionLease
 func (i *Ingestor) nextWindow(config orders.Config, checkpoint orders.Checkpoint, stream string) (orders.OrderWindow, string) {
 	now := i.options.Now().UTC()
 	window := i.anchoredWindow(stream, now)
-	if checkpoint.ConfigRevision == config.Revision && checkpoint.Revision > 0 && stream != ActiveStream {
+	if checkpoint.ConfigRevision == config.Revision && checkpoint.Revision > 0 && stream != ActiveStream && stream != orders.NativePointStream {
 		if !checkpoint.Complete {
 			window.From, window.To = checkpoint.WindowFrom, checkpoint.WindowTo
 			return window, checkpoint.RefreshKey
@@ -158,7 +164,7 @@ func (i *Ingestor) nextWindow(config orders.Config, checkpoint orders.Checkpoint
 			window.To = window.From.Add(31 * 24 * time.Hour)
 		}
 	}
-	if stream == ActiveStream && !checkpoint.Complete && !checkpoint.Exhausted && checkpoint.ConfigRevision == config.Revision && checkpoint.Revision > 0 {
+	if (stream == ActiveStream || stream == orders.NativePointStream) && !checkpoint.Complete && !checkpoint.Exhausted && checkpoint.ConfigRevision == config.Revision && checkpoint.Revision > 0 {
 		window.From, window.To = checkpoint.WindowFrom, checkpoint.WindowTo
 		return window, checkpoint.RefreshKey
 	}
@@ -189,11 +195,12 @@ func (i *Ingestor) collectLeasedPage(ctx context.Context, config orders.Config, 
 		RefreshKey: lease.RefreshKey, ExpectedCheckpointRevision: checkpoint.Revision, ExpectedCursor: cursor, WindowFrom: window.From,
 		WindowTo: window.To, StartedAt: i.options.Now(), FenceToken: lease.Token, FreshDetail: true,
 		IdempotencyKey: ingestionDigest(lease.Token, lease.RefreshKey, cursor)}
-	result, err := i.readLeasedPage(ctx, config.Scope, window, cursor)
+	result, err := i.readLeasedPage(ctx, config.Scope, lease.Credentials, window, cursor)
 	if err != nil {
 		return err
 	}
 	page.Postings, page.NextCursor, page.Complete = result.Postings, result.NextCursor, result.Complete
+	page.NativeReads = result.NativeReads
 	page.Failures, page.Exhausted = result.Failures, result.Exhausted
 	retainRefreshFailures(&page, checkpoint)
 	if ctx.Err() != nil {
@@ -227,7 +234,10 @@ func (i *Ingestor) persistLeasedPage(ctx context.Context, config orders.Config, 
 	return nil
 }
 
-func (i *Ingestor) readLeasedPage(ctx context.Context, scope orders.Scope, window orders.OrderWindow, cursor string) (orders.OrderSourcePage, error) {
+func (i *Ingestor) readLeasedPage(ctx context.Context, scope orders.Scope, credentials orders.CredentialRevisions, window orders.OrderWindow, cursor string) (orders.OrderSourcePage, error) {
+	if window.Stream == orders.NativePointStream {
+		return i.readNativePointPage(ctx, scope, credentials, cursor)
+	}
 	if window.Stream != ActiveStream {
 		return i.source.ReadOrderPage(ctx, scope, window, cursor)
 	}
@@ -275,7 +285,7 @@ func (i *Ingestor) renewLease(ctx context.Context, lease orders.IngestionLease) 
 }
 
 func ingestionStream(stream string) bool {
-	return stream == DiscoveryStream || stream == UnfulfilledStream || stream == ActiveStream
+	return stream == DiscoveryStream || stream == UnfulfilledStream || stream == ActiveStream || stream == orders.NativePointStream
 }
 
 func ingestionDigest(parts ...string) string {

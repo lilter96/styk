@@ -36,7 +36,7 @@ func (c orderCollector) Collect(ctx context.Context, scope orders.Scope) error {
 	if !ok {
 		return orders.ErrBlocked
 	}
-	collector, err := orderflow.NewIngestor(c.db, source, orderflow.IngestionOptions{WorkerID: c.workerID, Protector: c.protector})
+	collector, err := orderflow.NewIngestor(c.db, source, orderflow.IngestionOptions{WorkerID: c.workerID, NativeResolver: c.factory, Protector: c.protector})
 	if err != nil {
 		return err
 	}

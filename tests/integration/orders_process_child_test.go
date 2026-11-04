@@ -197,7 +197,7 @@ func (c ordersProcessCollector) Collect(ctx context.Context, scope orders.Scope)
 	if !ok {
 		return orders.ErrBlocked
 	}
-	collector, err := orderflow.NewIngestor(c.db, source, orderflow.IngestionOptions{WorkerID: c.worker, LeaseDuration: 5 * time.Second, PageSize: 25})
+	collector, err := orderflow.NewIngestor(c.db, source, orderflow.IngestionOptions{WorkerID: c.worker, NativeResolver: c.factory, LeaseDuration: 5 * time.Second, PageSize: 25})
 	if err != nil {
 		return err
 	}
