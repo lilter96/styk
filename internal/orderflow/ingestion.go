@@ -13,7 +13,7 @@ const (
 	ActiveStream      = "ozon-orders-active"
 )
 
-// OrderWindow is a bounded creation-time traversal, never an update watermark.
+// OrderWindow is a bounded creation-time or assembly-cutoff traversal, never an update watermark.
 type OrderWindow = orders.OrderWindow
 type OrderSourcePage = orders.OrderSourcePage
 
@@ -44,14 +44,17 @@ type PageProtector interface {
 }
 
 type IngestionOptions struct {
-	WorkerID      string
-	Lookback      time.Duration
-	Overlap       time.Duration
-	LeaseDuration time.Duration
-	PageSize      int
-	ActiveBatch   int
-	Protector     PageProtector
-	Now           func() time.Time
+	WorkerID string
+	// UnfulfilledLookahead is a local discovery horizon, not a provider maximum.
+	// Zero selects seven days; values above thirty days are rejected locally.
+	UnfulfilledLookahead time.Duration
+	Lookback             time.Duration
+	Overlap              time.Duration
+	LeaseDuration        time.Duration
+	PageSize             int
+	ActiveBatch          int
+	Protector            PageProtector
+	Now                  func() time.Time
 }
 
 type Ingestor struct {
@@ -69,6 +72,9 @@ func NewIngestor(store IngestionStore, source SourceReader, options IngestionOpt
 }
 
 func defaultIngestionOptions(options IngestionOptions) IngestionOptions {
+	if options.UnfulfilledLookahead == 0 {
+		options.UnfulfilledLookahead = 7 * 24 * time.Hour
+	}
 	if options.Lookback == 0 {
 		options.Lookback = 31 * 24 * time.Hour
 	}
@@ -91,7 +97,8 @@ func defaultIngestionOptions(options IngestionOptions) IngestionOptions {
 }
 
 func validIngestionOptions(options IngestionOptions) bool {
-	return options.WorkerID != "" && options.Lookback > 0 && options.Lookback <= 31*24*time.Hour &&
+	return options.UnfulfilledLookahead > 0 && options.UnfulfilledLookahead <= 30*24*time.Hour &&
+		options.WorkerID != "" && options.Lookback > 0 && options.Lookback <= 31*24*time.Hour &&
 		options.Overlap > 0 && options.Overlap < options.Lookback && options.LeaseDuration > 0 && options.LeaseDuration <= 5*time.Minute &&
 		options.PageSize > 0 && options.PageSize <= orders.MaxPagePostings && options.ActiveBatch > 0 && options.ActiveBatch <= orders.MaxPagePostings
 }

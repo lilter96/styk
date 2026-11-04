@@ -101,7 +101,7 @@ func (i *Ingestor) claimPageLease(ctx context.Context, request orders.IngestionC
 		return nil, window, err
 	}
 	now := i.options.Now().UTC()
-	window.From, window.To = now.Add(-i.options.Lookback), now
+	window = i.anchoredWindow(request.Stream, now)
 	request.RefreshKey = ingestionDigest(checkpoint.RefreshKey, "credentials", strconv.FormatInt(lease.Credentials.Ozon, 10), strconv.FormatInt(lease.Credentials.Moysklad, 10))
 	request.Now, request.LeaseUntil = now, now.Add(i.options.LeaseDuration)
 	lease, err = i.store.ClaimOrderIngestion(ctx, request)
@@ -145,13 +145,15 @@ func (i *Ingestor) releaseLease(ctx context.Context, lease orders.IngestionLease
 
 func (i *Ingestor) nextWindow(config orders.Config, checkpoint orders.Checkpoint, stream string) (orders.OrderWindow, string) {
 	now := i.options.Now().UTC()
-	window := orders.OrderWindow{Stream: stream, From: now.Add(-i.options.Lookback), To: now, Limit: i.options.PageSize}
+	window := i.anchoredWindow(stream, now)
 	if checkpoint.ConfigRevision == config.Revision && checkpoint.Revision > 0 && stream != ActiveStream {
-		window.From, window.To = checkpoint.WindowFrom, checkpoint.WindowTo
 		if !checkpoint.Complete {
+			window.From, window.To = checkpoint.WindowFrom, checkpoint.WindowTo
 			return window, checkpoint.RefreshKey
 		}
-		window.From, window.To = checkpoint.WindowTo.Add(-i.options.Overlap), now
+		if stream == DiscoveryStream {
+			window.From = checkpoint.WindowTo.Add(-i.options.Overlap)
+		}
 		if window.To.Sub(window.From) > 31*24*time.Hour {
 			window.To = window.From.Add(31 * 24 * time.Hour)
 		}
@@ -162,6 +164,20 @@ func (i *Ingestor) nextWindow(config orders.Config, checkpoint orders.Checkpoint
 	}
 	key := ingestionDigest(stream, window.From.Format(time.RFC3339Nano), window.To.Format(time.RFC3339Nano), strconv.FormatInt(config.Revision, 10), strconv.FormatInt(checkpoint.Revision, 10))
 	return window, key
+}
+
+// anchoredWindow bounds every request to our existing 31-day local span.
+// Assembly deadlines may be future-dated even for old-created active orders.
+// Each completed cutoff traversal therefore starts a new now-anchored epoch;
+// its future upper bound must never become the next epoch's lower bound.
+// Neither the seven-day default nor the span asserts a provider API limit.
+func (i *Ingestor) anchoredWindow(stream string, now time.Time) orders.OrderWindow {
+	past, future := i.options.Lookback, time.Duration(0)
+	if stream == UnfulfilledStream {
+		future = i.options.UnfulfilledLookahead
+		past = min(past, 31*24*time.Hour-future)
+	}
+	return orders.OrderWindow{Stream: stream, From: now.Add(-past), To: now.Add(future), Limit: i.options.PageSize}
 }
 
 func (i *Ingestor) collectLeasedPage(ctx context.Context, config orders.Config, checkpoint orders.Checkpoint, window orders.OrderWindow, lease orders.IngestionLease) error {
