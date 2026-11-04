@@ -1109,3 +1109,122 @@ test("audited UNKNOWN recovery unlocks a fresh review but never writes automatic
   ).toBeEnabled();
   expect(errors).toEqual([]);
 });
+
+test("native draft follows normal preview and separate merchant approval", async ({
+  page,
+}, testInfo) => {
+  const { approvals, errors } = await openOrders(page, false, true);
+  const now = new Date();
+  await page.route("**/api/orders/config?*", (route) =>
+    fulfill(route, {
+      ...config,
+      native_documents: {
+        enabled: true,
+        allow_posted: false,
+        actions: ["demand_create", "salesreturn_create"],
+        maximum_quantity: "10",
+        event_max_age_seconds: 3600,
+        attested_at: now.toISOString(),
+        valid_until: new Date(now.getTime() + 3600000).toISOString(),
+      },
+    }),
+  );
+  const nativeCommand: OrderCommand = {
+    id: "native-command",
+    action: "demand_create",
+    posting_number: "SYNTHETIC-1",
+    correlation: { customer_order_id: "native-parent" },
+    native_movement: {
+      applicable: { presence: "zero", value: false },
+      organization_id: "org",
+      agent_id: "agent",
+      store_id: "store",
+      currency_id: "currency",
+      moment: now.toISOString(),
+      lines: [
+        {
+          identity: { offer_id: "SYNTHETIC-SKU" },
+          order_position_id: "position-1",
+          quantity: "1",
+          price: { amount: "0", currency: "RUB" },
+          discount: known("0"),
+          vat: known("0"),
+          vat_enabled: known(false),
+        },
+      ],
+    },
+  };
+  let proposed = false;
+  await page.route("**/api/orders/preview", (route) => {
+    const body = route.request().postDataJSON();
+    expect(body.proposals).toBeUndefined();
+    expect(body.native_proposals[0]).toMatchObject({
+      action: "demand_create",
+      applicable: { presence: "zero", value: false },
+      event_kind: "draft_plan",
+      event_confirmed: false,
+    });
+    expect(body.native_proposals[0].lines[0].quantity).toBe("1");
+    proposed = true;
+    return fulfill(route, {
+      id: "preview-synthetic",
+      scope,
+      config_revision: 1,
+      expires_at: new Date(Date.now() + 60000).toISOString(),
+      decisions: [
+        { ...decision("SYNTHETIC-1", true), commands: [nativeCommand] },
+      ],
+    });
+  });
+  await page
+    .getByText("Отгрузка и возврат в МойСклад", { exact: true })
+    .click();
+  await page
+    .getByRole("textbox", { name: /^Количество · Тестовый товар/ })
+    .fill("1");
+  await page
+    .getByLabel("Плановое время документа")
+    .fill(new Date(now.getTime() + 3600000).toISOString().slice(0, 16));
+  await page
+    .getByLabel("Идентификатор планирования")
+    .fill("PRIVATE-SYNTHETIC-PLAN");
+  expect(approvals).toHaveLength(0);
+  await page
+    .getByRole("button", { name: "Проверить документ перед созданием" })
+    .click();
+  await expect.poll(() => proposed).toBe(true);
+  await expect(
+    page.getByText("Проверка складского документа", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/Будет создан непроведённый документ/),
+  ).toBeVisible();
+  expect(approvals).toHaveLength(0);
+  await page.screenshot({
+    path: testInfo.outputPath("native-draft-desktop.png"),
+    fullPage: true,
+    mask: [page.getByLabel("Идентификатор планирования")],
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("native-draft-mobile.png"),
+    fullPage: true,
+    mask: [page.getByLabel("Идентификатор планирования")],
+  });
+  await page.getByLabel("Подтвердить отправление SYNTHETIC-1").check();
+  await page
+    .getByLabel(
+      "Я проверил фактическое основание, состав и проведение документа и подтверждаю создание складского документа в МойСклад.",
+    )
+    .check();
+  await page
+    .getByRole("button", { name: "Создать складские документы (1)" })
+    .click();
+  await expect.poll(() => approvals.length).toBe(1);
+  expect(errors).toEqual([]);
+});

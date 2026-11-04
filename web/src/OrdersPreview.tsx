@@ -1,3 +1,4 @@
+import { OrdersNativeSummary } from "./OrdersNativeSummary";
 import { useEffect, useState } from "react";
 import { OrdersPositionPatch } from "./OrdersPositionPatch";
 import { OrdersActionSummary } from "./OrdersActionSummary";
@@ -144,13 +145,18 @@ export function OrdersPreview({
         (command) =>
           permittedActions.includes(command.action) &&
           (command.action.startsWith("mirror_") ||
+            (["demand_create", "salesreturn_create"].includes(command.action) &&
+              !!command.native_movement) ||
             !!command.posting_action?.parameters),
       ),
   );
   const eligible = ready.map((decision) => decision.posting.posting_number);
   const disabled = blocked || busy || expired;
-  const outgoing = permittedActions.some(
-    (action) => !action.startsWith("mirror_"),
+  const outgoing = permittedActions.some((action) =>
+    action.startsWith("posting_"),
+  );
+  const native = permittedActions.some((action) =>
+    ["demand_create", "salesreturn_create"].includes(action),
   );
   function select(numbers: string[]) {
     setChosen(numbers);
@@ -162,7 +168,11 @@ export function OrdersPreview({
       aria-labelledby="orders-preview-heading"
     >
       <h2 id="orders-preview-heading">
-        {outgoing ? "Проверка действия в Ozon" : "Проверка перед передачей"}
+        {outgoing
+          ? "Проверка действия в Ozon"
+          : native
+            ? "Проверка складского документа"
+            : "Проверка перед передачей"}
       </h2>
       <p>
         Готово: {ready.length}. Требуют внимания:{" "}
@@ -241,7 +251,10 @@ export function OrdersPreview({
                     metadata={metadata}
                   />
                 )}
-                {!command.action.startsWith("mirror_") && (
+                {command.native_movement && (
+                  <OrdersNativeSummary command={command} />
+                )}
+                {command.action.startsWith("posting_") && (
                   <OrdersActionSummary
                     command={command}
                     reasonLabel={
@@ -269,7 +282,9 @@ export function OrdersPreview({
         />
         {outgoing
           ? "Я проверил параметры выбранного действия и подтверждаю отправку запроса в Ozon."
-          : "Я проверил состав и поля выбранных отправлений и подтверждаю создание или обновление заказов в МойСклад."}
+          : native
+            ? "Я проверил фактическое основание, состав и проведение документа и подтверждаю создание складского документа в МойСклад."
+            : "Я проверил состав и поля выбранных отправлений и подтверждаю создание или обновление заказов в МойСклад."}
       </label>
       <div className="orders-actions">
         <button
@@ -283,7 +298,9 @@ export function OrdersPreview({
             ? "Записываем подтверждение…"
             : outgoing
               ? `Подтвердить действие в Ozon (${chosen.length})`
-              : `Передать в МойСклад (${chosen.length})`}
+              : native
+                ? `Создать складские документы (${chosen.length})`
+                : `Передать в МойСклад (${chosen.length})`}
         </button>
         <p className="orders-note">
           Результат передачи подтверждается отдельной сверкой в истории

@@ -1,3 +1,4 @@
+import { OrdersNativeSummary, nativeDocumentURL } from "./OrdersNativeSummary";
 import { OrdersRecovery } from "./OrdersRecovery";
 import { useLabelExpiryClock } from "./useLabelExpiryClock";
 import { useEffect, useState } from "react";
@@ -155,6 +156,27 @@ export function OrdersOperations({
                     work.receipt?.external_id
                   }
                 />
+              )}
+              {work.command.native_movement && (
+                <details>
+                  <summary>Подтверждённый складской документ</summary>
+                  <OrdersNativeSummary command={work.command} />
+                  {nativeDocumentURL(
+                    work.command,
+                    work.native_document?.id ?? work.receipt?.external_id,
+                  ) && (
+                    <a
+                      href={nativeDocumentURL(
+                        work.command,
+                        work.native_document?.id ?? work.receipt?.external_id,
+                      )}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Открыть складской документ МойСклад
+                    </a>
+                  )}
+                </details>
               )}
               {work.command.posting_action && (
                 <details>

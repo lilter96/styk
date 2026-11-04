@@ -1,3 +1,4 @@
+import { OrdersNativePolicy, nativePolicyValid } from "./OrdersNativePolicy";
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, post } from "./api";
@@ -256,6 +257,7 @@ export function OrdersConfig({
     !mappingsValid ||
     !piiRetentionValid ||
     !reverseValid ||
+    !nativePolicyValid(draft.native_documents) ||
     (automatic &&
       (!automaticAllowed ||
         !automationConsent ||
@@ -820,6 +822,13 @@ export function OrdersConfig({
             </button>
           </div>
         </details>
+        <OrdersNativePolicy
+          value={draft.native_documents}
+          disabled={busy}
+          onChange={(native_documents) =>
+            change({ ...draft, native_documents })
+          }
+        />
         <div className="orders-form-grid">
           <label>
             Интервал проверки, секунд

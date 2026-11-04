@@ -1,4 +1,5 @@
 import { ApiError } from "./api";
+import type { NativeDocumentPolicy } from "./OrdersNativeTypes";
 import type { ExemplarSetInput } from "./OrdersExemplarTypes";
 
 export type OrderScope = { tenant: string; moy: string; ozon: string };
@@ -99,6 +100,7 @@ export type OrderAutomation = {
   revoked_at?: string;
 };
 export type OrdersConfigData = {
+  native_documents?: NativeDocumentPolicy;
   scope: NativeScope;
   revision: number;
   enabled: boolean;
@@ -202,7 +204,26 @@ export type OrderPositionPatch = {
   reserve: OrderField<string>;
   price: OrderField<OrderMoney>;
 };
+export type OrderNativeMovement = {
+  applicable: OrderField<boolean>;
+  organization_id: string;
+  agent_id: string;
+  store_id: string;
+  currency_id: string;
+  moment: string;
+  demand_work_id?: string;
+  lines: {
+    identity: OrderLine["identity"];
+    order_position_id: string;
+    quantity: string;
+    price: OrderMoney;
+    discount: OrderField<string>;
+    vat: OrderField<string>;
+    vat_enabled: OrderField<boolean>;
+  }[];
+};
 export type OrderCommand = {
+  native_movement?: OrderNativeMovement;
   id: string;
   action: string;
   posting_number: string;
@@ -232,6 +253,7 @@ export type OrdersPreviewData = {
   decisions: OrderDecision[];
 };
 export type OrderWork = {
+  native_document?: { id: string; kind: string; observed_at: string };
   id: string;
   state: string;
   command: OrderCommand;
@@ -357,6 +379,8 @@ export const postingStatusLabels: Record<string, string> = {
 };
 export const orderActionLabel = (action: string) =>
   ({
+    demand_create: "Создать отгрузку в МойСклад",
+    salesreturn_create: "Создать возврат покупателя в МойСклад",
     mirror_create: "Создать заказ в МойСклад",
     mirror_update: "Обновить заказ в МойСклад",
     mirror_position_update: "Обновить позицию заказа в МойСклад",

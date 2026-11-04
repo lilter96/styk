@@ -1,3 +1,4 @@
+import type { OrderNativeProposal } from "./OrdersNativeTypes";
 import { useCallback, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, post } from "./api";
@@ -126,7 +127,7 @@ function OrdersAccount({
     setPreview(null);
     setMessage("Настройки заказов сохранены.");
   }
-  async function review(proposal?: OrderActionProposal) {
+  async function review(proposal?: OrderActionProposal | OrderNativeProposal) {
     if (proposal && dirty) {
       setError("Сохраните настройки перед проверкой действия в Ozon.");
       return;
@@ -160,7 +161,11 @@ function OrdersAccount({
           expected_revision: config.data.revision,
           posting_numbers: numbers,
           actions,
-          ...(proposal ? { proposals: [proposal] } : {}),
+          ...(proposal
+            ? "applicable" in proposal
+              ? { native_proposals: [proposal] }
+              : { proposals: [proposal] }
+            : {}),
         },
         AbortSignal.timeout(30000),
       );
@@ -346,6 +351,7 @@ function OrdersAccount({
             freshnessSeconds={config.data.source_freshness_seconds}
             actionReset={actionReset}
             onActionPreview={(proposal) => void review(proposal)}
+            onNativePreview={(proposal) => void review(proposal)}
             onActionDraftChange={() => setPreview(null)}
             selected={selected}
             disabled={busy !== null}

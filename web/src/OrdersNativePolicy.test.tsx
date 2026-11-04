@@ -1,0 +1,97 @@
+import "@testing-library/jest-dom/vitest";
+import { afterEach, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
+import { OrdersNativePolicy, nativePolicyValid } from "./OrdersNativePolicy";
+import { OrdersNativeSummary, nativeDocumentURL } from "./OrdersNativeSummary";
+import type { NativeDocumentPolicy } from "./OrdersNativeTypes";
+import type { OrderCommand } from "./OrdersTypes";
+
+afterEach(cleanup);
+it("validates physical-event policy expiry and bounded quantities", () => {
+  const policy: NativeDocumentPolicy = {
+    enabled: true,
+    allow_posted: false,
+    actions: ["demand_create"],
+    maximum_quantity: "10",
+    event_max_age_seconds: 3600,
+    attested_at: "",
+    valid_until: "",
+  };
+  expect(nativePolicyValid(policy)).toBe(true);
+  expect(nativePolicyValid({ ...policy, maximum_quantity: "1001" })).toBe(
+    false,
+  );
+  expect(nativePolicyValid({ ...policy, allow_posted: true })).toBe(false);
+  expect(
+    nativePolicyValid({
+      ...policy,
+      allow_posted: true,
+      attested_at: new Date().toISOString(),
+      valid_until: new Date(Date.now() + 3600000).toISOString(),
+    }),
+  ).toBe(true);
+});
+it("enabling document preparation does not enable posting or fabricate a physical event", () => {
+  let latest: NativeDocumentPolicy | undefined;
+  function Harness() {
+    const [value, setValue] = useState<NativeDocumentPolicy>();
+    return (
+      <OrdersNativePolicy
+        value={value}
+        disabled={false}
+        onChange={(next) => {
+          latest = next;
+          setValue(next);
+        }}
+      />
+    );
+  }
+  render(<Harness />);
+  fireEvent.click(
+    screen.getByLabelText("Разрешить подготовку складских документов"),
+  );
+  expect(latest?.enabled).toBe(true);
+  expect(latest?.allow_posted).toBe(false);
+  const checkbox = screen.getByLabelText(
+    "На один час разрешаю отдельное ручное подтверждение проведения по реальным складским событиям.",
+  );
+  fireEvent.click(checkbox);
+  const expiry = latest?.valid_until;
+  expect(latest?.allow_posted).toBe(true);
+  expect(Date.parse(expiry!)).toBeGreaterThan(Date.now());
+  fireEvent.change(
+    screen.getByLabelText("Максимальное количество в складском документе"),
+    { target: { value: "7" } },
+  );
+  expect(latest?.valid_until).toBe(expiry);
+});
+it("explains draft semantics and links only exact supported native document identities", () => {
+  const command = {
+    id: "native-command",
+    posting_number: "SYNTHETIC-1",
+    correlation: {},
+    action: "demand_create",
+    native_movement: {
+      applicable: { presence: "zero", value: false },
+      organization_id: "org",
+      agent_id: "agent",
+      store_id: "store",
+      currency_id: "rub",
+      moment: new Date().toISOString(),
+      lines: [],
+    },
+  } as OrderCommand;
+  render(<OrdersNativeSummary command={command} />);
+  expect(screen.getByText(/Будет создан непроведённый документ/)).toBeVisible();
+  const id = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  expect(nativeDocumentURL(command, id)).toBe(
+    `https://online.moysklad.ru/app/#demand/edit?id=${id}`,
+  );
+  expect(
+    nativeDocumentURL(command, "https://internal.example"),
+  ).toBeUndefined();
+  expect(
+    nativeDocumentURL({ ...command, action: "mirror_update" }, id),
+  ).toBeUndefined();
+});
