@@ -72,7 +72,21 @@ function OrdersAccount({
     refetchOnWindowFocus: false,
   });
   const [selected, setSelected] = useState<string[]>([]);
-  const [uncertain, setUncertain] = useState<string[]>([]);
+  const [unresolved, setUncertain] = useState<string[]>([]);
+  const [recoveries, setRecoveries] = useState<Record<string, number>>({});
+  const uncertain = unresolved.filter(
+    (number) => !(recoveries[number] > Date.now()),
+  );
+  const recoveryAuthorization = useCallback(
+    (posting: string, until: string | undefined) => {
+      setRecoveries((previous) => ({
+        ...previous,
+        [posting]: until ? Date.parse(until) : 0,
+      }));
+      setPreview(null);
+    },
+    [],
+  );
   const [preview, setPreview] = useState<OrdersPreviewData | null>(null);
   const [previewActions, setPreviewActions] = useState([
     "mirror_create",
@@ -94,7 +108,9 @@ function OrdersAccount({
   const updateOutcomes = useCallback((states: Record<string, string>) => {
     setUncertain((previous) => [
       ...new Set([
-        ...previous,
+        ...previous.filter(
+          (number) => !["RECONCILED", "REJECTED"].includes(states[number]),
+        ),
         ...Object.keys(states).filter((number) => states[number] === "UNKNOWN"),
       ]),
     ]);
@@ -405,6 +421,7 @@ function OrdersAccount({
         scope={scope}
         onLinks={updateLinks}
         onOutcomes={updateOutcomes}
+        onRecoveryAuthorization={recoveryAuthorization}
       />
     </div>
   );

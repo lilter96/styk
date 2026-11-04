@@ -960,3 +960,152 @@ test("exemplar edits require explicit input, preserve string IDs and use separat
   ).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test("audited UNKNOWN recovery unlocks a fresh review but never writes automatically", async ({
+  page,
+}, testInfo) => {
+  const { approvals, previews, errors } = await openOrders(page);
+  const work = {
+    id: "unknown-work",
+    scope,
+    state: "UNKNOWN",
+    automatic: false,
+    command: {
+      id: "unknown-command",
+      action: "mirror_update",
+      posting_number: "SYNTHETIC-1",
+      correlation: { customer_order_id: "native-synthetic" },
+    },
+    receipt: { state: "UNKNOWN", code: "TRANSPORT_ERROR" },
+  };
+  let checked = false;
+  let resolved = false;
+  let resolves = 0;
+  const evidence = {
+    id: "evidence-1",
+    scope,
+    work_id: work.id,
+    created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 60000).toISOString(),
+    source: {
+      status: known("awaiting_packaging"),
+      observed_at: new Date().toISOString(),
+    },
+    target: {
+      complete: true,
+      positions: [],
+      observed_at: new Date().toISOString(),
+    },
+  };
+  const view = () => ({
+    work,
+    eligible: checked && !resolved,
+    blockers: checked ? [] : [{ code: "RECOVERY_CHECK_REQUIRED" }],
+    ...(checked ? { evidence } : {}),
+    ...(resolved
+      ? {
+          resolution: {
+            id: "resolution-1",
+            accepted_uncertainty: true,
+            created_at: new Date().toISOString(),
+            attestation: {
+              id: "attestation-1",
+              valid_until: new Date(Date.now() + 60000).toISOString(),
+            },
+          },
+        }
+      : {}),
+  });
+  await page.route("**/api/orders/operations?*", (route) =>
+    fulfill(route, {
+      operations: [
+        {
+          id: "old-op",
+          scope,
+          created_at: new Date().toISOString(),
+          state: "UNKNOWN",
+          targets: [work],
+        },
+      ],
+    }),
+  );
+  await page.route("**/api/orders/recovery?*", (route) =>
+    fulfill(route, view()),
+  );
+  await page.route("**/api/orders/recovery/check", (route) => {
+    checked = true;
+    return fulfill(route, view());
+  });
+  await page.route("**/api/orders/recovery/resolve", (route) => {
+    const body = route.request().postDataJSON();
+    expect(body.work_id).toBe(work.id);
+    expect(body.acknowledge).toBe(true);
+    expect(body.worker_stopped).toBe(true);
+    expect(body.evidence_id).toBe(evidence.id);
+    resolved = true;
+    resolves++;
+    return fulfill(route, view());
+  });
+  await page.getByRole("button", { name: "Обновить статусы заказов" }).click();
+  await page
+    .getByText("Проверить неизвестный результат и варианты восстановления", {
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByText("Запросите свежую сверку источника и заказа МойСклад."),
+  ).toBeVisible();
+  expect(resolves).toBe(0);
+  await page.getByRole("button", { name: "Сверить результат чтением" }).click();
+  const resolve = page.getByRole("button", {
+    name: "Записать разрешение нового решения",
+  });
+  await expect(resolve).toBeDisabled();
+  await page
+    .getByLabel("Основание восстановления (не менее 16 символов)")
+    .fill("Осознанно принимаю риск позднего запроса после сверки");
+  await page
+    .getByLabel(
+      "Прежний обработчик остановлен; активная отправка этого заказа исключена.",
+    )
+    .check();
+  await expect(resolve).toBeDisabled();
+  await page
+    .getByLabel(
+      "Принимаю риск позднего применения прежнего запроса. Разрешаю только новый предпросмотр и отдельное подтверждение.",
+    )
+    .check();
+  await page.screenshot({
+    path: testInfo.outputPath("recovery-desktop.png"),
+    fullPage: true,
+    mask: [page.getByRole("textbox", { name: /Основание восстановления/ })],
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("recovery-mobile.png"),
+    fullPage: true,
+    mask: [page.getByRole("textbox", { name: /Основание восстановления/ })],
+  });
+  await resolve.click();
+  await expect(
+    page.getByText(/Принятие неопределённости записано/),
+  ).toBeVisible();
+  expect(resolves).toBe(1);
+  expect(approvals).toHaveLength(0);
+  expect(previews).toHaveLength(0);
+  await page
+    .getByRole("checkbox", { name: "Выбрать отправление SYNTHETIC-1" })
+    .check();
+  await expect(
+    page.getByRole("button", {
+      name: "Проверить выбранные отправления",
+      exact: true,
+    }),
+  ).toBeEnabled();
+  expect(errors).toEqual([]);
+});

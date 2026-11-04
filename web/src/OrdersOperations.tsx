@@ -1,3 +1,4 @@
+import { OrdersRecovery } from "./OrdersRecovery";
 import { useLabelExpiryClock } from "./useLabelExpiryClock";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -24,10 +25,15 @@ export function OrdersOperations({
   scope,
   onLinks,
   onOutcomes,
+  onRecoveryAuthorization,
 }: {
   scope: OrderScope;
   onLinks?: (links: Record<string, string>) => void;
   onOutcomes?: (states: Record<string, string>) => void;
+  onRecoveryAuthorization?: (
+    posting: string,
+    until: string | undefined,
+  ) => void;
 }) {
   const [cursors, setCursors] = useState([""]);
   const cursor = cursors[cursors.length - 1];
@@ -191,6 +197,13 @@ export function OrdersOperations({
                   повторная отправка автоматически не выполняется. Обновите
                   статусы и дождитесь подтверждения.
                 </p>
+              )}
+              {work.state === "UNKNOWN" && (
+                <OrdersRecovery
+                  scope={scope}
+                  work={work}
+                  onAuthorization={onRecoveryAuthorization}
+                />
               )}
               {work.state === "BLOCKED" && (
                 <p className="orders-warning">
