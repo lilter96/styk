@@ -37,6 +37,8 @@ type ActionParameters struct {
 	EventConfirmed         bool             `json:"event_confirmed,omitempty"`
 	ReadinessConfirmed     bool             `json:"readiness_confirmed,omitempty"`
 	LabelType              string           `json:"label_type,omitempty"`
+	LabelWorkID            string           `json:"label_work_id,omitempty"`
+	LabelPrintedConfirmed  bool             `json:"label_printed_confirmed,omitempty"`
 	ReasonMessageProvided  bool             `json:"reason_message_provided,omitempty"`
 	TrackingProvided       bool             `json:"tracking_provided,omitempty"`
 	EventReferenceProvided bool             `json:"event_reference_provided,omitempty"`

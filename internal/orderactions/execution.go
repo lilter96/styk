@@ -12,7 +12,7 @@ import (
 
 // ContractVersion records the operation subset reviewed against the official
 // Chinese Swagger in the preceding lab. It is not a full Swagger download.
-const ContractVersion = "ozon-fulfillment-2026-10-30:v2:ship-v4,cancel-v2,partial-result-string,tracking-v2,delivery-v2,label-v3"
+const ContractVersion = "ozon-fulfillment-2026-11-04:v3:ship-v4,cancel-v2,partial-result-string,tracking-v2,delivery-v2,label-v3,hybrid-printed-label-v1"
 
 //go:embed label_contract.json
 var labelContract []byte
@@ -36,6 +36,9 @@ func RequiredParameters(action orders.Action) []string {
 
 func PlanExecution(posting orders.Posting, cap orders.CapabilityRef, action orders.Action, now time.Time) orders.ActionOption {
 	plan := executionEdge(action)
+	if orders.HybridLabelRequired(posting, action) {
+		plan.ParametersRequired = append(plan.ParametersRequired, "label_work_id", "label_printed_confirmed")
+	}
 	plan.Blockers = append(plan.Blockers, executionFacts(posting, cap, now)...)
 	if !posting.Status.IsKnown() || !executionPredecessor(action, *posting.Status.Value) {
 		plan.Blockers = append(plan.Blockers, actionBlock("status", "action_not_available_in_current_status"))

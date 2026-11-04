@@ -45,6 +45,9 @@ func executionInput(posting orders.Posting, action orders.Action, input orders.A
 		if !input.EventConfirmed || !executionText(input.EventReference) {
 			return orders.ErrBlocked
 		}
+		if orders.HybridLabelRequired(posting, action) && (!input.LabelPrintedConfirmed || !executionText(input.LabelWorkID) || len(input.LabelWorkID) > 256) {
+			return orders.ErrBlocked
+		}
 	case orders.ActionPostingLabelCreate:
 		if !slices.Contains([]string{"big_label", "small_label"}, input.LabelType) {
 			return orders.ErrInvalid

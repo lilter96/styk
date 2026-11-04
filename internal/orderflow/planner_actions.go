@@ -55,6 +55,7 @@ func (s *Service) planAction(ctx context.Context, review orders.ReviewContext, p
 		decision.Validation = append(decision.Validation, orders.Validation{Field: "reason_id", Code: "provider_reasons_unavailable"})
 	}
 	decision.Validation = append(decision.Validation, orderactions.ValidateExecution(posting, warehouse.Capability, proposal, reasons, now)...)
+	decision.Validation = append(decision.Validation, s.validateHybridLabel(ctx, posting, proposal, now)...)
 	if len(decision.Validation) > 0 {
 		return decision, nil
 	}

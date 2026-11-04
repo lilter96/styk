@@ -51,6 +51,9 @@ func readOrderPreviewContext(ctx context.Context, q ordersQuerier, preview order
 	if errors.Is(err, orders.ErrNotFound) {
 		return review, orders.ErrStale
 	}
+	if err == nil {
+		err = validateOrderPreviewHybridLabels(ctx, q, preview, review)
+	}
 	return review, err
 }
 

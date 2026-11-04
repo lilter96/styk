@@ -70,6 +70,14 @@ func orderDispatchCurrent(ctx context.Context, tx pgx.Tx, work orders.Work, guar
 	if work.State.ReadOnly() {
 		return true, nil
 	}
+	if len(current.Postings) == 1 {
+		if err = validateOrderHybridLabel(ctx, tx, current.Postings[0], work.Command); err != nil {
+			if errors.Is(err, orders.ErrStale) || errors.Is(err, orders.ErrBlocked) {
+				return false, nil
+			}
+			return false, err
+		}
+	}
 	return validateOrderUnsentWork(work, current, now)
 }
 
