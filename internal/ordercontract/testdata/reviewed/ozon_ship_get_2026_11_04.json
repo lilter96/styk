@@ -1,0 +1,219 @@
+{
+  "evidence_kind": "REVIEWED_SELECTED_SCHEMA_EXCERPT",
+  "source": {
+    "url": "https://docs.ozon.ru/api/seller/zh/swagger.json",
+    "retrieved_at": "2026-11-04T19:48:23Z",
+    "openapi": "3.0.0",
+    "document_reader_line_count": 52781,
+    "raw_document_sha256": null,
+    "raw_download": {
+      "attempts": 1,
+      "maximum_bytes": 20971520,
+      "timeout_seconds": 60,
+      "outcome": "PROXY_CONNECT_ABORTED"
+    },
+    "transport": "official_document_web_reader",
+    "line_ranges": [
+      "8094-8180",
+      "12515-12557",
+      "12759-12812",
+      "32144-32213",
+      "32266-32282",
+      "37645-37660",
+      "37983-38030",
+      "12627-12630",
+      "37610-37643",
+      "37875-37886"
+    ]
+  },
+  "normalization": "Selected structural keys only; descriptions and examples omitted. UTF-8 JSON object keys sorted, compact separators. Hash covers excerpt only, not remote document bytes.",
+  "excerpt_sha256": "0f7d8498945d7d62143ad63ff6abb6d9cdb9e4874bfa10132762786bc0378520",
+  "coverage": "PARTIAL_SELECTED_FIELDS_NOT_FULL_SCHEMA",
+  "review": {
+    "ship_http_200_requires_readback": true,
+    "ship_failed_is_not_success": true,
+    "ship_result_exhaustive_membership_documented": false,
+    "get_404_proves_split_supersession": false,
+    "get_specific_404_reason_codes_documented": false,
+    "rpcStatus_definition_reviewed": false,
+    "product_id_semantics": "SKU",
+    "described_split_parent_retirement_status": "cancelled_from_split_pending",
+    "status_values_are_description_not_formal_enum": true,
+    "related_postings_optional_request_flag": true,
+    "related_postings_response_null_in_official_example": true,
+    "related_posting_numbers_explicit_array_type_declared": false,
+    "related_postings_prove_children_or_exhaustive_membership": false,
+    "split_cancel_status_is_not_generic_cancellation_or_financial_settlement": true
+  },
+  "excerpt": {
+    "paths": {
+      "/v4/posting/fbs/ship": {
+        "post": {
+          "operationId": "PostingAPI_ShipFbsPostingV4",
+          "request_schema": {
+            "$ref": "#/components/schemas/fbsv4FbsPostingShipV4Request"
+          },
+          "response_schemas": {
+            "200": {
+              "$ref": "#/components/schemas/fbsv4FbsPostingShipV4Response"
+            },
+            "default": {
+              "$ref": "#/components/schemas/rpcStatus"
+            }
+          }
+        }
+      },
+      "/v3/posting/fbs/get": {
+        "post": {
+          "operationId": "PostingAPI_GetFbsPostingV3",
+          "request_schema": {
+            "$ref": "#/components/schemas/postingv3GetFbsPostingRequest"
+          },
+          "response_schemas": {
+            "200": {
+              "$ref": "#/components/schemas/v3GetFbsPostingResponseV3"
+            },
+            "400": {
+              "$ref": "#/components/schemas/rpcStatus"
+            },
+            "403": {
+              "$ref": "#/components/schemas/rpcStatus"
+            },
+            "404": {
+              "$ref": "#/components/schemas/rpcStatus"
+            },
+            "409": {
+              "$ref": "#/components/schemas/rpcStatus"
+            },
+            "500": {
+              "$ref": "#/components/schemas/rpcStatus"
+            }
+          }
+        }
+      }
+    },
+    "components": {
+      "schemas": {
+        "FbsPostingShipV4RequestPackageProduct": {
+          "required": [
+            "product_id",
+            "quantity"
+          ],
+          "type": "object",
+          "title": "object",
+          "properties": {
+            "product_id": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "quantity": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        },
+        "FbsPostingShipV4RequestPackage": {
+          "required": [
+            "products"
+          ],
+          "type": "object",
+          "title": "object",
+          "properties": {
+            "products": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/FbsPostingShipV4RequestPackageProduct"
+              }
+            }
+          }
+        },
+        "fbsv4FbsPostingShipV4Request": {
+          "required": [
+            "packages",
+            "posting_number"
+          ],
+          "type": "object",
+          "title": "object",
+          "properties": {
+            "packages": {
+              "items": {
+                "$ref": "#/components/schemas/FbsPostingShipV4RequestPackage"
+              }
+            },
+            "posting_number": {
+              "type": "string"
+            },
+            "with": {
+              "$ref": "#/components/schemas/FbsPostingShipV4RequestWith"
+            }
+          }
+        },
+        "fbsv4FbsPostingShipV4Response": {
+          "type": "object",
+          "title": "object",
+          "properties": {
+            "additional_data": {
+              "items": {
+                "$ref": "#/components/schemas/FbsPostingShipV4ResponseShipAdditionalData"
+              }
+            },
+            "result": {
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "postingv3GetFbsPostingRequest": {
+          "required": [
+            "posting_number"
+          ],
+          "properties": {
+            "posting_number": {
+              "type": "string"
+            },
+            "with": {
+              "$ref": "#/components/schemas/postingv3FbsPostingWithParamsExamplars"
+            }
+          },
+          "type": "object",
+          "title": "object"
+        },
+        "v3FbsPostingDetail_selected_fields": {
+          "properties": {
+            "parent_posting_number": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "related_postings": {
+              "$ref": "#/components/schemas/v3FbsPostingDetailRelatedPostings"
+            }
+          }
+        },
+        "postingv3FbsPostingWithParamsExamplars_selected_fields": {
+          "properties": {
+            "related_postings": {
+              "type": "boolean"
+            }
+          }
+        },
+        "v3FbsPostingDetailRelatedPostings": {
+          "type": "object",
+          "title": "object",
+          "properties": {
+            "related_posting_numbers": {
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "reviewed_description_fragments": {
+      "v3FbsPostingDetail.properties.status": "`cancelled_from_split_pending`——因货件拆分而取消"
+    }
+  }
+}

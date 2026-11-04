@@ -172,6 +172,15 @@
       "sha256": "80cf89961a05753a2a963f4dd5212abc14811acb022fb222f498f2400f70b488",
       "hash_basis": "reviewed_subset_summary_utf8",
       "evidence": "Reviewed official Seller Swagger 2026-11-04: v6FbsPostingProductExemplarSetV6Request.multi_box_qty integer int32, v6FbsPostingProductExemplarCreateOrGetV6Response.multi_box_qty same type; v3 detail result.multi_box_qty integer int32. v5 exemplar status contains no documented multi_box_qty, so the existing fresh detail read is separate evidence, not a fabricated v5 field. Weight absent from formal exemplar components but present in official v6 set/create and v5 status examples. Official article445 explicitly documents sending weight via v6 set and checking v5 status; no authoritative measurement unit established. This implementation preserves only exact unchanged provider-observed native numeric weights and grouping with fresh matching evidence; no merchant measurement, edits, unit conversion or new grouping. Evidence hash summarizes reviewed facts, not remote schema bytes."
+    },
+    {
+      "id": "ozon_assembly_related_review_20261104",
+      "url": "https://docs.ozon.ru/api/seller/zh/swagger.json",
+      "checked_at": "2026-11-04",
+      "status": "official_selected_fields_reviewed",
+      "sha256": "89b8ee6dad4388179460f6e375b1d854a896d63c0c149fd74955f550da20d1cd",
+      "hash_basis": "reviewed_subset_summary_utf8",
+      "evidence": "Reviewed official zh Seller Swagger via document reader on 2026-11-04: postingv3FbsPostingWithParamsExamplars.related_postings is an optional boolean; v3FbsPostingDetail.related_postings references an object and the official GET example shows null; v3FbsPostingDetailRelatedPostings.related_posting_numbers describes related assembly posting numbers with string items but omits explicit array type, required and nullable. Runtime validation accepts only a bounded string array when supplied, without pretending the missing formal type was declared. Assembly-related references are read-only structured evidence, not children, exhaustive membership or proof of parent supersession. No unverified list-request flag is enabled. Raw download failed once with proxy CONNECT aborted; this source hash covers this reviewed summary, not unavailable remote bytes. Canonical selected excerpt SHA256=0f7d8498945d7d62143ad63ff6abb6d9cdb9e4874bfa10132762786bc0378520."
     }
   ],
   "contracts": [
@@ -416,9 +425,10 @@
       "coverage": "reviewed_subset",
       "sources": [
         "ozon_schema",
-        "styk_snapshot"
+        "styk_snapshot",
+        "ozon_assembly_related_review_20261104"
       ],
-      "sha256": "86f0a20c55594d3dc27b5f7c2495a8c81c80f620d89d33ac95bb000cfa540512",
+      "sha256": "2984149b362ee015376b85469f32d3c93744dce7b9ca5aa668f653b7f0bd4b36",
       "fixture": "ozon-get-request.json",
       "fields": [
         {
@@ -546,6 +556,24 @@
           "read_only": false,
           "privacy": "customer_personal",
           "fixture": "ozon-get-request.json"
+        },
+        {
+          "path": "$.with.related_postings",
+          "types": [
+            "boolean"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_assembly_related_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Request assembly-related posting references; optional documented GET flag, not an inventory lineage assertion",
+          "destination": "STYK typed assembly-related references; never infer children, exhaustive coverage or parent retirement",
+          "classification": "structured",
+          "read_only": false,
+          "privacy": "operational_identifier",
+          "fixture": "ozon-get-related-request.json"
         }
       ]
     },
@@ -560,9 +588,10 @@
         "ozon_schema",
         "ozon_sdk",
         "ozon_news800",
-        "ozon_exemplar_native_preservation_20261104"
+        "ozon_exemplar_native_preservation_20261104",
+        "ozon_assembly_related_review_20261104"
       ],
-      "sha256": "c273f6d498a90538265843807bceb0c5e89a7283a67a57c12bbca889e17ca361",
+      "sha256": "abfed6ac18f62c42f05028cd3e972c4fbee58f534a22dd2eda2a8592992cd25d",
       "fixture": "ozon-get-response.json",
       "fields": [
         {
@@ -3174,6 +3203,60 @@
           "read_only": false,
           "privacy": "operational_identifier",
           "fixture": "ozon-get-response.json"
+        },
+        {
+          "path": "$.result.related_postings",
+          "types": [
+            "object"
+          ],
+          "presence": "optional",
+          "nullable": true,
+          "sources": [
+            "ozon_assembly_related_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Optional assembly-related block; official example is null, which does not prove an empty or exhaustive child set",
+          "destination": "STYK typed assembly-related references; never infer children, exhaustive coverage or parent retirement",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational_identifier",
+          "fixture": "ozon-get-related-response.json"
+        },
+        {
+          "path": "$.result.related_postings.related_posting_numbers",
+          "types": [
+            "array"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_assembly_related_review_20261104"
+          ],
+          "verification": "official_items_verified_runtime_array_validation",
+          "semantics": "Read-only related assembly posting references; string items documented while formal array type is absent, so runtime array shape remains selected-subset validation",
+          "destination": "STYK typed assembly-related references; never infer children, exhaustive coverage or parent retirement",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational_identifier",
+          "fixture": "ozon-get-related-response.json"
+        },
+        {
+          "path": "$.result.related_postings.related_posting_numbers[]",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_assembly_related_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Exact related posting reference; not a numeric order ID and not proof of parent-child direction",
+          "destination": "STYK typed assembly-related references; never infer children, exhaustive coverage or parent retirement",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational_identifier",
+          "fixture": "ozon-get-related-response.json"
         }
       ]
     },
