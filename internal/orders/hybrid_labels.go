@@ -16,11 +16,14 @@ func HybridLabelRequired(posting Posting, action Action) bool {
 type LabelProof struct {
 	Scope                                                                   Scope
 	WorkID, PostingNumber, CommercialOrderID, WarehouseID, DeliveryMethodID string
-	TaskID                                                                  string
+	TaskID, SourceRevision                                                  string
 	ExpiresAt                                                               time.Time
 }
 
 func (proof LabelProof) ValidateFor(posting Posting, reference string, now time.Time) error {
+	if !validID(proof.SourceRevision) || proof.SourceRevision != posting.Evidence.Revision {
+		return ErrStale
+	}
 	if posting.Evidence.Origin != OriginOzon || proof.Scope != posting.Scope || !validID(reference) || proof.WorkID != reference || !validID(proof.TaskID) || !proof.ExpiresAt.After(now) {
 		return ErrStale
 	}

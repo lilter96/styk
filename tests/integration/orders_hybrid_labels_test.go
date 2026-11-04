@@ -56,7 +56,7 @@ func TestOrdersHybridLabelRemovedBetweenPreviewAndApprovalRejectsApproval(t *tes
 
 func finishHybridLabelFixture(t *testing.T, f ordersStoreFixture) orders.Work {
 	t.Helper()
-	w, receipt := labelStoreWork(t, f)
+	w, receipt := hybridLabelStoreWork(t, f)
 	vault, err := credentials.New(bytes.Repeat([]byte{33}, 32))
 	if err != nil {
 		t.Fatal(err)
@@ -96,15 +96,21 @@ func assertHybridLabelScope(t *testing.T, f ordersStoreFixture, label orders.Wor
 
 func hybridShipPreview(t *testing.T, f ordersStoreFixture, label orders.Work) orders.Preview {
 	t.Helper()
+	p, err := f.db.SaveOrderPreview(f.ctx, hybridShipDraft(t, f, label))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func hybridShipDraft(t *testing.T, f ordersStoreFixture, label orders.Work) orders.Preview {
+	t.Helper()
 	current, err := f.db.OrderReviewContext(f.ctx, f.config.Scope)
 	if err != nil || len(current.Postings) != 1 {
 		t.Fatalf("read hybrid source fixture: %v", err)
 	}
 	posting := current.Postings[0]
-	posting.Delivery.IntegrationType = orders.Present("hybrid")
-	posting.Evidence.Revision += "-hybrid"
-	posting.Evidence.ProviderUpdatedAt = orders.Present(time.Now().UTC())
-	ordersStoreCommit(t, f, posting, "hybrid-source")
+
 	p := ordersStorePreview(t, f, posting.PostingNumber)
 	p.ID += "-hybrid"
 	c := &p.Decisions[0].Commands[0]
@@ -113,9 +119,65 @@ func hybridShipPreview(t *testing.T, f ordersStoreFixture, label orders.Work) or
 	c.Action, c.CustomerOrder = orders.ActionPostingShip, nil
 	c.Warehouse.Capability = label.Command.Warehouse.Capability
 	c.PostingAction = &orders.PostingAction{Capability: c.Warehouse.Capability, ContractHash: orderactions.ExecutionContractHash(), Parameters: orders.ActionParameters{EventConfirmed: true, EventReferenceProvided: true, LabelPrintedConfirmed: true, LabelWorkID: label.ID}}
-	p, err = f.db.SaveOrderPreview(f.ctx, p)
+	return p
+}
+
+func hybridLabelStoreWork(t *testing.T, f ordersStoreFixture) (orders.Work, orders.Receipt) {
+	t.Helper()
+	posting := ordersStorePosting(f.config.Scope, "hybrid-label-posting", "hybrid-source-v1", time.Now().UTC())
+	posting.Delivery.IntegrationType = orders.Present("hybrid")
+	ordersStoreCommit(t, f, posting, "hybrid-initial-source")
+	p := ordersStorePreview(t, f, posting.PostingNumber)
+	p.ID += "-label"
+	c := &p.Decisions[0].Commands[0]
+	c.ID += "-label"
+	c.IdempotencyKey = c.ID
+	c.Action, c.CustomerOrder = orders.ActionPostingLabelCreate, nil
+	cap := orders.CapabilityRef{ID: "synthetic-label-capability", Revision: 1, WarehouseID: *posting.WarehouseID.Value, DeliveryMethodID: *posting.DeliveryMethodID.Value, Scheme: "FBS", ObservedAt: time.Now().UTC(), ValidUntil: time.Now().UTC().Add(time.Hour)}
+	c.Warehouse.Capability = cap
+	c.PostingAction = &orders.PostingAction{Capability: cap, ContractHash: orderactions.ExecutionContractHash(), Parameters: orders.ActionParameters{LabelType: "big_label"}}
+	p, err := f.db.SaveOrderPreview(f.ctx, p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return p
+	ordersStoreApprove(t, f, p)
+	w := ordersStoreClaim(t, f, time.Minute)
+	allowed, err := f.db.GuardOrderDispatch(f.ctx, orders.DispatchGuard{Work: w, Begin: true, Now: time.Now()})
+	if err != nil || !allowed {
+		t.Fatalf("label dispatch guard: %v", err)
+	}
+	receipt := orders.Receipt{CommandID: w.Command.ID, State: orders.StatePolling, TaskID: "99", TaskIDs: []orders.ActionTask{{ID: "99", Type: "big_label"}}, LabelTasksVerified: true, HTTPStatus: 200, ObservedAt: time.Now().UTC()}
+	cpl := orders.Completion{WorkID: w.ID, Scope: w.Scope, ClaimToken: w.ClaimToken, ExpectedState: orders.StateDispatching, State: orders.StatePolling, Receipt: receipt}
+	if err = f.db.CompleteOrderWork(f.ctx, cpl); err != nil {
+		t.Fatal(err)
+	}
+	return ordersStoreClaim(t, f, time.Minute), receipt
+}
+
+func TestOrdersHybridOldLabelCannotAuthorizeNewComposition(t *testing.T) {
+	f := newLabelStoreFixture(t)
+	label := finishHybridLabelFixture(t, f)
+	current, err := f.db.OrderReviewContext(f.ctx, f.config.Scope)
+	if err != nil || len(current.Postings) != 1 {
+		t.Fatal("missing hybrid source")
+	}
+	posting := current.Postings[0]
+	posting.Lines = append([]orders.PostingLine(nil), posting.Lines...)
+	posting.Lines[0].Quantity = "1"
+	posting.Evidence.Revision = "hybrid-source-v2"
+	posting.Evidence.ProviderUpdatedAt = orders.Present(time.Now().UTC())
+	ordersStoreCommit(t, f, posting, "hybrid-source-changed")
+	proof, err := f.db.OrderLabelProof(f.ctx, f.config.Scope, posting.PostingNumber, label.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if proof.SourceRevision != label.Command.ExpectedSourceRevision || !errors.Is(proof.ValidateFor(posting, label.ID, time.Now()), orders.ErrStale) {
+		t.Fatal("old label authorized changed posting composition")
+	}
+	if _, err = f.db.SaveOrderPreview(f.ctx, hybridShipDraft(t, f, label)); !errors.Is(err, orders.ErrStale) {
+		t.Fatalf("new composition accepted old printed label at preview: %v", err)
+	}
+	assertOrdersRowCount(t, f, `SELECT count(*) FROM orders_work`, 1)
+	assertOrdersRowCount(t, f, `SELECT count(*) FROM orders_write_intents`, 1)
+
 }

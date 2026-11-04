@@ -45,6 +45,7 @@ func readOrderLabelProof(ctx context.Context, q ordersQuerier, scope orders.Scop
 	if work.Scope != scope || work.ID != workID || work.Command.PostingNumber != posting || work.Command.Action != orders.ActionPostingLabelCreate || work.Receipt.TaskID != proof.TaskID || work.Receipt.LabelTask == nil || !orders.LabelTaskComplete(work.Command, work.Receipt, *work.Receipt.LabelTask) {
 		return proof, orders.ErrStale
 	}
+	proof.SourceRevision = work.Command.ExpectedSourceRevision
 	proof.CommercialOrderID = work.Command.CommercialOrderID
 	proof.WarehouseID, proof.DeliveryMethodID = work.Command.Warehouse.OzonWarehouseID, work.Command.Warehouse.Capability.DeliveryMethodID
 	return proof, nil

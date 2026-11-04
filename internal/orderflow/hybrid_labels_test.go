@@ -24,7 +24,7 @@ func TestHybridPreviewRequiresStoredExactLabelEvidence(t *testing.T) {
 	posting := review.Postings[0]
 	posting.Delivery.IntegrationType = orders.Present("hybrid")
 	proposal := orders.ActionProposal{Action: orders.ActionPostingShip, Parameters: orders.ActionParameters{LabelWorkID: "label-work", LabelPrintedConfirmed: true}}
-	store := &hybridProofStore{flowStore: &flowStore{review: review}, proof: orders.LabelProof{Scope: posting.Scope, WorkID: "label-work", TaskID: "99", PostingNumber: posting.PostingNumber, CommercialOrderID: posting.CommercialOrderID, WarehouseID: *posting.WarehouseID.Value, DeliveryMethodID: *posting.DeliveryMethodID.Value, ExpiresAt: flowTestNow.Add(time.Hour)}}
+	store := &hybridProofStore{flowStore: &flowStore{review: review}, proof: orders.LabelProof{Scope: posting.Scope, WorkID: "label-work", TaskID: "99", SourceRevision: posting.Evidence.Revision, PostingNumber: posting.PostingNumber, CommercialOrderID: posting.CommercialOrderID, WarehouseID: *posting.WarehouseID.Value, DeliveryMethodID: *posting.DeliveryMethodID.Value, ExpiresAt: flowTestNow.Add(time.Hour)}}
 	service := &Service{store: store}
 	if got := service.validateHybridLabel(context.Background(), posting, proposal, flowTestNow); len(got) != 0 {
 		t.Fatalf("valid proof blocked: %+v", got)
