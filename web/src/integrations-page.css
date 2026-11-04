@@ -55,6 +55,23 @@
   line-height: var(--styk-provider-title-leading);
   letter-spacing: -0.03em;
 }
+.provider-group-identity .brand-logo {
+  --brand-size: 48px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+  filter: drop-shadow(0 2px 2px #18264a1a)
+    drop-shadow(0 5px 7px #18264a12);
+}
+.provider-group-identity .brand-logo > img {
+  border-radius: 6px;
+}
+.provider-group-identity .brand-logo[data-brand="yandex-market"] {
+  border-radius: 6px;
+  background: #ffdf45;
+  overflow: hidden;
+}
 .provider-account-count {
   font-size: var(--styk-label-size);
   color: var(--styk-muted);
@@ -194,8 +211,8 @@
   min-width: 0;
 }
 .integration-account-card .integration-metric > svg {
-  width: 16px;
-  height: 16px;
+  width: var(--styk-icon-metric);
+  height: var(--styk-icon-metric);
   flex-shrink: 0;
   color: #5d6b94;
 }
@@ -377,17 +394,6 @@
 }
 .integration-console .styk-page-header {
   margin-bottom: 0;
-}
-.integration-console .publication-eligibility {
-  margin: 0;
-  padding: 11px 15px;
-  border: 1px solid #e6e2fa;
-  border-left: 3px solid var(--styk-primary);
-  border-radius: 8px;
-  background: #f0efff;
-  color: var(--styk-muted);
-  font-size: var(--styk-label-size);
-  line-height: 1.6;
 }
 .reference-shell .integration-console .setup-card {
   padding: 20px 22px;

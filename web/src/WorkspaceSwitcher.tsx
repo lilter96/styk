@@ -86,7 +86,6 @@ export function WorkspaceSwitcher({
             aria-pressed={marketplace === item.id}
             onClick={() => onMarketplaceChange(item.id)}
           >
-            <ProviderLogo provider={item.id} size="sm" />
             <span>{item.label}</span>
           </button>
         ))}
