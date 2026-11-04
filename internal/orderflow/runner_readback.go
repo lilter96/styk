@@ -104,7 +104,11 @@ func (r *Runner) readWorkTarget(ctx context.Context, work orders.Work) (orders.T
 
 func (r *Runner) reconcileTarget(ctx context.Context, work orders.Work, target orders.TargetObservation) error {
 	correlation := target.Correlation
-	return r.complete(ctx, work, orders.Completion{State: orders.StateReconciled, Code: "TARGET_FACTS_CONFIRMED", Correlation: &correlation, ObservedTarget: &target})
+	code := "TARGET_FACTS_CONFIRMED"
+	if write := work.Command.CustomerOrder; write != nil && (orders.AccountingMomentNormalized(write.Moment, target.Fields.Moment) || orders.AccountingMomentNormalized(write.DeliveryAt, target.Fields.DeliveryAt)) {
+		code = "TARGET_DOCUMENT_MINUTE_FACTS_CONFIRMED"
+	}
+	return r.complete(ctx, work, orders.Completion{State: orders.StateReconciled, Code: code, Correlation: &correlation, ObservedTarget: &target})
 }
 
 func (r *Runner) readFulfillmentResult(ctx context.Context, work orders.Work) (orders.TargetObservation, error) {

@@ -115,10 +115,7 @@ func orderFieldEqual[T comparable](wanted, actual orders.Field[T]) bool {
 }
 
 func orderTimeFieldEqual(wanted, actual orders.Field[time.Time]) bool {
-	if !wanted.IsKnown() {
-		return true
-	}
-	return actual.IsKnown() && wanted.Value != nil && actual.Value != nil && wanted.Value.Equal(*actual.Value)
+	return orders.AccountingMomentMatches(wanted, actual)
 }
 
 func orderDecimalFieldEqual(wanted, actual orders.Field[orders.Decimal]) bool {

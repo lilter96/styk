@@ -93,5 +93,9 @@ func (r *Runner) reconcileNative(ctx context.Context, work orders.Work, client o
 	if err != nil || !orders.NativeParentReadback(work.Command, target) || !ordermoney.NativeParentEffectObserved(work.Command, target) {
 		return r.deferReadback(ctx, work, "NATIVE_PARENT_FACTS_NOT_CONFIRMED")
 	}
-	return r.complete(ctx, work, orders.Completion{State: orders.StateReconciled, Code: "NATIVE_DOCUMENT_FACTS_CONFIRMED", ObservedTarget: &target, ObservedNativeDocument: &actual})
+	code := "NATIVE_DOCUMENT_FACTS_CONFIRMED"
+	if orders.NativeDocumentMomentNormalized(work.Command, actual) {
+		code = "NATIVE_DOCUMENT_MOMENT_MINUTE_CONFIRMED"
+	}
+	return r.complete(ctx, work, orders.Completion{State: orders.StateReconciled, Code: code, ObservedTarget: &target, ObservedNativeDocument: &actual})
 }

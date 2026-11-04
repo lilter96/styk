@@ -1,0 +1,14 @@
+{
+  "source_url": "https://raw.githubusercontent.com/moysklad/api-remap-1.2-doc/master/md/_general.md",
+  "retrieved_on": "2026-11-04",
+  "download_sha256": "5dc61a23b376b7b2ea46ece7ac6f33f56476d2c34fdf152d457cbeb8e0da0c16",
+  "scope": "Official general DateTime subset; not a full provider schema",
+  "documented_fields": ["moment", "deliveryPlannedMoment"],
+  "provider_rule": "Fields are set and returned with minute precision, seconds and milliseconds zero",
+  "native_operations": ["customerorder", "demand", "salesreturn"],
+  "new_intents": "Canonicalize only accounting-field copies before immutable preview; preserve precise source and physical-event timestamps",
+  "legacy_readback": "Accept exact original millisecond instant or exact UTC floor of original minute, never an arbitrary nearby instant",
+  "legacy_reconciliation_codes": ["NATIVE_DOCUMENT_MOMENT_MINUTE_CONFIRMED", "TARGET_DOCUMENT_MINUTE_FACTS_CONFIRMED"],
+  "observed_live": {"demand": "minute-normalized moment observed on one owner-controlled draft", "customerorder": "not independently asserted by this fixture", "salesreturn": "NOT_OBSERVED_LIVE"},
+  "identity_money_reservation_checks": "Unchanged; normalization is not independent evidence of physical shipment, payment or return"
+}

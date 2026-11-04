@@ -98,10 +98,10 @@ func applyTimeMapping(write *orders.CustomerOrderWrite, posting orders.Posting, 
 		return orders.Validation{}
 	}
 	if mapping.Target == "moment" {
-		write.Moment = value
+		write.Moment = orders.Present(orders.NativeAccountingMoment(*value.Value))
 		return orders.Validation{}
 	}
-	write.DeliveryAt = value
+	write.DeliveryAt = orders.Present(orders.NativeAccountingMoment(*value.Value))
 	return orders.Validation{}
 }
 

@@ -194,7 +194,7 @@ func sameField[T comparable](left, right orders.Field[T]) bool {
 }
 
 func timeRepresented(wanted, actual orders.Field[time.Time]) bool {
-	return !wanted.IsKnown() || (actual.IsKnown() && wanted.Value.Equal(*actual.Value))
+	return orders.AccountingMomentMatches(wanted, actual)
 }
 
 func attributesRepresented(wanted, actual []orders.AttributeWrite) bool {
