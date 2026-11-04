@@ -202,9 +202,9 @@ export function OrdersOperations({
                   Задача обработки Ozon: {task.id}
                 </p>
               ))}
-              {work.command.action === "posting_split" && (
-                <OrdersSplitEvidence receipt={work.receipt} />
-              )}
+              {["posting_split", "posting_split_unassembled"].includes(
+                work.command.action,
+              ) && <OrdersSplitEvidence receipt={work.receipt} />}
               {work.state === "RECONCILED" &&
                 work.receipt?.artifact?.available &&
                 (!work.receipt.artifact.expires_at ||

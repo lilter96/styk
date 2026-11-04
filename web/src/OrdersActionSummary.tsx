@@ -20,6 +20,13 @@ export function OrdersActionSummary({
         Будет отправлен запрос: {orderActionLabel(command.action)}. Фактический
         результат будет проверен отдельно.
       </p>
+      {command.action === "posting_split_unassembled" && (
+        <p className="orders-note">
+          Изменится только распределение товаров между отправлениями. Это не
+          сборка и не передача в доставку. Ответ API ещё не подтверждает
+          синхронизацию: STYK должен повторно прочитать и проверить весь состав.
+        </p>
+      )}
       {(parameters.packages ?? []).map((item, index) => (
         <div className="orders-line" key={index}>
           <strong>Упаковка {index + 1}</strong>

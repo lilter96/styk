@@ -31,3 +31,41 @@ it("does not invent children before an acknowledgement", () => {
   );
   expect(container.textContent).toBe("");
 });
+
+it("does not call an unassembled acknowledgment a verified frontier or parent retirement", () => {
+  render(
+    <OrdersSplitEvidence
+      receipt={{
+        state: "ACKNOWLEDGED",
+        unassembled_split: {
+          parent: { presence: "null" },
+          postings: {
+            presence: "value",
+            value: [
+              {
+                posting_number: {
+                  presence: "value",
+                  value: "9007199254740993",
+                },
+                products: {
+                  presence: "value",
+                  value: [{ sku: "9007199254740995", quantity: "0" }],
+                },
+              },
+              {
+                posting_number: { presence: "value", value: "child-two" },
+                products: { presence: "missing" },
+              },
+            ],
+          },
+        },
+      }}
+    />,
+  );
+  expect(screen.getByText("Ответ Ozon на разделение без сборки")).toBeTruthy();
+  expect(screen.getByText(/Эта информация не доказывает отмену/)).toBeTruthy();
+  expect(screen.getByText("SKU 9007199254740995: 0")).toBeTruthy();
+  expect(screen.getByText("Состав: Неизвестно")).toBeTruthy();
+  expect(screen.getAllByText("Ожидаем подтверждения состава")).toHaveLength(2);
+  expect(screen.queryByText(/Состав проверен:/)).toBeNull();
+});

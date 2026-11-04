@@ -24,6 +24,7 @@ import {
 export const ozonOrderActions = [
   "posting_pack",
   "posting_split",
+  "posting_split_unassembled",
   "posting_cancel",
   "posting_partial_cancel",
   "posting_tracking",
@@ -36,7 +37,11 @@ export const ozonOrderActions = [
   "posting_exemplar_prepare",
   "posting_exemplar_set",
 ];
-const packageActions = ["posting_pack", "posting_split"];
+const packageActions = [
+  "posting_pack",
+  "posting_split",
+  "posting_split_unassembled",
+];
 const eventActions = [
   "posting_ship",
   "posting_last_mile",
@@ -58,6 +63,11 @@ const lineKey = (posting: OrderPosting, index: number) =>
   JSON.stringify(posting.lines[index].identity);
 const positive = (value: string) =>
   /^\d+(?:\.\d+)?$/.test(value) && /[1-9]/.test(value);
+function exactPositiveInteger(value: string, maximum: bigint): boolean {
+  return (
+    value.length <= 19 && /^[1-9]\d*$/.test(value) && BigInt(value) <= maximum
+  );
+}
 function decimalTotal(values: string[]): bigint[] {
   const scale = Math.max(
     ...values.map((value) => value.split(".")[1]?.length ?? 0),
@@ -213,6 +223,8 @@ export function OrdersActions({
     refetchOnWindowFocus: false,
   });
   const packaging = packageActions.includes(action);
+  const unassembledSplit = action === "posting_split_unassembled";
+  const splitting = action === "posting_split" || unassembledSplit;
   const event = eventActions.includes(action);
   const cancellation = cancelActions.includes(action);
   const wrongShipScheme =
@@ -237,15 +249,30 @@ export function OrdersActions({
     "country_confirmed",
   ];
   const unsupportedParameters = parameters.some(
-    (parameter) => !knownParameters.includes(parameter),
+    (parameter) =>
+      !knownParameters.includes(parameter) ||
+      (unassembledSplit && parameter !== "packages"),
   );
-  const hybridLabelRequired = parameters.includes("label_work_id");
+  const hybridLabelRequired =
+    !unassembledSplit && parameters.includes("label_work_id");
   const exemplarRequired =
-    action === "posting_exemplar_set" ||
-    parameters.includes("exemplar_work_id");
+    !unassembledSplit &&
+    (action === "posting_exemplar_set" ||
+      parameters.includes("exemplar_work_id"));
   const quantitiesValid =
     (!packaging && action !== "posting_partial_cancel") ||
     orderAllocationValid(posting, allocations, packaging);
+  const unassembledIdentitiesValid =
+    !unassembledSplit ||
+    posting.lines.every(
+      (line) =>
+        exactPositiveInteger(line.identity.sku ?? "", 9223372036854775807n) &&
+        exactPositiveInteger(line.quantity, 2147483647n) &&
+        allocations.every((allocation) => {
+          const value = allocation[JSON.stringify(line.identity)] || "0";
+          return value === "0" || exactPositiveInteger(value, 2147483647n);
+        }),
+    );
   const canPreview =
     !options.isError &&
     !options.isFetching &&
@@ -254,6 +281,7 @@ export function OrdersActions({
     !option.blockers?.length &&
     !unsupportedParameters &&
     quantitiesValid &&
+    unassembledIdentitiesValid &&
     (action !== "posting_country_set" ||
       (!!country?.sku && !!country.iso && country.confirmed)) &&
     (!exemplarRequired ||
@@ -262,7 +290,8 @@ export function OrdersActions({
         (action !== "posting_exemplar_set" || !!exemplar.input))) &&
     (!hybridLabelRequired || (!!labelWork && labelPrinted)) &&
     (!packaging ||
-      (ready && (action !== "posting_split" || allocations.length >= 2))) &&
+      ((unassembledSplit || ready) &&
+        (!splitting || allocations.length >= 2))) &&
     (!cancellation ||
       !!options.data?.cancellation_reasons.some(
         (item) => item.id === reason,
@@ -300,7 +329,7 @@ export function OrdersActions({
       parameters.packages = allocations.map((allocation) => ({
         lines: allocationLines(posting, allocation),
       }));
-      parameters.readiness_confirmed = ready;
+      if (!unassembledSplit) parameters.readiness_confirmed = ready;
     }
     if (action === "posting_partial_cancel")
       parameters.lines = allocationLines(posting, allocations[0]);
@@ -455,6 +484,19 @@ export function OrdersActions({
                     пока нельзя задать в этом разделе.
                   </p>
                 )}
+                {unassembledSplit && (
+                  <p className="orders-note">
+                    Разделение меняет только состав отправлений и не
+                    подтверждает сборку. После ответа Ozon STYK отдельно
+                    проверит фактический состав всех отправлений.
+                  </p>
+                )}
+                {unassembledSplit && !unassembledIdentitiesValid && (
+                  <p className="orders-warning">
+                    Для разделения нужны известные SKU и целые количества
+                    товаров. Неизвестное количество нельзя считать нулём.
+                  </p>
+                )}
                 {(packaging || action === "posting_partial_cancel") && (
                   <fieldset>
                     <legend>
@@ -482,7 +524,9 @@ export function OrdersActions({
                             {line.identity.offer_id ??
                               line.identity.sku ??
                               line.identity.provider_line_id}
-                            <small>В отправлении: {line.quantity}</small>
+                            <small>
+                              В отправлении: {line.quantity || "Неизвестно"}
+                            </small>
                             <input
                               type="text"
                               inputMode="decimal"
@@ -556,7 +600,7 @@ export function OrdersActions({
                       )}
                   </fieldset>
                 )}
-                {packaging && (
+                {packaging && !unassembledSplit && (
                   <label className="orders-check">
                     <input
                       type="checkbox"

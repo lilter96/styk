@@ -705,3 +705,177 @@ it("uses a factual dictionary country on an exact required SKU only after confir
     },
   });
 });
+
+it("offers unassembled splitting separately without packing attestations", async () => {
+  mockAPI((url) =>
+    url.pathname.endsWith("/action-options")
+      ? json(
+          options({
+            actions: [
+              {
+                action: "posting_split_unassembled",
+                allowed: true,
+                blockers: [],
+                parameters_required: ["packages"],
+              },
+              {
+                action: "posting_split",
+                allowed: true,
+                blockers: [],
+                parameters_required: ["packages", "readiness_confirmed"],
+              },
+            ],
+          }),
+        )
+      : undefined,
+  );
+  const selected = form();
+  await openAction("posting_split_unassembled");
+  expect(
+    screen.getByRole("option", { name: "Разделить без сборки" }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("option", { name: "Разделить отправление в Ozon" }),
+  ).toBeTruthy();
+  expect(
+    screen.queryByLabelText(
+      /Подтверждаю, что указанные товары фактически собраны/,
+    ),
+  ).toBeNull();
+  fireEvent.change(
+    screen.getByLabelText("Количество OFFER-SYNTHETIC в упаковке 1"),
+    { target: { value: "2" } },
+  );
+  expect(checkButton().disabled).toBe(true);
+  fireEvent.change(
+    screen.getByLabelText("Количество OFFER-SYNTHETIC в упаковке 1"),
+    { target: { value: "1" } },
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Добавить упаковку" }));
+  fireEvent.change(
+    screen.getByLabelText("Количество OFFER-SYNTHETIC в упаковке 2"),
+    { target: { value: "1" } },
+  );
+  expect(checkButton().disabled).toBe(false);
+  fireEvent.click(checkButton());
+  expect(selected).toHaveBeenCalledWith({
+    posting_number: posting.posting_number,
+    action: "posting_split_unassembled",
+    parameters: {
+      packages: [
+        { lines: [{ identity: posting.lines[0].identity, quantity: "1" }] },
+        { lines: [{ identity: posting.lines[0].identity, quantity: "1" }] },
+      ],
+    },
+  });
+  expect(screen.getByText(/Разделение меняет только состав/)).toBeTruthy();
+});
+
+it("keeps large SKU exact and rejects fractional unassembled quantities", async () => {
+  mockAPI();
+  const onPreview = vi.fn();
+  const largePosting = {
+    ...posting,
+    lines: [
+      {
+        ...posting.lines[0],
+        identity: { sku: "9007199254740993", offer_id: "LARGE-SKU" },
+      },
+    ],
+  };
+  mount(
+    <OrdersActions
+      scope={scope}
+      posting={largePosting}
+      disabled={false}
+      onPreview={onPreview}
+      onDraftChange={() => {}}
+    />,
+  );
+  await openAction("posting_split_unassembled");
+  fireEvent.change(screen.getByLabelText("Количество LARGE-SKU в упаковке 1"), {
+    target: { value: "1.5" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Добавить упаковку" }));
+  fireEvent.change(screen.getByLabelText("Количество LARGE-SKU в упаковке 2"), {
+    target: { value: "0.5" },
+  });
+  expect(checkButton().disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText("Количество LARGE-SKU в упаковке 1"), {
+    target: { value: "1" },
+  });
+  fireEvent.change(screen.getByLabelText("Количество LARGE-SKU в упаковке 2"), {
+    target: { value: "1" },
+  });
+  fireEvent.click(checkButton());
+  expect(
+    onPreview.mock.calls[0][0].parameters.packages[0].lines[0].identity.sku,
+  ).toBe("9007199254740993");
+});
+
+it("blocks unverified extra parameters for splitting without assembly", async () => {
+  mockAPI((url) =>
+    url.pathname.endsWith("/action-options")
+      ? json(
+          options({
+            actions: [
+              {
+                action: "posting_split_unassembled",
+                allowed: true,
+                blockers: [],
+                parameters_required: ["packages", "future_required"],
+              },
+            ],
+          }),
+        )
+      : undefined,
+  );
+  form();
+  await openAction("posting_split_unassembled");
+  expect(checkButton().disabled).toBe(true);
+  expect(
+    screen.getByText(/Для этого действия нужны дополнительные параметры/),
+  ).toBeTruthy();
+});
+
+it.each(["", "0"])(
+  "does not split a missing or zero source quantity (%s)",
+  async (quantity) => {
+    mockAPI();
+    const source = { ...posting, lines: [{ ...posting.lines[0], quantity }] };
+    mount(
+      <OrdersActions
+        scope={scope}
+        posting={source}
+        disabled={false}
+        onPreview={vi.fn()}
+        onDraftChange={() => {}}
+      />,
+    );
+    await openAction("posting_split_unassembled");
+    expect(
+      screen.getByText(`В отправлении: ${quantity || "Неизвестно"}`),
+    ).toBeTruthy();
+    expect(checkButton().disabled).toBe(true);
+  },
+);
+
+it("explains that an unassembled preview is an allocation change requiring readback", () => {
+  mount(
+    <OrdersPreview
+      preview={preview({
+        ...command("posting_split_unassembled"),
+        posting_action: { parameters: { packages: [] } },
+      })}
+      blocked={false}
+      busy={false}
+      onApprove={() => {}}
+    />,
+  );
+  expect(
+    screen.getByText(/Изменится только распределение товаров/),
+  ).toBeTruthy();
+  expect(
+    screen.queryByText(/Оператор подтвердил фактическую сборку/),
+  ).toBeNull();
+});

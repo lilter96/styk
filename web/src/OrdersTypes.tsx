@@ -275,6 +275,10 @@ export type OrdersPreviewData = {
   expires_at: string;
   decisions: OrderDecision[];
 };
+export type OrderSplitResponsePosting = {
+  posting_number: OrderField<string>;
+  products: OrderField<{ sku: string; quantity: string }[]>;
+};
 export type OrderWork = {
   native_document?: { id: string; kind: string; observed_at: string };
   id: string;
@@ -285,6 +289,10 @@ export type OrderWork = {
   receipt: {
     state: string;
     posting_numbers?: string[];
+    unassembled_split?: {
+      parent: OrderField<OrderSplitResponsePosting>;
+      postings: OrderField<OrderSplitResponsePosting[]>;
+    };
     observed_postings?: {
       posting_number: string;
       evidence: { observed_at: string; checked_at?: string };
@@ -419,6 +427,7 @@ export const orderActionLabel = (action: string) =>
     mirror_composition_update: "Заменить состав заказа в МойСклад",
     posting_pack: "Передать сборку в Ozon",
     posting_split: "Разделить отправление в Ozon",
+    posting_split_unassembled: "Разделить без сборки",
     posting_cancel: "Отменить отправление в Ozon",
     posting_partial_cancel: "Отменить часть товаров в Ozon",
     posting_tracking: "Передать трек-номер в Ozon",
