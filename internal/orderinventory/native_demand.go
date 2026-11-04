@@ -30,7 +30,11 @@ func nativeDemandBaselineOrdered(input Input, observation Observation) bool {
 	if at == nil || at.After(input.Now) || input.MaxAge <= 0 || input.Now.Sub(*at) >= input.MaxAge || !start.After(observation.NativeConfirmedAt) {
 		return false
 	}
-	if observation.NativeStartedAt.IsZero() || !observation.NativeStartedAt.After(observation.NativeConfirmedAt) || observation.NativeFinishedAt.Before(observation.NativeStartedAt) || observation.NativeFinishedAt.After(input.Now) || !start.After(observation.NativeFinishedAt) {
+	if observation.NativePointRecordedAt.IsZero() && observation.NativePointAdmittedAt.IsZero() {
+		if observation.NativeStartedAt.IsZero() || !observation.NativeStartedAt.After(observation.NativeConfirmedAt) || observation.NativeFinishedAt.Before(observation.NativeStartedAt) || observation.NativeFinishedAt.After(input.Now) || !start.After(observation.NativeFinishedAt) {
+			return false
+		}
+	} else if !nativePointBaselineOrdered(input, observation) {
 		return false
 	}
 	if !nativeDemandProviderVersion(observation, input.Now) {

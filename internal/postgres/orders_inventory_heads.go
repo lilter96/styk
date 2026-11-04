@@ -15,7 +15,7 @@ import (
 // unknown warehouse conservatively affects every warehouse for the same item.
 const orderInventoryHeadsSQL = `
 SELECT h.projection,source.posting->'status',h.checked_at,h.quarantined,affected.lines,
-       COALESCE(b.customer_order_id,''),COALESCE(b.sync_id,''),COALESCE(b.marker,''),w.work,r.observed_target,r.observed_native_document,n.observed_at,
+       COALESCE(b.customer_order_id,''),COALESCE(b.sync_id,''),COALESCE(b.marker,''),w.work,r.observed_target,r.observed_native_document,n.observed_at,r.created_at,
        EXISTS(SELECT 1 FROM orders_work attempted WHERE attempted.tenant_id=h.tenant_id AND attempted.moysklad_account=h.moysklad_account AND attempted.ozon_account=h.ozon_account AND attempted.posting_number=h.posting_number AND attempted.action IN ('mirror_create','mirror_update','mirror_position_update','mirror_composition_update') AND attempted.dispatch_count>0)
 FROM orders_posting_heads h
 JOIN orders_posting_observations source ON source.id=h.observation_id AND source.tenant_id=h.tenant_id AND source.moysklad_account=h.moysklad_account AND source.ozon_account=h.ozon_account AND source.posting_number=h.posting_number
@@ -87,9 +87,9 @@ func readOrderInventoryHeads(ctx context.Context, tx pgx.Tx, pool domain.StockPo
 func scanOrderInventoryHead(row pgx.Row) (orderinventory.Observation, error) {
 	var result orderinventory.Observation
 	var posting, status, lines, work, target, native []byte
-	var confirmed *time.Time
+	var confirmed, reconciled *time.Time
 	var checked time.Time
-	if err := row.Scan(&posting, &status, &checked, &result.Quarantined, &lines, &result.Binding.CustomerOrderID, &result.Binding.SyncID, &result.Binding.Marker, &work, &target, &native, &confirmed, &result.ProjectionAttempted); err != nil {
+	if err := row.Scan(&posting, &status, &checked, &result.Quarantined, &lines, &result.Binding.CustomerOrderID, &result.Binding.SyncID, &result.Binding.Marker, &work, &target, &native, &confirmed, &reconciled, &result.ProjectionAttempted); err != nil {
 		return result, fmt.Errorf("decode order inventory head: %w", err)
 	}
 	if err := ordersDecode(posting, &result.Posting); err != nil {
@@ -128,6 +128,9 @@ func scanOrderInventoryHead(row pgx.Row) (orderinventory.Observation, error) {
 	}
 	if confirmed != nil {
 		result.NativeConfirmedAt = *confirmed
+	}
+	if reconciled != nil {
+		result.ReconciledAt = *reconciled
 	}
 	return result, nil
 }

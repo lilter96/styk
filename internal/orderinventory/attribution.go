@@ -44,6 +44,9 @@ func assessObservation(input Input, observation Observation) Obligation {
 		result.State, result.Reserve = Cancelled, "0"
 		return result
 	}
+	if observation.NativeReadCode != "" {
+		return pending(result, Unknown, "native_point_read_failed:"+observation.NativeReadCode)
+	}
 	if observation.Work != nil && observation.Work.Command.Action == orders.ActionSalesReturnCreate {
 		return pending(result, Unknown, "native_return_obligation_attribution_unverified")
 	}
@@ -136,6 +139,12 @@ func baselineOrdered(input Input, observation Observation) bool {
 	baselineStart := input.BaselineStartedAt
 	if source.FreshTraversal != nil {
 		baselineStart = NativeEffectBaselineStart(input.Pool, source, baselineStart, input.Now)
+	}
+	if _, physicalOK := whole(*source.Physical); !physicalOK {
+		return false
+	}
+	if !observation.NativePointRecordedAt.IsZero() || !observation.NativePointAdmittedAt.IsZero() {
+		return nativePointBaselineOrdered(input, observation)
 	}
 	if observation.NativeStartedAt.IsZero() || observation.NativeStartedAt.Before(target.ObservedAt) || observation.NativeFinishedAt.Before(observation.NativeStartedAt) || baselineStart.Before(observation.NativeFinishedAt) || baselineStart.After(input.Now) {
 		return false

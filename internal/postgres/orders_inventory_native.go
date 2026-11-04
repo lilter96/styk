@@ -12,17 +12,26 @@ import (
 )
 
 func readOrderInventoryNative(ctx context.Context, tx pgx.Tx, input *orderinventory.Input) error {
+	start := orderinventory.NativeEffectBaselineStart(input.Pool, input.Baseline, input.BaselineStartedAt, input.Now)
+	points, err := readNativePointsForInventory(ctx, tx, input.Pool, input.Observations, start)
+	if err != nil {
+		return err
+	}
 	var batch int64
 	var started, finished time.Time
-	err := tx.QueryRow(ctx, `SELECT id,started_at,finished_at FROM moy_order_batches WHERE tenant_id=$1 AND account_id=$2 AND traversal_status='completed' ORDER BY id DESC LIMIT 1`, input.Pool.Tenant, input.Pool.MoyskladAccount).Scan(&batch, &started, &finished)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil
-	}
-	if err != nil {
+	err = tx.QueryRow(ctx, `SELECT id,started_at,finished_at FROM moy_order_batches WHERE tenant_id=$1 AND account_id=$2 AND traversal_status='completed' ORDER BY id DESC LIMIT 1`, input.Pool.Tenant, input.Pool.MoyskladAccount).Scan(&batch, &started, &finished)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("read order inventory native batch: %w", err)
 	}
 	for index := range input.Observations {
 		observation := &input.Observations[index]
+		if point, found := points[index]; found {
+			applyInventoryNativePoint(input.Pool, observation, point)
+			continue
+		}
+		if batch == 0 {
+			continue
+		}
 		observation.NativeStartedAt, observation.NativeFinishedAt = started, finished
 		if err = readOrderInventoryPositions(ctx, tx, input.Pool, batch, observation); err != nil {
 			return err

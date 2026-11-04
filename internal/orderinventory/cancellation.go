@@ -6,6 +6,9 @@ import "github.com/lilter96/styk/internal/orders"
 // additional deduction. This never releases or rewrites the source reserve and
 // says nothing about physical returns or reserves belonging to other orders.
 func cancelledZeroReadback(input Input, observation Observation) bool {
+	if !observation.NativePointRecordedAt.IsZero() || !observation.NativePointAdmittedAt.IsZero() {
+		return false
+	}
 	target := observation.Target
 	if !knownStatus(observation.Posting, "cancelled") || target == nil || target.Fields.StoreID != input.Pool.WarehouseID || !freshCancellation(input, observation) {
 		return false

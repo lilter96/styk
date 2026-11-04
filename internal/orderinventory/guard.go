@@ -29,21 +29,25 @@ const (
 // Observation preserves native facts separately from the correlation binding.
 // A resolved binding or a successful mirror alone cannot prove stock coverage.
 type Observation struct {
-	PositionOwnership   *orders.PositionBaseline
-	NativeDocument      *orders.NativeDocumentObservation
-	NativeConfirmedAt   time.Time
-	Posting             orders.Posting
-	Lines               []orders.LineIdentity
-	Binding             orders.Correlation
-	Work                *orders.Work
-	Target              *orders.TargetObservation
-	Positions           []domain.StockObservedOrderPosition
-	NativeSyncID        *string
-	NativeStartedAt     time.Time
-	NativeFinishedAt    time.Time
-	Quarantined         bool
-	Truncated           bool
-	ProjectionAttempted bool
+	ReconciledAt          time.Time
+	NativePointAdmittedAt time.Time
+	NativePointRecordedAt time.Time
+	NativeReadCode        string
+	PositionOwnership     *orders.PositionBaseline
+	NativeDocument        *orders.NativeDocumentObservation
+	NativeConfirmedAt     time.Time
+	Posting               orders.Posting
+	Lines                 []orders.LineIdentity
+	Binding               orders.Correlation
+	Work                  *orders.Work
+	Target                *orders.TargetObservation
+	Positions             []domain.StockObservedOrderPosition
+	NativeSyncID          *string
+	NativeStartedAt       time.Time
+	NativeFinishedAt      time.Time
+	Quarantined           bool
+	Truncated             bool
+	ProjectionAttempted   bool
 }
 
 type Input struct {
