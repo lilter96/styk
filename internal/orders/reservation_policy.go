@@ -46,6 +46,12 @@ func reservationPostingValidation(posting Posting, write *CustomerOrderWrite, ba
 	if write == nil || posting.Status.Validate() != nil || !posting.Status.IsKnown() {
 		return reservePolicyValidation("posting.status", "reservation_policy_status_unknown")
 	}
+	if write.Applicable.Validate() != nil {
+		return reservePolicyValidation("applicable", "reservation_policy_requires_applicable_true")
+	}
+	if optionalField(posting.Cancellation, func(value Cancellation) error { return value.Validate() }) != nil {
+		return reservePolicyValidation("posting.cancellation", "reservation_policy_shipment_or_cancellation_conflict")
+	}
 	if len(posting.ChildPostingNumbers) > 0 || posting.ParentPostingNumber.IsKnown() {
 		return reservePolicyValidation("posting.lineage", "reservation_policy_split_lineage_requires_review")
 	}

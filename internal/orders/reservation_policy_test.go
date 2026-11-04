@@ -36,6 +36,10 @@ func TestOpenQuantityReservePreservesUnknownAndDoesNotReleaseUnownedInventory(t 
 		}, "reservation_policy_shipment_or_cancellation_conflict"},
 		{"cancelled without owned baseline", func(p *Posting, _ *CustomerOrderWrite) { p.Status = Present("cancelled") }, "reservation_policy_owned_release_required"},
 		{"unposted", func(_ *Posting, w *CustomerOrderWrite) { w.Applicable = Present(false) }, "reservation_policy_requires_applicable_true"},
+		{"malformed applicable", func(_ *Posting, w *CustomerOrderWrite) { w.Applicable = Field[bool]{Presence: PresenceValue} }, "reservation_policy_requires_applicable_true"},
+		{"malformed cancellation", func(p *Posting, _ *CustomerOrderWrite) {
+			p.Cancellation = Present(Cancellation{AfterShipment: Field[bool]{Presence: PresenceValue}})
+		}, "reservation_policy_shipment_or_cancellation_conflict"},
 		{"unknown applicable", func(_ *Posting, w *CustomerOrderWrite) { w.Applicable = Field[bool]{} }, "reservation_policy_requires_applicable_true"},
 		{"partial cancellation", func(p *Posting, _ *CustomerOrderWrite) { p.Lines[0].CancelledQuantity = Present(Decimal("1")) }, "reservation_policy_partial_cancellation_unknown"},
 		{"null cancelled quantity", func(p *Posting, _ *CustomerOrderWrite) {
