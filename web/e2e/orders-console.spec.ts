@@ -375,6 +375,10 @@ async function openOrders(
       if (body.proposals?.length) {
         const proposal = body.proposals[0] as OrderActionProposal;
         const parameters = { ...proposal.parameters };
+        if (parameters.exemplars) {
+          delete parameters.exemplars;
+          parameters.exemplars_provided = true;
+        }
         if (parameters.tracking_number) {
           delete parameters.tracking_number;
           parameters.tracking_provided = true;
@@ -865,4 +869,94 @@ test("hybrid handover clears an expired printed-label selection without another 
   expect(operationReads).toBe(reads);
   expect(approvals).toHaveLength(0);
   expect(previews).toHaveLength(0);
+});
+
+test("exemplar edits require explicit input, preserve string IDs and use separate approval", async ({
+  page,
+}, testInfo) => {
+  const { approvals, previews, errors } = await openOrders(page, false, true);
+  await page.route("**/api/orders/action-options?*", (route) =>
+    fulfill(route, {
+      scope,
+      posting_number: "SYNTHETIC-1",
+      source_revision: "synthetic-v1",
+      actions: [
+        {
+          action: "posting_exemplar_set",
+          allowed: true,
+          blockers: [],
+          parameters_required: ["exemplar_work_id", "exemplars"],
+        },
+      ],
+      cancellation_reasons: [],
+      label_types: [],
+    }),
+  );
+  await page.route("**/api/orders/exemplars?*", (route) =>
+    fulfill(route, {
+      scope,
+      posting_number: "SYNTHETIC-1",
+      source_revision: "synthetic-v1",
+      work_id: "prepared-synthetic",
+      target_fingerprint: "physical-fp",
+      expires_at: new Date(Date.now() + 60000).toISOString(),
+      products: [
+        {
+          sku: "9007199254740993",
+          quantity: 1,
+          ids: ["9007199254740995"],
+          required: {
+            mandatory_mark: known(true),
+            imei: known(false),
+            gtd: missing,
+          },
+        },
+      ],
+    }),
+  );
+  await page
+    .getByText("Действия с отправлением в Ozon", { exact: true })
+    .click();
+  await page
+    .getByLabel("Действие для отправления SYNTHETIC-1")
+    .selectOption("posting_exemplar_set");
+  const preview = page.getByRole("button", {
+    name: "Проверить действие в Ozon",
+  });
+  await expect(preview).toBeDisabled();
+  await expect(
+    page.getByText(/Таможенная декларация: неизвестно/),
+  ).toBeVisible();
+  await page
+    .getByLabel("Код маркировки", { exact: true })
+    .fill("SCANNED-SYNTHETIC-CODE");
+  await expect(preview).toBeEnabled();
+  await page.screenshot({
+    path: testInfo.outputPath("exemplars-desktop.png"),
+    fullPage: true,
+    mask: [page.getByLabel("Код маркировки", { exact: true })],
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("exemplars-mobile.png"),
+    fullPage: true,
+    mask: [page.getByLabel("Код маркировки", { exact: true })],
+  });
+  await preview.click();
+  expect(
+    previews[0].proposals?.[0].parameters.exemplars?.products[0].exemplars[0]
+      .id,
+  ).toBe("9007199254740995");
+  expect(approvals).toHaveLength(0);
+  await expect(
+    page.getByText(
+      "Сведения экземпляров введены; маркировка и таможенные данные скрыты в журнале.",
+    ),
+  ).toBeVisible();
+  expect(errors).toEqual([]);
 });

@@ -69,6 +69,18 @@ export function OrdersActionSummary({
             : "Печать не подтверждена."}
         </p>
       )}
+      {parameters.exemplar_work_id && (
+        <p>
+          Экземпляры: операция {parameters.exemplar_work_id}. Проверка
+          фактических сведений выполняется отдельно.
+        </p>
+      )}
+      {(parameters.exemplars_provided || parameters.exemplars) && (
+        <p>
+          Сведения экземпляров введены; маркировка и таможенные данные скрыты в
+          журнале.
+        </p>
+      )}
       {parameters.label_type && (
         <p>
           Формат:{" "}

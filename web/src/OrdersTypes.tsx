@@ -1,4 +1,5 @@
 import { ApiError } from "./api";
+import type { ExemplarSetInput } from "./OrdersExemplarTypes";
 
 export type OrderScope = { tenant: string; moy: string; ozon: string };
 export type NativeScope = {
@@ -154,6 +155,9 @@ export type OrderActionParameters = {
   label_type?: "big_label" | "small_label";
   label_work_id?: string;
   label_printed_confirmed?: boolean;
+  exemplar_work_id?: string;
+  exemplars?: ExemplarSetInput;
+  exemplars_provided?: boolean;
   tracking_provided?: boolean;
   reason_message_provided?: boolean;
   event_reference_provided?: boolean;
@@ -366,6 +370,8 @@ export const orderActionLabel = (action: string) =>
     posting_deliver: "Передать статус «Доставлено» в Ozon",
     posting_sent_by_seller: "Подтвердить отправку продавцом в Ozon",
     posting_label_create: "Создать этикетку в Ozon",
+    posting_exemplar_prepare: "Подготовить экземпляры в Ozon",
+    posting_exemplar_set: "Передать сведения экземпляров в Ozon",
   })[action] || action;
 const issueLabels: Record<string, string> = {
   position_ownership_unverified:
@@ -393,7 +399,7 @@ const issueLabels: Record<string, string> = {
   packing_gtd_required:
     "Ozon требует таможенные сведения указанного SKU. Заполните их в Ozon и обновите отправление.",
   packing_mandatory_mark_required:
-    "Ozon требует код маркировки указанного SKU. Передача экземпляров в STYK пока не реализована: укажите реальные данные в Ozon и обновите отправление.",
+    "Ozon требует код маркировки указанного SKU. Подготовьте экземпляры, затем передайте реальные сведения и дождитесь проверки.",
   packing_jw_uin_required:
     "Ozon требует УИН ювелирного изделия. Укажите реальные данные экземпляров в Ozon и обновите отправление.",
   packing_rnpt_required:

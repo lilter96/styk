@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
+import { OrdersExemplars } from "./OrdersExemplars";
+import type { ExemplarDraft } from "./OrdersExemplarTypes";
 import { useQuery } from "@tanstack/react-query";
 import { ApiError, api } from "./api";
 import { OrdersHybridLabels } from "./OrdersHybridLabels";
@@ -29,6 +31,8 @@ export const ozonOrderActions = [
   "posting_deliver",
   "posting_sent_by_seller",
   "posting_label_create",
+  "posting_exemplar_prepare",
+  "posting_exemplar_set",
 ];
 const packageActions = ["posting_pack", "posting_split"];
 const eventActions = [
@@ -130,6 +134,14 @@ export function OrdersActions({
   const [labelType, setLabelType] = useState("");
   const [labelWork, setLabelWork] = useState("");
   const [labelPrinted, setLabelPrinted] = useState(false);
+  const [exemplar, setExemplar] = useState<ExemplarDraft>();
+  const changeExemplar = useCallback(
+    (value: ExemplarDraft | undefined) => {
+      setExemplar(value);
+      onDraftChange();
+    },
+    [onDraftChange],
+  );
   const options = useQuery({
     queryKey: [
       "orders-action-options",
@@ -208,11 +220,16 @@ export function OrdersActions({
     "label_type",
     "label_work_id",
     "label_printed_confirmed",
+    "exemplar_work_id",
+    "exemplars",
   ];
   const unsupportedParameters = parameters.some(
     (parameter) => !knownParameters.includes(parameter),
   );
   const hybridLabelRequired = parameters.includes("label_work_id");
+  const exemplarRequired =
+    action === "posting_exemplar_set" ||
+    parameters.includes("exemplar_work_id");
   const quantitiesValid =
     (!packaging && action !== "posting_partial_cancel") ||
     orderAllocationValid(posting, allocations, packaging);
@@ -224,6 +241,10 @@ export function OrdersActions({
     !option.blockers?.length &&
     !unsupportedParameters &&
     quantitiesValid &&
+    (!exemplarRequired ||
+      (!!exemplar?.workID &&
+        Date.parse(exemplar.validUntil) > Date.now() &&
+        (action !== "posting_exemplar_set" || !!exemplar.input))) &&
     (!hybridLabelRequired || (!!labelWork && labelPrinted)) &&
     (!packaging ||
       (ready && (action !== "posting_split" || allocations.length >= 2))) &&
@@ -253,6 +274,7 @@ export function OrdersActions({
     setLabelType("");
     setLabelWork("");
     setLabelPrinted(false);
+    setExemplar(undefined);
     changed();
   }
   function buildProposal() {
@@ -280,6 +302,11 @@ export function OrdersActions({
     if (hybridLabelRequired) {
       parameters.label_work_id = labelWork;
       parameters.label_printed_confirmed = labelPrinted;
+    }
+    if (exemplarRequired && exemplar) {
+      parameters.exemplar_work_id = exemplar.workID;
+      if (action === "posting_exemplar_set")
+        parameters.exemplars = exemplar.input;
     }
     if (action === "posting_label_create")
       parameters.label_type = labelType as "big_label" | "small_label";
@@ -612,6 +639,17 @@ export function OrdersActions({
                       {eventLabels[action]}
                     </label>
                   </>
+                )}
+                {exemplarRequired && (
+                  <OrdersExemplars
+                    key={`${action}:${scope.tenant}:${scope.moy}:${scope.ozon}:${posting.posting_number}:${posting.evidence.revision}`}
+                    scope={scope}
+                    postingNumber={posting.posting_number}
+                    sourceRevision={posting.evidence.revision}
+                    mode={action === "posting_exemplar_set" ? "edit" : "proof"}
+                    disabled={disabled}
+                    onChange={changeExemplar}
+                  />
                 )}
                 {hybridLabelRequired && (
                   <OrdersHybridLabels

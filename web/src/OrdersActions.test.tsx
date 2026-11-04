@@ -608,3 +608,59 @@ it("requires a reconciled label and separate printed confirmation for hybrid han
     label_printed_confirmed: true,
   });
 });
+
+it("previews edited provider-issued exemplars through the normal action flow", async () => {
+  mockAPI((url) => {
+    if (url.pathname.endsWith("/exemplars"))
+      return json({
+        scope: orderScopeBody(scope),
+        source_revision: "source-v1",
+        work_id: "prepare-synthetic",
+        target_fingerprint: "physical-fp",
+        posting_number: posting.posting_number,
+        expires_at: new Date(Date.now() + 60000).toISOString(),
+        products: [
+          {
+            sku: "123",
+            quantity: 2,
+            ids: ["9007199254740993", "9007199254740994"],
+            required: { mandatory_mark: { presence: "value", value: true } },
+          },
+        ],
+      });
+  });
+  const preview = form();
+  await openAction("posting_exemplar_set");
+  expect(checkButton().disabled).toBe(true);
+  const fields = await screen.findAllByLabelText("Код маркировки");
+  fireEvent.change(fields[0], { target: { value: "01REAL\u001d21SCANNED" } });
+  expect(checkButton().disabled).toBe(false);
+  fireEvent.click(checkButton());
+  expect(preview).toHaveBeenLastCalledWith({
+    posting_number: posting.posting_number,
+    action: "posting_exemplar_set",
+    parameters: {
+      exemplar_work_id: "prepare-synthetic",
+      exemplars: {
+        products: [
+          {
+            sku: "123",
+            exemplars: [
+              {
+                id: "9007199254740993",
+                marks: {
+                  presence: "value",
+                  value: [
+                    { type: "mandatory_mark", value: "01REAL\u001d21SCANNED" },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  });
+  expect(localStorage.length).toBe(0);
+  expect(sessionStorage.length).toBe(0);
+});
