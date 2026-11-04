@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"sync/atomic"
 
 	"github.com/lilter96/styk/internal/orders"
@@ -129,8 +130,8 @@ func (r *Runner) freshSource(ctx context.Context, work orders.Work, reviewed ord
 	if fresh.Scope != reviewed.Scope || fresh.PostingNumber != reviewed.PostingNumber || fresh.CommercialOrderID != reviewed.CommercialOrderID {
 		return orders.Posting{}, orders.ErrStale
 	}
-	if work.Command.CustomerOrder != nil && work.Command.CustomerOrder.HasPIIMappings() && work.Command.ProtectedCustomer != nil && fresh.Customer != *work.Command.ProtectedCustomer {
-		return orders.Posting{}, orders.ErrStale
+	if err := r.verifyFreshCustomer(ctx, work.Command, &fresh); err != nil {
+		return orders.Posting{}, err
 	}
 	before, err := orders.PostingFingerprint(withoutCustomerProjection(reviewed))
 	if err != nil {
@@ -241,4 +242,26 @@ func validWriteReceipt(command orders.Command, receipt orders.Receipt) bool {
 		return false
 	}
 	return receipt.State == orders.StateAcknowledged || receipt.State == orders.StatePolling || receipt.State == orders.StateUnknown || receipt.State == orders.StateRejected || receipt.State == orders.StateReconciled
+}
+
+// A fresh provider response has values, not STYK's encrypted reference. Verify
+// those values before rebinding the reviewed reference; never trust that marker.
+func (r *Runner) verifyFreshCustomer(ctx context.Context, command orders.Command, fresh *orders.Posting) error {
+	if command.CustomerOrder == nil || !command.CustomerOrder.HasPIIMappings() {
+		return nil
+	}
+	ref := command.ProtectedCustomer
+	if ref == nil || r.options.CustomerReader == nil || fresh.PII == nil || fresh.Customer.Presence != orders.PresenceValue {
+		return orders.ErrBlocked
+	}
+	expected, err := r.options.CustomerReader.Customer(ctx, command.Scope, command.PostingNumber, *ref)
+	if err != nil {
+		return fmt.Errorf("read protected customer for source comparison: %w", err)
+	}
+	if expected == nil || !reflect.DeepEqual(expected, fresh.PII) {
+		return orders.ErrStale
+	}
+	fresh.Customer = *ref
+	fresh.PII = nil
+	return nil
 }

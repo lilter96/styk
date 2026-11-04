@@ -86,7 +86,7 @@ func newOrdersWork(db *postgres.Store, resolver *credentials.Resolver) (applicat
 	if err != nil {
 		return nil, err
 	}
-	factory := orderprovider.Factory{Credentials: resolver, Gate: gate, DeliveryObserver: db}
+	factory := orderprovider.Factory{Credentials: resolver, Gate: gate, DeliveryObserver: db, Configs: db}
 	protector := orderprivacy.Protector{Vault: resolver.Vault, Store: db}
 	service, err := orderflow.NewService(db, factory, orderflow.ServiceOptions{AllowScope: orderAllowed, CustomerReader: protector})
 	if err != nil {

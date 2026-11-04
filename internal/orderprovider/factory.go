@@ -3,6 +3,7 @@ package orderprovider
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/lilter96/styk/internal/credentials"
@@ -16,7 +17,12 @@ import (
 type CredentialResolver interface {
 	ResolveWithRevision(context.Context, credentials.Scope) (string, int64, error)
 }
+type ConfigReader interface {
+	OrderConfig(context.Context, orders.Scope) (orders.Config, error)
+}
+
 type Factory struct {
+	Configs          ConfigReader
 	Credentials      CredentialResolver
 	Gate             providercall.Gate
 	DeliveryObserver delivery.Observer
@@ -35,13 +41,13 @@ func (f Factory) ResolveOrder(ctx context.Context, scope orders.Scope, provider,
 	if revision < 1 || (expected > 0 && expected != revision) {
 		return orders.Binding{}, orders.ErrStale
 	}
-	client, err := f.client(scope, provider, account, secret, revision)
+	client, err := f.client(ctx, scope, provider, account, secret, revision)
 	if err != nil {
 		return orders.Binding{}, err
 	}
 	return orders.Binding{Scope: scope, Provider: provider, Account: account, CredentialRevision: revision, Client: client}, nil
 }
-func (f Factory) client(scope orders.Scope, provider, account, secret string, revision int64) (orders.Provider, error) {
+func (f Factory) client(ctx context.Context, scope orders.Scope, provider, account, secret string, revision int64) (orders.Provider, error) {
 	gateScope := providercall.Scope{Tenant: scope.Tenant, Provider: provider, Account: account, CredentialRevision: revision}
 	if provider == "ozon" {
 		create := f.NewOzon
@@ -55,7 +61,11 @@ func (f Factory) client(scope orders.Scope, provider, account, secret string, re
 		if err = base.Coordinate(f.Gate, gateScope); err != nil {
 			return nil, err
 		}
-		return ozon.NewOrderClientWithOptions(base, scope, ozon.OrderReadOptions{AnalyticsData: true, FinancialData: true, Barcodes: true, ResolveDelivery: true, DeliveryObserver: f.DeliveryObserver})
+		options, err := f.ozonReadOptions(ctx, scope)
+		if err != nil {
+			return nil, err
+		}
+		return ozon.NewOrderClientWithOptions(base, scope, options)
 	}
 	create := f.NewMoysklad
 	if create == nil {
@@ -75,4 +85,23 @@ func defaultOzon(account, secret string) (*ozon.Client, error) {
 }
 func defaultMoysklad(_, secret string) (*moysklad.Client, error) {
 	return moysklad.New(moysklad.Options{BaseURL: moysklad.BaseURL, Token: secret, Timeout: 15 * time.Second, Interval: time.Second, Backoff: time.Second, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 100})
+}
+
+func (f Factory) ozonReadOptions(ctx context.Context, scope orders.Scope) (ozon.OrderReadOptions, error) {
+	options := ozon.OrderReadOptions{AnalyticsData: true, FinancialData: true, Barcodes: true, ResolveDelivery: true, DeliveryObserver: f.DeliveryObserver}
+	if f.Configs == nil {
+		return options, nil
+	}
+	config, err := f.Configs.OrderConfig(ctx, scope)
+	if errors.Is(err, orders.ErrNotFound) {
+		return options, nil
+	}
+	if err != nil {
+		return options, err
+	}
+	if config.Scope != scope || config.Validate() != nil {
+		return options, orders.ErrStale
+	}
+	options.CustomerPII = config.Enabled && config.PIIEnabled
+	return options, nil
 }

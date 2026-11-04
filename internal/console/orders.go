@@ -32,7 +32,7 @@ func registerOrdersRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c *co
 	if err != nil {
 		return err
 	}
-	factory := orderprovider.Factory{Credentials: &credentials.Resolver{Store: db, Vault: c.vault}, Gate: gate, DeliveryObserver: db}
+	factory := orderprovider.Factory{Credentials: &credentials.Resolver{Store: db, Vault: c.vault}, Gate: gate, DeliveryObserver: db, Configs: db}
 	if c.moyFactory != nil {
 		factory.NewMoysklad = func(_, secret string) (*moysklad.Client, error) { return c.moyFactory(secret) }
 	}
