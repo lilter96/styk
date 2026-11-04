@@ -536,3 +536,10 @@ The official [sales-return contract](https://raw.githubusercontent.com/moysklad/
 was also checked for VAT inclusion, enabled state and the demand-basis link.
 Live included-tax shipment/return remains NOT_OBSERVED_LIVE. This extension does
 not claim that all fiscal rounding cases or the complete release are finished.
+
+Local runtime was then rebuilt from clean source `e0804b2` and the four owned
+processes (two APIs, two normal workers) were restarted after database checks
+showed zero enabled order/stock/catalog configurations, active provider calls,
+dispatches and pending/running outbox tasks. Both API readiness checks passed.
+General stock/catalog publication flags remain unset; no live provider mutation
+was requested by this continuation. The unrelated `AGENTS.md` edit is preserved.
