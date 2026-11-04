@@ -426,6 +426,14 @@ export const orderActionLabel = (action: string) =>
     posting_exemplar_set: "Передать сведения экземпляров в Ozon",
   })[action] || action;
 const issueLabels: Record<string, string> = {
+  native_return_basis_unknown:
+    "Нет полной подтверждённой отгрузки-основания и сведений о предыдущих возвратах. Обновите данные перед созданием возврата.",
+  native_return_quantity_exceeded:
+    "Количество возврата превышает остаток исходной отгрузки с учётом уже проведённых возвратов.",
+  native_tax_or_discount_rounding_unverified:
+    "Не подтверждён расчёт скидки или НДС сверх цены. STYK сохраняет наблюдаемый включённый НДС, но не угадывает налоговые значения и округление.",
+  native_sum_rounding_unverified:
+    "Сумма позиции требует неподтверждённого округления. Проверьте цену и количество исходного документа.",
   NATIVE_DOCUMENT_MOMENT_MINUTE_CONFIRMED:
     "Документ и связанный заказ сверены. Учётная дата подтверждена с документированной минутной точностью МойСклад; первоначальный ответ записи сохранён в истории.",
   TARGET_DOCUMENT_MINUTE_FACTS_CONFIRMED:

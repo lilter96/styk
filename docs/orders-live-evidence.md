@@ -486,3 +486,53 @@ Exemplar updates can preserve freshly observed weights and grouping without unit
 conversion or new measurements. Real ship/delivery/marking and posted native
 shipment/return events remain NOT_OBSERVED_LIVE because no applicable genuine event
 was fabricated; supported paths have deterministic HTTP/worker evidence.
+
+
+### Continuation: observed included VAT and return-boundary validation
+
+Native demand/return plans now preserve a nonzero integer VAT percentage already
+observed in MoySklad when document VAT is enabled and included in the gross
+price. They do not infer a seller tax declaration or treat an Ozon fractional
+rate as a native percentage. The gross amount remains exact quantity × observed
+price; VAT is not added again. Discount-dependent, excluded-tax and fractional
+minor-unit rounding remain explicit blockers. Existing zero-tax behavior remains.
+
+Contract checked 2026-11-04: the official
+[demand specification](https://raw.githubusercontent.com/moysklad/api-remap-1.2-doc/master/md/documents/_demand.md)
+defines document `vatIncluded` as inclusion in price, position `vat` as an integer,
+and position `vatEnabled` separately from exempt/zero treatment. Return tax
+headers and line financial values are inherited from the exact demand basis,
+not from a later edited customer order. This does not change the interpretation
+or mapping of Ozon posting VAT fields.
+
+Adversarial review found a pre-existing return-boundary gap: the planner copied
+basis fiscal values, but command validation did not independently bind outgoing
+return price/currency/discount/VAT to the exact demand position. The domain now
+checks the basis UUID, item identity, fiscal values and duplicate basis use.
+Payload monetary validation independently rechecks complete prior-return evidence
+and remaining quantity using exact decimals; only posted returns consume physical
+return quantity. Changed basis facts still fail the existing fresh preflight.
+
+The normal merchant HTTP → PostgreSQL → outbox/worker → deterministic MoySklad
+transport exercises a draft, posted demand and linked return with observed 20%
+included VAT, retaining the original 12.34 RUB gross unit price. No live tax,
+physical shipment or return was created for this extension. The first test setup
+reused a physical-event correlation reference for two intents and correctly got
+HTTP 409; distinct event references corrected the test rather than weakening
+intent uniqueness. The earlier failed attempt is not counted as passed.
+
+Verification for this extension: `make lint test build`, complete Go race suite,
+Go vet and integration-tag golangci-lint pass (0 findings). Four selected normal
+native HTTP/PostgreSQL scenarios, including lost acknowledgement and stale-source/
+foreign-reserve guards, pass with race instrumentation in 79.676 seconds.
+Frontend typecheck/lint/build, 276 unit tests and 14 orders-console browser
+journeys pass. No schema migration or live provider request was required.
+The legacy default `npm run test:browser` smoke failed because it expects the
+removed local-operator “Ключ входа” form; this is retained as a failing legacy
+harness, not reported as a successful merchant-authentication E2E. The explicit
+current orders-console suite passes separately.
+
+The official [sales-return contract](https://raw.githubusercontent.com/moysklad/api-remap-1.2-doc/master/md/documents/_sales_return.md)
+was also checked for VAT inclusion, enabled state and the demand-basis link.
+Live included-tax shipment/return remains NOT_OBSERVED_LIVE. This extension does
+not claim that all fiscal rounding cases or the complete release are finished.
