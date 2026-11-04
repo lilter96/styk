@@ -111,7 +111,7 @@ func CompositionTargetCurrent(command Command, target TargetObservation) error {
 	if command.PositionReplacement == nil || command.PositionReplacement.Validate(command) != nil {
 		return ErrBlocked
 	}
-	if !target.Complete || target.Scope != command.Scope || target.Correlation != command.Correlation || target.Revision != command.ExpectedTargetRevision || !NativePositionsEqual(target.Positions, command.TargetPositions) || !nativeBoolEqual(command.PositionReplacement.VATEnabled, target.Fields.VATEnabled) || !nativeBoolEqual(command.PositionReplacement.Applicable, target.Fields.Applicable) {
+	if !target.Complete || target.Scope != command.Scope || target.Correlation != command.Correlation || target.Revision != command.ExpectedTargetRevision || !NativePositionsEqual(target.Positions, command.TargetPositions) || !compositionReferencesMatch(command, target) || !nativeBoolEqual(command.PositionReplacement.VATEnabled, target.Fields.VATEnabled) || !nativeBoolEqual(command.PositionReplacement.Applicable, target.Fields.Applicable) {
 		return ErrStale
 	}
 	for _, current := range target.Positions {
@@ -124,7 +124,7 @@ func CompositionTargetCurrent(command Command, target TargetObservation) error {
 
 // Complete readback keeps retained UUIDs and refuses any extra or stale row.
 func CompositionTargetObserved(command Command, target TargetObservation) bool {
-	if command.PositionReplacement == nil || command.PositionReplacement.Validate(command) != nil || !target.Complete || target.Scope != command.Scope || target.Correlation != command.Correlation || len(target.Positions) != len(command.CustomerOrder.Positions) || !nativeBoolEqual(command.PositionReplacement.Applicable, target.Fields.Applicable) || !nativeBoolEqual(command.PositionReplacement.VATEnabled, target.Fields.VATEnabled) {
+	if command.PositionReplacement == nil || command.PositionReplacement.Validate(command) != nil || !target.Complete || target.Scope != command.Scope || target.Correlation != command.Correlation || !compositionReferencesMatch(command, target) || len(target.Positions) != len(command.CustomerOrder.Positions) || !nativeBoolEqual(command.PositionReplacement.Applicable, target.Fields.Applicable) || !nativeBoolEqual(command.PositionReplacement.VATEnabled, target.Fields.VATEnabled) {
 		return false
 	}
 	for _, wanted := range command.CustomerOrder.Positions {
@@ -159,4 +159,12 @@ func CompositionTargetObserved(command Command, target TargetObservation) bool {
 func CompositionDispatchAcknowledged(work Work) bool {
 	receipt := work.Receipt
 	return work.DispatchCount == 1 && receipt.State == StateAcknowledged && receipt.HTTPStatus >= 200 && receipt.HTTPStatus < 300 && receipt.CommandID == work.Command.ID && receipt.ExternalID == work.Command.Correlation.CustomerOrderID && receipt.ExternalID != ""
+}
+
+func compositionReferencesMatch(command Command, target TargetObservation) bool {
+	if command.CustomerOrder == nil {
+		return false
+	}
+	expected, actual := command.CustomerOrder, target.Fields
+	return expected.OrganizationID == actual.OrganizationID && expected.AgentID == actual.AgentID && expected.StoreID == actual.StoreID && expected.SalesChannelID == actual.SalesChannelID && expected.CurrencyID == actual.CurrencyID
 }

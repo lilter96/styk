@@ -71,7 +71,7 @@ func compositionResult(command Command) TargetObservation {
 	positions := slices.Clone(command.TargetPositions)
 	added := command.CustomerOrder.Positions[1]
 	positions = append(positions, TargetPosition{ID: "new-native-position", CompositionSafe: Present(true), MoyskladKind: added.Mapping.MoyskladKind, MoyskladID: added.Mapping.MoyskladID, Quantity: added.Quantity, Reserve: added.Reserve, Price: added.Price, VAT: added.VAT, VATEnabled: Present(false), Discount: Present(Decimal("0")), Shipped: Present(Decimal("0"))})
-	return TargetObservation{Scope: command.Scope, Correlation: command.Correlation, Complete: true, Revision: "after", ObservedAt: time.Now(), Positions: positions, Fields: CustomerOrderWrite{Applicable: Present(false), VATEnabled: Present(false)}}
+	return TargetObservation{Scope: command.Scope, Correlation: command.Correlation, Complete: true, Revision: "after", ObservedAt: time.Now(), Positions: positions, Fields: compositionReadbackFields(command)}
 }
 
 func TestCompositionAcknowledgedReadbackLearnsOnlyExactNewUUIDs(t *testing.T) {
@@ -104,7 +104,7 @@ func TestCompositionAcknowledgedReadbackLearnsOnlyExactNewUUIDs(t *testing.T) {
 func TestCompositionExactPreflightAndUnsupportedReadback(t *testing.T) {
 	t.Parallel()
 	command, _ := compositionFixture(t)
-	target := TargetObservation{Scope: command.Scope, Correlation: command.Correlation, Complete: true, Revision: command.ExpectedTargetRevision, Positions: slices.Clone(command.TargetPositions), Fields: CustomerOrderWrite{VATEnabled: Present(false), Applicable: Present(false)}}
+	target := TargetObservation{Scope: command.Scope, Correlation: command.Correlation, Complete: true, Revision: command.ExpectedTargetRevision, Positions: slices.Clone(command.TargetPositions), Fields: compositionReadbackFields(command)}
 	if err := CompositionTargetCurrent(command, target); err != nil {
 		t.Fatal(err)
 	}
@@ -164,6 +164,38 @@ func TestCompositionRejectsNonzeroTaxAndOverReservation(t *testing.T) {
 			tc.change(&command)
 			if command.Validate() == nil {
 				t.Fatal("unsafe source/native value accepted")
+			}
+		})
+	}
+}
+
+func compositionReadbackFields(command Command) CustomerOrderWrite {
+	fields := *command.CustomerOrder
+	fields.Applicable, fields.VATEnabled = Present(false), Present(false)
+	return fields
+}
+
+func TestCompositionReadbackCannotSwitchNativeReferences(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		change func(*TargetObservation)
+	}{
+		{"store", func(t *TargetObservation) { t.Fields.StoreID = "foreign-store" }},
+		{"organization", func(t *TargetObservation) { t.Fields.OrganizationID = "foreign-organization" }},
+		{"agent", func(t *TargetObservation) { t.Fields.AgentID = "foreign-agent" }},
+		{"currency", func(t *TargetObservation) { t.Fields.CurrencyID = "foreign-currency" }},
+		{"channel", func(t *TargetObservation) { t.Fields.SalesChannelID = "foreign-channel" }},
+		{"scope", func(t *TargetObservation) { t.Scope.Tenant = "foreign-tenant" }},
+		{"application", func(t *TargetObservation) { t.Fields.Applicable = Present(true) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			command, _ := compositionFixture(t)
+			target := compositionResult(command)
+			tc.change(&target)
+			if CompositionTargetObserved(command, target) {
+				t.Fatal("cross-target native readback reconciled")
 			}
 		})
 	}
