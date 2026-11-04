@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"bytes"
 	"encoding/json"
 
 	"github.com/lilter96/styk/internal/orders"
@@ -38,7 +39,9 @@ func orderProjectionJSON(value any) (any, error) {
 		return nil, err
 	}
 	var result any
-	if err = json.Unmarshal(raw, &result); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err = decoder.Decode(&result); err != nil {
 		return nil, orders.ErrInvalid
 	}
 	return result, nil
