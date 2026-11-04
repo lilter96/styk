@@ -48,6 +48,32 @@ export function nativeQuantityAtMost(quantity: string, maximum: string) {
   );
 }
 
+export function nativeQuantityTotalAtMost(
+  quantities: string[],
+  maximum: string,
+) {
+  if (
+    quantities.length === 0 ||
+    quantities.length > 100 ||
+    quantities.some((value) => !nativeQuantityAtMost(value, maximum))
+  )
+    return false;
+  const parts = quantities.map((value) => value.split("."));
+  const [whole, fraction = ""] = maximum.split(".");
+  const scale = Math.max(
+    fraction.length,
+    ...parts.map((part) => part[1]?.length ?? 0),
+  );
+  const total = parts.reduce(
+    (sum, [integer, decimal = ""]) =>
+      sum + BigInt(integer + decimal) * 10n ** BigInt(scale - decimal.length),
+    0n,
+  );
+  return (
+    total <= BigInt(whole + fraction) * 10n ** BigInt(scale - fraction.length)
+  );
+}
+
 export function OrdersNativeDocuments(props: Props) {
   if (!sameOrderScope(props.posting.scope, props.scope))
     return (
@@ -123,17 +149,28 @@ function NativeForm({
     !!policy?.allow_posted &&
     Date.parse(policy.attested_at) <= now &&
     expiry > now;
+  const eventMilliseconds = Date.parse(occurred);
+  const eventExpiry =
+    mode !== "draft" &&
+    Number.isFinite(eventMilliseconds) &&
+    (policy?.event_max_age_seconds ?? 0) > 0
+      ? eventMilliseconds + (policy?.event_max_age_seconds ?? 0) * 1000
+      : NaN;
   useEffect(() => {
-    if (!Number.isFinite(expiry) || expiry <= Date.now()) return;
+    const deadlines = [expiry, eventExpiry].filter(
+      (value) => Number.isFinite(value) && value > Date.now(),
+    );
+    if (deadlines.length === 0) return;
+    const deadline = Math.min(...deadlines);
     const timer = window.setTimeout(
       () => {
         setNow(Date.now());
         onDraftChange();
       },
-      Math.min(expiry - Date.now() + 1, 2147483647),
+      Math.min(deadline - Date.now() + 1, 2147483647),
     );
     return () => window.clearTimeout(timer);
-  }, [expiry, now, onDraftChange]);
+  }, [expiry, eventExpiry, now, onDraftChange]);
   const demands = (history.data?.operations ?? []).flatMap((op) =>
     op.targets
       .filter((work) => eligibleDemand(work, posting.posting_number, scope))
@@ -152,8 +189,12 @@ function NativeForm({
       ? [{ identity: line.identity, quantity: quantities[index].trim() }]
       : [],
   );
+  const totalValid = nativeQuantityTotalAtMost(
+    lines.map((line) => line.quantity),
+    policy?.maximum_quantity ?? "0",
+  );
   const quantitiesValid =
-    lines.length > 0 &&
+    totalValid &&
     posting.lines.every(
       (line, index) =>
         !quantities[index]?.trim() ||
@@ -174,7 +215,7 @@ function NativeForm({
     Number.isFinite(milliseconds) &&
     (mode === "draft" ||
       (milliseconds <= Date.now() + 60000 &&
-        Date.now() - milliseconds <=
+        Date.now() - milliseconds <
           (policy?.event_max_age_seconds ?? 0) * 1000));
   const canPreview =
     !disabled &&
@@ -334,6 +375,16 @@ function NativeForm({
           )}
           <fieldset>
             <legend>Товары документа</legend>
+            <p className="orders-note">
+              Общий лимит документа:{" "}
+              {policy?.maximum_quantity ?? "не установлен"}.
+            </p>
+            {lines.length > 0 && !totalValid && (
+              <p className="orders-warning">
+                Суммарное количество должно быть положительным и не превышать
+                общий лимит документа.
+              </p>
+            )}
             <p className="orders-note">
               Укажите количество только у нужных позиций. Пустое поле исключает
               товар. Остаток по отгрузке и возвраты дополнительно проверит

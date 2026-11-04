@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   cleanup,
+  act,
   fireEvent,
   render,
   screen,
@@ -11,6 +12,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   OrdersNativeDocuments,
   nativeQuantityAtMost,
+  nativeQuantityTotalAtMost,
 } from "./OrdersNativeDocuments";
 import { orderScopeBody, type OrderPosting } from "./OrdersTypes";
 
@@ -109,7 +111,7 @@ async function open() {
   if (!details) throw new Error("missing form");
   details.open = true;
   fireEvent(details, new Event("toggle"));
-  await screen.findByText(/лимит разрешения: 10/);
+  await screen.findAllByText(/лимит разрешения: 10/);
 }
 function quantity() {
   fireEvent.change(screen.getByLabelText(/Количество · Тестовый товар/), {
@@ -130,6 +132,7 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 it("keeps exact quantities and never coerces provider identifiers to numbers", () => {
@@ -435,4 +438,110 @@ it("rejects a foreign configuration without enabling document creation", async (
   await screen.findByRole("alert");
   expect(previewButton()).toBeDisabled();
   expect(f.onPreview).not.toHaveBeenCalled();
+});
+
+it("checks the aggregate document quantity with exact decimals", () => {
+  expect(
+    nativeQuantityTotalAtMost(
+      ["1.000000000000000001", "1.999999999999999999"],
+      "3",
+    ),
+  ).toBe(true);
+  expect(
+    nativeQuantityTotalAtMost(
+      ["1.000000000000000002", "1.999999999999999999"],
+      "3",
+    ),
+  ).toBe(false);
+  expect(nativeQuantityTotalAtMost(["6", "6"], "10")).toBe(false);
+  expect(
+    nativeQuantityTotalAtMost(
+      ["9007199254740993", "0.000000000000000001"],
+      "9007199254740993.000000000000000001",
+    ),
+  ).toBe(true);
+  for (const values of [
+    [],
+    ["0"],
+    ["-1"],
+    ["NaN"],
+    Array<string>(101).fill("1"),
+  ])
+    expect(nativeQuantityTotalAtMost(values, "1000")).toBe(false);
+});
+
+it("invalidates the preview when the real event ages out before the policy", async () => {
+  const f = setup({ nativePolicy: { ...policy(), event_max_age_seconds: 2 } });
+  await open();
+  quantity();
+  fireEvent.change(screen.getByLabelText("Документ"), {
+    target: { value: "demand" },
+  });
+  vi.useFakeTimers();
+  const date = new Date(Date.now() - 1000);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, -1);
+  fireEvent.change(screen.getByLabelText("Фактическое время события"), {
+    target: { value: local },
+  });
+  fireEvent.change(screen.getByLabelText("Идентификатор реального события"), {
+    target: { value: "real-event-reference" },
+  });
+  fireEvent.click(
+    screen.getByLabelText(/Подтверждаю: выбранный товар фактически передан/),
+  );
+  expect(previewButton()).not.toBeDisabled();
+  f.onDraftChange.mockClear();
+  await act(async () => vi.advanceTimersByTime(1001));
+  expect(previewButton()).toBeDisabled();
+  expect(f.onDraftChange).toHaveBeenCalledTimes(1);
+  await act(async () => vi.advanceTimersByTime(1000));
+  expect(f.onDraftChange).toHaveBeenCalledTimes(1);
+});
+
+it("blocks a document whose independently valid line quantities exceed the total limit", async () => {
+  const f = setup();
+  f.view.rerender(
+    <QueryClientProvider client={f.client}>
+      <OrdersNativeDocuments
+        {...f.props}
+        posting={{
+          ...posting,
+          lines: [
+            {
+              ...posting.lines[0],
+              quantity: "6",
+              name: { presence: "value", value: "Товар А" },
+            },
+            {
+              ...posting.lines[0],
+              identity: { provider_line_id: "line-2", sku: "456" },
+              quantity: "6",
+              name: { presence: "value", value: "Товар Б" },
+            },
+          ],
+        }}
+      />
+    </QueryClientProvider>,
+  );
+  await open();
+  fireEvent.change(screen.getByLabelText(/Количество · Товар А/), {
+    target: { value: "6" },
+  });
+  fireEvent.change(screen.getByLabelText(/Количество · Товар Б/), {
+    target: { value: "6" },
+  });
+  fireEvent.change(screen.getByLabelText("Плановое время документа"), {
+    target: { value: "2026-12-01T12:34" },
+  });
+  fireEvent.change(screen.getByLabelText("Идентификатор планирования"), {
+    target: { value: "synthetic-plan" },
+  });
+  expect(previewButton()).toBeDisabled();
+  expect(screen.getByText(/Суммарное количество должно/)).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText(/Количество · Товар Б/), {
+    target: { value: "4" },
+  });
+  expect(previewButton()).not.toBeDisabled();
 });
