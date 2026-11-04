@@ -1,1 +1,12 @@
-{}
+{
+  "cursor": "opaque-next",
+  "has_next": true,
+  "delivery_methods": [
+    {
+      "id": 9007199254740995,
+      "warehouse_id": 9007199254740993,
+      "is_express": true,
+      "status": "ACTIVE"
+    }
+  ]
+}

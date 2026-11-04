@@ -1,1 +1,13 @@
-{}
+{
+  "cursor": "",
+  "has_next": false,
+  "warehouses": [
+    {
+      "warehouse_id": 9007199254740993,
+      "warehouse_type": "rfbs_express",
+      "status": "created",
+      "is_rfbs": true,
+      "is_express": true
+    }
+  ]
+}

@@ -1,1 +1,24 @@
-{}
+{
+  "limit": 100,
+  "cursor": "opaque-cursor",
+  "sort_dir": "ASC",
+  "filter": {
+    "delivery_method_ids": [
+      "9007199254740995"
+    ],
+    "provider_ids": [
+      "24"
+    ],
+    "warehouse_ids": [
+      "9007199254740993"
+    ],
+    "status": [
+      "NEW",
+      "EDITED",
+      "ACTIVE",
+      "DISABLED",
+      "WAITING",
+      "BROKEN"
+    ]
+  }
+}

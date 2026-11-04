@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "checked_at": "2026-10-30",
+  "checked_at": "2026-11-04",
   "sources": [
     {
       "id": "ozon_news734",
@@ -145,6 +145,15 @@
       "sha256": "f78973173f065c942e5d351c154d973f6faa13e493df684344692bed8ad9bb7b",
       "hash_basis": "evidence_summary_utf8",
       "evidence": "Authorized 2026-10-30 HTTP200 observation reported customerorder metadata attributes as a MetaArray object with meta href, size, limit, offset, type and mediaType. Only sanitized field shape is retained; no account IDs or source payload are stored. Missing or nonzero size requires separate bounded attribute discovery; metadata href must be checked against the exact configured customerorder metadata/attributes endpoint before use. This observation does not verify a complete provider schema. Sanitized fixture SHA-256: b73254b73b238dddf29fcf2d7e56a3032e8724cadd9397e8fed0997b59543b08."
+    },
+    {
+      "id": "ozon_delivery_metadata_review_20261104",
+      "url": "https://docs.ozon.ru/api/seller/zh/swagger.json",
+      "checked_at": "2026-11-04",
+      "status": "official_selected_fields_reviewed",
+      "sha256": "a64cf48b03b813e6acb307ea47917f327e235b9427f8409c53c0496b9baffca5",
+      "hash_basis": "reviewed_subset_summary_utf8",
+      "evidence": "Official public https://docs.ozon.ru/api/seller/zh/swagger.json reviewed with web reader on 2026-11-04. Reviewed components: v2WarehouseListV2Request (limit required integer max200, cursor string, warehouse_ids string int64 array); v2WarehouseListV2Response (cursor string, has_next boolean, warehouses array); selected WarehouseListV2ResponseWarehouse fields warehouse_id integer int64, warehouse_type/status string, is_rfbs/is_express boolean. v2DeliveryMethodListV2Request uses cursor string, limit required integer 1..100, sort_dir ASC/DESC, filter with delivery_method_ids/provider_ids/warehouse_ids string int64 arrays max100 and status array NEW/EDITED/ACTIVE/DISABLED/WAITING/BROKEN; response top-level cursor string, has_next boolean, delivery_methods array; selected DeliveryMethodListV2ResponseDeliveryMethod fields id/warehouse_id integer int64, is_express boolean, status string. Response properties have no required or nullable declarations in those components. This is reviewed selected-field evidence, not a complete downloaded Swagger or an API permission proof. SHA256 hashes this normalized UTF-8 review evidence, not remote schema bytes; field fixtures are synthetic. Other metadata including address_info/courier contacts, scheduling, carrier integration and dropoff structures are outside this selected subset. Validator enforces selected JSON types/presence only; integer ranges, maxItems, enum membership and cursor progress are independently checked where implemented and are not claimed by this manifest."
     }
   ],
   "contracts": [
@@ -6538,13 +6547,13 @@
       "method": "POST",
       "version": "v2",
       "direction": "request",
-      "schema_status": "unverified",
-      "coverage": "no_verified_field_schema",
+      "schema_status": "partial_unverified",
+      "coverage": "official_selected_metadata_fields_reviewed; remaining fields, enums and numeric bounds are not a full schema validation",
       "sources": [
-        "ozon_schema",
+        "ozon_delivery_metadata_review_20261104",
         "ozon_news648"
       ],
-      "sha256": "2c29640f97b3ae84f9f4c8961f609923d5e2fbe7541c21f0611e9773ce7db988",
+      "sha256": "530e513479eae18bdc2fbe74dabb49c8382b9fcfa61e888c677942a51bd30702",
       "fixture": "v2-warehouse-list-request.json",
       "fields": [
         {
@@ -6555,12 +6564,83 @@
           "presence": "required",
           "nullable": false,
           "sources": [
-            "ozon_schema",
-            "ozon_news648"
+            "ozon_delivery_metadata_review_20261104"
           ],
-          "verification": "unverified",
-          "semantics": "JSON structural container",
-          "destination": "STYK allowlisted structured observation; never concatenate into description",
+          "verification": "official_field_verified",
+          "semantics": "Documented top-level JSON object; no legacy result wrapper",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": false,
+          "privacy": "operational",
+          "fixture": "v2-warehouse-list-request.json"
+        },
+        {
+          "path": "$.cursor",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Opaque continuation cursor, distinct from identity or offset",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": false,
+          "privacy": "operational",
+          "fixture": "v2-warehouse-list-request.json"
+        },
+        {
+          "path": "$.limit",
+          "types": [
+            "integer"
+          ],
+          "presence": "required",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Bounded provider page size; official method max100 / warehouse max200",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": false,
+          "privacy": "operational",
+          "fixture": "v2-warehouse-list-request.json"
+        },
+        {
+          "path": "$.warehouse_ids",
+          "types": [
+            "array"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Optional exact warehouse identity selection",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": false,
+          "privacy": "operational",
+          "fixture": "v2-warehouse-list-request.json"
+        },
+        {
+          "path": "$.warehouse_ids[]",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Warehouse ID documented as string int64 in request; preserve decimal digits",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
           "classification": "structured",
           "read_only": false,
           "privacy": "operational",
@@ -6573,13 +6653,13 @@
       "method": "POST",
       "version": "v2",
       "direction": "response",
-      "schema_status": "unverified",
-      "coverage": "no_verified_field_schema",
+      "schema_status": "partial_unverified",
+      "coverage": "official_selected_metadata_fields_reviewed; remaining fields, enums and numeric bounds are not a full schema validation",
       "sources": [
-        "ozon_schema",
+        "ozon_delivery_metadata_review_20261104",
         "ozon_news648"
       ],
-      "sha256": "45a3a67686fc629bd765863c96ef4db75d791de1ad3da27a6fce8ac383b25963",
+      "sha256": "479a49bd97097788fb289e8d1c04f4ad0b0b4f48c9ea116d89fee2d953d0e406",
       "fixture": "v2-warehouse-list-response.json",
       "fields": [
         {
@@ -6590,14 +6670,175 @@
           "presence": "required",
           "nullable": false,
           "sources": [
-            "ozon_schema",
-            "ozon_news648"
+            "ozon_delivery_metadata_review_20261104"
           ],
-          "verification": "unverified",
-          "semantics": "JSON structural container",
-          "destination": "STYK allowlisted structured observation; never concatenate into description",
+          "verification": "official_field_verified",
+          "semantics": "Documented top-level JSON object; no legacy result wrapper",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
           "classification": "structured",
-          "read_only": false,
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "v2-warehouse-list-response.json"
+        },
+        {
+          "path": "$.cursor",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Opaque next-page cursor; continuation requires progress separately",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "v2-warehouse-list-response.json"
+        },
+        {
+          "path": "$.has_next",
+          "types": [
+            "boolean"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Provider indicates another page; false is distinct from missing",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "v2-warehouse-list-response.json"
+        },
+        {
+          "path": "$.warehouses",
+          "types": [
+            "array"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Selected metadata records; optional in Swagger, required by complete adapter traversal",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "v2-warehouse-list-response.json"
+        },
+        {
+          "path": "$.warehouses[]",
+          "types": [
+            "object"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Selected non-PII discovery fields; unreviewed keys remain schema drift",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "v2-warehouse-list-response.json"
+        },
+        {
+          "path": "$.warehouses[].warehouse_id",
+          "types": [
+            "integer"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Warehouse int64 identity independent from delivery method identity",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "v2-warehouse-list-response.json"
+        },
+        {
+          "path": "$.warehouses[].warehouse_type",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Observed warehouse type; unknown value cannot establish fulfillment scheme",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "v2-warehouse-list-response.json"
+        },
+        {
+          "path": "$.warehouses[].status",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Observed warehouse lifecycle value; no universal order-action authorization",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "v2-warehouse-list-response.json"
+        },
+        {
+          "path": "$.warehouses[].is_rfbs",
+          "types": [
+            "boolean"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Independent provider rFBS classification fact",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "v2-warehouse-list-response.json"
+        },
+        {
+          "path": "$.warehouses[].is_express",
+          "types": [
+            "boolean"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Express flag is independent from carrier integration and destination type",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": true,
           "privacy": "operational",
           "fixture": "v2-warehouse-list-response.json"
         }
@@ -6608,13 +6849,13 @@
       "method": "POST",
       "version": "v2",
       "direction": "request",
-      "schema_status": "unverified",
-      "coverage": "no_verified_field_schema",
+      "schema_status": "partial_unverified",
+      "coverage": "official_selected_metadata_fields_reviewed; remaining fields, enums and numeric bounds are not a full schema validation",
       "sources": [
-        "ozon_schema",
+        "ozon_delivery_metadata_review_20261104",
         "ozon_news648"
       ],
-      "sha256": "e425c3461428003f42f737ae2bde058594f9653c18993f69f586349ba2fe243d",
+      "sha256": "9525d5c9fa05398df7403f90a657d33d9b805617f595ece35149ec452f14edd2",
       "fixture": "v2-delivery-method-list-request.json",
       "fields": [
         {
@@ -6625,12 +6866,227 @@
           "presence": "required",
           "nullable": false,
           "sources": [
-            "ozon_schema",
-            "ozon_news648"
+            "ozon_delivery_metadata_review_20261104"
           ],
-          "verification": "unverified",
-          "semantics": "JSON structural container",
-          "destination": "STYK allowlisted structured observation; never concatenate into description",
+          "verification": "official_field_verified",
+          "semantics": "Documented top-level JSON object; no legacy result wrapper",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": false,
+          "privacy": "operational",
+          "fixture": "v2-delivery-method-list-request.json"
+        },
+        {
+          "path": "$.cursor",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Opaque continuation cursor, distinct from identity or offset",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": false,
+          "privacy": "operational",
+          "fixture": "v2-delivery-method-list-request.json"
+        },
+        {
+          "path": "$.limit",
+          "types": [
+            "integer"
+          ],
+          "presence": "required",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Bounded provider page size; official method max100 / warehouse max200",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": false,
+          "privacy": "operational",
+          "fixture": "v2-delivery-method-list-request.json"
+        },
+        {
+          "path": "$.sort_dir",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Documented ASC or DESC; adapter explicitly requests ASC",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": false,
+          "privacy": "operational",
+          "fixture": "v2-delivery-method-list-request.json"
+        },
+        {
+          "path": "$.filter",
+          "types": [
+            "object"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Independent provider filter dimensions; omitted status may default NEW",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": false,
+          "privacy": "operational",
+          "fixture": "v2-delivery-method-list-request.json"
+        },
+        {
+          "path": "$.filter.delivery_method_ids",
+          "types": [
+            "array"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Documented optional independent filter; no identity substitution",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": false,
+          "privacy": "operational",
+          "fixture": "v2-delivery-method-list-request.json"
+        },
+        {
+          "path": "$.filter.delivery_method_ids[]",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Documented string int64 ID; not JavaScript Number",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": false,
+          "privacy": "operational",
+          "fixture": "v2-delivery-method-list-request.json"
+        },
+        {
+          "path": "$.filter.provider_ids",
+          "types": [
+            "array"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Documented optional independent filter; no identity substitution",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": false,
+          "privacy": "operational",
+          "fixture": "v2-delivery-method-list-request.json"
+        },
+        {
+          "path": "$.filter.provider_ids[]",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Documented string int64 ID; not JavaScript Number",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": false,
+          "privacy": "operational",
+          "fixture": "v2-delivery-method-list-request.json"
+        },
+        {
+          "path": "$.filter.warehouse_ids",
+          "types": [
+            "array"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Documented optional independent filter; no identity substitution",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": false,
+          "privacy": "operational",
+          "fixture": "v2-delivery-method-list-request.json"
+        },
+        {
+          "path": "$.filter.warehouse_ids[]",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Documented string int64 ID; not JavaScript Number",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": false,
+          "privacy": "operational",
+          "fixture": "v2-delivery-method-list-request.json"
+        },
+        {
+          "path": "$.filter.status",
+          "types": [
+            "array"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Documented optional independent filter; no identity substitution",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": false,
+          "privacy": "operational",
+          "fixture": "v2-delivery-method-list-request.json"
+        },
+        {
+          "path": "$.filter.status[]",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Documented status token; unknown values are not assumed ACTIVE",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
           "classification": "structured",
           "read_only": false,
           "privacy": "operational",
@@ -6643,13 +7099,13 @@
       "method": "POST",
       "version": "v2",
       "direction": "response",
-      "schema_status": "unverified",
-      "coverage": "no_verified_field_schema",
+      "schema_status": "partial_unverified",
+      "coverage": "official_selected_metadata_fields_reviewed; remaining fields, enums and numeric bounds are not a full schema validation",
       "sources": [
-        "ozon_schema",
+        "ozon_delivery_metadata_review_20261104",
         "ozon_news648"
       ],
-      "sha256": "cace37cd7a03ea9cd32228336c672be89e1847efb12f3f27bedfa049c67f241e",
+      "sha256": "4731ee412f97d763e20788ba431d856104ab42bfe567c0feea8d946fa98c49ac",
       "fixture": "v2-delivery-method-list-response.json",
       "fields": [
         {
@@ -6660,14 +7116,157 @@
           "presence": "required",
           "nullable": false,
           "sources": [
-            "ozon_schema",
-            "ozon_news648"
+            "ozon_delivery_metadata_review_20261104"
           ],
-          "verification": "unverified",
-          "semantics": "JSON structural container",
-          "destination": "STYK allowlisted structured observation; never concatenate into description",
+          "verification": "official_field_verified",
+          "semantics": "Documented top-level JSON object; no legacy result wrapper",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
           "classification": "structured",
-          "read_only": false,
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "v2-delivery-method-list-response.json"
+        },
+        {
+          "path": "$.cursor",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Opaque next-page cursor; continuation requires progress separately",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "v2-delivery-method-list-response.json"
+        },
+        {
+          "path": "$.has_next",
+          "types": [
+            "boolean"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Provider indicates another page; false is distinct from missing",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "v2-delivery-method-list-response.json"
+        },
+        {
+          "path": "$.delivery_methods",
+          "types": [
+            "array"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Selected metadata records; optional in Swagger, required by complete adapter traversal",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "v2-delivery-method-list-response.json"
+        },
+        {
+          "path": "$.delivery_methods[]",
+          "types": [
+            "object"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Selected non-PII discovery fields; unreviewed keys remain schema drift",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "v2-delivery-method-list-response.json"
+        },
+        {
+          "path": "$.delivery_methods[].id",
+          "types": [
+            "integer"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Delivery method int64 identity distinct from warehouse ID",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "v2-delivery-method-list-response.json"
+        },
+        {
+          "path": "$.delivery_methods[].warehouse_id",
+          "types": [
+            "integer"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Related warehouse int64 identity; do not substitute method ID",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "v2-delivery-method-list-response.json"
+        },
+        {
+          "path": "$.delivery_methods[].is_express",
+          "types": [
+            "boolean"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Independent provider express dimension",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "v2-delivery-method-list-response.json"
+        },
+        {
+          "path": "$.delivery_methods[].status",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_delivery_metadata_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Observed lifecycle string; no claim that disabled prevents existing-order fulfillment",
+          "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": true,
           "privacy": "operational",
           "fixture": "v2-delivery-method-list-response.json"
         }
