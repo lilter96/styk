@@ -25,16 +25,8 @@ func (c *OrderClient) readNativePositions(ctx context.Context, document nativeDo
 			return orders.ErrConflict
 		}
 		seen[target.ID] = true
-		var fields map[string]json.RawMessage
-		if json.Unmarshal(raw, &fields) != nil {
-			return ErrOrderSchema
-		}
-		vatEnabled, decodeErr := orderReadField[bool](fields, "vatEnabled")
+		position, decodeErr := decodeNativePosition(target, raw)
 		if decodeErr != nil {
-			return decodeErr
-		}
-		position := orders.NativeDocumentPosition{ID: target.ID, ItemKind: target.MoyskladKind, ItemID: target.MoyskladID, Quantity: target.Quantity, Price: *target.Price.Value, Discount: target.Discount, VAT: target.VAT, VATEnabled: vatEnabled}
-		if decodeErr = position.Validate(); decodeErr != nil {
 			return decodeErr
 		}
 		positions = append(positions, position)
@@ -48,4 +40,20 @@ func (c *OrderClient) readNativePositions(ctx context.Context, document nativeDo
 		return nil, nil, orders.ErrStale
 	}
 	return rows, positions, nil
+}
+
+func decodeNativePosition(target orders.TargetPosition, raw json.RawMessage) (orders.NativeDocumentPosition, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return orders.NativeDocumentPosition{}, ErrOrderSchema
+	}
+	vatEnabled, decodeErr := orderReadField[bool](fields, "vatEnabled")
+	if decodeErr != nil {
+		return orders.NativeDocumentPosition{}, decodeErr
+	}
+	position := orders.NativeDocumentPosition{ID: target.ID, ItemKind: target.MoyskladKind, ItemID: target.MoyskladID, Quantity: target.Quantity, Price: *target.Price.Value, Discount: target.Discount, VAT: target.VAT, VATEnabled: vatEnabled}
+	if decodeErr = position.Validate(); decodeErr != nil {
+		return orders.NativeDocumentPosition{}, decodeErr
+	}
+	return position, nil
 }

@@ -79,12 +79,9 @@ func NativeParentReadback(command Command, target TargetObservation) bool {
 	for _, line := range movement.Lines {
 		selected[line.OrderPositionID] = true
 	}
-	after := make(map[string]TargetPosition, len(target.Positions))
-	for _, position := range target.Positions {
-		if _, exists := after[position.ID]; exists {
-			return false
-		}
-		after[position.ID] = position
+	after, unique := nativeParentPositionIndex(target.Positions)
+	if !unique {
+		return false
 	}
 	for _, before := range command.TargetPositions {
 		current, found := after[before.ID]
@@ -126,4 +123,18 @@ func NativeParentFacts(target TargetObservation) TargetObservation {
 	fields := target.Fields
 	target.Fields = CustomerOrderWrite{OrganizationID: fields.OrganizationID, AgentID: fields.AgentID, StoreID: fields.StoreID, CurrencyID: fields.CurrencyID, RateValue: fields.RateValue, VATEnabled: fields.VATEnabled, VATIncluded: fields.VATIncluded, Applicable: fields.Applicable, StateID: fields.StateID}
 	return target
+}
+
+func nativeParentPositionIndex(positions []TargetPosition) (map[string]TargetPosition, bool) {
+	result := make(map[string]TargetPosition, len(positions))
+	for _, position := range positions {
+		if position.ID == "" {
+			return nil, false
+		}
+		if _, exists := result[position.ID]; exists {
+			return nil, false
+		}
+		result[position.ID] = position
+	}
+	return result, true
 }
