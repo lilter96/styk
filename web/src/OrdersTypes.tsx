@@ -405,6 +405,7 @@ export const postingStatusLabels: Record<string, string> = {
   driver_pickup: "У курьера",
   delivered: "Доставлено",
   cancelled: "Отменено",
+  cancelled_from_split_pending: "Заменено при разделении",
   not_accepted: "Не принято",
   sent_by_seller: "Отправлено продавцом",
 };
@@ -431,6 +432,10 @@ export const orderActionLabel = (action: string) =>
     posting_exemplar_set: "Передать сведения экземпляров в Ozon",
   })[action] || action;
 const issueLabels: Record<string, string> = {
+  superseded_split_reserve_proof_required:
+    "Исходное отправление заменено после разделения. Для снятия только его резерва нужны подтверждённый результат разделения, все дочерние отправления и свежие позиции заказа МойСклад.",
+  SPLIT_REPLACEMENT_SOURCE_OR_RESERVE_CHANGED:
+    "После разделения изменились исходное отправление, дочерние отправления или резерв МойСклад. Запись не отправлена; обновите данные и проверьте новый предпросмотр.",
   split_reserve_group_busy:
     "Дочерний заказ ещё ожидает сверки. STYK временно не меняет родительский заказ, чтобы не нарушить перенос резерва.",
   SPLIT_RESERVE_GROUP_BUSY:

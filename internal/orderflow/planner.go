@@ -151,6 +151,12 @@ func postingCorrelation(posting orders.Posting, correlations []orders.Correlatio
 }
 
 func (s *Service) planMirror(ctx context.Context, review orders.ReviewContext, decision orders.Decision, actions []orders.Action, automatic bool, now time.Time) (orders.Decision, error) {
+	if decision.Posting.Status.IsKnown() && *decision.Posting.Status.Value == "cancelled_from_split_pending" {
+		if len(actions) > 0 && !slices.Contains(actions, orders.ActionMirrorPositionUpdate) && !slices.Contains(actions, orders.ActionMirrorUpdate) {
+			return blockedSupersededDecision(decision), nil
+		}
+		return s.planSupersededSplitReserve(ctx, review, decision, automatic, now)
+	}
 	warehouse, validation := postingWarehouse(decision.Posting, review)
 	if validation.Code != "" {
 		decision.Validation = append(decision.Validation, validation)

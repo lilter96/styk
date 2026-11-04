@@ -27,7 +27,8 @@ JOIN LATERAL (SELECT w.work,r.observed_target AS target
  WHERE w.tenant_id=split.tenant_id AND w.moysklad_account=split.moysklad_account
   AND w.ozon_account=split.ozon_account AND w.posting_number=split.posting_number
   AND w.action='mirror_position_update' AND w.state='RECONCILED' AND w.dispatch_count=1
-  AND w.work#>>'{command,retained_split_work_id}'=split.id AND r.observed_target IS NOT NULL
+  AND (w.work#>>'{command,retained_split_work_id}'=split.id
+   OR w.work#>>'{command,superseded_split_work_id}'=split.id) AND r.observed_target IS NOT NULL
  ORDER BY r.created_at DESC,w.id DESC LIMIT 1) release ON true
 JOIN orders_projection_bindings binding ON binding.tenant_id=split.tenant_id
  AND binding.moysklad_account=split.moysklad_account AND binding.ozon_account=split.ozon_account
@@ -56,6 +57,12 @@ func enrichOrderSplitTransfers(ctx context.Context, q ordersQuerier, result *ord
 	if err = enrichOrderRetainedSplitReserves(ctx, q, &parents, numbers); err != nil {
 		return err
 	}
+	for _, facts := range candidates {
+		parents.Postings = append(parents.Postings, facts.Parent)
+	}
+	if err = enrichOrderSupersededSplitReserves(ctx, q, &parents, numbers); err != nil {
+		return err
+	}
 	applyOrderSplitTransferProofs(result, parents, candidates)
 	return nil
 }
@@ -68,6 +75,10 @@ func applyOrderSplitTransferProofs(result *orders.ReviewContext, parents orders.
 	result.SplitReserveTransfers = make(map[string]orders.SplitReserveTransferPermission, len(candidates))
 	for _, facts := range candidates {
 		facts.Child = children[facts.Child.PostingNumber]
+		if facts.ParentRelease.Command.SupersededSplitWorkID != "" {
+			applySupersededSplitTransfer(result, parents, facts)
+			continue
+		}
 		permit := parents.SplitRetainedReserves[facts.Parent.PostingNumber]
 		facts.Before, facts.OriginalCorrelation = permit.Before, permit.Correlation
 		if permit.SplitWorkID != facts.Split.ID || facts.ParentTarget.Fields.StoreID != result.Config.StoreID || facts.ParentTarget.Fields.OrganizationID != result.Config.OrganizationID {
@@ -77,6 +88,23 @@ func applyOrderSplitTransferProofs(result *orders.ReviewContext, parents orders.
 			result.SplitReserveTransfers[facts.Child.PostingNumber] = proof
 			delete(result.SplitReserveBlocked, facts.Child.PostingNumber)
 		}
+	}
+}
+
+func applySupersededSplitTransfer(result *orders.ReviewContext, parents orders.ReviewContext, facts orders.SplitReserveTransferFacts) {
+	retirement, found := parents.SplitSupersededReserves[facts.Parent.PostingNumber]
+	if !found || retirement.Split.ID != facts.Split.ID || facts.ParentTarget.Fields.StoreID != result.Config.StoreID || facts.ParentTarget.Fields.OrganizationID != result.Config.OrganizationID {
+		return
+	}
+	facts.Before, facts.OriginalCorrelation = retirement.Before, retirement.OriginalCorrelation
+	baseline, err := orders.ProjectionPositionBaseline(facts.ParentRelease, facts.ParentTarget)
+	if err != nil {
+		return
+	}
+	retirement.Baseline, retirement.Target = baseline, facts.ParentTarget
+	if proof, e := orders.NewSupersededSplitTransfer(facts, retirement); e == nil {
+		result.SplitReserveTransfers[facts.Child.PostingNumber] = proof
+		delete(result.SplitReserveBlocked, facts.Child.PostingNumber)
 	}
 }
 

@@ -68,7 +68,7 @@ func validateOrderCommandCurrent(command orders.Command, posting orders.Posting,
 	if current.SplitTransferBusy[command.PostingNumber] {
 		return orders.ErrBlocked
 	}
-	if command.Action.IsMirror() && current.SplitReserveBlocked[command.PostingNumber] {
+	if command.Action.IsMirror() && current.SplitReserveBlocked[command.PostingNumber] && command.SupersededSplitWorkID == "" {
 		return orders.ErrBlocked
 	}
 	if command.Action.IsMirror() && command.SplitSourceWorkID != current.SplitReservePermissions[command.PostingNumber].SplitWorkID {
@@ -78,6 +78,9 @@ func validateOrderCommandCurrent(command orders.Command, posting orders.Posting,
 		return orders.ErrBlocked
 	}
 	if err := validateRetainedSplitCommand(command, posting, current); err != nil {
+		return err
+	}
+	if err := validateSupersededSplitCommand(command, current); err != nil {
 		return err
 	}
 	if err := validateSplitTransferCommand(command, posting, current); err != nil {

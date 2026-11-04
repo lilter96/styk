@@ -81,6 +81,9 @@ func readOrderInventoryHeads(ctx context.Context, tx pgx.Tx, pool domain.StockPo
 	if err = enrichInventoryPositionOwnership(ctx, tx, result); err != nil {
 		return nil, false, err
 	}
+	if err = enrichInventorySupersededSplits(ctx, tx, result); err != nil {
+		return nil, false, err
+	}
 	return result, false, nil
 }
 

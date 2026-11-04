@@ -13,6 +13,7 @@ type SaveConfigRequest struct {
 }
 
 type ReviewContext struct {
+	SplitSupersededReserves map[string]SplitSupersededReserveFacts    `json:"-"`
 	SplitTransferBusy       map[string]bool                           `json:"-"`
 	SplitReserveTransfers   map[string]SplitReserveTransferPermission `json:"-"`
 	SplitRetainedReserves   map[string]SplitRetainedReservePermission `json:"-"`
@@ -141,12 +142,14 @@ type ClaimRequest struct {
 // Begin journals the exact intent before network I/O. Every check includes the
 // claim token, current config, mappings, credentials, grant and per-posting fence.
 type DispatchGuard struct {
-	SplitParentSource *Posting
-	SplitParentTarget *TargetObservation
-	ExemplarSecret    *ExemplarSecret
-	Work              Work
-	Now               time.Time
-	Begin             bool
+	SplitSupersededChildren []Posting
+	SplitSupersededTarget   *TargetObservation
+	SplitParentSource       *Posting
+	SplitParentTarget       *TargetObservation
+	ExemplarSecret          *ExemplarSecret
+	Work                    Work
+	Now                     time.Time
+	Begin                   bool
 }
 
 // Completion is a state+claim-token CAS. Unknown and acknowledged work may only

@@ -55,6 +55,12 @@ func (r *Runner) dispatchMirror(ctx context.Context, work orders.Work) error {
 		}
 		return r.reconcileTarget(ctx, work, *target)
 	}
+	if work.Command.SupersededSplitWorkID != "" {
+		checks, err = r.supersededSplitPreflight(ctx, work, fresh, target)
+		if err != nil {
+			return r.stop(ctx, work, "SPLIT_REPLACEMENT_SOURCE_OR_RESERVE_CHANGED")
+		}
+	}
 	return r.bindAndWrite(ctx, work, client, checks)
 }
 

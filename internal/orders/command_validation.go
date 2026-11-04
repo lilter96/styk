@@ -51,6 +51,9 @@ func (command Command) Validate() error {
 }
 
 func (command Command) validateAttachments() error {
+	if command.SupersededSplitWorkID != "" && (!validID(command.SupersededSplitWorkID) || command.Action != ActionMirrorPositionUpdate || command.SplitSourceWorkID != "" || command.RetainedSplitWorkID != "" || command.SplitTransfer != nil) {
+		return ErrInvalid
+	}
 	if command.SplitTransfer != nil && (!command.Action.IsMirror() || command.SplitSourceWorkID != "" || command.RetainedSplitWorkID != "" || !command.SplitTransfer.AllowsCommand(command)) {
 		return ErrInvalid
 	}

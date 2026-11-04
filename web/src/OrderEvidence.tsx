@@ -103,6 +103,7 @@ const postingStatus: Record<string, string> = {
   delivering: "в доставке",
   delivered: "доставлено",
   cancelled: "отменено",
+  cancelled_from_split_pending: "заменено при разделении",
 };
 
 export function OrderEvidence({

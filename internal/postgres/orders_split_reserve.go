@@ -76,6 +76,9 @@ func enrichOrderSplitReserveBlocks(ctx context.Context, q ordersQuerier, result 
 	if err = enrichOrderRetainedSplitReserves(ctx, q, result, numbers); err != nil {
 		return err
 	}
+	if err = enrichOrderSupersededSplitReserves(ctx, q, result, numbers); err != nil {
+		return err
+	}
 	return enrichOrderSplitTransfers(ctx, q, result, dependencies)
 }
 

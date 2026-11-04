@@ -382,6 +382,7 @@ type PostingAction struct {
 }
 
 type Command struct {
+	SupersededSplitWorkID   string                          `json:"superseded_split_work_id,omitempty"`
 	SplitSourceWorkID       string                          `json:"split_source_work_id,omitempty"`
 	RetainedSplitWorkID     string                          `json:"retained_split_work_id,omitempty"`
 	SplitTransfer           *SplitReserveTransferPermission `json:"split_transfer,omitempty"`
