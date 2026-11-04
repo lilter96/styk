@@ -23,6 +23,7 @@ export type ExemplarPublic = {
   target_fingerprint: string;
   products: {
     sku: string;
+    unsupported_fields?: string[];
     quantity: number;
     required: Record<string, OrderField<boolean>>;
     ids: string[];

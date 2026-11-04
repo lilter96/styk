@@ -82,7 +82,12 @@ export function OrdersExemplars({
   const data = summary.data;
   const until = mode === "proof" ? data?.proof_valid_until : data?.expires_at;
   const deadline = until ? Date.parse(until) : NaN;
+  const unsupported =
+    mode === "edit" &&
+    (data?.products.some((product) => !!product.unsupported_fields?.length) ??
+      false);
   const valid =
+    !unsupported &&
     !summary.isFetching &&
     !summary.isError &&
     Number.isFinite(deadline) &&
@@ -103,6 +108,24 @@ export function OrdersExemplars({
   }, [valid, onChange]);
   return (
     <section aria-label="Экземпляры товаров">
+      {unsupported && (
+        <p className="orders-warning">
+          Ozon уже хранит сведения, которые этот редактор не может безопасно
+          сохранить:{" "}
+          {data?.products
+            .flatMap((product) => product.unsupported_fields ?? [])
+            .map(
+              (field) =>
+                ({
+                  weight: "вес",
+                  multi_box_qty: "число коробок",
+                  multi_box_qty_unknown: "неизвестное число коробок",
+                })[field] ?? field,
+            )
+            .join(", ")}
+          . Передача из этого редактора заблокирована, чтобы не стереть данные.
+        </p>
+      )}
       {summary.isFetching && <p role="status">Проверяем экземпляры товаров…</p>}
       {summary.isError && (
         <p role="alert">{orderRequestError(summary.error)}</p>

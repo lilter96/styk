@@ -46,9 +46,12 @@ export function exemplarInput(
       }
       const marks = (Object.keys(markLabels) as ExemplarMarkType[]).flatMap(
         (type) =>
-          values[type] && values[`${type}_clear`] !== "yes"
-            ? [{ type, value: values[type] }]
-            : [],
+          values[`${type}_clear`] === "yes"
+            ? []
+            : (values[type] ?? "")
+                .split(/\r?\n/)
+                .filter((value) => value.length > 0)
+                .map((value) => ({ type, value })),
       );
       if (marks.length) unit.marks = { presence: "value", value: marks };
       const clear = (Object.keys(markLabels) as ExemplarMarkType[]).filter(
@@ -64,7 +67,14 @@ export function exemplarInput(
       (field) => values[`${field}_mode`] === "value" && !values[field],
     ),
   );
-  return products.length && !incomplete ? { products } : undefined;
+  const invalid = products.some((product) =>
+    product.exemplars.some(
+      (unit) =>
+        (unit.marks?.value?.length ?? 0) > 20 ||
+        unit.marks?.value?.some((mark) => /[\r\n\0]/.test(mark.value)),
+    ),
+  );
+  return products.length && !incomplete && !invalid ? { products } : undefined;
 }
 
 export function OrdersExemplarEditor({
@@ -93,7 +103,10 @@ export function OrdersExemplarEditor({
       <p className="orders-note">
         Идентификаторы назначены Ozon. Вводите только реальные сведения с товара
         или документов. Пустой ввод сохраняет прежние данные; очистка
-        выполняется отдельно. Коды не показываются в журнале.
+        выполняется отдельно. Коды не показываются в журнале. Несколько кодов
+        одного вида вводите по одному на строке, не более 20 на экземпляр.
+        Несколько кодов одного вида вводите по одному на строке, не более 20 на
+        экземпляр.
       </p>
       {units.slice(page * 10, (page + 1) * 10).map(({ product, id }) => {
         const values = draft[unitKey(product.sku, id)] ?? {};
@@ -153,10 +166,11 @@ export function OrdersExemplarEditor({
               <div key={type}>
                 <label>
                   {markLabels[type]}
-                  <input
+                  <textarea
+                    rows={2}
                     autoComplete="off"
                     spellCheck={false}
-                    maxLength={2048}
+                    maxLength={8192}
                     value={values[type] ?? ""}
                     disabled={disabled || values[`${type}_clear`] === "yes"}
                     onChange={(event) =>
