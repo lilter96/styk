@@ -118,6 +118,9 @@ func validateOrderPageCurrent(ctx context.Context, tx pgx.Tx, page orders.Source
 	if err != nil {
 		return config, err
 	}
+	if err = validateOrderReadAuthority(ctx, tx, config); err != nil {
+		return config, err
+	}
 	revisions, err := ordersCredentials(ctx, tx, page.Scope)
 	if err != nil {
 		return config, err
@@ -146,21 +149,35 @@ func writeOrderPage(ctx context.Context, tx pgx.Tx, page orders.SourcePage, conf
 	if err != nil {
 		return previous, err
 	}
-	ids, err := insertOrderPagePostings(ctx, tx, page, now)
+	ids, err := insertOrderPageFacts(ctx, tx, page, config, now)
 	if err != nil {
 		return previous, err
-	}
-	for _, secret := range page.Secrets {
-		if err = insertOrderSecret(ctx, tx, secret, config, now); err != nil {
-			return previous, err
-		}
 	}
 	checkpoint := orders.Checkpoint{Scope: page.Scope, Stream: page.Stream, RefreshKey: page.RefreshKey, ConfigRevision: page.ConfigRevision, Credentials: page.Credentials, Revision: previous.Revision + 1, Cursor: page.NextCursor, WindowFrom: page.WindowFrom, WindowTo: page.WindowTo, Complete: page.Complete, Exhausted: page.Exhausted, Failures: page.Failures, FailuresTruncated: page.FailuresTruncated, UpdatedAt: now}
 	mergeOrderCheckpointFailures(&checkpoint, previous, page)
 	if err = insertOrderCheckpoint(ctx, tx, page, checkpoint, ids, hash); err != nil {
 		return previous, err
 	}
+	if err = saveOrderNativePointPage(ctx, tx, page, now); err != nil {
+		return previous, err
+	}
 	return checkpoint, finishOrderIngestionPage(ctx, tx, page)
+}
+
+func insertOrderPageFacts(ctx context.Context, tx pgx.Tx, page orders.SourcePage, config orders.Config, now time.Time) ([]string, error) {
+	if page.Stream == orders.NativePointStream {
+		return []string{}, nil
+	}
+	ids, err := insertOrderPagePostings(ctx, tx, page, now)
+	if err != nil {
+		return nil, err
+	}
+	for _, secret := range page.Secrets {
+		if err = insertOrderSecret(ctx, tx, secret, config, now); err != nil {
+			return nil, err
+		}
+	}
+	return ids, nil
 }
 
 func validateOrderCheckpoint(page orders.SourcePage, previous orders.Checkpoint) error {

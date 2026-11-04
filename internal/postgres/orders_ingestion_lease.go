@@ -41,6 +41,9 @@ func claimOrderIngestionLocked(ctx context.Context, tx pgx.Tx, req orders.Ingest
 	if err != nil || config.Revision == 0 {
 		return nil, orders.ErrNotFound
 	}
+	if err = validateOrderReadAuthority(ctx, tx, config); err != nil {
+		return nil, err
+	}
 	revisions, err := ordersCredentials(ctx, tx, req.Scope)
 	if err != nil {
 		return nil, err
@@ -54,7 +57,7 @@ func claimOrderIngestionLocked(ctx context.Context, tx pgx.Tx, req orders.Ingest
 	}
 	lease := orders.IngestionLease{Scope: req.Scope, Stream: req.Stream, RefreshKey: req.RefreshKey, Token: token, ConfigRevision: config.Revision, Credentials: revisions}
 	args := append(ordersScopeArgs(req.Scope), req.Stream, req.RefreshKey, token, req.WorkerID, config.Revision, revisions.Ozon, revisions.Moysklad, duration.String())
-	err = tx.QueryRow(ctx, `INSERT INTO orders_ingestion_leases(tenant_id,moysklad_account,ozon_account,stream,refresh_key,sequence,token,worker_id,config_revision,ozon_revision,moysklad_revision,lease_until,updated_at) VALUES($1,$2,$3,$4,$5,1,$6,$7,$8,$9,$10,clock_timestamp()+$11::interval,clock_timestamp()) ON CONFLICT(tenant_id,moysklad_account,ozon_account) DO UPDATE SET stream=EXCLUDED.stream,refresh_key=EXCLUDED.refresh_key,sequence=orders_ingestion_leases.sequence+1,token=EXCLUDED.token,worker_id=EXCLUDED.worker_id,config_revision=EXCLUDED.config_revision,ozon_revision=EXCLUDED.ozon_revision,moysklad_revision=EXCLUDED.moysklad_revision,lease_until=EXCLUDED.lease_until,updated_at=EXCLUDED.updated_at WHERE orders_ingestion_leases.token IS NULL OR orders_ingestion_leases.lease_until<=clock_timestamp() RETURNING sequence,lease_until`, args...).Scan(&lease.Sequence, &lease.LeaseUntil)
+	err = tx.QueryRow(ctx, `INSERT INTO orders_ingestion_leases(tenant_id,moysklad_account,ozon_account,stream,refresh_key,sequence,token,worker_id,config_revision,ozon_revision,moysklad_revision,lease_until,updated_at,attempt_started_at) VALUES($1,$2,$3,$4,$5,1,$6,$7,$8,$9,$10,clock_timestamp()+$11::interval,clock_timestamp(),clock_timestamp()) ON CONFLICT(tenant_id,moysklad_account,ozon_account) DO UPDATE SET stream=EXCLUDED.stream,refresh_key=EXCLUDED.refresh_key,sequence=orders_ingestion_leases.sequence+1,token=EXCLUDED.token,worker_id=EXCLUDED.worker_id,config_revision=EXCLUDED.config_revision,ozon_revision=EXCLUDED.ozon_revision,moysklad_revision=EXCLUDED.moysklad_revision,lease_until=EXCLUDED.lease_until,updated_at=EXCLUDED.updated_at,attempt_started_at=EXCLUDED.attempt_started_at WHERE orders_ingestion_leases.token IS NULL OR orders_ingestion_leases.lease_until<=clock_timestamp() RETURNING sequence,lease_until`, args...).Scan(&lease.Sequence, &lease.LeaseUntil)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
