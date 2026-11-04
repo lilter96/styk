@@ -12,7 +12,7 @@ import (
 
 // ContractVersion records the operation subset reviewed against the official
 // Chinese Swagger in the preceding lab. It is not a full Swagger download.
-const ContractVersion = "ozon-fulfillment-2026-11-04:v4:ship-v4,cancel-v2,partial-result-string,tracking-v2,delivery-v2,label-v3,hybrid-printed-label-v1,marking-requirements-v1,exemplars-v6-v5-v1,country-v2-v1"
+const ContractVersion = "ozon-fulfillment-2026-11-04:v4:ship-v4,cancel-v2,partial-result-string,tracking-v2,delivery-v2,label-v3,hybrid-printed-label-v1,marking-requirements-v1,exemplars-v6-v5-v1,country-v2-v1,method-integration-v1,explicit-express-action-v1"
 
 //go:embed label_contract.json
 var labelContract []byte
@@ -26,11 +26,15 @@ var exemplarContract []byte
 //go:embed country_contract.json
 var countryContract []byte
 
+//go:embed delivery_method_contract.json
+var deliveryMethodContract []byte
+
 func ExecutionContractHash() string {
 	payload := append([]byte(ContractVersion), labelContract...)
 	payload = append(payload, requirementsContract...)
 	payload = append(payload, exemplarContract...)
-	sum := sha256.Sum256(append(payload, countryContract...))
+	payload = append(payload, countryContract...)
+	sum := sha256.Sum256(append(payload, deliveryMethodContract...))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -82,6 +86,9 @@ func PlanExecutionWithProof(posting orders.Posting, cap orders.CapabilityRef, ac
 }
 
 func executionFacts(posting orders.Posting, cap orders.CapabilityRef, now time.Time) []orders.Validation {
+	if orders.DeliveryIntegrationConflict(posting) {
+		return []orders.Validation{actionBlock("delivery.integration_type", "conflicting_integration")}
+	}
 	if posting.Validate() != nil || cap.Validate() != nil || posting.Evidence.Origin != orders.OriginOzon || !posting.WarehouseID.IsKnown() || *posting.WarehouseID.Value != cap.WarehouseID {
 		return []orders.Validation{actionBlock("posting", "exact_posting_capability_required")}
 	}
@@ -155,6 +162,9 @@ func sellerDeliveryControl(posting orders.Posting, cap orders.CapabilityRef, act
 	}
 	if !posting.Delivery.IntegrationType.IsKnown() || !slices.Contains([]string{"non_integrated", "3pl_tracking", "hybrid"}, *posting.Delivery.IntegrationType.Value) {
 		return []orders.Validation{actionBlock("delivery.integration_type", "seller_delivery_control_not_verified")}
+	}
+	if validation := explicitDeliveryProfileAction(posting, cap, action); validation.Code != "" {
+		return []orders.Validation{validation}
 	}
 	if *posting.Delivery.IntegrationType.Value == "hybrid" && action != orders.ActionPostingShip {
 		return []orders.Validation{actionBlock("delivery.destination", "pvz_last_mile_managed_by_ozon")}

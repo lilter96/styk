@@ -154,6 +154,15 @@
       "sha256": "a64cf48b03b813e6acb307ea47917f327e235b9427f8409c53c0496b9baffca5",
       "hash_basis": "reviewed_subset_summary_utf8",
       "evidence": "Official public https://docs.ozon.ru/api/seller/zh/swagger.json reviewed with web reader on 2026-11-04. Reviewed components: v2WarehouseListV2Request (limit required integer max200, cursor string, warehouse_ids string int64 array); v2WarehouseListV2Response (cursor string, has_next boolean, warehouses array); selected WarehouseListV2ResponseWarehouse fields warehouse_id integer int64, warehouse_type/status string, is_rfbs/is_express boolean. v2DeliveryMethodListV2Request uses cursor string, limit required integer 1..100, sort_dir ASC/DESC, filter with delivery_method_ids/provider_ids/warehouse_ids string int64 arrays max100 and status array NEW/EDITED/ACTIVE/DISABLED/WAITING/BROKEN; response top-level cursor string, has_next boolean, delivery_methods array; selected DeliveryMethodListV2ResponseDeliveryMethod fields id/warehouse_id integer int64, is_express boolean, status string. Response properties have no required or nullable declarations in those components. This is reviewed selected-field evidence, not a complete downloaded Swagger or an API permission proof. SHA256 hashes this normalized UTF-8 review evidence, not remote schema bytes; field fixtures are synthetic. Other metadata including address_info/courier contacts, scheduling, carrier integration and dropoff structures are outside this selected subset. Validator enforces selected JSON types/presence only; integer ranges, maxItems, enum membership and cursor progress are independently checked where implemented and are not claimed by this manifest."
+    },
+    {
+      "id": "ozon_method_integration_review_20261104",
+      "url": "https://docs.ozon.ru/api/seller/zh/swagger.json",
+      "checked_at": "2026-11-04",
+      "status": "official_selected_fields_reviewed",
+      "sha256": "810fd90aa4913c850f4916340f5c2005ccc4bc247ccf507e62e13592b94ee52d",
+      "hash_basis": "reviewed_subset_summary_utf8",
+      "evidence": "Reviewed current official Swagger DeliveryMethodListV2ResponseDeliveryMethod.tpl_integration_type on 2026-11-04: optional string with documented values aggregator (third-party delivery, Ozon registration), 3pl_tracking (third-party delivery, seller registration), non_integrated (seller delivery), hybrid (mixed integration). Exact known method/posting values must agree. Preserve 3pl_tracking/hybrid raw facts without inferring seller transition authority, destination, or provider identity. Normalize only non_integrated and aggregator to the same named carrier classes. Review includes current posting available_actions non_int_delivering/non_int_last_mile/non_int_delivered and fresh-GET asynchronous third-party endpoint semantics. Evidence summary hash is not remote Swagger bytes or a claim of complete schema coverage."
     }
   ],
   "contracts": [
@@ -7103,9 +7112,10 @@
       "coverage": "official_selected_metadata_fields_reviewed; remaining fields, enums and numeric bounds are not a full schema validation",
       "sources": [
         "ozon_delivery_metadata_review_20261104",
-        "ozon_news648"
+        "ozon_news648",
+        "ozon_method_integration_review_20261104"
       ],
-      "sha256": "4731ee412f97d763e20788ba431d856104ab42bfe567c0feea8d946fa98c49ac",
+      "sha256": "7d0203df9acea7eef2f2eb62e08590a7ade165d50e29f8e37c161691ec457d93",
       "fixture": "v2-delivery-method-list-response.json",
       "fields": [
         {
@@ -7265,6 +7275,24 @@
           "verification": "official_field_verified",
           "semantics": "Observed lifecycle string; no claim that disabled prevents existing-order fulfillment",
           "destination": "Scoped STYK delivery discovery; never customerorder description or an outbound action permission",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "v2-delivery-method-list-response.json"
+        },
+        {
+          "path": "$.delivery_methods[].tpl_integration_type",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "ozon_method_integration_review_20261104"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Provider integration type distinct from delivery scheme, express, destination and action authority",
+          "destination": "Scoped STYK method integration observation; only exact documented carrier normalization; no inferred seller delivery event",
           "classification": "structured",
           "read_only": true,
           "privacy": "operational",

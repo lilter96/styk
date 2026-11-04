@@ -192,6 +192,11 @@ func (c *OrdersClient) EnrichDelivery(ctx context.Context, scope orders.Scope, p
 		posting.Scheme = profile.Scheme
 		posting.Drift = slices.DeleteFunc(posting.Drift, func(d orders.Drift) bool { return d.Code == "scheme_unverified" })
 	}
+	if profile.IntegrationConflicts(posting) {
+		posting.DeliveryProfile = nil
+		posting.Drift = append(posting.Drift, orders.Drift{Path: "$.tpl_integration_type", Code: "conflicting_integration"})
+		return posting, nil
+	}
 	posting.DeliveryProfile = profile.CapabilityRef()
 	posting.Drift = append(posting.Drift, profile.Drift...)
 	if orderKnown(posting.Scheme) == "FBO" {

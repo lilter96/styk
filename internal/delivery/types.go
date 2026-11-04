@@ -33,32 +33,34 @@ type Warehouse struct {
 }
 
 type Method struct {
-	ID          string               `json:"id"`
-	WarehouseID string               `json:"warehouse_id"`
-	Express     orders.Field[bool]   `json:"express"`
-	Status      orders.Field[string] `json:"status"`
+	IntegrationType orders.Field[string] `json:"integration_type,omitzero"`
+	ID              string               `json:"id"`
+	WarehouseID     string               `json:"warehouse_id"`
+	Express         orders.Field[bool]   `json:"express"`
+	Status          orders.Field[string] `json:"status"`
 }
 
 type Profile struct {
-	Scope              Scope                `json:"scope"`
-	ID                 string               `json:"id"`
-	Revision           int64                `json:"revision"`
-	WarehouseID        string               `json:"warehouse_id"`
-	MethodID           orders.Field[string] `json:"method_id"`
-	MethodVerified     bool                 `json:"method_verified"`
-	MethodStatus       orders.Field[string] `json:"method_status,omitzero"`
-	Scheme             orders.Field[string] `json:"scheme"`
-	WarehouseType      orders.Field[string] `json:"warehouse_type"`
-	WarehouseStatus    orders.Field[string] `json:"warehouse_status"`
-	Express            orders.Field[bool]   `json:"express"`
-	CarrierIntegration orders.Field[string] `json:"carrier_integration"`
-	DestinationType    orders.Field[string] `json:"destination_type"`
-	VerifiedDimensions []string             `json:"verified_dimensions"`
-	Contract           ContractEvidence     `json:"contract"`
-	ObservedAt         time.Time            `json:"observed_at"`
-	CheckedAt          time.Time            `json:"checked_at"`
-	ValidUntil         time.Time            `json:"valid_until"`
-	Drift              []orders.Drift       `json:"drift"`
+	Scope                 Scope                `json:"scope"`
+	ID                    string               `json:"id"`
+	Revision              int64                `json:"revision"`
+	WarehouseID           string               `json:"warehouse_id"`
+	MethodID              orders.Field[string] `json:"method_id"`
+	MethodVerified        bool                 `json:"method_verified"`
+	MethodStatus          orders.Field[string] `json:"method_status,omitzero"`
+	MethodIntegrationType orders.Field[string] `json:"method_integration_type,omitzero"`
+	Scheme                orders.Field[string] `json:"scheme"`
+	WarehouseType         orders.Field[string] `json:"warehouse_type"`
+	WarehouseStatus       orders.Field[string] `json:"warehouse_status"`
+	Express               orders.Field[bool]   `json:"express"`
+	CarrierIntegration    orders.Field[string] `json:"carrier_integration"`
+	DestinationType       orders.Field[string] `json:"destination_type"`
+	VerifiedDimensions    []string             `json:"verified_dimensions"`
+	Contract              ContractEvidence     `json:"contract"`
+	ObservedAt            time.Time            `json:"observed_at"`
+	CheckedAt             time.Time            `json:"checked_at"`
+	ValidUntil            time.Time            `json:"valid_until"`
+	Drift                 []orders.Drift       `json:"drift"`
 }
 
 type Discovery struct {

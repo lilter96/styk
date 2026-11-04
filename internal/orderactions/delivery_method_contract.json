@@ -1,0 +1,14 @@
+{
+  "schema_status": "official_reviewed_operation_subset",
+  "reviewed_on": "2026-11-04",
+  "source": "https://docs.ozon.ru/api/seller/zh/swagger.json",
+  "hash_basis": "embedded_normalized_reviewed_evidence_not_remote_swagger_bytes",
+  "method": {"endpoint": "/v2/delivery-method/list", "component": "DeliveryMethodListV2ResponseDeliveryMethod", "field": "tpl_integration_type", "type": "optional string", "values": ["non_integrated", "aggregator", "3pl_tracking", "hybrid"]},
+  "carrier_evidence": {"non_integrated": "non_integrated", "aggregator": "aggregator", "3pl_tracking": "preserved raw; seller registration does not alone authorize delivery reporting", "hybrid": "preserved raw; needs explicit provider/destination and label evidence"},
+  "posting_actions": {"non_int_delivering": "/v2/fbs/posting/delivering", "non_int_last_mile": "/v2/fbs/posting/last-mile", "non_int_delivered": "/v2/fbs/posting/delivered"},
+  "endpoint_semantics": "Current endpoint descriptions apply to third-party delivery, require a fresh posting GET and describe asynchronous transitions.",
+  "express_evidence": "https://dev.ozon.ru/start/449-RFBS-Express-Rabota-so-skladami-i-metodami-dostavki-cherez-Seller-API/ documents non-integrated Express using seller or third-party delivery separately from aggregator Express.",
+  "express_rule": "Known non-integrated carrier plus an exact current non_int_* available_action, supported predecessor, exact fresh warehouse/method, factual event and existing policy guards are required. Missing or unknown advertised action is not permission. No universal ban or all-profile authorization follows from express alone.",
+  "conflicts": "Contradictory known exact method/posting integration observations remove current capability and block outgoing actions; missing data alone is not a contradiction.",
+  "limitations": ["Not a complete Swagger schema.", "No real Express posting transition was observed by this evidence review.", "Method lifecycle status is not a universal prohibition on handling existing postings."]
+}

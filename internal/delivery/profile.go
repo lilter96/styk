@@ -89,6 +89,7 @@ func (p *Profile) classifyMethod(method *Method) {
 	p.MethodID, p.MethodVerified = orders.Present(method.ID), true
 	p.VerifiedDimensions = append(p.VerifiedDimensions, "delivery_method")
 	p.classifyMethodStatus(method.Status)
+	p.classifyMethodIntegration(method.IntegrationType)
 	if !method.Express.IsKnown() {
 		return
 	}
