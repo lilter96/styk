@@ -9,7 +9,11 @@ const ReserveOpenQuantitySource = "posting.open_quantity"
 // second inventory formula. Release proposals require existing STYK ownership;
 // the native patch planner must still prove the current reserve is unchanged.
 func ApplyOpenQuantityReserve(posting Posting, write *CustomerOrderWrite, baseline PositionBaseline) Validation {
-	if validation := reservationPostingValidation(posting, write, baseline); validation.Code != "" {
+	return applyOpenQuantityReserve(posting, write, baseline, false)
+}
+
+func applyOpenQuantityReserve(posting Posting, write *CustomerOrderWrite, baseline PositionBaseline, splitAllowed bool) Validation {
+	if validation := reservationPostingValidation(posting, write, baseline, splitAllowed); validation.Code != "" {
 		return validation
 	}
 	quantities, validation := reservationLineQuantities(posting.Lines)
@@ -36,7 +40,7 @@ func ApplyOpenQuantityReserve(posting Posting, write *CustomerOrderWrite, baseli
 	return Validation{}
 }
 
-func reservationPostingValidation(posting Posting, write *CustomerOrderWrite, baseline PositionBaseline) Validation {
+func reservationPostingValidation(posting Posting, write *CustomerOrderWrite, baseline PositionBaseline, splitAllowed bool) Validation {
 	if write == nil || posting.Status.Validate() != nil || !posting.Status.IsKnown() {
 		return reservePolicyValidation("posting.status", "reservation_policy_status_unknown")
 	}
@@ -46,7 +50,7 @@ func reservationPostingValidation(posting Posting, write *CustomerOrderWrite, ba
 	if optionalField(posting.Cancellation, func(value Cancellation) error { return value.Validate() }) != nil {
 		return reservePolicyValidation("posting.cancellation", "reservation_policy_shipment_or_cancellation_conflict")
 	}
-	if len(posting.ChildPostingNumbers) > 0 || posting.ParentPostingNumber.IsKnown() {
+	if !splitAllowed && (len(posting.ChildPostingNumbers) > 0 || posting.ParentPostingNumber.IsKnown()) {
 		return reservePolicyValidation("posting.lineage", "reservation_policy_split_lineage_requires_review")
 	}
 	if posting.Times.DeliveringAt.IsKnown() || posting.Times.DeliveredAt.IsKnown() || reservationAfterShipment(posting.Cancellation) {

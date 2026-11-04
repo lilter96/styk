@@ -401,6 +401,9 @@ func applyConfiguredReserve(write *orders.CustomerOrderWrite, posting orders.Pos
 			if review.SplitReserveBlocked[posting.PostingNumber] {
 				return orders.Validation{Field: "posting.lineage", Code: "split_reserve_transfer_pending"}
 			}
+			if permission, ok := review.SplitReservePermissions[posting.PostingNumber]; ok {
+				return orders.ApplySplitOpenQuantityReserve(posting, write, review.PositionBaselines[posting.PostingNumber], permission)
+			}
 			return orders.ApplyOpenQuantityReserve(posting, write, review.PositionBaselines[posting.PostingNumber])
 		}
 	}

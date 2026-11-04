@@ -380,6 +380,7 @@ type PostingAction struct {
 }
 
 type Command struct {
+	SplitSourceWorkID       string               `json:"split_source_work_id,omitempty"`
 	PositionBaseline        *PositionBaseline    `json:"position_baseline,omitempty"`
 	NativeMovement          *NativeMovement      `json:"native_movement,omitempty"`
 	PositionReplacement     *PositionReplacement `json:"position_replacement,omitempty"`

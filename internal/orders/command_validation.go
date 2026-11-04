@@ -17,14 +17,8 @@ func (action Action) IsMirror() bool {
 }
 
 func (command Command) Validate() error {
-	if command.PositionReplacement != nil && command.Action != ActionMirrorCompositionUpdate {
-		return ErrInvalid
-	}
-	if err := command.ValidateApplicationBaseline(); err != nil {
+	if err := command.validateAttachments(); err != nil {
 		return err
-	}
-	if command.NativeMovement != nil && !command.Action.IsNativeMovement() {
-		return ErrInvalid
 	}
 	if command.Scope.Validate() != nil || !validID(command.ID) || !command.Action.Valid() || !validID(command.CommercialOrderID) || !validID(command.PostingNumber) {
 		return ErrInvalid
@@ -54,6 +48,22 @@ func (command Command) Validate() error {
 		return command.validateMirror()
 	}
 	return command.validatePostingAction()
+}
+
+func (command Command) validateAttachments() error {
+	if command.SplitSourceWorkID != "" && (!command.Action.IsMirror() || !validID(command.SplitSourceWorkID)) {
+		return ErrInvalid
+	}
+	if command.PositionReplacement != nil && command.Action != ActionMirrorCompositionUpdate {
+		return ErrInvalid
+	}
+	if err := command.ValidateApplicationBaseline(); err != nil {
+		return err
+	}
+	if command.NativeMovement != nil && !command.Action.IsNativeMovement() {
+		return ErrInvalid
+	}
+	return nil
 }
 
 func (command Command) validateMirror() error {

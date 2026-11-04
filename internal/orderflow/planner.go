@@ -201,6 +201,7 @@ func mirrorCommand(review orders.ReviewContext, decision orders.Decision, wareho
 		PostingNumber: decision.Posting.PostingNumber, Correlation: decision.Correlation, ConfigRevision: review.Config.Revision,
 		Credentials: review.Credentials, ExpectedSourceRevision: decision.Posting.Evidence.Revision, SourceOrigin: decision.Posting.Evidence.Origin,
 		SourceCommandID: decision.Posting.Evidence.SourceCommandID, Warehouse: warehouse, CustomerOrder: &write, IdempotencyKey: id, CreatedAt: now}
+	command.SplitSourceWorkID = review.SplitReservePermissions[command.PostingNumber].SplitWorkID
 	if write.HasPIIMappings() {
 		protected := decision.Posting.Customer
 		command.ProtectedCustomer = &protected

@@ -68,6 +68,12 @@ func validateOrderCommandCurrent(command orders.Command, posting orders.Posting,
 	if command.Action.IsMirror() && current.SplitReserveBlocked[command.PostingNumber] {
 		return orders.ErrBlocked
 	}
+	if command.Action.IsMirror() && command.SplitSourceWorkID != current.SplitReservePermissions[command.PostingNumber].SplitWorkID {
+		return orders.ErrStale
+	}
+	if command.Action.IsMirror() && command.SplitSourceWorkID != "" && !current.SplitReservePermissions[command.PostingNumber].Allows(posting) {
+		return orders.ErrBlocked
+	}
 	if !command.Action.IsMirror() && !command.Action.IsNativeMovement() && command.PostingAction.ContractHash != orderactions.ExecutionContractHash() {
 		return orders.ErrStale
 	}
