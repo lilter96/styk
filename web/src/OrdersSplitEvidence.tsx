@@ -8,12 +8,14 @@ import {
 
 export function OrdersSplitEvidence({
   receipt,
+  state,
 }: {
   receipt: OrderWork["receipt"];
+  state?: string;
 }) {
   const numbers = receipt?.posting_numbers ?? [];
   if (receipt?.unassembled_split)
-    return <UnassembledSplitEvidence receipt={receipt} />;
+    return <UnassembledSplitEvidence receipt={receipt} state={state} />;
   if (!numbers.length) return null;
   return (
     <details>
@@ -46,11 +48,16 @@ export function OrdersSplitEvidence({
 
 function UnassembledSplitEvidence({
   receipt,
+  state,
 }: {
   receipt: OrderWork["receipt"];
+  state?: string;
 }) {
   const facts = receipt.unassembled_split!;
   const postings = knownOrderField(facts.postings);
+  const verified =
+    (state ?? receipt.state) === "RECONCILED" &&
+    !!receipt.posting_numbers?.length;
   return (
     <details>
       <summary>Ответ Ozon на разделение без сборки</summary>
@@ -59,6 +66,7 @@ function UnassembledSplitEvidence({
         Синхронизация подтверждается только после отдельной проверки
         фактического состава.
       </p>
+      <UnassembledVerification receipt={receipt} verified={verified} />
       <UnassembledParentEvidence parent={facts.parent} />
       {postings ? (
         <ul>
@@ -67,6 +75,7 @@ function UnassembledSplitEvidence({
               key={index}
               posting={posting}
               receipt={receipt}
+              verified={verified}
             />
           ))}
         </ul>
@@ -98,24 +107,70 @@ function SplitResponseContents({
 function UnassembledPostingEvidence({
   posting,
   receipt,
+  verified,
 }: {
   posting: OrderSplitResponsePosting;
   receipt: OrderWork["receipt"];
+  verified: boolean;
 }) {
-  const number = knownOrderField(posting.posting_number);
-  const observed = receipt.observed_postings?.find(
-    (item) => item.posting_number === number,
-  );
+  const confirmed =
+    verified &&
+    !!receipt.posting_numbers?.includes(
+      knownOrderField(posting.posting_number) ?? "",
+    );
   return (
     <li>
       <strong>{orderFieldText(posting.posting_number)}</strong>
+      <p>Состав в ответе Ozon:</p>
       <SplitResponseContents posting={posting} />
       <span>
-        {observed
-          ? `Состав проверен: ${orderDate(observed.evidence.checked_at || observed.evidence.observed_at)}`
+        {confirmed
+          ? "Состав подтверждён отдельной проверкой"
           : "Ожидаем подтверждения состава"}
       </span>
     </li>
+  );
+}
+
+function UnassembledVerification({
+  receipt,
+  verified,
+}: {
+  receipt: OrderWork["receipt"];
+  verified: boolean;
+}) {
+  const count = receipt.split_read_count;
+  const countKnown =
+    typeof count === "number" &&
+    Number.isSafeInteger(count) &&
+    count >= 0 &&
+    count <= 1001;
+  return (
+    <>
+      {countKnown && (
+        <p>
+          Сохранено результатов проверки: {count}. Это число само по себе не
+          подтверждает полный состав.
+        </p>
+      )}
+      {verified ? (
+        <>
+          <p>Полный состав подтверждён отдельной проверкой всех отправлений.</p>
+          <details>
+            <summary>
+              Подтверждённые отправления ({receipt.posting_numbers!.length})
+            </summary>
+            <ul>
+              {receipt.posting_numbers!.map((number) => (
+                <li key={number}>{number}</li>
+              ))}
+            </ul>
+          </details>
+        </>
+      ) : (
+        <p>Полный состав ещё не подтверждён.</p>
+      )}
+    </>
   );
 }
 

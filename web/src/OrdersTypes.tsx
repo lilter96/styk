@@ -289,6 +289,7 @@ export type OrderWork = {
   receipt: {
     state: string;
     posting_numbers?: string[];
+    split_read_count?: number;
     unassembled_split?: {
       parent: OrderField<OrderSplitResponsePosting>;
       postings: OrderField<OrderSplitResponsePosting[]>;

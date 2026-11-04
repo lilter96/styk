@@ -204,7 +204,12 @@ export function OrdersOperations({
               ))}
               {["posting_split", "posting_split_unassembled"].includes(
                 work.command.action,
-              ) && <OrdersSplitEvidence receipt={work.receipt} />}
+              ) && (
+                <OrdersSplitEvidence
+                  receipt={work.receipt}
+                  state={work.state}
+                />
+              )}
               {work.state === "RECONCILED" &&
                 work.receipt?.artifact?.available &&
                 (!work.receipt.artifact.expires_at ||
