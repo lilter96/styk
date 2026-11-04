@@ -57,7 +57,7 @@ func finishProviderPermit(ctx context.Context, tx pgx.Tx, a providercall.Attempt
 	if err != nil {
 		return fmt.Errorf("complete provider attempt count: %w", err)
 	}
-	return nil
+	return finishProviderStockTarget(ctx, tx, a, now)
 }
 
 func applyProviderResponse(ctx context.Context, tx pgx.Tx, a providercall.Attempt, r providercall.Result, now time.Time) error {
@@ -96,6 +96,21 @@ func applyProviderCooldown(ctx context.Context, tx pgx.Tx, a providercall.Attemp
 	_, err := tx.Exec(ctx, `UPDATE provider_call_accounts SET cooldown_until=GREATEST(cooldown_until,$3),cooldown_blocked=cooldown_blocked OR $4,updated_at=$5 WHERE provider=$1 AND account_id=$2`, a.Scope.Provider, a.Scope.Account, until, blocked, now)
 	if err != nil {
 		return fmt.Errorf("record provider cooldown: %w", err)
+	}
+	return nil
+}
+
+func finishProviderStockTarget(ctx context.Context, tx pgx.Tx, a providercall.Attempt, now time.Time) error {
+	cooldown := providercall.StockTargetCooldown(a)
+	if cooldown == 0 {
+		return nil
+	}
+	_, err := tx.Exec(ctx, `UPDATE provider_call_targets t SET next_send_at=GREATEST(t.next_send_at,$5::timestamptz)
+ FROM provider_call_permits p WHERE p.id=$1 AND p.provider=$2 AND p.account_id=$3
+ AND p.target_key=$4 AND p.started_at IS NOT NULL AND p.is_write
+ AND t.provider=p.provider AND t.account_id=p.account_id AND t.target_key=p.target_key`, a.ID, a.Scope.Provider, a.Scope.Account, a.TargetKey, now.Add(cooldown))
+	if err != nil {
+		return fmt.Errorf("complete provider stock target cooldown: %w", err)
 	}
 	return nil
 }
