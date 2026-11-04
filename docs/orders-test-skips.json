@@ -999,5 +999,695 @@
       "Optional live fulfillment and legacy live diagnostic were intentionally not dispatched.",
       "Missing optional browser flags and dedicated stock database requirements are not passes; supplemental exact named passes are recorded separately."
     ]
+  },
+  "final_release_2026_11_04": {
+    "recorded_at": "2026-11-04T15:33:28.594459+00:00",
+    "schema_version": 59,
+    "primary": {
+      "status": "PASS",
+      "compiled_source_revision": "8ec67ea",
+      "command": "go test -race -tags=integration -json ./tests/integration ./internal/postgres -count=1 -timeout=30m",
+      "source_log": ".local/orders-v9-full-integration59.jsonl",
+      "counts": {
+        "pass": 728,
+        "fail": 0,
+        "skip": 66
+      },
+      "elapsed_seconds": 1608.039,
+      "scope": "Full PostgreSQL integration and internal/postgres packages; later minute-precision changes covered by the sequential current-source delta."
+    },
+    "earlier_failed_attempt": {
+      "status": "FAIL",
+      "source_checkpoint": "58",
+      "source_log": ".local/orders-v9-full-integration58.jsonl",
+      "counts": {
+        "pass": 698,
+        "fail": 8,
+        "skip": 66
+      },
+      "elapsed_seconds": 1438.095,
+      "failed_tests_including_subtests": [
+        "TestOrderInventoryPostgresNativeReserveAttribution/matched_once",
+        "TestOrderInventoryPostgresNativeReserveAttribution/foreign_reserve_cannot_cover_zero",
+        "TestOrderInventoryPostgresNativeReserveAttribution/cancelled_preserves_foreign_reserve",
+        "TestOrderInventoryPostgresNativeReserveAttribution/shipped_uses_reduced_physical",
+        "TestOrderInventoryPostgresNativeReserveAttribution/aggregate_does_not_cover_native",
+        "TestOrderInventoryPostgresNativeReserveAttribution",
+        "TestOrdersPositionPatchRequiresImmutableOwnedBaseline",
+        "TestOrdersRecoveryMigrationUpgradeRetainsOriginalUnknown"
+      ],
+      "note": "Retained as a failed attempt. Inventory attribution, position-baseline fixtures and migration-specific rollback assertions were corrected; it is not reclassified as a successful run."
+    },
+    "supplements": {
+      "stock_supplement_schema59": {
+        "status": "PASS",
+        "command": "go test -race -tags=integration ./tests/integration -run ^(TestStock|TestAutomatic|TestControlled) -count=1 -json",
+        "database": "Dedicated local stock-publication test database, migrated to59",
+        "counts": {
+          "pass": 112,
+          "fail": 0,
+          "skip": 6
+        },
+        "elapsed_seconds": 185.312,
+        "source_log": ".local/orders-v9-stock-supplement59.jsonl"
+      },
+      "native_delta_schema59": {
+        "status": "PASS",
+        "source_revision": "eb351cb",
+        "scope": "Native draft/posted/return, lost acknowledgment, stale source and foreign reserve, pause and current authority, legacy minute readback, startup compatibility, native nine-process acceptance",
+        "environment": {
+          "STYK_PROCESS_E2E": "true"
+        },
+        "counts": {
+          "pass": 19,
+          "fail": 0,
+          "skip": 0
+        },
+        "elapsed_seconds": 200.638,
+        "source_log": ".local/orders-v9-final-delta59.jsonl",
+        "passed_tests": [
+          "TestOrdersStartupRequiresActualCurrentSchema",
+          "TestOrdersStartupRequiresCompositionActionConstraint",
+          "TestOrdersNativeHTTPLegacyMomentMinuteReadbackAfterUnknownAndPause",
+          "TestOrdersNativeHTTPDraftAndPostedDemandThenLinkedReturn",
+          "TestOrdersNativeHTTPLostCreateAcknowledgementOnlyReconciles",
+          "TestOrdersNativeHTTPStaleSourceAndForeignReservePreventDispatch/source_changed",
+          "TestOrdersNativeHTTPStaleSourceAndForeignReservePreventDispatch/foreign_native_reserve_changed",
+          "TestOrdersNativeHTTPStaleSourceAndForeignReservePreventDispatch",
+          "TestOrdersNativeHTTPWrongAccountCannotUseDemandBasis",
+          "TestOrdersNativeHTTPPostedEffectFencesPoolUntilActualFreshStockRead",
+          "TestOrdersNativeNineProcessStack/lost-ack-stays-unknown-without-repeat",
+          "TestOrdersNativeNineProcessStack/kill-after-native-post-before-database-ack",
+          "TestOrdersNativeNineProcessStack/late-native-claimant-cannot-ack-or-post",
+          "TestOrdersNativeNineProcessStack",
+          "TestOrdersNativeHTTPUnknownReadbackSurvivesPauseAndConfigRevision",
+          "TestOrdersNativeHTTPPauseStillBlocksUnsentMutation",
+          "TestOrdersNativeHTTPUnknownReadbackRetainsCredentialAndOwnerBoundaries/credential_rotation",
+          "TestOrdersNativeHTTPUnknownReadbackRetainsCredentialAndOwnerBoundaries/membership_revocation",
+          "TestOrdersNativeHTTPUnknownReadbackRetainsCredentialAndOwnerBoundaries"
+        ]
+      },
+      "normal_orders_process_browser_schema59": {
+        "status": "PASS",
+        "source_revision": "eb351cb",
+        "command": "go test -race -tags=integration ./tests/integration -run ^TestOrdersNineProcessStack$ -count=1 -json",
+        "environment": {
+          "STYK_PROCESS_E2E": "true",
+          "STYK_ORDERS_BROWSER_E2E": "1"
+        },
+        "scope": "Actual React -> Go API -> PostgreSQL -> scheduler/outbox -> worker -> deterministic provider; 3 API,2 scheduler,4 worker OS processes and2 merchant sessions, no API route mocks",
+        "counts": {
+          "pass": 12,
+          "fail": 0,
+          "skip": 0
+        },
+        "elapsed_seconds": 96.114,
+        "source_log": ".local/orders-v9-final-process-browser59.jsonl",
+        "passed_tests": [
+          "TestOrdersNineProcessStack/sessions-and-isolation",
+          "TestOrdersNineProcessStack/provider-global-cooldown",
+          "TestOrdersNineProcessStack/concurrent-approval-and-workers",
+          "TestOrdersNineProcessStack/unknown-does-not-resend-or-block-other-postings",
+          "TestOrdersNineProcessStack/kill-restart-before-claim",
+          "TestOrdersNineProcessStack/kill-restart-after-claim",
+          "TestOrdersNineProcessStack/kill-restart-after-provider-before-ack",
+          "TestOrdersNineProcessStack/kill-restart-during-poll",
+          "TestOrdersNineProcessStack/stale-child-cannot-ack",
+          "TestOrdersNineProcessStack/browser",
+          "TestOrdersNineProcessStack/credential-rotation-and-expired-grant",
+          "TestOrdersNineProcessStack"
+        ]
+      },
+      "real_owner_read_only_browser": {
+        "status": "PASS_WITH_METADATA_LOADING_LIMITATION",
+        "scope": "Actual existing merchant login, authenticated sessions across APIs8080/8082, orders/history/configOFF, desktop/mobile no overflow. Metadata completion was not asserted; this does not replace the named onboarding or stock browser cases.",
+        "source_evidence": ".local/orders-v8/browser-live59/result.json",
+        "provider_reads": {
+          "moysklad": 33,
+          "ozon": 0
+        },
+        "provider_writes": 0,
+        "budget_note": "Initial GUI estimate12 was exceeded at17; recorded explicitly. Additional20 reads authorized, actual second run16. No provider writes or configuration changes."
+      }
+    },
+    "primary_skips_with_separate_supplemental_status": {
+      "NOT_RUN": 9,
+      "INTENTIONAL_SUBPROCESS_ENTRYPOINT": 4,
+      "PASS": 53
+    },
+    "records": [
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestCatalogMerchantBrowserStack",
+        "primary_status": "SKIP",
+        "reason": "catalog_browser_stack_test.go:44: catalog browser stack not requested",
+        "supplemental_status": "NOT_RUN",
+        "supplemental_run": "",
+        "note": "Browser opt-in was absent in the primary run. Read-only owner screenshots and frontend route-mocked tests are not substitutes for this named full-stack browser scenario."
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestControlledStockPublicationBrowser",
+        "primary_status": "SKIP",
+        "reason": "controlled_stock_browser_test.go:38: browser E2E not requested",
+        "supplemental_status": "NOT_RUN",
+        "supplemental_run": "",
+        "note": "Browser opt-in was absent in the primary run. Read-only owner screenshots and frontend route-mocked tests are not substitutes for this named full-stack browser scenario."
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestControlledStockRecoveryBrowser",
+        "primary_status": "SKIP",
+        "reason": "controlled_stock_browser_test.go:45: recovery browser E2E not requested",
+        "supplemental_status": "NOT_RUN",
+        "supplemental_run": "",
+        "note": "Browser opt-in was absent in the primary run. Read-only owner screenshots and frontend route-mocked tests are not substitutes for this named full-stack browser scenario."
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestControlledStockAutomaticBrowser",
+        "primary_status": "SKIP",
+        "reason": "controlled_stock_browser_test.go:52: automatic browser E2E not requested",
+        "supplemental_status": "NOT_RUN",
+        "supplemental_run": "",
+        "note": "Browser opt-in was absent in the primary run. Read-only owner screenshots and frontend route-mocked tests are not substitutes for this named full-stack browser scenario."
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestControlledStockAutomaticMultiBrowser",
+        "primary_status": "SKIP",
+        "reason": "controlled_stock_browser_test.go:59: automatic multi-product browser E2E not requested",
+        "supplemental_status": "NOT_RUN",
+        "supplemental_run": "",
+        "note": "Browser opt-in was absent in the primary run. Read-only owner screenshots and frontend route-mocked tests are not substitutes for this named full-stack browser scenario."
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestMerchantBrowserWorkspaces",
+        "primary_status": "SKIP",
+        "reason": "merchant_browser_test.go:41: merchant browser E2E not requested",
+        "supplemental_status": "NOT_RUN",
+        "supplemental_run": "",
+        "note": "Browser opt-in was absent in the primary run. Read-only owner screenshots and frontend route-mocked tests are not substitutes for this named full-stack browser scenario."
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestOrderFlowFullE2E",
+        "primary_status": "SKIP",
+        "reason": "orders_flow_full_e2e_test.go:41: explicit legacy live diagnostic opt-in required",
+        "supplemental_status": "NOT_RUN",
+        "supplemental_run": "",
+        "note": "No live fulfillment mutation was forced against historical cancelled postings; this named opt-in test remains skipped. Separate real stock and unposted native-document evidence is recorded in orders-live-evidence.md."
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestOrdersNativeProcessChild",
+        "primary_status": "SKIP",
+        "reason": "orders_native_process_test.go:33: native worker subprocess only",
+        "supplemental_status": "INTENTIONAL_SUBPROCESS_ENTRYPOINT",
+        "supplemental_run": "",
+        "parent_test": "TestOrdersNativeNineProcessStack",
+        "note": "The parent invokes this process helper; a direct skipped invocation is not a standalone pass."
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestOrdersNativeNineProcessStack",
+        "primary_status": "SKIP",
+        "reason": "orders_native_process_test.go:199: set STYK_PROCESS_E2E=true for independent native-process acceptance",
+        "supplemental_status": "PASS",
+        "supplemental_run": "native_delta_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestOrdersProcessChild",
+        "primary_status": "SKIP",
+        "reason": "orders_process_child_test.go:42: orders process subprocess only",
+        "supplemental_status": "INTENTIONAL_SUBPROCESS_ENTRYPOINT",
+        "supplemental_run": "",
+        "parent_test": "TestOrdersNineProcessStack",
+        "note": "The parent invokes this process helper; a direct skipped invocation is not a standalone pass."
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestOrdersNineProcessStack/browser",
+        "primary_status": "SKIP",
+        "reason": "orders_process_browser_test.go:27: orders browser stack not requested",
+        "supplemental_status": "PASS",
+        "supplemental_run": "normal_orders_process_browser_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestOzonFulfillmentFbsE2E",
+        "primary_status": "SKIP",
+        "reason": "ozon_fulfillment_e2e_test.go:26: skipping live Ozon fulfillment e2e: OZON_API_KEY not set",
+        "supplemental_status": "NOT_RUN",
+        "supplemental_run": "",
+        "note": "No live fulfillment mutation was forced against historical cancelled postings; this named opt-in test remains skipped. Separate real stock and unposted native-document evidence is recorded in orders-live-evidence.md."
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestProviderCoordinatorProcessChild",
+        "primary_status": "SKIP",
+        "reason": "provider_process_test.go:87: provider coordination subprocess only",
+        "supplemental_status": "INTENTIONAL_SUBPROCESS_ENTRYPOINT",
+        "supplemental_run": "",
+        "parent_test": "TestProviderCoordinatorSharedAcrossProcesses",
+        "note": "The parent invokes this process helper; a direct skipped invocation is not a standalone pass."
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationOperatorAssertionsAreNeverProviderProof",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:113: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationReviewExpiresWhenMarketplaceTraversalAgesOut",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:175: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationRequiresProofsScopedReviewAndExplicitIntent",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:191: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationUnknownNeverReplaysAndReadbackIsExplicit",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:232: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationSuccessfulResultAndContinuousChangedEvidence",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:304: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationPartialReadbackKeepsUnknownTargetsVisible",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:356: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationStaleReviewAndExpiredProofsFailClosed",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:408: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationConcurrentIntentAndDispatchAreSingle",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:432: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationTargetFenceSpansMoyskladScopes",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:483: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationCredentialRevisionRequiresNewReview",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:533: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationHTTPExplicitEnableReplayAndDisable",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:560: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationRejectsRecoveredStaleWorkerClaim",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:697: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationRejectsOutOfOrderImports/moysklad",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:725: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationRejectsOutOfOrderImports/ozon",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:725: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationRequiresCurrentCatalogIdentity/offer_changed",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:773: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationRequiresCurrentCatalogIdentity/stock_sku_differs",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:773: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationRequiresCurrentCatalogIdentity/sku_changed_consistently",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:773: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationRequiresCurrentCatalogIdentity/offer_archived",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:773: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationRequiresCurrentCatalogIdentity/warehouse_becomes_rfbs",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:773: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationRequiresCurrentCatalogIdentity/source_item_missing",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:773: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationBlocksProductAndVariantSharedPool",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:831: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationPartialErrorKeepsUncertainTargetFenced",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:876: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationLostResponseNeverReissuesRegardlessOfEffect/applied_false",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:907: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationLostResponseNeverReissuesRegardlessOfEffect/applied_true",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:907: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationDatabaseFailureAfterDispatchDoesNotReplay",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:946: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationZeroAndMissingQuantitiesAreDistinct",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:989: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationRejectsInvalidMarketplaceNumbers/present",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:1015: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationRejectsInvalidMarketplaceNumbers/reserved",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:1015: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationRejectsInvalidMarketplaceNumbers/free",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:1015: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationReusedBatchDoesNotRefreshObservationTime",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:1040: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationFreshDurableTraversalReusesHistoricalBatch",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:1058: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationDisableCannotUndoInFlightRequest",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:1130: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationDisabledWorkerDoesNotClaimPreviouslyEnabledPolicy",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:1163: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationFrozenMappingRevisionChangesBlockDispatch/product_mappings",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:1183: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationFrozenMappingRevisionChangesBlockDispatch/warehouse_mappings",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:1183: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationRejectsMissingReservationAttribution",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:1213: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationCrashHelper",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:1239: subprocess fixture",
+        "supplemental_status": "INTENTIONAL_SUBPROCESS_ENTRYPOINT",
+        "supplemental_run": "",
+        "parent_test": "TestStockPublicationWorkerCrashAfterDispatchIsNotRetried",
+        "note": "The parent invokes this process helper; a direct skipped invocation is not a standalone pass."
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationWorkerCrashAfterDispatchIsNotRetried",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:1256: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationRejectsProofAfterSourceTraversalStarted",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:1310: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationRejectsLongRunningTraversalEvenIfRecentlyFinished/moysklad",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:1334: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationRejectsLongRunningTraversalEvenIfRecentlyFinished/ozon",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:1334: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationRejectsIdenticalStartTimesForDifferentBatches",
+        "primary_status": "SKIP",
+        "reason": "stock_publication_test.go:1376: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockShadowBrowser",
+        "primary_status": "SKIP",
+        "reason": "stock_shadow_browser_test.go:43: shadow browser E2E not requested",
+        "supplemental_status": "NOT_RUN",
+        "supplemental_run": "",
+        "note": "Browser opt-in was absent in the primary run. Read-only owner screenshots and frontend route-mocked tests are not substitutes for this named full-stack browser scenario."
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockShadowProjectionBoundaries/explicit_zero",
+        "primary_status": "SKIP",
+        "reason": "stock_shadow_test.go:112: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockShadowProjectionBoundaries/missing_observation",
+        "primary_status": "SKIP",
+        "reason": "stock_shadow_test.go:112: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockShadowProjectionBoundaries/missing_reserve",
+        "primary_status": "SKIP",
+        "reason": "stock_shadow_test.go:112: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockShadowProjectionBoundaries/negative_stock",
+        "primary_status": "SKIP",
+        "reason": "stock_shadow_test.go:112: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockShadowProjectionBoundaries/fractional_stock",
+        "primary_status": "SKIP",
+        "reason": "stock_shadow_test.go:112: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockShadowRejectsParentVariantOverlap",
+        "primary_status": "SKIP",
+        "reason": "stock_shadow_test.go:192: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockShadowStaleReusedAndUnknown/reused_batch",
+        "primary_status": "SKIP",
+        "reason": "stock_shadow_test.go:238: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockShadowStaleReusedAndUnknown/stale_traversal",
+        "primary_status": "SKIP",
+        "reason": "stock_shadow_test.go:255: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockShadowStaleReusedAndUnknown/unknown_write",
+        "primary_status": "SKIP",
+        "reason": "stock_shadow_test.go:268: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockShadowStaleReusedAndUnknown/expired_attestation",
+        "primary_status": "SKIP",
+        "reason": "stock_shadow_test.go:285: dedicated local stock publication test database required",
+        "supplemental_status": "PASS",
+        "supplemental_run": "stock_supplement_schema59"
+      }
+    ],
+    "notes": [
+      "Counts include test and subtest events, not unique scenarios; package-only events are excluded. Do not add counts across overlapping runs as unique coverage.",
+      "Every primary skip remains SKIP even when its named test passes under a separately enabled database or browser configuration.",
+      "Old October30 and earlier November4 evidence remains in the surrounding ledger; the failed checkpoint58 attempt is explicitly preserved above.",
+      "Live-provider results, retained unposted document, immutable original UNKNOWN receipt and subsequent read-only reconciliation are recorded separately in orders-live-evidence.md.",
+      "No plaintext credentials, browser session secrets, buyer data or provider raw responses are stored in this ledger."
+    ]
   }
 }
