@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -37,6 +38,7 @@ type nativeMovementHTTPProvider struct {
 	loseResponse atomic.Bool
 	shipped      atomic.Int64
 	returned     atomic.Int64
+	includedTax  bool
 }
 type nativeMovementHTTPFixture struct {
 	positionHTTPFixture
@@ -45,8 +47,13 @@ type nativeMovementHTTPFixture struct {
 
 func newNativeMovementHTTPFixture(t *testing.T) nativeMovementHTTPFixture {
 	t.Helper()
+	return newNativeMovementHTTPFixtureWithTax(t, false)
+}
+
+func newNativeMovementHTTPFixtureWithTax(t *testing.T, includedTax bool) nativeMovementHTTPFixture {
+	t.Helper()
 	f := newPositionHTTPFixture(t)
-	p := &nativeMovementHTTPProvider{position: f.provider, documents: map[string]*nativeMovementHTTPDocument{}}
+	p := &nativeMovementHTTPProvider{position: f.provider, documents: map[string]*nativeMovementHTTPDocument{}, includedTax: includedTax}
 	f.provider.base.server.Config.Handler = http.HandlerFunc(p.serve)
 	resolver, ok := f.factory.Credentials.(*credentials.Resolver)
 	if !ok {
@@ -64,6 +71,10 @@ func newNativeMovementHTTPFixture(t *testing.T) nativeMovementHTTPFixture {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
+	if includedTax {
+		// Tax is observed in the destination, not inferred from an Ozon fraction.
+		f.config.FieldMappings = slices.DeleteFunc(f.config.FieldMappings, func(m orders.FieldMapping) bool { return m.Target == "positions.vat" })
+	}
 	f.config.NativeDocuments = &orders.NativeDocumentPolicy{Enabled: true, AllowPosted: true, Actions: []orders.Action{orders.ActionDemandCreate, orders.ActionSalesReturnCreate}, MaximumQuantity: "10", EventMaxAgeSeconds: 3600, AttestedAt: now.Add(-time.Minute), ValidUntil: now.Add(time.Hour)}
 	f.config, err = f.db.SaveOrderConfig(f.ctx, orders.SaveConfigRequest{Config: f.config, ExpectedRevision: f.config.Revision, Actor: f.session.AuditID, IdempotencyKey: "native-http-config"}, now)
 	if err != nil {
@@ -292,10 +303,16 @@ func (p *nativeMovementHTTPProvider) serve(w http.ResponseWriter, r *http.Reques
 				row["vatEnabled"] = false
 				if index == 0 {
 					row["shipped"] = json.Number(strconv.FormatInt(p.shipped.Load(), 10))
+					if p.includedTax {
+						row["vat"], row["vatEnabled"] = json.Number("20"), true
+					}
 				}
 			}
 		} else {
 			body["vatEnabled"], body["vatIncluded"] = false, false
+			if p.includedTax {
+				body["vatEnabled"], body["vatIncluded"] = true, true
+			}
 			if _, specified := body["applicable"]; !specified {
 				body["applicable"] = false
 			}

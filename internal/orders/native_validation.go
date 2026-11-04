@@ -74,7 +74,7 @@ func (movement NativeMovement) validateLines(scope Scope) error {
 		}
 		// Native totals currently have a verified simple monetary subset. Block
 		// unsupported rounding before dispatch, not after a physical movement.
-		if !ExactDecimalEqual(*line.Discount.Value, "0") || *line.VATEnabled.Value && !ExactDecimalEqual(*line.VAT.Value, "0") {
+		if !ExactDecimalEqual(*line.Discount.Value, "0") || !NativeTaxPreservesPrice(line, movement.VATEnabled, movement.VATIncluded) {
 			return ErrBlocked
 		}
 		if line.BasisPositionID != "" && !validUUID(line.BasisPositionID) {
@@ -99,7 +99,10 @@ func (movement NativeMovement) validateBasis(action Action) error {
 	if !basis.CustomerOrderID.IsKnown() || *basis.CustomerOrderID.Value != movement.SourceBaseline.Correlation.CustomerOrderID || basis.OrganizationID != movement.OrganizationID || basis.AgentID != movement.AgentID || basis.CurrencyID != movement.CurrencyID {
 		return ErrStale
 	}
-	return nil
+	if !nativeBoolEqual(basis.VATEnabled, movement.VATEnabled) || !nativeBoolEqual(basis.VATIncluded, movement.VATIncluded) {
+		return ErrStale
+	}
+	return movement.validateReturnValues()
 }
 
 func (observation NativeDocumentObservation) Validate() error {

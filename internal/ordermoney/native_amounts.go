@@ -8,12 +8,15 @@ func NativeDocumentAmounts(movement *orders.NativeMovement) orders.Validation {
 	if movement == nil || len(movement.Lines) == 0 {
 		return nativeAmountIssue("native_sum_unknown")
 	}
+	if issue := nativeReturnAmounts(movement); issue.Code != "" {
+		return issue
+	}
 	currency := movement.Lines[0].Price.Currency
 	for _, line := range movement.Lines {
 		if line.Price.Currency != currency {
 			return nativeAmountIssue("currency_mismatch")
 		}
-		if !line.Discount.IsKnown() || !orders.ExactDecimalEqual(*line.Discount.Value, "0") || !line.VAT.IsKnown() || !line.VATEnabled.IsKnown() || *line.VATEnabled.Value && !orders.ExactDecimalEqual(*line.VAT.Value, "0") {
+		if !line.Discount.IsKnown() || !orders.ExactDecimalEqual(*line.Discount.Value, "0") || !orders.NativeTaxPreservesPrice(line, movement.VATEnabled, movement.VATIncluded) {
 			return nativeAmountIssue("native_tax_or_discount_rounding_unverified")
 		}
 		price, scale, err := monetaryDecimal(line.Price)

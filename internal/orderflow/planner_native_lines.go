@@ -14,6 +14,9 @@ func planNativeValues(review orders.ReviewContext, posting orders.Posting, propo
 		moment = proposal.PlannedMoment
 	}
 	movement := orders.NativeMovement{SourceBaseline: baseline, DemandWorkID: proposal.DemandWorkID, DemandBasis: basis, OrganizationID: fields.OrganizationID, AgentID: fields.AgentID, StoreID: fields.StoreID, CurrencyID: fields.CurrencyID, RateValue: fields.RateValue, Applicable: proposal.Applicable, VATEnabled: fields.VATEnabled, VATIncluded: fields.VATIncluded, Moment: orders.NativeAccountingMoment(moment), Lines: make([]orders.NativeMovementLine, 0, len(proposal.Lines))}
+	if basis != nil {
+		movement.VATEnabled, movement.VATIncluded = basis.VATEnabled, basis.VATIncluded
+	}
 	if proposal.Action == orders.ActionDemandCreate && *proposal.Applicable.Value && posting.Status.IsKnown() && *posting.Status.Value == "cancelled" {
 		return movement, []orders.Validation{{Field: "posting.status", Code: "cancelled_posting_cannot_create_new_shipment"}}
 	}
@@ -42,9 +45,6 @@ func planNativeLine(review orders.ReviewContext, posting orders.Posting, selecte
 	}
 	current := parent.Positions[index]
 	if !current.Price.IsKnown() || !current.Discount.IsKnown() || !current.VAT.IsKnown() || !current.VATEnabled.IsKnown() {
-		return orders.NativeMovementLine{}, orders.ErrBlocked
-	}
-	if !orders.ExactDecimalEqual(*current.Discount.Value, "0") || *current.VATEnabled.Value && !orders.ExactDecimalEqual(*current.VAT.Value, "0") {
 		return orders.NativeMovementLine{}, orders.ErrBlocked
 	}
 	line := orders.NativeMovementLine{Identity: selected.Identity, Mapping: binding.Source.Mapping, OrderPositionID: current.ID, Quantity: selected.Quantity, Price: *current.Price.Value, Discount: current.Discount, VAT: current.VAT, VATEnabled: current.VATEnabled}
