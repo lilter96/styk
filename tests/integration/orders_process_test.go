@@ -42,7 +42,7 @@ func TestOrdersNineProcessStack(t *testing.T) {
 	t.Run("stale-child-cannot-ack", stack.staleChild)
 	t.Run("browser", stack.browser)
 	t.Run("credential-rotation-and-expired-grant", stack.authorityChanges)
-	stack.provider.assertBudget(t)
+	stack.provider.assertBudget(t, stack.db)
 }
 
 func ordersProcessNewStack(t *testing.T) *ordersProcessStack {

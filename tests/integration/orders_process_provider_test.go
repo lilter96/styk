@@ -3,8 +3,11 @@
 package integration
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/lilter96/styk/internal/postgres"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -308,7 +311,7 @@ func (p *ordersProcessProvider) reveal(number string) {
 	}
 }
 
-func (p *ordersProcessProvider) assertBudget(t *testing.T) {
+func (p *ordersProcessProvider) assertBudget(t *testing.T, db *postgres.Store) {
 	t.Helper()
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -326,17 +329,80 @@ func (p *ordersProcessProvider) assertBudget(t *testing.T) {
 		if found {
 			minimumGap = min(minimumGap, attempt.at.Sub(previous.at))
 		}
-		if found && attempt.at.Sub(previous.at) < 18*time.Millisecond {
-			t.Error("independent processes bypassed shared provider request spacing")
-		}
 		if found && previous.status == http.StatusTooManyRequests && attempt.at.Sub(previous.at) < 950*time.Millisecond {
 			t.Error("independent processes bypassed shared 429 cooldown")
 		}
 		last[attempt.account] = attempt
 	}
-	t.Logf("observed %d real loopback provider HTTP attempts across nine processes; minimum account gap=%s, maximum inflight=%d", len(p.attempts), minimumGap, maximumInflight)
+	// Network arrivals can compress after delayed final guards or OS scheduling.
+	// The enforceable shared dispatch-grant interval is checked on DB-clock rows;
+	// actual arrival jitter, concurrent HTTP and response cooldown remain distinct.
+	p.assertDispatchGrants(t, db)
+	t.Logf("observed %d real loopback provider HTTP attempts across nine processes; minimum account arrival gap=%s, maximum inflight=%d", len(p.attempts), minimumGap, maximumInflight)
 }
 
 func ordersProcessNumber(prefix string, number int) string {
 	return fmt.Sprintf("%s-%02d", prefix, number)
+}
+
+type ordersProcessGrantEvidence struct {
+	account  string
+	interval time.Duration
+	attempts int64
+	starts   []time.Time
+}
+
+func validateOrdersProcessGrants(e ordersProcessGrantEvidence, arrivals int) error {
+	if e.interval < 20*time.Millisecond || e.attempts != int64(len(e.starts)) || e.attempts < int64(arrivals) {
+		return errors.New("missing or corrupted shared dispatch grant evidence")
+	}
+	for i := 1; i < len(e.starts); i++ {
+		if e.starts[i].Sub(e.starts[i-1]) < e.interval {
+			return errors.New("shared database dispatch grants bypassed account interval")
+		}
+	}
+	return nil
+}
+
+func (p *ordersProcessProvider) assertDispatchGrants(t *testing.T, db *postgres.Store) {
+	t.Helper()
+	counts := make(map[string]int)
+	for _, attempt := range p.attempts {
+		counts[attempt.account]++
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	rows, err := db.Pool.Query(ctx, `SELECT a.provider||':'||a.account_id,a.interval_ns,a.attempts,
+ COALESCE(array_agg(p.started_at ORDER BY p.started_at) FILTER(WHERE p.started_at IS NOT NULL),'{}'::timestamptz[])
+ FROM provider_call_accounts a LEFT JOIN provider_call_permits p ON p.provider=a.provider AND p.account_id=a.account_id
+ GROUP BY a.provider,a.account_id,a.interval_ns,a.attempts`)
+	if err != nil {
+		t.Fatal("read shared dispatch grants", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var evidence ordersProcessGrantEvidence
+		if err = rows.Scan(&evidence.account, &evidence.interval, &evidence.attempts, &evidence.starts); err != nil {
+			t.Fatal("decode shared dispatch grants", err)
+		}
+		if err = validateOrdersProcessGrants(evidence, counts[evidence.account]); err != nil {
+			t.Errorf("account %s: %v", evidence.account, err)
+		}
+		t.Logf("shared DB account %s grants=%d interval=%s minimum grant gap=%s", evidence.account, evidence.attempts, evidence.interval, ordersProcessMinimumGrantGap(evidence.starts))
+		delete(counts, evidence.account)
+	}
+	if rows.Err() != nil {
+		t.Fatal("finish shared dispatch grant evidence", rows.Err())
+	}
+	if len(counts) != 0 {
+		t.Error("provider arrivals lack a scoped durable account budget")
+	}
+}
+
+func ordersProcessMinimumGrantGap(starts []time.Time) time.Duration {
+	result := time.Hour
+	for i := 1; i < len(starts); i++ {
+		result = min(result, starts[i].Sub(starts[i-1]))
+	}
+	return result
 }
