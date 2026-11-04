@@ -36,7 +36,7 @@ func newCompositionHTTPFixture(t *testing.T) compositionHTTPFixture {
 	p.mode.Store(1)
 	f.provider.base.server.Config.Handler = http.HandlerFunc(p.serve)
 	config := f.config
-	config.FieldMappings = append(config.FieldMappings, orders.FieldMapping{Source: "constant.false", Target: "vat_enabled"}, orders.FieldMapping{Source: "constant.true", Target: "vat_included"})
+	config.FieldMappings = append(config.FieldMappings, orders.FieldMapping{Source: "constant.false", Target: "applicable"}, orders.FieldMapping{Source: "constant.false", Target: "vat_enabled"}, orders.FieldMapping{Source: "constant.true", Target: "vat_included"})
 	var err error
 	f.config, err = f.db.SaveOrderConfig(f.ctx, orders.SaveConfigRequest{Config: config, ExpectedRevision: config.Revision, Actor: f.session.AuditID, IdempotencyKey: "composition-config"}, time.Now())
 	if err != nil {
