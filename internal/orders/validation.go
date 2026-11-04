@@ -23,6 +23,11 @@ func (config Config) Validate() error {
 	if config.Revision < 0 || !config.validBounds() {
 		return ErrInvalid
 	}
+	if config.NativeDocuments != nil {
+		if err := config.NativeDocuments.Validate(); err != nil {
+			return err
+		}
+	}
 	if err := config.validateReferences(); err != nil {
 		return err
 	}

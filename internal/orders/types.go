@@ -281,6 +281,7 @@ type AutomationGrant struct {
 }
 
 type Config struct {
+	NativeDocuments        *NativeDocumentPolicy  `json:"native_documents,omitempty"`
 	Scope                  Scope                  `json:"scope"`
 	Revision               int64                  `json:"revision"`
 	Enabled                bool                   `json:"enabled"`
@@ -376,6 +377,7 @@ type PostingAction struct {
 }
 
 type Command struct {
+	NativeMovement          *NativeMovement     `json:"native_movement,omitempty"`
 	PositionPatch           *PositionPatch      `json:"position_patch,omitempty"`
 	ID                      string              `json:"id"`
 	Scope                   Scope               `json:"scope"`

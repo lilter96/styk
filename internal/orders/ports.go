@@ -13,24 +13,26 @@ type SaveConfigRequest struct {
 }
 
 type ReviewContext struct {
-	PositionBaselines map[string]PositionBaseline `json:"position_baselines,omitempty"`
-	Config            Config                      `json:"config"`
-	Credentials       CredentialRevisions         `json:"credentials"`
-	Postings          []Posting                   `json:"postings"`
-	ProductMappings   []ProductMappingRef         `json:"product_mappings"`
-	WarehouseMappings []WarehouseMappingRef       `json:"warehouse_mappings"`
-	Correlations      []Correlation               `json:"correlations"`
-	ActivePostings    map[string]State            `json:"active_postings,omitempty"`
-	Metadata          MetadataRegistry            `json:"metadata"`
+	NativeDocuments   map[string]NativeDocumentBinding `json:"native_documents,omitempty"`
+	PositionBaselines map[string]PositionBaseline      `json:"position_baselines,omitempty"`
+	Config            Config                           `json:"config"`
+	Credentials       CredentialRevisions              `json:"credentials"`
+	Postings          []Posting                        `json:"postings"`
+	ProductMappings   []ProductMappingRef              `json:"product_mappings"`
+	WarehouseMappings []WarehouseMappingRef            `json:"warehouse_mappings"`
+	Correlations      []Correlation                    `json:"correlations"`
+	ActivePostings    map[string]State                 `json:"active_postings,omitempty"`
+	Metadata          MetadataRegistry                 `json:"metadata"`
 }
 
 type PreviewRequest struct {
-	Scope            Scope            `json:"scope"`
-	ExpectedRevision int64            `json:"expected_revision"`
-	PostingNumbers   []string         `json:"posting_numbers,omitempty"`
-	Actions          []Action         `json:"actions,omitempty"`
-	Proposals        []ActionProposal `json:"proposals,omitempty"`
-	Actor            string           `json:"-"`
+	NativeProposals  []NativeMovementProposal `json:"native_proposals,omitempty"`
+	Scope            Scope                    `json:"scope"`
+	ExpectedRevision int64                    `json:"expected_revision"`
+	PostingNumbers   []string                 `json:"posting_numbers,omitempty"`
+	Actions          []Action                 `json:"actions,omitempty"`
+	Proposals        []ActionProposal         `json:"proposals,omitempty"`
+	Actor            string                   `json:"-"`
 }
 
 type Approval struct {
@@ -133,19 +135,20 @@ type DispatchGuard struct {
 // Completion is a state+claim-token CAS. Unknown and acknowledged work may only
 // schedule reads. Reconciled persists correlation and outcome atomically.
 type Completion struct {
-	LabelArtifact   *LabelArtifact
-	WorkID          string
-	Scope           Scope
-	ClaimToken      string
-	ExpectedState   State
-	State           State
-	Code            string
-	Receipt         Receipt
-	Correlation     *Correlation
-	ObservedTarget  *TargetObservation
-	ObservedPosting *Posting
-	NextRunAt       time.Time
-	Now             time.Time
+	ObservedNativeDocument *NativeDocumentObservation
+	LabelArtifact          *LabelArtifact
+	WorkID                 string
+	Scope                  Scope
+	ClaimToken             string
+	ExpectedState          State
+	State                  State
+	Code                   string
+	Receipt                Receipt
+	Correlation            *Correlation
+	ObservedTarget         *TargetObservation
+	ObservedPosting        *Posting
+	NextRunAt              time.Time
+	Now                    time.Time
 }
 
 type Configurer interface {
