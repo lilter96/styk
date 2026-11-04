@@ -161,6 +161,9 @@ func readOrderWorkContext(ctx context.Context, q ordersQuerier, work orders.Work
 	}
 	err = enrichOrderPositionBaselines(ctx, q, &result)
 	if err == nil {
+		err = enrichOrderSplitReserveBlocks(ctx, q, &result, []string{posting.PostingNumber})
+	}
+	if err == nil {
 		err = enrichNativePreviewContext(ctx, q, orders.Preview{Scope: work.Scope, Decisions: []orders.Decision{{Commands: []orders.Command{work.Command}}}}, &result)
 	}
 	if err == nil {

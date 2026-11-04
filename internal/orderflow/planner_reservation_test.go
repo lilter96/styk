@@ -57,3 +57,27 @@ func TestMirrorReservePolicyDoesNotBecomeDefaultOrGuessUnsupportedObligations(t 
 		})
 	}
 }
+
+func TestLocalSplitReserveDependencyBlocksOnlyAffectedReservation(t *testing.T) {
+	t.Parallel()
+	review := flowReview(t, "split-child")
+	review.Config.FieldMappings = slices.DeleteFunc(review.Config.FieldMappings, func(m orders.FieldMapping) bool {
+		return m.Target == "positions.reserve" || m.Target == "applicable"
+	})
+	review.Config.FieldMappings = append(review.Config.FieldMappings,
+		orders.FieldMapping{Source: orders.ReserveOpenQuantitySource, Target: "positions.reserve"},
+		orders.FieldMapping{Source: "constant.true", Target: "applicable"})
+	review.SplitReserveBlocked = map[string]bool{"split-child": true}
+	preview := flowPreview(t, flowService(t, &flowStore{review: review}, flowResolver{}), review)
+	decision := preview.Decisions[0]
+	if decision.Ready || len(decision.Commands) != 0 || !slices.ContainsFunc(decision.Validation, func(v orders.Validation) bool {
+		return v.Code == "split_reserve_transfer_pending"
+	}) {
+		t.Fatal("local split dependency was ignored", decision.Validation)
+	}
+	review.SplitReserveBlocked = map[string]bool{"other-child": true}
+	preview = flowPreview(t, flowService(t, &flowStore{review: review}, flowResolver{}), review)
+	if !preview.Decisions[0].Ready || len(preview.Decisions[0].Commands) != 1 {
+		t.Fatal("independent posting blocked", preview.Decisions[0].Validation)
+	}
+}

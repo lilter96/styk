@@ -65,6 +65,9 @@ func validateOrderCommandCurrent(command orders.Command, posting orders.Posting,
 	if err := command.Validate(); err != nil {
 		return err
 	}
+	if command.Action.IsMirror() && current.SplitReserveBlocked[command.PostingNumber] {
+		return orders.ErrBlocked
+	}
 	if !command.Action.IsMirror() && !command.Action.IsNativeMovement() && command.PostingAction.ContractHash != orderactions.ExecutionContractHash() {
 		return orders.ErrStale
 	}

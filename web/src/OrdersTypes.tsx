@@ -426,6 +426,8 @@ export const orderActionLabel = (action: string) =>
     posting_exemplar_set: "Передать сведения экземпляров в Ozon",
   })[action] || action;
 const issueLabels: Record<string, string> = {
+  split_reserve_transfer_pending:
+    "Отправление разделено. Сначала нужно сверить перенос принадлежащего STYK резерва исходного заказа; повторное резервирование дочернего заказа заблокировано.",
   native_return_basis_unknown:
     "Нет полной подтверждённой отгрузки-основания и сведений о предыдущих возвратах. Обновите данные перед созданием возврата.",
   native_return_quantity_exceeded:

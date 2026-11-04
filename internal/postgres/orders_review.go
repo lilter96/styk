@@ -67,6 +67,13 @@ func readOrderReviewContext(ctx context.Context, q ordersQuerier, scope orders.S
 	}
 	err = enrichOrderPositionBaselines(ctx, q, &result)
 	if err == nil {
+		numbers := make([]string, 0, len(result.Postings))
+		for _, posting := range result.Postings {
+			numbers = append(numbers, posting.PostingNumber)
+		}
+		err = enrichOrderSplitReserveBlocks(ctx, q, &result, numbers)
+	}
+	if err == nil {
 		err = enrichOrderExemplarProofs(ctx, q, &result)
 	}
 	return result, err
