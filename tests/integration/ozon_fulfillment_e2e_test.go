@@ -19,8 +19,12 @@ import (
 // is in an actionable state. This is read-only; it does not mutate provider
 // state. Requires live provider credentials in the environment
 // (OZON_API_KEY, OZON_CLIENT_ID) and a dedicated test database
-// (TEST_DATABASE_URL). Skipped silently when credentials are absent.
+// (TEST_DATABASE_URL), plus STYK_LIVE_OZON_FULFILLMENT_TEST=true.
+// Ordinary integration runs must never trigger a live read from inherited keys.
 func TestOzonFulfillmentFbsE2E(t *testing.T) {
+	if os.Getenv("STYK_LIVE_OZON_FULFILLMENT_TEST") != "true" {
+		t.Skip("explicit journaled live Ozon read opt-in required")
+	}
 	for _, key := range []string{"OZON_API_KEY", "OZON_CLIENT_ID"} {
 		if os.Getenv(key) == "" {
 			t.Skipf("skipping live Ozon fulfillment e2e: %s not set", key)
