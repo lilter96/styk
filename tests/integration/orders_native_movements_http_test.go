@@ -154,6 +154,7 @@ func TestOrdersNativeHTTPLostCreateAcknowledgementOnlyReconciles(t *testing.T) {
 	f.native.loseResponse.Store(true)
 	f.run(t, orders.StateUnknown)
 	f.run(t, orders.StateReconciled)
+	f.assertVerifiedNativeHistory(t)
 	if f.native.writes.Load() != 1 {
 		t.Fatal("uncertain native creation was blindly retried")
 	}

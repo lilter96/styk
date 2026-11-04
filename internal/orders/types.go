@@ -473,21 +473,28 @@ type Operation struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type NativeDocumentReference struct {
+	ID         string    `json:"id"`
+	Kind       string    `json:"kind"`
+	ObservedAt time.Time `json:"observed_at"`
+}
+
 type Work struct {
-	ID                 string              `json:"id"`
-	OperationID        string              `json:"operation_id"`
-	Scope              Scope               `json:"scope"`
-	PreviewID          string              `json:"preview_id"`
-	ConfigRevision     int64               `json:"config_revision"`
-	Credentials        CredentialRevisions `json:"credentials"`
-	Command            Command             `json:"command"`
-	CommandFingerprint string              `json:"command_fingerprint"`
-	State              State               `json:"state"`
-	Receipt            Receipt             `json:"receipt"`
-	Automatic          bool                `json:"automatic"`
-	ClaimToken         string              `json:"-"`
-	LeaseUntil         time.Time           `json:"lease_until"`
-	DispatchCount      int                 `json:"dispatch_count"`
-	NextRunAt          time.Time           `json:"next_run_at"`
-	Code               string              `json:"code,omitempty"`
+	NativeDocument     *NativeDocumentReference `json:"native_document,omitempty"`
+	ID                 string                   `json:"id"`
+	OperationID        string                   `json:"operation_id"`
+	Scope              Scope                    `json:"scope"`
+	PreviewID          string                   `json:"preview_id"`
+	ConfigRevision     int64                    `json:"config_revision"`
+	Credentials        CredentialRevisions      `json:"credentials"`
+	Command            Command                  `json:"command"`
+	CommandFingerprint string                   `json:"command_fingerprint"`
+	State              State                    `json:"state"`
+	Receipt            Receipt                  `json:"receipt"`
+	Automatic          bool                     `json:"automatic"`
+	ClaimToken         string                   `json:"-"`
+	LeaseUntil         time.Time                `json:"lease_until"`
+	DispatchCount      int                      `json:"dispatch_count"`
+	NextRunAt          time.Time                `json:"next_run_at"`
+	Code               string                   `json:"code,omitempty"`
 }
