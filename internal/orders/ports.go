@@ -13,19 +13,20 @@ type SaveConfigRequest struct {
 }
 
 type ReviewContext struct {
-	SplitReservePermissions map[string]SplitReservePermission `json:"-"`
-	SplitReserveBlocked     map[string]bool                   `json:"-"`
-	ExemplarProofs          map[string]ExemplarEvidence       `json:"-"`
-	NativeDocuments         map[string]NativeDocumentBinding  `json:"native_documents,omitempty"`
-	PositionBaselines       map[string]PositionBaseline       `json:"position_baselines,omitempty"`
-	Config                  Config                            `json:"config"`
-	Credentials             CredentialRevisions               `json:"credentials"`
-	Postings                []Posting                         `json:"postings"`
-	ProductMappings         []ProductMappingRef               `json:"product_mappings"`
-	WarehouseMappings       []WarehouseMappingRef             `json:"warehouse_mappings"`
-	Correlations            []Correlation                     `json:"correlations"`
-	ActivePostings          map[string]State                  `json:"active_postings,omitempty"`
-	Metadata                MetadataRegistry                  `json:"metadata"`
+	SplitRetainedReserves   map[string]SplitRetainedReservePermission `json:"-"`
+	SplitReservePermissions map[string]SplitReservePermission         `json:"-"`
+	SplitReserveBlocked     map[string]bool                           `json:"-"`
+	ExemplarProofs          map[string]ExemplarEvidence               `json:"-"`
+	NativeDocuments         map[string]NativeDocumentBinding          `json:"native_documents,omitempty"`
+	PositionBaselines       map[string]PositionBaseline               `json:"position_baselines,omitempty"`
+	Config                  Config                                    `json:"config"`
+	Credentials             CredentialRevisions                       `json:"credentials"`
+	Postings                []Posting                                 `json:"postings"`
+	ProductMappings         []ProductMappingRef                       `json:"product_mappings"`
+	WarehouseMappings       []WarehouseMappingRef                     `json:"warehouse_mappings"`
+	Correlations            []Correlation                             `json:"correlations"`
+	ActivePostings          map[string]State                          `json:"active_postings,omitempty"`
+	Metadata                MetadataRegistry                          `json:"metadata"`
 }
 
 type PreviewRequest struct {

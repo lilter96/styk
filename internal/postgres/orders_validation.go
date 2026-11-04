@@ -74,6 +74,9 @@ func validateOrderCommandCurrent(command orders.Command, posting orders.Posting,
 	if command.Action.IsMirror() && command.SplitSourceWorkID != "" && !current.SplitReservePermissions[command.PostingNumber].Allows(posting) {
 		return orders.ErrBlocked
 	}
+	if err := validateRetainedSplitCommand(command, posting, current); err != nil {
+		return err
+	}
 	if !command.Action.IsMirror() && !command.Action.IsNativeMovement() && command.PostingAction.ContractHash != orderactions.ExecutionContractHash() {
 		return orders.ErrStale
 	}
@@ -111,6 +114,23 @@ func validateOrderCommandCurrent(command orders.Command, posting orders.Posting,
 	}
 	if automatic {
 		return validateOrderAutomaticCommand(command, current.Config, now)
+	}
+	return nil
+}
+
+func validateRetainedSplitCommand(command orders.Command, posting orders.Posting, current orders.ReviewContext) error {
+	if !command.Action.IsMirror() {
+		return nil
+	}
+	permission := current.SplitRetainedReserves[command.PostingNumber]
+	if command.RetainedSplitWorkID != permission.SplitWorkID {
+		return orders.ErrStale
+	}
+	if command.RetainedSplitWorkID == "" {
+		return nil
+	}
+	if command.CustomerOrder == nil || permission.ValidateWrite(posting, *command.CustomerOrder, current.PositionBaselines[command.PostingNumber]) != nil {
+		return orders.ErrBlocked
 	}
 	return nil
 }

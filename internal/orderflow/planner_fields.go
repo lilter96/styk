@@ -404,6 +404,9 @@ func applyConfiguredReserve(write *orders.CustomerOrderWrite, posting orders.Pos
 			if permission, ok := review.SplitReservePermissions[posting.PostingNumber]; ok {
 				return orders.ApplySplitOpenQuantityReserve(posting, write, review.PositionBaselines[posting.PostingNumber], permission)
 			}
+			if permission, ok := review.SplitRetainedReserves[posting.PostingNumber]; ok {
+				return orders.ApplyRetainedSplitOpenQuantityReserve(posting, write, review.PositionBaselines[posting.PostingNumber], permission)
+			}
 			return orders.ApplyOpenQuantityReserve(posting, write, review.PositionBaselines[posting.PostingNumber])
 		}
 	}

@@ -478,6 +478,10 @@ const issueLabels: Record<string, string> = {
     "Для резервирования ожидающего отправления выберите проведение заказа МойСклад. Это не отправляет товар и не меняет статус Ozon.",
   reservation_policy_split_lineage_requires_review:
     "Отправление разделено. Проверьте родительский заказ и дочерние позиции, чтобы не зарезервировать один товар дважды.",
+  reservation_policy_retained_split_proof_required:
+    "Не подтверждены исходный заказ и принадлежащий STYK резерв после разделения. Обновите отправление и заказ МойСклад, затем создайте новый предпросмотр.",
+  reservation_policy_retained_split_reduction_required:
+    "Для сохранённой части отправления можно только уменьшить подтверждённые количество и резерв. Изменение товара, цены или НДС требует отдельной проверки.",
   reservation_policy_partial_cancellation_unknown:
     "Недостаточно данных о частичной отмене. STYK не угадывает оставшееся количество для резерва.",
   reservation_policy_shipment_or_cancellation_conflict:

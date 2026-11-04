@@ -85,5 +85,9 @@ func enrichOrderSplitReserveBlocks(ctx context.Context, q ordersQuerier, result 
 			result.SplitReserveBlocked[number] = true
 		}
 	}
-	return ordersRowsError("read split reserve dependencies", rows.Err())
+	rows.Close()
+	if err = rows.Err(); err != nil {
+		return ordersError("read split reserve dependencies", err)
+	}
+	return enrichOrderRetainedSplitReserves(ctx, q, result, numbers)
 }

@@ -51,6 +51,9 @@ func (command Command) Validate() error {
 }
 
 func (command Command) validateAttachments() error {
+	if command.RetainedSplitWorkID != "" && (!command.Action.IsMirror() || !validID(command.RetainedSplitWorkID) || command.SplitSourceWorkID != "") {
+		return ErrInvalid
+	}
 	if command.SplitSourceWorkID != "" && (!command.Action.IsMirror() || !validID(command.SplitSourceWorkID)) {
 		return ErrInvalid
 	}
