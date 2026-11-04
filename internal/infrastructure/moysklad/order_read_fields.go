@@ -40,6 +40,10 @@ func (c *OrderClient) decodeOrderFields(ctx context.Context, document orderNativ
 	if err != nil || !sum.IsKnown() {
 		return orders.TargetObservation{}, ErrOrderSchema
 	}
+	return c.decodeOrderReadOnlyFields(raw, correlation, write, sum)
+}
+
+func (c *OrderClient) decodeOrderReadOnlyFields(raw map[string]json.RawMessage, correlation orders.Correlation, write orders.CustomerOrderWrite, sum orders.Field[orders.Money]) (orders.TargetObservation, error) {
 	if _, err := orderReadMoment(raw, "updated"); err != nil {
 		return orders.TargetObservation{}, err
 	}
@@ -47,7 +51,24 @@ func (c *OrderClient) decodeOrderFields(ctx context.Context, document orderNativ
 	if err != nil {
 		return orders.TargetObservation{}, err
 	}
-	return orders.TargetObservation{ProviderUpdatedAt: updated, Scope: c.scope, Correlation: correlation, Fields: write, Sum: sum, ObservedAt: time.Now().UTC()}, nil
+	deleted, err := orderReadDeleted(raw)
+	if err != nil {
+		return orders.TargetObservation{}, err
+	}
+	return orders.TargetObservation{SourceDeleted: deleted, ProviderUpdatedAt: updated, Scope: c.scope, Correlation: correlation, Fields: write, Sum: sum, ObservedAt: time.Now().UTC()}, nil
+}
+
+func orderReadDeleted(raw map[string]json.RawMessage) (orders.Field[string], error) {
+	deleted, err := orderReadField[string](raw, "deleted")
+	if err != nil || !deleted.IsKnown() {
+		return deleted, err
+	}
+	for _, layout := range []string{"2006-01-02 15:04:05.000", "2006-01-02 15:04:05"} {
+		if _, err := time.Parse(layout, *deleted.Value); err == nil {
+			return deleted, nil
+		}
+	}
+	return orders.Field[string]{}, ErrOrderSchema
 }
 
 func (c *OrderClient) decodeOrderAttributes(raw json.RawMessage) ([]orders.AttributeWrite, error) {
