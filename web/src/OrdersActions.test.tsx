@@ -664,3 +664,44 @@ it("previews edited provider-issued exemplars through the normal action flow", a
   expect(localStorage.length).toBe(0);
   expect(sessionStorage.length).toBe(0);
 });
+
+it("uses a factual dictionary country on an exact required SKU only after confirmation", async () => {
+  mockAPI((url) => {
+    if (url.pathname.endsWith("/countries"))
+      return json({
+        scope: orderScopeBody(scope),
+        posting_number: posting.posting_number,
+        source_revision: "source-v1",
+        required_skus: ["123"],
+        countries: [{ name: "Страна из справочника", country_iso_code: "BY" }],
+      });
+  });
+  const preview = form();
+  await openAction("posting_country_set");
+  expect(checkButton().disabled).toBe(true);
+  await screen.findByRole("option", { name: "Страна из справочника (BY)" });
+  fireEvent.change(
+    screen.getByLabelText("Товар, для которого Ozon требует страну"),
+    { target: { value: "123" } },
+  );
+  fireEvent.change(screen.getByLabelText("Страна из справочника Ozon"), {
+    target: { value: "BY" },
+  });
+  expect(checkButton().disabled).toBe(true);
+  fireEvent.click(
+    screen.getByLabelText(
+      "Подтверждаю фактическую страну происхождения выбранного товара по имеющимся сведениям.",
+    ),
+  );
+  expect(checkButton().disabled).toBe(false);
+  fireEvent.click(checkButton());
+  expect(preview).toHaveBeenLastCalledWith({
+    posting_number: posting.posting_number,
+    action: "posting_country_set",
+    parameters: {
+      country_sku: "123",
+      country_iso_code: "BY",
+      country_confirmed: true,
+    },
+  });
+});

@@ -69,6 +69,13 @@ export function OrdersActionSummary({
             : "Печать не подтверждена."}
         </p>
       )}
+      {(parameters.country_provided || parameters.country_iso_code) && (
+        <p>
+          Фактическая страна для SKU {parameters.country_sku} указана
+          оператором; значение скрыто в журнале. Ozon не предоставляет отдельное
+          чтение установленной страны.
+        </p>
+      )}
       {parameters.exemplar_work_id && (
         <p>
           Экземпляры: операция {parameters.exemplar_work_id}. Проверка

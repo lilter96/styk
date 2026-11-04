@@ -1,3 +1,4 @@
+import { OrdersCountry, type OrderCountryDraft } from "./OrdersCountry";
 import { useCallback, useState } from "react";
 import { OrdersExemplars } from "./OrdersExemplars";
 import type { ExemplarDraft } from "./OrdersExemplarTypes";
@@ -31,6 +32,7 @@ export const ozonOrderActions = [
   "posting_deliver",
   "posting_sent_by_seller",
   "posting_label_create",
+  "posting_country_set",
   "posting_exemplar_prepare",
   "posting_exemplar_set",
 ];
@@ -135,6 +137,14 @@ export function OrdersActions({
   const [labelWork, setLabelWork] = useState("");
   const [labelPrinted, setLabelPrinted] = useState(false);
   const [exemplar, setExemplar] = useState<ExemplarDraft>();
+  const [country, setCountry] = useState<OrderCountryDraft>();
+  const changeCountry = useCallback(
+    (value: OrderCountryDraft | undefined) => {
+      setCountry(value);
+      onDraftChange();
+    },
+    [onDraftChange],
+  );
   const changeExemplar = useCallback(
     (value: ExemplarDraft | undefined) => {
       setExemplar(value);
@@ -222,6 +232,9 @@ export function OrdersActions({
     "label_printed_confirmed",
     "exemplar_work_id",
     "exemplars",
+    "country_sku",
+    "country_iso_code",
+    "country_confirmed",
   ];
   const unsupportedParameters = parameters.some(
     (parameter) => !knownParameters.includes(parameter),
@@ -241,6 +254,8 @@ export function OrdersActions({
     !option.blockers?.length &&
     !unsupportedParameters &&
     quantitiesValid &&
+    (action !== "posting_country_set" ||
+      (!!country?.sku && !!country.iso && country.confirmed)) &&
     (!exemplarRequired ||
       (!!exemplar?.workID &&
         Date.parse(exemplar.validUntil) > Date.now() &&
@@ -275,6 +290,7 @@ export function OrdersActions({
     setLabelWork("");
     setLabelPrinted(false);
     setExemplar(undefined);
+    setCountry(undefined);
     changed();
   }
   function buildProposal() {
@@ -302,6 +318,11 @@ export function OrdersActions({
     if (hybridLabelRequired) {
       parameters.label_work_id = labelWork;
       parameters.label_printed_confirmed = labelPrinted;
+    }
+    if (action === "posting_country_set" && country) {
+      parameters.country_sku = country.sku;
+      parameters.country_iso_code = country.iso;
+      parameters.country_confirmed = country.confirmed;
     }
     if (exemplarRequired && exemplar) {
       parameters.exemplar_work_id = exemplar.workID;
@@ -639,6 +660,15 @@ export function OrdersActions({
                       {eventLabels[action]}
                     </label>
                   </>
+                )}
+                {action === "posting_country_set" && (
+                  <OrdersCountry
+                    key={`country:${scope.tenant}:${scope.moy}:${scope.ozon}:${posting.posting_number}:${posting.evidence.revision}`}
+                    scope={scope}
+                    posting={posting}
+                    disabled={disabled}
+                    onChange={changeCountry}
+                  />
                 )}
                 {exemplarRequired && (
                   <OrdersExemplars

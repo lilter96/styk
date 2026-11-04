@@ -137,7 +137,10 @@ export function OrdersOperations({
                 <span
                   className={`orders-badge ${work.state === "UNKNOWN" || work.state === "BLOCKED" ? "warning" : work.state === "RECONCILED" ? "success" : ""}`}
                 >
-                  {orderStateLabels[work.state] ?? work.state}
+                  {work.command.action === "posting_country_set" &&
+                  work.state === "RECONCILED"
+                    ? "Требование страны снято"
+                    : (orderStateLabels[work.state] ?? work.state)}
                 </span>
               </div>
               <p>
@@ -183,6 +186,16 @@ export function OrdersOperations({
                   <summary>Подтверждённые параметры действия</summary>
                   <OrdersActionSummary command={work.command} />
                 </details>
+              )}
+              {work.receipt?.country_evidence && (
+                <p className="orders-note">
+                  SKU {work.receipt.country_evidence.sku}:{" "}
+                  {work.receipt.country_evidence.requirement_resolved
+                    ? "требование указать страну снято"
+                    : "снятие требования не подтверждено"}
+                  . Установленное значение страны отдельным чтением не
+                  подтверждено.
+                </p>
               )}
               {(work.receipt?.task_ids ?? []).map((task, index) => (
                 <p className="orders-note" key={`${task.id}:${index}`}>

@@ -375,6 +375,10 @@ async function openOrders(
       if (body.proposals?.length) {
         const proposal = body.proposals[0] as OrderActionProposal;
         const parameters = { ...proposal.parameters };
+        if (parameters.country_iso_code) {
+          delete parameters.country_iso_code;
+          parameters.country_provided = true;
+        }
         if (parameters.exemplars) {
           delete parameters.exemplars;
           parameters.exemplars_provided = true;
@@ -1165,6 +1169,8 @@ test("native draft follows normal preview and separate merchant approval", async
       event_confirmed: false,
     });
     expect(body.native_proposals[0].lines[0].quantity).toBe("1");
+    nativeCommand.native_movement!.moment =
+      body.native_proposals[0].planned_moment;
     proposed = true;
     return fulfill(route, {
       id: "preview-synthetic",
@@ -1226,5 +1232,93 @@ test("native draft follows normal preview and separate merchant approval", async
     .getByRole("button", { name: "Создать складские документы (1)" })
     .click();
   await expect.poll(() => approvals.length).toBe(1);
+  expect(errors).toEqual([]);
+});
+
+test("country command explains requirement-only reconciliation and never invents a default", async ({
+  page,
+}, testInfo) => {
+  const { approvals, previews, errors } = await openOrders(page, false, true);
+  await page.route("**/api/orders/action-options?*", (route) =>
+    fulfill(route, {
+      scope,
+      posting_number: "SYNTHETIC-1",
+      source_revision: "synthetic-v1",
+      actions: [
+        {
+          action: "posting_country_set",
+          allowed: true,
+          blockers: [],
+          parameters_required: [
+            "country_sku",
+            "country_iso_code",
+            "country_confirmed",
+          ],
+        },
+      ],
+      cancellation_reasons: [],
+      label_types: [],
+    }),
+  );
+  await page.route("**/api/orders/countries?*", (route) =>
+    fulfill(route, {
+      scope,
+      posting_number: "SYNTHETIC-1",
+      source_revision: "synthetic-v1",
+      required_skus: ["123456"],
+      countries: [{ name: "Страна из справочника", country_iso_code: "BY" }],
+    }),
+  );
+  await page
+    .getByText("Действия с отправлением в Ozon", { exact: true })
+    .click();
+  await page
+    .getByLabel("Действие для отправления SYNTHETIC-1")
+    .selectOption("posting_country_set");
+  const preview = page.getByRole("button", {
+    name: "Проверить действие в Ozon",
+  });
+  await expect(preview).toBeDisabled();
+  await page
+    .getByLabel("Товар, для которого Ozon требует страну")
+    .selectOption("123456");
+  await page.getByLabel("Страна из справочника Ozon").selectOption("BY");
+  await expect(preview).toBeDisabled();
+  await page
+    .getByLabel(
+      "Подтверждаю фактическую страну происхождения выбранного товара по имеющимся сведениям.",
+    )
+    .check();
+  await expect(preview).toBeEnabled();
+  await expect(
+    page.getByText(/это не независимое подтверждение страны/),
+  ).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("country-desktop.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("country-mobile.png"),
+    fullPage: true,
+  });
+  await preview.click();
+  await expect.poll(() => previews.length).toBe(1);
+  expect(previews[0].proposals?.[0].parameters).toEqual({
+    country_sku: "123456",
+    country_iso_code: "BY",
+    country_confirmed: true,
+  });
+  expect(approvals).toHaveLength(0);
+  await expect(
+    page.getByText(
+      /Ozon не предоставляет отдельное чтение установленной страны/,
+    ),
+  ).toBeVisible();
   expect(errors).toEqual([]);
 });

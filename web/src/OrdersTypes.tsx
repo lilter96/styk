@@ -146,6 +146,10 @@ export type OrderActionLine = {
   quantity: string;
 };
 export type OrderActionParameters = {
+  country_sku?: string;
+  country_iso_code?: string;
+  country_confirmed?: boolean;
+  country_provided?: boolean;
   packages?: { lines: OrderActionLine[] }[];
   lines?: OrderActionLine[];
   reason_id?: string;
@@ -276,6 +280,14 @@ export type OrderWork = {
       expires_at?: string;
     };
     task_ids?: { id: string; type: string }[];
+    country_evidence?: {
+      sku: string;
+      is_gtd_needed: OrderField<boolean>;
+      requirement_resolved: boolean;
+      country_value_observed: boolean;
+      meaning: string;
+      checked_at: string;
+    };
   };
 };
 export type OrderOperation = {
@@ -395,6 +407,7 @@ export const orderActionLabel = (action: string) =>
     posting_deliver: "Передать статус «Доставлено» в Ozon",
     posting_sent_by_seller: "Подтвердить отправку продавцом в Ozon",
     posting_label_create: "Создать этикетку в Ozon",
+    posting_country_set: "Указать страну происхождения в Ozon",
     posting_exemplar_prepare: "Подготовить экземпляры в Ozon",
     posting_exemplar_set: "Передать сведения экземпляров в Ozon",
   })[action] || action;
