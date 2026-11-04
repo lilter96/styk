@@ -1,7 +1,105 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { readFile } from "node:fs/promises";
 import type { OrderActionProposal, OrderCommand } from "../src/OrdersTypes";
 
 const origin = process.env.STYK_ORDERS_UI_ORIGIN || "http://127.0.0.1:5173";
+
+test("label download appears after reconciliation and expires without another create", async ({
+  page,
+}, testInfo) => {
+  const now = new Date("2026-11-04T10:00:00Z");
+  await page.clock.install({ time: now });
+  const { approvals } = await openOrders(page);
+  let state = "POLLING";
+  const expires = new Date(now.getTime() + 86400000).toISOString();
+  let operationReads = 0;
+  await page.route("**/api/orders/operations?*", (route) => {
+    operationReads++;
+    return fulfill(route, {
+      operations: [
+        {
+          id: "label-operation",
+          scope,
+          state,
+          created_at: new Date().toISOString(),
+          targets: [
+            {
+              id: "label-work",
+              state,
+              automatic: false,
+              command: {
+                action: "posting_label_create",
+                posting_number: "SYNTHETIC-1",
+                correlation: {},
+              },
+              receipt: {
+                state,
+                task_ids: [{ id: "9007199254740993", type: "big_label" }],
+                artifact: {
+                  available: true,
+                  download_url: "/api/orders/artifacts/label-work",
+                  label_type: "big_label",
+                  expires_at: expires,
+                },
+              },
+            },
+          ],
+        },
+      ],
+    });
+  });
+  await page.route("**/api/orders/artifacts/label-work", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/pdf",
+      headers: {
+        "Content-Disposition": 'attachment; filename="ozon-label.pdf"',
+      },
+      body: "%PDF-1.7\nSYNTHETIC\n%%EOF",
+    }),
+  );
+  await page.getByRole("button", { name: "Обновить статусы заказов" }).click();
+  await expect(
+    page.getByRole("link", { name: "Скачать этикетку" }),
+  ).toHaveCount(0);
+  state = "RECONCILED";
+  await page.getByRole("button", { name: "Обновить статусы заказов" }).click();
+  await expect(
+    page.getByRole("link", { name: "Скачать этикетку" }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("label-desktop.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("label-mobile.png"),
+    fullPage: true,
+  });
+  const downloading = page.waitForEvent("download");
+  await page.getByRole("link", { name: "Скачать этикетку" }).click();
+  const download = await downloading;
+  expect(download.suggestedFilename()).toBe("ozon-label.pdf");
+  expect(await download.failure()).toBeNull();
+  const downloadedPath = await download.path();
+  if (!downloadedPath) throw new Error("Synthetic PDF was not saved");
+  expect((await readFile(downloadedPath)).toString()).toBe(
+    "%PDF-1.7\nSYNTHETIC\n%%EOF",
+  );
+  const readsBeforeExpiry = operationReads;
+  await page.clock.fastForward(86400001);
+  await expect(
+    page.getByRole("link", { name: "Скачать этикетку" }),
+  ).toHaveCount(0);
+  await expect(page.getByText("Срок хранения этикетки истёк.")).toBeVisible();
+  expect(approvals).toHaveLength(0);
+  expect(operationReads).toBe(readsBeforeExpiry);
+});
 
 test("split history shows exact child identities and partial readback on desktop and mobile", async ({
   page,

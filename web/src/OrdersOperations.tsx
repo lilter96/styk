@@ -62,6 +62,7 @@ export function OrdersOperations({
         ? 10000
         : false,
   });
+  const labelNow = useLabelExpiryClock(history.data);
   useEffect(() => {
     const links: Record<string, string> = {};
     const states: Record<string, string> = {};
@@ -160,15 +161,24 @@ export function OrdersOperations({
               )}
               {work.state === "RECONCILED" &&
                 work.receipt?.artifact?.available &&
+                (!work.receipt.artifact.expires_at ||
+                  Date.parse(work.receipt.artifact.expires_at) > labelNow) &&
                 safeOrderArtifactURL(work.receipt.artifact.download_url) && (
                   <a
                     href={safeOrderArtifactURL(
                       work.receipt.artifact.download_url,
                     )}
-                    download
                   >
                     Скачать этикетку
                   </a>
+                )}
+              {work.state === "RECONCILED" &&
+                work.receipt?.artifact?.expires_at && (
+                  <p className="orders-note">
+                    {Date.parse(work.receipt.artifact.expires_at) > labelNow
+                      ? `Этикетка доступна до ${orderDate(work.receipt.artifact.expires_at)}.`
+                      : "Срок хранения этикетки истёк."}
+                  </p>
                 )}
               {work.state === "UNKNOWN" && (
                 <p className="orders-warning">
@@ -217,4 +227,30 @@ export function OrdersOperations({
       </div>
     </section>
   );
+}
+
+// Reconciled operations no longer poll, but their private downloads still expire.
+function useLabelExpiryClock(page: OrdersOperationPage | undefined) {
+  const [tick, setTick] = useState(Date.now);
+  useEffect(() => {
+    const now = Date.now();
+    const deadlines = (page?.operations ?? []).flatMap((operation) =>
+      (operation.targets ?? []).flatMap((work) => {
+        const artifact = work.receipt?.artifact;
+        if (
+          work.state !== "RECONCILED" ||
+          !artifact?.available ||
+          !artifact.expires_at
+        )
+          return [];
+        const deadline = Date.parse(artifact.expires_at);
+        return Number.isFinite(deadline) && deadline > now ? [deadline] : [];
+      }),
+    );
+    if (!deadlines.length) return;
+    const delay = Math.min(Math.min(...deadlines) - now + 1, 2147483647);
+    const timer = window.setTimeout(() => setTick(Date.now()), delay);
+    return () => window.clearTimeout(timer);
+  }, [page, tick]);
+  return Date.now();
 }

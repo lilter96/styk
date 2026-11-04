@@ -236,6 +236,7 @@ export type OrderWork = {
       available: boolean;
       download_url?: string;
       label_type?: string;
+      expires_at?: string;
     };
     task_ids?: { id: string; type: string }[];
   };
