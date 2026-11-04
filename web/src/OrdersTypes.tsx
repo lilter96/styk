@@ -152,6 +152,8 @@ export type OrderActionParameters = {
   event_reference?: string;
   readiness_confirmed?: boolean;
   label_type?: "big_label" | "small_label";
+  label_work_id?: string;
+  label_printed_confirmed?: boolean;
   tracking_provided?: boolean;
   reason_message_provided?: boolean;
   event_reference_provided?: boolean;
@@ -189,11 +191,19 @@ export type OrderNativeWrite = {
   owned_fields?: string[];
   attributes?: { attribute_id: string; value: OrderField<string> }[];
 };
+export type OrderPositionPatch = {
+  position_id: string;
+  identity: OrderLine["identity"];
+  quantity: OrderField<string>;
+  reserve: OrderField<string>;
+  price: OrderField<OrderMoney>;
+};
 export type OrderCommand = {
   id: string;
   action: string;
   posting_number: string;
   correlation: { customer_order_id?: string };
+  position_patch?: OrderPositionPatch;
   customer_order?: OrderNativeWrite;
   posting_action?: {
     capability?: OrderDeliveryCapability;
@@ -345,6 +355,7 @@ export const orderActionLabel = (action: string) =>
   ({
     mirror_create: "Создать заказ в МойСклад",
     mirror_update: "Обновить заказ в МойСклад",
+    mirror_position_update: "Обновить позицию заказа в МойСклад",
     posting_pack: "Передать сборку в Ozon",
     posting_split: "Разделить отправление в Ozon",
     posting_cancel: "Отменить отправление в Ozon",

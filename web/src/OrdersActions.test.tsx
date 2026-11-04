@@ -514,3 +514,97 @@ it("exposes label downloads only after reconciliation and rejects external artif
   expect(download[0].getAttribute("href")).toBe(artifact);
   expect(screen.queryByRole("link", { name: /Заказ МойСклад/ })).toBeNull();
 });
+
+it("requires a reconciled label and separate printed confirmation for hybrid handover", async () => {
+  mockAPI((url) => {
+    if (url.pathname.endsWith("/action-options"))
+      return json(
+        options({
+          actions: [
+            {
+              action: "posting_ship",
+              allowed: true,
+              blockers: [],
+              parameters_required: [
+                "event_confirmed",
+                "event_reference",
+                "label_work_id",
+                "label_printed_confirmed",
+              ],
+            },
+          ],
+        }),
+      );
+    if (url.pathname.endsWith("/operations")) {
+      expect(url.searchParams.get("search")).toBe(posting.posting_number);
+      const label = (
+        id: string,
+        state: string,
+        number = posting.posting_number,
+      ) => ({
+        id,
+        state,
+        automatic: false,
+        command: {
+          id,
+          action: "posting_label_create",
+          posting_number: number,
+          correlation: {},
+        },
+        receipt: {
+          state,
+          artifact: {
+            available: true,
+            label_type: "big_label",
+            expires_at: new Date(Date.now() + 3600000).toISOString(),
+          },
+        },
+      });
+      return json({
+        operations: [
+          {
+            id: "op",
+            scope: orderScopeBody(scope),
+            created_at: new Date().toISOString(),
+            state: "RECONCILED",
+            targets: [
+              label("label-ready", "RECONCILED"),
+              label("label-pending", "POLLING"),
+              label("other-posting", "RECONCILED", "different"),
+            ],
+          },
+        ],
+      });
+    }
+  });
+  const selected = form();
+  await openAction("posting_ship");
+  const labels = await screen.findByLabelText("Подтверждённая этикетка");
+  await screen.findByRole("option", { name: /label-ready/ });
+  expect(
+    screen.queryByRole("option", { name: /label-pending|other-posting/ }),
+  ).toBeNull();
+  fireEvent.change(screen.getByLabelText("Основание фактического события"), {
+    target: { value: "ACT-SYNTHETIC" },
+  });
+  fireEvent.click(
+    screen.getByLabelText(
+      "Подтверждаю, что отправление rFBS фактически передано в доставку.",
+    ),
+  );
+  expect(checkButton().disabled).toBe(true);
+  fireEvent.change(labels, { target: { value: "label-ready" } });
+  expect(checkButton().disabled).toBe(true);
+  fireEvent.click(
+    screen.getByLabelText(
+      "Этикетка распечатана и наклеена на это отправление.",
+    ),
+  );
+  fireEvent.click(checkButton());
+  expect(selected.mock.calls[0][0].parameters).toEqual({
+    event_reference: "ACT-SYNTHETIC",
+    event_confirmed: true,
+    label_work_id: "label-ready",
+    label_printed_confirmed: true,
+  });
+});

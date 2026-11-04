@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { OrdersPositionPatch } from "./OrdersPositionPatch";
 import { OrdersActionSummary } from "./OrdersActionSummary";
 import {
   MoyOrderLink,
@@ -107,7 +108,11 @@ export function OrdersPreview({
   blocked,
   busy,
   onApprove,
-  permittedActions = ["mirror_create", "mirror_update"],
+  permittedActions = [
+    "mirror_create",
+    "mirror_update",
+    "mirror_position_update",
+  ],
   actionOptions = [],
 }: {
   preview: OrdersPreviewData;
@@ -227,7 +232,10 @@ export function OrdersPreview({
             {(decision.commands ?? []).map((command) => (
               <details key={command.id} open>
                 <summary>{orderActionLabel(command.action)}</summary>
-                {command.customer_order && (
+                {command.position_patch && (
+                  <OrdersPositionPatch value={command.position_patch} />
+                )}
+                {command.customer_order && !command.position_patch && (
                   <ProposedOrder
                     value={command.customer_order}
                     metadata={metadata}

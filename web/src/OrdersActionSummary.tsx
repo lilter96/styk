@@ -61,6 +61,14 @@ export function OrdersActionSummary({
       {parameters.readiness_confirmed && (
         <p>Оператор подтвердил фактическую сборку указанных упаковок.</p>
       )}
+      {parameters.label_work_id && (
+        <p>
+          Этикетка: операция {parameters.label_work_id}.{" "}
+          {parameters.label_printed_confirmed
+            ? "Оператор подтвердил печать и нанесение на отправление."
+            : "Печать не подтверждена."}
+        </p>
+      )}
       {parameters.label_type && (
         <p>
           Формат:{" "}

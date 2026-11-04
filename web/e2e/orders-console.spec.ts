@@ -675,3 +675,184 @@ test("package allocation on mobile has no default factual readiness and only exp
   expect(approvals).toHaveLength(0);
   expect(errors).toEqual([]);
 });
+
+test("owned native position preview stays selectable and explains its exact scope", async ({
+  page,
+}, testInfo) => {
+  const { approvals, errors } = await openOrders(page);
+  await page.route("**/api/orders/preview", (route) => {
+    const item = decision("SYNTHETIC-1");
+    return fulfill(route, {
+      id: "preview-synthetic",
+      scope,
+      config_revision: 1,
+      expires_at: new Date(Date.now() + 60000).toISOString(),
+      decisions: [
+        {
+          ...item,
+          commands: [
+            {
+              ...item.commands[0],
+              action: "mirror_position_update",
+              position_patch: {
+                position_id: "11111111-2222-4333-8444-555555555555",
+                identity: { offer_id: "SYNTHETIC-SKU" },
+                quantity: known("1"),
+                reserve: missing,
+                price: known({ amount: "19.99", currency: "RUB" }),
+              },
+            },
+          ],
+        },
+      ],
+    });
+  });
+  await page.getByLabel("Выбрать отправление SYNTHETIC-1").check();
+  await page
+    .getByRole("button", { name: "Проверить выбранные отправления" })
+    .click();
+  await expect(
+    page.getByText("Точечное изменение позиции SYNTHETIC-SKU"),
+  ).toBeVisible();
+  await expect(page.getByText("Без изменения", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(/Другие строки и их резервы сохраняются/),
+  ).toBeVisible();
+  await page.getByLabel("Подтвердить отправление SYNTHETIC-1").check();
+  const submit = page.getByRole("button", { name: "Передать в МойСклад (1)" });
+  await expect(submit).toBeDisabled();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("position-patch-mobile.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.screenshot({
+    path: testInfo.outputPath("position-patch-desktop.png"),
+    fullPage: true,
+  });
+  await page.getByLabel(/Я проверил состав и поля/).check();
+  await submit.click();
+  await expect(page.getByText(/Подтверждение записано/)).toBeVisible();
+  expect(approvals).toHaveLength(1);
+  expect(errors).toEqual([]);
+});
+
+test("hybrid handover clears an expired printed-label selection without another provider check", async ({
+  page,
+}, testInfo) => {
+  const now = new Date();
+  await page.clock.install({ time: now });
+  const { approvals, previews } = await openOrders(page, false, true);
+  const expires = new Date(now.getTime() + 10000).toISOString();
+  let operationReads = 0;
+  await page.route("**/api/orders/operations?*", (route) => {
+    operationReads++;
+    return fulfill(route, {
+      operations: [
+        {
+          id: "label-op",
+          scope,
+          state: "RECONCILED",
+          created_at: now.toISOString(),
+          targets: [
+            {
+              id: "label-current",
+              state: "RECONCILED",
+              automatic: false,
+              command: {
+                id: "label-command",
+                action: "posting_label_create",
+                posting_number: "SYNTHETIC-1",
+                correlation: {},
+              },
+              receipt: {
+                state: "RECONCILED",
+                artifact: {
+                  available: true,
+                  label_type: "big_label",
+                  expires_at: expires,
+                },
+              },
+            },
+          ],
+        },
+      ],
+    });
+  });
+  await page.route("**/api/orders/action-options?*", (route) =>
+    fulfill(route, {
+      scope,
+      posting_number: "SYNTHETIC-1",
+      source_revision: "synthetic-v1",
+      actions: [
+        {
+          action: "posting_ship",
+          allowed: true,
+          blockers: [],
+          parameters_required: [
+            "event_confirmed",
+            "event_reference",
+            "label_work_id",
+            "label_printed_confirmed",
+          ],
+        },
+      ],
+      label_types: ["big_label"],
+      cancellation_reasons: [],
+    }),
+  );
+  await page
+    .getByText("Действия с отправлением в Ozon", { exact: true })
+    .click();
+  await page
+    .getByLabel("Действие для отправления SYNTHETIC-1")
+    .selectOption("posting_ship");
+  await page.getByLabel("Основание фактического события").fill("ACT-SYNTHETIC");
+  await page
+    .getByLabel(
+      "Подтверждаю, что отправление rFBS фактически передано в доставку.",
+    )
+    .check();
+  const preview = page.getByRole("button", {
+    name: "Проверить действие в Ozon",
+  });
+  await expect(preview).toBeDisabled();
+  await page
+    .getByLabel("Подтверждённая этикетка")
+    .selectOption("label-current");
+  await expect(preview).toBeDisabled();
+  await page
+    .getByLabel("Этикетка распечатана и наклеена на это отправление.")
+    .check();
+  await expect(preview).toBeEnabled();
+  await page.screenshot({
+    path: testInfo.outputPath("hybrid-label-desktop.png"),
+    fullPage: true,
+  });
+  const reads = operationReads;
+  await page.clock.fastForward(11000);
+  await expect(preview).toBeDisabled();
+  await expect(page.getByLabel("Подтверждённая этикетка")).toHaveValue("");
+  await expect(
+    page.getByLabel("Этикетка распечатана и наклеена на это отправление."),
+  ).not.toBeChecked();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("hybrid-label-mobile-expired.png"),
+    fullPage: true,
+  });
+  expect(operationReads).toBe(reads);
+  expect(approvals).toHaveLength(0);
+  expect(previews).toHaveLength(0);
+});

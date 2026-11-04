@@ -119,6 +119,9 @@ function OrdersAccount({
     const actions = proposal
       ? [proposal.action]
       : ["mirror_create", "mirror_update"];
+    const allowedActions = actions.includes("mirror_update")
+      ? [...actions, "mirror_position_update"]
+      : actions;
     if (
       lock.current ||
       !config.data ||
@@ -132,7 +135,7 @@ function OrdersAccount({
     setError("");
     setMessage("");
     setPreview(null);
-    setPreviewActions(actions);
+    setPreviewActions(allowedActions);
     try {
       const value = await post<OrdersPreviewData>(
         "/api/orders/preview",
@@ -154,7 +157,9 @@ function OrdersAccount({
           (item) =>
             !numbers.includes(item.posting.posting_number) ||
             !sameOrderScope(item.posting.scope, scope) ||
-            item.commands.some((command) => !actions.includes(command.action)),
+            item.commands.some(
+              (command) => !allowedActions.includes(command.action),
+            ),
         )
       )
         throw new Error("invalid preview");

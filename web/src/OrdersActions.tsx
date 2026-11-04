@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ApiError, api } from "./api";
+import { OrdersHybridLabels } from "./OrdersHybridLabels";
 import {
   orderActionLabel,
   knownOrderField,
@@ -127,6 +128,8 @@ export function OrdersActions({
   const [eventConfirmed, setEventConfirmed] = useState(false);
   const [ready, setReady] = useState(false);
   const [labelType, setLabelType] = useState("");
+  const [labelWork, setLabelWork] = useState("");
+  const [labelPrinted, setLabelPrinted] = useState(false);
   const options = useQuery({
     queryKey: [
       "orders-action-options",
@@ -203,10 +206,13 @@ export function OrdersActions({
     "event_reference",
     "readiness_confirmed",
     "label_type",
+    "label_work_id",
+    "label_printed_confirmed",
   ];
   const unsupportedParameters = parameters.some(
     (parameter) => !knownParameters.includes(parameter),
   );
+  const hybridLabelRequired = parameters.includes("label_work_id");
   const quantitiesValid =
     (!packaging && action !== "posting_partial_cancel") ||
     orderAllocationValid(posting, allocations, packaging);
@@ -218,6 +224,7 @@ export function OrdersActions({
     !option.blockers?.length &&
     !unsupportedParameters &&
     quantitiesValid &&
+    (!hybridLabelRequired || (!!labelWork && labelPrinted)) &&
     (!packaging ||
       (ready && (action !== "posting_split" || allocations.length >= 2))) &&
     (!cancellation ||
@@ -244,6 +251,8 @@ export function OrdersActions({
     setEventConfirmed(false);
     setReady(false);
     setLabelType("");
+    setLabelWork("");
+    setLabelPrinted(false);
     changed();
   }
   function buildProposal() {
@@ -267,6 +276,10 @@ export function OrdersActions({
     if (event) {
       parameters.event_confirmed = eventConfirmed;
       parameters.event_reference = eventReference.trim();
+    }
+    if (hybridLabelRequired) {
+      parameters.label_work_id = labelWork;
+      parameters.label_printed_confirmed = labelPrinted;
     }
     if (action === "posting_label_create")
       parameters.label_type = labelType as "big_label" | "small_label";
@@ -484,13 +497,15 @@ export function OrdersActions({
                         Добавить упаковку
                       </button>
                     )}
-                    {!quantitiesValid && (
-                      <p className="orders-warning">
-                        Проверьте количества: каждая упаковка или отмена должна
-                        содержать товары, а общий состав должен соответствовать
-                        отправлению.
-                      </p>
-                    )}
+                    {!quantitiesValid &&
+                      (!hybridLabelRequired ||
+                        (!!labelWork && labelPrinted)) && (
+                        <p className="orders-warning">
+                          Проверьте количества: каждая упаковка или отмена
+                          должна содержать товары, а общий состав должен
+                          соответствовать отправлению.
+                        </p>
+                      )}
                   </fieldset>
                 )}
                 {packaging && (
@@ -597,6 +612,24 @@ export function OrdersActions({
                       {eventLabels[action]}
                     </label>
                   </>
+                )}
+                {hybridLabelRequired && (
+                  <OrdersHybridLabels
+                    scope={scope}
+                    postingNumber={posting.posting_number}
+                    value={labelWork}
+                    printed={labelPrinted}
+                    disabled={disabled}
+                    onSelect={(id) => {
+                      setLabelWork(id);
+                      setLabelPrinted(false);
+                      changed();
+                    }}
+                    onPrinted={(value) => {
+                      setLabelPrinted(value);
+                      changed();
+                    }}
+                  />
                 )}
                 {action === "posting_label_create" && (
                   <label>
