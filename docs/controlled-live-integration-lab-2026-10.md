@@ -658,3 +658,12 @@ were not persisted; only the matching comparison outcome was journalled. Key,
 credentials/history and OFF settings were preserved; deployment made zero
 provider calls. Later/nested admission and sequential scalar histories remain
 separate gaps; active fulfillment remains **NOT_OBSERVED_LIVE**.
+
+The next clean runtime **`716a49c`** adds staged same-split reductions and first
+native root creation after multiple same-root splits, with an explicit persisted
+root-admission marker and exact unsent-self exception. The existing
+[order report](orders-live-evidence.md) records real HTTP/backend acceptance,
+fresh race/lint/PG/process gates and the dispatch defect found and corrected.
+No provider request or external mutation occurred in this phase; credentials,
+key/history and OFF settings remain intact, schema 62. Child-first admission
+after the child's own split remains a separate implementation gap.

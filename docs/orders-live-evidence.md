@@ -1487,3 +1487,48 @@ native grants and general publication are OFF. Deployment made zero provider
 calls. Later/nested initial native admission and complex sequential scalar
 histories still need separate coverage; active fulfillment remains
 **NOT_OBSERVED_LIVE**. Unrestricted production readiness is not established.
+
+
+### Staged reductions and late native root — 2026-11-05
+
+Clean **`716a49c`** replays several reductions belonging to one split through
+their exact preceding reconciled UUID baselines. Actual quantities/reserves must
+strictly decrease toward the approved allocation; money/tax/discount and foreign
+rows remain unchanged. A partial A-only result is not the full desired A+B result.
+Child admission still requires every retained row to match actual readback.
+Complete native histories retain all states and use the existing global bound
+of 192 events plus one overflow witness, instead of assuming one change per split.
+
+A root first created after several same-root splits now binds its real creation
+to the latest reconciled split before that creation. Overlapping native/split
+intervals are rejected; historical source times are never refreshed. Older
+children can reference the actual fully settled origin WorkID without inventing
+an earlier reserve or a reduction. A new server-derived `RetainedRoot` permission
+persists the exact split through the existing command `SplitSourceWorkID`.
+At dispatch only that same fenced, unsent create with matching fingerprint and
+marker can be excluded from absence checks; missing/null, other pending work,
+dispatched work and UNKNOWN remain blockers. The first attempted acceptance
+exposed this self-history dispatch defect; failed traces are retained.
+
+Normal HTTP/PG/outbox/worker scenarios now pass two splits with four staged A/B
+updates, child holds between partial/ACK/readback phases, exact foreign reserve,
+restart/no-op, late root creation after two splits and lost creation response.
+The native totals remain owned 10 plus foreign 1 in the multi-SKU case; late
+initial creation reserves only actual root 2, then children 4 and 2, never root 8.
+
+Fresh checks: normal/integration lint **0**, Go tests/full race/build/vet PASS;
+PostgreSQL race **183 pass events / zero skips**, affected integration **37
+top-level cases / 47 pass events / zero skips**, stock **116 pass events / two
+previously documented skips**. The unchanged frontend tree retains its verified
+299 tests/typecheck/lint/build; these were not rerun. A fresh actual React/Go/PG
+merchant regression passed on **3 API + 2 scheduler + 4 worker OS processes**;
+desktop/mobile screenshots were inspected. New admission paths were verified
+through HTTP/backend integration, not claimed as a new live or React journey.
+Private consolidated evidence: `.local/orders-v11-final/acceptance-716a49cbb5f0.json`.
+
+Both dev APIs/two workers run clean `716a49c`, schema 62, health/readiness 200.
+No provider request was made in this phase or deployment. Key, encrypted
+credentials, historical operations and OFF settings were preserved. First native
+admission of a child after its own split remains blocked pending its own complete
+ancestor/native-free-node proof. Active fulfillment remains NOT_OBSERVED_LIVE;
+the full production-readiness goal is not complete.
