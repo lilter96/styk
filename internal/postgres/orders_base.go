@@ -136,7 +136,7 @@ func ordersCredentials(ctx context.Context, q ordersQuerier, scope orders.Scope)
 	return revisions, nil
 }
 
-func ordersClock(ctx context.Context, tx pgx.Tx) (time.Time, error) {
+func ordersClock(ctx context.Context, tx ordersQuerier) (time.Time, error) {
 	var now time.Time
 	if err := tx.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&now); err != nil {
 		return now, ordersError("read order database clock", err)
