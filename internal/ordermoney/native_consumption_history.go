@@ -1,6 +1,10 @@
 package ordermoney
 
-import "github.com/lilter96/styk/internal/orders"
+import (
+	"reflect"
+
+	"github.com/lilter96/styk/internal/orders"
+)
 
 func (h *nativeConsumptionHistory) read(c orders.Command, f orders.NativeConsumptionFacts) orders.Validation {
 	for _, event := range f.Events {
@@ -82,10 +86,18 @@ func nativeConsumptionReconciled(event orders.NativeConsumptionEvent, f orders.N
 
 // Independent readback may reconcile a lost write response. It proves the
 // document, not receipt of an acknowledgment or causality of the original HTTP
-// request; the original UNKNOWN receipt remains unchanged in durable history.
+// request; the original UNKNOWN or absent receipt remains unchanged in history.
 func nativeConsumptionReceiptIdentified(work orders.Work, documentID string) bool {
 	r := work.Receipt
-	if documentID == "" || r.CommandID != work.Command.ID {
+	if documentID == "" {
+		return false
+	}
+	// A process can die after provider application but before recording any
+	// receipt. Accept only the entire zero value, never a partial empty state.
+	if reflect.ValueOf(r).IsZero() {
+		return true
+	}
+	if r.CommandID != work.Command.ID {
 		return false
 	}
 	switch r.State {
