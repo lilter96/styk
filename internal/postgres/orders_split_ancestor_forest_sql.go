@@ -25,14 +25,16 @@ const ownedForestNativeSQL = `SELECT w.work,r.observed_target,w.created_at,w.dis
  ORDER BY w.created_at,w.id LIMIT $11`
 
 // Shared by full native traversal and explicit absence witnesses: a malformed
-// or null proof is never absence. Node admission cannot borrow a leaf's mode.
+// or null proof is never absence. A leaf node admission additionally needs the
+// Go-validated immutable self witness supplied through $10; other modes cannot
+// borrow it because action and mode are checked again here.
 const ownedForestUnsentSelfSQL = `w.id=$5 AND w.command_fingerprint=$6 AND w.dispatch_count=0 AND w.state IN('QUEUED','CLAIMED')
  AND w.posting_number=$7
  AND ((w.work#>>'{command,split_ancestor_settlement,split_work_id}'=$9
  AND ((w.action IN ('mirror_position_update','mirror_composition_update') AND w.posting_number=$8
  AND w.work#>>'{command,split_ancestor_settlement,mode}'='retained_reduction')
  OR (w.action='mirror_create' AND (w.work#>>'{command,split_ancestor_settlement,mode}'='child_admission'
- OR (w.work#>>'{command,split_ancestor_settlement,mode}'='node_admission' AND w.posting_number=$8
+ OR (w.work#>>'{command,split_ancestor_settlement,mode}'='node_admission' AND (w.posting_number=$8 OR $10::boolean)
  AND w.work#>>'{command,split_ancestor_settlement,source,posting_number}'=$7
  AND w.work#>>'{command,split_ancestor_settlement,node,posting_number}'=$7)))))
  OR (w.action='mirror_update' AND $10::boolean))

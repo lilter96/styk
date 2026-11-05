@@ -20,11 +20,11 @@ const ownedForestNativeHistorySQL = `SELECT p.number,
  FROM unnest($4::text[]) p(number) ORDER BY p.number`
 
 func readOwnedForestNativeHistory(ctx context.Context, q ordersQuerier, scope orders.Scope, numbers []string, selfID, fingerprint, selected, node, split string) ([]orders.NestedSplitNativeHistory, error) {
-	metadataSelf, err := readScalarMetadataSelf(ctx, q, scope, selfID, fingerprint)
+	unsentSelf, err := readOwnedForestUnsentSelf(ctx, q, scope, selfID, fingerprint, selected, node, split)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := q.Query(ctx, ownedForestNativeHistorySQL, append(ordersScopeArgs(scope), numbers, selfID, fingerprint, selected, node, split, metadataSelf)...)
+	rows, err := q.Query(ctx, ownedForestNativeHistorySQL, append(ordersScopeArgs(scope), numbers, selfID, fingerprint, selected, node, split, unsentSelf)...)
 	if err != nil {
 		return nil, ordersError("read forest native absence witnesses", err)
 	}
