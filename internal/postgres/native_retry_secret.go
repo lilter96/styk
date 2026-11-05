@@ -75,13 +75,15 @@ const nativeRetrySecretSQL = `SELECT s.ciphertext,s.created_at,s.expires_at,w.wo
  JOIN orders_action_secrets s ON s.tenant_id=w.tenant_id AND s.moysklad_account=w.moysklad_account
  AND s.ozon_account=w.ozon_account AND s.posting_number=w.posting_number AND s.action=w.action
  JOIN orders_configs c ON c.tenant_id=w.tenant_id AND c.moysklad_account=w.moysklad_account AND c.ozon_account=w.ozon_account
+ JOIN orders_config_revisions cfg ON cfg.tenant_id=c.tenant_id AND cfg.moysklad_account=c.moysklad_account
+ AND cfg.ozon_account=c.ozon_account AND cfg.revision=c.revision
  WHERE w.tenant_id=$1 AND w.moysklad_account=$2 AND w.ozon_account=$3 AND w.id=$4
  AND w.command_fingerprint=$5 AND w.work->>'command_fingerprint'=w.command_fingerprint
  AND w.work->>'state'=w.state AND (w.work->>'dispatch_count')::int=w.dispatch_count
  AND w.posting_number=$6 AND w.action=$7 AND s.reference=$8 AND s.config_revision=$9
  AND w.config_revision=$9 AND w.work#>>'{command,native_movement,event,protected_input,reference}'=$8
  AND w.work#>>'{command,native_movement,event,protected_input,revision}'=$9::text
- AND c.enabled AND c.test_enabled AND c.revision>=s.config_revision
+ AND c.enabled AND cfg.config->'test_enabled'='true'::jsonb AND c.revision>=s.config_revision
  AND s.created_at<=clock_timestamp() AND s.expires_at>clock_timestamp()
  AND s.expires_at<=s.created_at+interval '1 day' AND orders_native_retry_no_effect(w.id)
  AND EXISTS(SELECT 1 FROM connection_credentials k WHERE k.tenant_id=w.tenant_id AND k.provider='moysklad' AND k.account_id=w.moysklad_account AND k.enabled)
