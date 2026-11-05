@@ -15,6 +15,9 @@ func validateNativeMovementCurrent(command orders.Command, current orders.Review
 	if automatic || movement == nil || !movement.AllowedBy(current.Config.NativeDocuments, command.Action, now) {
 		return orders.ErrBlocked
 	}
+	if ordermoney.NativeConsumptionAllows(command, current.NativeConsumption[command.PostingNumber]).Code != "" {
+		return orders.ErrBlocked
+	}
 	if ordermoney.NativeDocumentAmounts(movement).Code != "" {
 		return orders.ErrBlocked
 	}

@@ -117,6 +117,9 @@ func readOrderSelectionReferences(ctx context.Context, q ordersQuerier, result *
 	if err = enrichOrderSplitReserveBlocks(ctx, q, result, numbers); err != nil {
 		return err
 	}
+	if err = enrichNativeConsumption(ctx, q, result); err != nil {
+		return err
+	}
 	return enrichOrderExemplarProofs(ctx, q, result)
 }
 

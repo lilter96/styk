@@ -177,6 +177,9 @@ func readOrderWorkContext(ctx context.Context, q ordersQuerier, work orders.Work
 		err = enrichNativePreviewContext(ctx, q, orders.Preview{Scope: work.Scope, Decisions: []orders.Decision{{Commands: []orders.Command{work.Command}}}}, &result)
 	}
 	if err == nil {
+		err = enrichNativeConsumption(ctx, q, &result)
+	}
+	if err == nil {
 		err = enrichOrderExemplarProofs(ctx, q, &result)
 	}
 	return result, err
