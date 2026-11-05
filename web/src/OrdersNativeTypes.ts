@@ -8,6 +8,7 @@ import type {
 export type NativeDocumentPolicy = {
   enabled: boolean;
   allow_posted: boolean;
+  allow_unposted_parent?: boolean;
   actions: ("demand_create" | "salesreturn_create")[] | null;
   maximum_quantity: string;
   event_max_age_seconds: number;

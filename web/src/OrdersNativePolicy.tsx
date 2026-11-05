@@ -13,6 +13,7 @@ export function nativePolicyValid(value: NativeDocumentPolicy | undefined) {
     !value.actions?.length
   )
     return false;
+  if (value.allow_unposted_parent && !value.allow_posted) return false;
   if (!value.allow_posted) return true;
   const start = Date.parse(value.attested_at);
   const end = Date.parse(value.valid_until);
@@ -35,6 +36,7 @@ export function OrdersNativePolicy({
   const policy: NativeDocumentPolicy = value ?? {
     enabled: false,
     allow_posted: false,
+    allow_unposted_parent: false,
     actions: ["demand_create", "salesreturn_create"],
     maximum_quantity: "10",
     event_max_age_seconds: 3600,
@@ -42,7 +44,11 @@ export function OrdersNativePolicy({
     valid_until: "0001-01-01T00:00:00Z",
   };
   const change = (next: Partial<NativeDocumentPolicy>) =>
-    onChange({ ...policy, ...next });
+    onChange({
+      ...policy,
+      allow_unposted_parent: policy.allow_unposted_parent ?? false,
+      ...next,
+    });
   return (
     <details>
       <summary>Отгрузки и возвраты МойСклад</summary>
@@ -57,7 +63,11 @@ export function OrdersNativePolicy({
             type="checkbox"
             checked={policy.enabled}
             onChange={(event) =>
-              change({ enabled: event.target.checked, allow_posted: false })
+              change({
+                enabled: event.target.checked,
+                allow_posted: false,
+                allow_unposted_parent: false,
+              })
             }
           />
           Разрешить подготовку складских документов
@@ -122,6 +132,7 @@ export function OrdersNativePolicy({
                   const now = Date.now();
                   change({
                     allow_posted: event.target.checked,
+                    allow_unposted_parent: false,
                     ...(event.target.checked
                       ? {
                           attested_at: new Date(now).toISOString(),
@@ -135,11 +146,30 @@ export function OrdersNativePolicy({
               реальным складским событиям.
             </label>
             {policy.allow_posted && (
-              <p>
-                Разрешение действует до {orderDate(policy.valid_until)}. Оно не
-                подтверждает, что товар уже отправлен или возвращён. Для
-                продления снимите и снова явно установите разрешение.
-              </p>
+              <>
+                <p>
+                  Разрешение действует до {orderDate(policy.valid_until)}. Оно не
+                  подтверждает, что товар уже отправлен или возвращён. Для
+                  продления снимите и снова явно установите разрешение.
+                </p>
+                <label className="orders-check orders-warning">
+                  <input
+                    type="checkbox"
+                    checked={policy.allow_unposted_parent ?? false}
+                    onChange={(event) =>
+                      change({ allow_unposted_parent: event.target.checked })
+                    }
+                  />
+                  Разрешить отгрузки и возвраты по непроведённому заказу МойСклад
+                </label>
+                <p className="orders-note">
+                  Заказ останется непроведённым, его счётчики отгрузки могут не
+                  измениться. STYK учитывает связанные проведённые отгрузки и не
+                  превышает количество заказа. Возврат не разрешает повторно
+                  отгрузить то же количество. Действует до окончания разрешения
+                  выше и требует подтверждения реального складского события.
+                </p>
+              </>
             )}
             {!nativePolicyValid(policy) && (
               <p className="orders-warning">

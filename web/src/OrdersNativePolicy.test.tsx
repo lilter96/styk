@@ -51,6 +51,9 @@ it("validates physical-event policy expiry and bounded quantities", () => {
   expect(nativePolicyValid({ ...policy, maximum_quantity: "1001" })).toBe(
     false,
   );
+  expect(nativePolicyValid({ ...policy, allow_unposted_parent: true })).toBe(
+    false,
+  );
   expect(nativePolicyValid({ ...policy, allow_posted: true })).toBe(false);
   expect(
     nativePolicyValid({
@@ -82,6 +85,10 @@ it("enabling document preparation does not enable posting or fabricate a physica
   );
   expect(latest?.enabled).toBe(true);
   expect(latest?.allow_posted).toBe(false);
+  expect(latest?.allow_unposted_parent).toBe(false);
+  const unpostedLabel =
+    "Разрешить отгрузки и возвраты по непроведённому заказу МойСклад";
+  expect(screen.queryByLabelText(unpostedLabel)).not.toBeInTheDocument();
   const checkbox = screen.getByLabelText(
     "На один час разрешаю отдельное ручное подтверждение проведения по реальным складским событиям.",
   );
@@ -89,11 +96,27 @@ it("enabling document preparation does not enable posting or fabricate a physica
   const expiry = latest?.valid_until;
   expect(latest?.allow_posted).toBe(true);
   expect(Date.parse(expiry!)).toBeGreaterThan(Date.now());
+  expect(screen.getByLabelText(unpostedLabel)).not.toBeChecked();
+  fireEvent.click(screen.getByLabelText(unpostedLabel));
+  expect(latest?.allow_unposted_parent).toBe(true);
   fireEvent.change(
     screen.getByLabelText("Максимальное количество в складском документе"),
     { target: { value: "7" } },
   );
   expect(latest?.valid_until).toBe(expiry);
+  expect(latest?.allow_unposted_parent).toBe(true);
+  fireEvent.click(checkbox);
+  expect(latest?.allow_unposted_parent).toBe(false);
+  expect(screen.queryByLabelText(unpostedLabel)).not.toBeInTheDocument();
+  fireEvent.click(checkbox);
+  expect(screen.getByLabelText(unpostedLabel)).not.toBeChecked();
+  fireEvent.click(screen.getByLabelText(unpostedLabel));
+  fireEvent.click(
+    screen.getByLabelText("Разрешить подготовку складских документов"),
+  );
+  expect(latest?.enabled).toBe(false);
+  expect(latest?.allow_posted).toBe(false);
+  expect(latest?.allow_unposted_parent).toBe(false);
 });
 it("explains draft semantics and links only exact supported native document identities", () => {
   const command = {
