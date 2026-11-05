@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync/atomic"
 	"testing"
 
@@ -158,7 +159,8 @@ func (p *ownedNestedParentHTTPProvider) serve(w http.ResponseWriter, r *http.Req
 	}
 	delete(row, "parent_posting_number")
 	if p.conflictingGrandchild.Load() && string(row["posting_number"]) == `"nested-grand-b"` {
-		row["parent_posting_number"] = json.RawMessage(`"unrelated-native-owner"`)
+		// A real ancestor is still the wrong direct parent of this generation.
+		row["parent_posting_number"] = json.RawMessage(strconv.Quote(nestedRoot))
 		p.conflictingReads.Add(1)
 	}
 	raw, err := json.Marshal(row)
