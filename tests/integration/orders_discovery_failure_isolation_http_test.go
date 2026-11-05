@@ -201,6 +201,7 @@ func (f discoveryFailureFixture) assertReadKeys(t *testing.T, want []string) {
 func (f discoveryFailureFixture) assertMigrationHistory(t *testing.T) {
 	t.Helper()
 	dsn := f.db.Pool.Config().ConnString()
+	catalogSyncMigrate(t, dsn, "down-to", "62")
 	ctx, cancel := context.WithTimeout(f.ctx, 30*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, "go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", dsn, "down")
@@ -209,6 +210,7 @@ func (f discoveryFailureFixture) assertMigrationHistory(t *testing.T) {
 		t.Fatal("read repair rollback discarded history")
 	}
 	assertOrdersRowCount(t, f.ordersStoreFixture, `SELECT count(*) FROM orders_read_repairs`, 1)
+	catalogSyncMigrate(t, dsn, "up")
 }
 
 func TestOrdersDiscoveryFailureIsolationHTTPGlobalFailureDefersAllListedKeys(t *testing.T) {
