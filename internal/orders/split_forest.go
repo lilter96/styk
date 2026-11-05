@@ -28,7 +28,7 @@ type SplitForestFacts struct {
 // NewSplitForestSettlement reconstructs reserve authority for mixed branches
 // using the existing calculation and permission format. It issues no command.
 func NewSplitForestSettlement(f SplitForestFacts) (SplitAncestorSettlementPermission, error) {
-	if !forestFactsValid(f) {
+	if !forestFactsValid(f) || !forestReductionsUnique(f.Native) {
 		return SplitAncestorSettlementPermission{}, ErrBlocked
 	}
 	for _, event := range f.Native {
@@ -37,6 +37,21 @@ func NewSplitForestSettlement(f SplitForestFacts) (SplitAncestorSettlementPermis
 		}
 	}
 	return forestCurrentPermission(f)
+}
+
+func forestReductionsUnique(native []SplitForestNative) bool {
+	seen := make(map[string]bool, len(native))
+	for _, event := range native {
+		if event.Work.Command.Action != ActionMirrorPositionUpdate {
+			continue
+		}
+		id := retainedNativeEventSplit(event.Work.Command)
+		if id == "" || seen[id] {
+			return false
+		}
+		seen[id] = true
+	}
+	return true
 }
 
 func forestFactsValid(f SplitForestFacts) bool {
