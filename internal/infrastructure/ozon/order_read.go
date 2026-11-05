@@ -112,31 +112,25 @@ func (c *OrdersClient) orderPageRequest(path string, window orders.OrderWindow, 
 }
 
 func (c *OrdersClient) readOrderPageDetails(ctx context.Context, data []byte, cursor string, limit int) (orders.OrderSourcePage, error) {
-	fields := newOrderFields(data)
-	rows := fields.array("postings")
-	more, next := fields.boolean("has_next"), fields.text("cursor")
-	if *fields.err != nil || rows == nil || !more.IsKnown() || len(rows) > limit {
-		return orders.OrderSourcePage{}, errOrderPayload
+	page, numbers, err := orderDetailPageKeys(data, cursor, limit)
+	if err != nil {
+		return orders.OrderSourcePage{}, err
 	}
-	page := orders.OrderSourcePage{Postings: make([]orders.Posting, 0, len(rows)), Complete: !*more.Value}
-	if !page.Complete && (!next.IsKnown() || *next.Value == cursor || len(rows) == 0) {
-		return orders.OrderSourcePage{}, errOrderPayload
-	}
-	if !page.Complete {
-		page.NextCursor = *next.Value
-	}
-	seen := make(map[string]bool, len(rows))
-	for _, row := range rows {
-		number := orderKnown(row.text("posting_number"))
-		if *fields.err != nil || number == "" || seen[number] {
-			return orders.OrderSourcePage{}, errOrderPayload
+	for index, number := range numbers {
+		posting, readErr := c.ReadOrderPosting(ctx, c.scope, number)
+		if readErr == nil {
+			page.Postings = append(page.Postings, posting)
+			continue
 		}
-		seen[number] = true
-		posting, err := c.ReadOrderPosting(ctx, c.scope, number)
-		if err != nil {
-			return orders.OrderSourcePage{}, err
+		code, stop := orderPageDetailFailure(readErr)
+		page.Failures = append(page.Failures, orders.ReadFailure{PostingNumber: number, Code: code})
+		page.Complete = false
+		if stop {
+			for _, deferred := range numbers[index+1:] {
+				page.Failures = append(page.Failures, orders.ReadFailure{PostingNumber: deferred, Code: "READ_DEFERRED"})
+			}
+			return page, readErr
 		}
-		page.Postings = append(page.Postings, posting)
 	}
 	return page, nil
 }

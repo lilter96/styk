@@ -153,8 +153,10 @@ func writeOrderPage(ctx context.Context, tx pgx.Tx, page orders.SourcePage, conf
 	if err != nil {
 		return previous, err
 	}
-	checkpoint := orders.Checkpoint{Scope: page.Scope, Stream: page.Stream, RefreshKey: page.RefreshKey, ConfigRevision: page.ConfigRevision, Credentials: page.Credentials, Revision: previous.Revision + 1, Cursor: page.NextCursor, WindowFrom: page.WindowFrom, WindowTo: page.WindowTo, Complete: page.Complete, Exhausted: page.Exhausted, Failures: page.Failures, FailuresTruncated: page.FailuresTruncated, UpdatedAt: now}
-	mergeOrderCheckpointFailures(&checkpoint, previous, page)
+	checkpoint, err := prepareOrderReadCheckpoint(ctx, tx, page, previous, now)
+	if err != nil {
+		return previous, err
+	}
 	if err = insertOrderCheckpoint(ctx, tx, page, checkpoint, ids, hash); err != nil {
 		return previous, err
 	}

@@ -87,6 +87,7 @@ type Checkpoint struct {
 	WindowTo          time.Time           `json:"window_to"`
 	Complete          bool                `json:"complete"`
 	Exhausted         bool                `json:"exhausted,omitempty"`
+	PageFailures      []ReadFailure       `json:"page_failures,omitempty"`
 	Failures          []ReadFailure       `json:"failures,omitempty"`
 	FailuresTruncated bool                `json:"failures_truncated,omitempty"`
 	UpdatedAt         time.Time           `json:"updated_at"`

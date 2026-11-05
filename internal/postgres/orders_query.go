@@ -85,18 +85,13 @@ func (s *Store) ActiveOrderPostings(ctx context.Context, scope orders.Scope, lim
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
 	args := append(ordersScopeArgs(scope), after, limit+1)
-	rows, err := s.Pool.Query(ctx, `SELECT h.projection,h.checked_at,h.quarantined FROM orders_posting_heads h JOIN orders_posting_observations o ON o.id=h.observation_id AND o.tenant_id=h.tenant_id AND o.moysklad_account=h.moysklad_account AND o.ozon_account=h.ozon_account AND o.posting_number=h.posting_number WHERE h.tenant_id=$1 AND h.moysklad_account=$2 AND h.ozon_account=$3 AND h.projection#>>'{scheme,value}' IS DISTINCT FROM 'FBO' AND o.posting#>>'{scheme,value}' IS DISTINCT FROM 'FBO'
- AND ((h.active AND NOT COALESCE(o.posting#>>'{status,presence}'='value' AND o.posting#>>'{status,value}' IN ('delivered','cancelled'),false))
- OR (o.posting#>>'{status,presence}'='value' AND o.posting#>>'{status,value}' IN ('delivered','cancelled')
- AND h.checked_at<=clock_timestamp()-interval '6 hours'
- AND o.observed_at>=clock_timestamp()-interval '31 days' AND o.observed_at<=clock_timestamp()+interval '1 minute'))
- AND h.posting_number>$4 ORDER BY h.posting_number LIMIT $5`, args...)
+	rows, err := s.Pool.Query(ctx, activeOrderRepairKeysSQL, args...)
 	if err != nil {
 		return result, ordersError("select active order postings", err)
 	}
 	defer rows.Close()
 	for rows.Next() {
-		posting, scanErr := scanOrderPosting(rows)
+		posting, scanErr := scanActiveOrderReadKey(rows, scope)
 		if scanErr != nil {
 			return result, scanErr
 		}

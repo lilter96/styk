@@ -153,7 +153,7 @@ func (i *Ingestor) nextWindow(config orders.Config, checkpoint orders.Checkpoint
 	now := i.options.Now().UTC()
 	window := i.anchoredWindow(stream, now)
 	if checkpoint.ConfigRevision == config.Revision && checkpoint.Revision > 0 && stream != ActiveStream && stream != orders.NativePointStream {
-		if !checkpoint.Complete {
+		if !checkpoint.Complete && !checkpoint.Exhausted {
 			window.From, window.To = checkpoint.WindowFrom, checkpoint.WindowTo
 			return window, checkpoint.RefreshKey
 		}
@@ -196,9 +196,10 @@ func (i *Ingestor) collectLeasedPage(ctx context.Context, config orders.Config, 
 		WindowTo: window.To, StartedAt: i.options.Now(), FenceToken: lease.Token, FreshDetail: true,
 		IdempotencyKey: ingestionDigest(lease.Token, lease.RefreshKey, cursor)}
 	result, err := i.readLeasedPage(ctx, config.Scope, lease.Credentials, window, cursor)
-	if err != nil {
+	if err != nil && len(result.Postings) == 0 && len(result.Failures) == 0 {
 		return err
 	}
+	readErr := err
 	page.Postings, page.NextCursor, page.Complete = result.Postings, result.NextCursor, result.Complete
 	page.NativeReads = result.NativeReads
 	page.Failures, page.Exhausted = result.Failures, result.Exhausted
@@ -211,7 +212,7 @@ func (i *Ingestor) collectLeasedPage(ctx context.Context, config orders.Config, 
 			return err
 		}
 	}
-	return i.persistLeasedPage(ctx, config, &page, lease)
+	return errors.Join(i.persistLeasedPage(ctx, config, &page, lease), readErr)
 }
 
 func (i *Ingestor) persistLeasedPage(ctx context.Context, config orders.Config, page *orders.SourcePage, lease orders.IngestionLease) error {

@@ -14,7 +14,7 @@ func (page SourcePage) validateReadFailures(success map[string]bool) error {
 	if page.Exhausted && page.NextCursor != "" {
 		return ErrInvalid
 	}
-	if (page.Exhausted || len(page.Failures) > 0 || page.FailuresTruncated) && ((page.Stream != "ozon-orders-active" && page.Stream != NativePointStream) || !page.FreshDetail) {
+	if (page.Exhausted || len(page.Failures) > 0 || page.FailuresTruncated) && ((page.Stream != "ozon-orders-active" && page.Stream != "ozon-orders-discovery" && page.Stream != "ozon-orders-unfulfilled" && page.Stream != NativePointStream) || !page.FreshDetail) {
 		return ErrInvalid
 	}
 	seen := make(map[string]bool, len(page.Failures))
@@ -37,7 +37,7 @@ func (page SourcePage) validReadFailureCode(code string) bool {
 func validReadFailureCode(code string) bool {
 	switch code {
 	case "POSTING_NOT_FOUND", "POSTING_SCHEMA_DRIFT", "POSTING_SCOPE_MISMATCH", "POSTING_READ_FAILED",
-		"AUTHORIZATION_DENIED", "RATE_LIMITED", "PROVIDER_UNAVAILABLE", "BUDGET_EXHAUSTED", "READ_INTERRUPTED":
+		"AUTHORIZATION_DENIED", "RATE_LIMITED", "PROVIDER_UNAVAILABLE", "BUDGET_EXHAUSTED", "READ_INTERRUPTED", "READ_DEFERRED":
 		return true
 	default:
 		return false
