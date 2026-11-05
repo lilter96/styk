@@ -50,10 +50,13 @@ func nativeHeaderRevision(target TargetObservation) (string, error) {
 	fields := target.Fields
 	fields.Positions = nil
 	raw, err := json.Marshal(struct {
-		Scope       Scope
-		Correlation Correlation
-		Fields      CustomerOrderWrite
-	}{target.Scope, target.Correlation, fields})
+		Scope               Scope
+		Correlation         Correlation
+		Fields              CustomerOrderWrite
+		ShipmentAddress     Field[string]
+		ShipmentAddressFull Field[ShipmentAddress]
+		TransientAttributes []AttributeWrite
+	}{target.Scope, target.Correlation, fields, fields.ShipmentAddress, fields.ShipmentAddressFull, fields.TransientAttributes})
 	if err != nil {
 		return "", err
 	}
