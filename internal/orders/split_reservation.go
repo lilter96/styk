@@ -4,6 +4,7 @@ package orders
 // It proves absence of a prior STYK parent projection, not absence of unrelated
 // merchant obligations or a provider-asserted parent relationship.
 type SplitReservePermission struct {
+	RetainedRoot        bool   `json:"retained_root,omitempty"`
 	Scope               Scope  `json:"scope"`
 	SplitWorkID         string `json:"split_work_id"`
 	ParentPostingNumber string `json:"parent_posting_number"`
@@ -11,7 +12,13 @@ type SplitReservePermission struct {
 }
 
 func (permission SplitReservePermission) Allows(posting Posting) bool {
-	if permission.Scope.Validate() != nil || permission.Scope != posting.Scope || !validID(permission.SplitWorkID) || !validID(permission.ParentPostingNumber) || permission.PostingNumber != posting.PostingNumber || permission.ParentPostingNumber == posting.PostingNumber || len(posting.ChildPostingNumbers) > 0 || posting.ParentPostingNumber.Validate() != nil {
+	if permission.Scope.Validate() != nil || permission.Scope != posting.Scope || !validID(permission.SplitWorkID) || !validID(permission.ParentPostingNumber) || permission.PostingNumber != posting.PostingNumber || len(posting.ChildPostingNumbers) > 0 || posting.ParentPostingNumber.Validate() != nil {
+		return false
+	}
+	if permission.RetainedRoot {
+		return permission.ParentPostingNumber == posting.PostingNumber && !posting.ParentPostingNumber.IsKnown()
+	}
+	if permission.ParentPostingNumber == posting.PostingNumber {
 		return false
 	}
 	return !posting.ParentPostingNumber.IsKnown() || *posting.ParentPostingNumber.Value == permission.ParentPostingNumber
