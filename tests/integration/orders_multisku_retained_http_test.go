@@ -139,7 +139,7 @@ func (m multiskuRetainedFixture) compositionPreview(t *testing.T) orders.Preview
 		code = "composition_manual_confirmation_required"
 	}
 	if regular.Decisions[0].Ready || len(regular.Decisions[0].Commands) != 0 || !slices.ContainsFunc(regular.Decisions[0].Validation, func(v orders.Validation) bool { return v.Code == code }) {
-		t.Fatal("ordinary preview did not explain that full owned-line transfer needs explicit composition consent")
+		t.Fatalf("ordinary preview did not require explicit composition consent: ready=%v commands=%d validation=%+v", regular.Decisions[0].Ready, len(regular.Decisions[0].Commands), regular.Decisions[0].Validation)
 	}
 	repeatedRetainedHeld(t, m.f, multiskuRetainedChild)
 	preview := (compositionHTTPFixture{positionHTTPFixture: m.f, composition: m.p.composition}).previewComposition(t)
