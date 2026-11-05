@@ -114,7 +114,7 @@ func (m multiskuRetainedFixture) splitPosting(t *testing.T) {
 func (m multiskuRetainedFixture) compositionPreview(t *testing.T) orders.Preview {
 	t.Helper()
 	regular := unmirroredUnassembledHTTPReview(t, m.f, nestedRoot)
-	if regular.Decisions[0].Ready || len(regular.Decisions[0].Commands) != 0 || !slices.ContainsFunc(regular.Decisions[0].Validation, func(v orders.Validation) bool { return v.Code == "composition_required" }) {
+	if regular.Decisions[0].Ready || len(regular.Decisions[0].Commands) != 0 || !slices.ContainsFunc(regular.Decisions[0].Validation, func(v orders.Validation) bool { return v.Code == "composition_split_replacement_required" }) {
 		t.Fatal("ordinary preview did not explain that full owned-line transfer needs explicit composition consent")
 	}
 	repeatedRetainedHeld(t, m.f, multiskuRetainedChild)
