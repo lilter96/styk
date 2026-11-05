@@ -23,7 +23,7 @@ const ownedForestNativeSQL = `SELECT w.work,r.observed_target,w.created_at,w.dis
  AND w.action IN('mirror_create','mirror_update','mirror_position_update','mirror_composition_update')
  AND NOT COALESCE((w.id=$5 AND w.command_fingerprint=$6 AND w.dispatch_count=0 AND w.state IN('QUEUED','CLAIMED')
  AND w.posting_number=$7 AND w.work#>>'{command,split_ancestor_settlement,split_work_id}'=$9
- AND ((w.action='mirror_position_update' AND w.posting_number=$8
+ AND ((w.action IN ('mirror_position_update','mirror_composition_update') AND w.posting_number=$8
  AND w.work#>>'{command,split_ancestor_settlement,mode}'='retained_reduction')
  OR (w.action='mirror_create' AND w.work#>>'{command,split_ancestor_settlement,mode}'='child_admission'))
  AND EXISTS(SELECT 1 FROM orders_target_fences f WHERE f.work_id=w.id AND f.tenant_id=w.tenant_id

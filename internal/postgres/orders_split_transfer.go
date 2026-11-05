@@ -26,7 +26,7 @@ JOIN LATERAL (SELECT w.work,r.observed_target AS target
   AND r.tenant_id=w.tenant_id AND r.moysklad_account=w.moysklad_account AND r.ozon_account=w.ozon_account
  WHERE w.tenant_id=split.tenant_id AND w.moysklad_account=split.moysklad_account
   AND w.ozon_account=split.ozon_account AND w.posting_number=split.posting_number
-  AND w.action='mirror_position_update' AND w.state='RECONCILED' AND w.dispatch_count=1
+  AND w.action IN ('mirror_position_update','mirror_composition_update') AND w.state='RECONCILED' AND w.dispatch_count=1
   AND (w.work#>>'{command,retained_split_work_id}'=split.id
    OR w.work#>>'{command,superseded_split_work_id}'=split.id) AND r.observed_target IS NOT NULL
  ORDER BY r.created_at DESC,w.id DESC LIMIT 1) release ON true

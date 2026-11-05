@@ -121,7 +121,7 @@ func assignDeepOwnedRoot(f *orders.SplitAncestorSettlementFacts, rows []ownedAnc
 		switch {
 		case w.Command.Action == orders.ActionMirrorCreate && f.RootOrigin.ID == "":
 			f.RootOrigin, f.RootOriginTarget = w, row.target
-		case w.Command.Action == orders.ActionMirrorPositionUpdate && w.Command.RetainedSplitWorkID == root.Work.ID && f.RootTransfer.ParentRelease.ID == "":
+		case (w.Command.Action == orders.ActionMirrorPositionUpdate || w.Command.Action == orders.ActionMirrorCompositionUpdate) && w.Command.RetainedSplitWorkID == root.Work.ID && f.RootTransfer.ParentRelease.ID == "":
 			f.RootTransfer.ParentRelease, f.RootTransfer.ParentTarget = w, row.target
 		default:
 			return false
@@ -140,7 +140,7 @@ func ownedAncestorGeneration(split orders.SplitLineageStep, rows []ownedAncestor
 		switch {
 		case w.Command.Action == orders.ActionMirrorCreate && result.Origin.ID == "":
 			result.Origin, result.OriginTarget = w, row.target
-		case w.Command.Action == orders.ActionMirrorPositionUpdate && w.Command.SplitAncestorSettlement != nil && w.Command.SplitAncestorSettlement.SplitWorkID == split.Work.ID && w.Command.SplitAncestorSettlement.Mode == orders.SplitAncestorReduce && result.Reduction == nil:
+		case (w.Command.Action == orders.ActionMirrorPositionUpdate || w.Command.Action == orders.ActionMirrorCompositionUpdate) && w.Command.SplitAncestorSettlement != nil && w.Command.SplitAncestorSettlement.SplitWorkID == split.Work.ID && w.Command.SplitAncestorSettlement.Mode == orders.SplitAncestorReduce && result.Reduction == nil:
 			work, target := w, row.target
 			result.Reduction, result.ReductionTarget = &work, &target
 		default:

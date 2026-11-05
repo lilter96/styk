@@ -31,6 +31,8 @@ func TestOwnedForestSelfExclusionPreservesUnknownOrMissingProof(t *testing.T) {
 		{"missing", "missing", orders.ActionMirrorPositionUpdate, orders.StateQueued, 0, false, true, true},
 		{"null", "null", orders.ActionMirrorPositionUpdate, orders.StateQueued, 0, false, true, true},
 		{"matching_reduction", "matching", orders.ActionMirrorPositionUpdate, orders.StateQueued, 0, false, false, true},
+		{"matching_composition", "matching", orders.ActionMirrorCompositionUpdate, orders.StateQueued, 0, false, false, true},
+		{"missing_composition", "missing", orders.ActionMirrorCompositionUpdate, orders.StateQueued, 0, false, true, true},
 		{"matching_admission", "matching", orders.ActionMirrorCreate, orders.StateClaimed, 0, false, false, true},
 		{"other_pending", "matching", orders.ActionMirrorPositionUpdate, orders.StateQueued, 0, true, true, true},
 		{"already_dispatched", "matching", orders.ActionMirrorPositionUpdate, orders.StatePolling, 1, false, true, true},

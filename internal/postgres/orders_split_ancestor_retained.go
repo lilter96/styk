@@ -48,7 +48,7 @@ func partitionRetainedNativeRows(rows []ownedAncestorNativeRow, path []orders.Sp
 }
 
 func retainedNativeSplitID(w orders.Work) string {
-	if w.Command.Action != orders.ActionMirrorPositionUpdate {
+	if w.Command.Action != orders.ActionMirrorPositionUpdate && w.Command.Action != orders.ActionMirrorCompositionUpdate {
 		return ""
 	}
 	if w.Command.SplitAncestorSettlement == nil {
