@@ -28,7 +28,11 @@ func enrichOrderSplitTransferBusy(ctx context.Context, q ordersQuerier, result *
 		}
 		result.SplitTransferBusy[number] = true
 	}
-	return ordersRowsError("read active split transfer groups", rows.Err())
+	if err = rows.Err(); err != nil {
+		return ordersRowsError("read active split transfer groups", err)
+	}
+	rows.Close()
+	return enrichOwnedAncestorBusy(ctx, q, result, numbers)
 }
 
 // Called under the same account-scope transaction lock as every dispatch Begin.

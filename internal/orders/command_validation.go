@@ -51,6 +51,9 @@ func (command Command) Validate() error {
 }
 
 func (command Command) validateAttachments() error {
+	if command.SplitAncestorSettlement != nil && (command.SplitTransfer != nil || command.SplitSourceWorkID != "" || command.RetainedSplitWorkID != "" || command.SupersededSplitWorkID != "" || !command.SplitAncestorSettlement.AllowsCommand(command)) {
+		return ErrInvalid
+	}
 	if command.SupersededSplitWorkID != "" && !command.validSupersededReserveMarker() {
 		return ErrInvalid
 	}

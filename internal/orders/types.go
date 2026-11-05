@@ -382,6 +382,8 @@ type PostingAction struct {
 }
 
 type Command struct {
+	SplitAncestorSettlement *SplitAncestorSettlementPermission `json:"split_ancestor_settlement,omitempty"`
+
 	SupersededSplitWorkID   string                          `json:"superseded_split_work_id,omitempty"`
 	SplitSourceWorkID       string                          `json:"split_source_work_id,omitempty"`
 	RetainedSplitWorkID     string                          `json:"retained_split_work_id,omitempty"`

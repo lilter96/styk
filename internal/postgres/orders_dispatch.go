@@ -138,6 +138,7 @@ func orderDispatchCurrent(ctx context.Context, tx pgx.Tx, work orders.Work, guar
 
 func readOrderWorkContext(ctx context.Context, q ordersQuerier, work orders.Work) (orders.ReviewContext, error) {
 	var result orders.ReviewContext
+	result.RevalidationWorkID, result.RevalidationCommandFingerprint = work.ID, work.CommandFingerprint
 	var err error
 	result.Config, err = readOrderConfig(ctx, q, work.Scope)
 	if err != nil {

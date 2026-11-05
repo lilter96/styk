@@ -12,7 +12,10 @@ func validateOrderSplitDispatch(ctx context.Context, tx pgx.Tx, work orders.Work
 	if err := validateSupersededSplitDispatch(ctx, tx, work, guard, current, now); err != nil {
 		return err
 	}
-	return validateOrderSplitTransferDispatch(ctx, tx, work, guard, now)
+	if err := validateOrderSplitTransferDispatch(ctx, tx, work, guard, now); err != nil {
+		return err
+	}
+	return validateOwnedAncestorDispatch(ctx, tx, work, guard, now)
 }
 
 func validateSupersededSplitDispatch(ctx context.Context, tx pgx.Tx, work orders.Work, guard orders.DispatchGuard, current orders.ReviewContext, now time.Time) error {

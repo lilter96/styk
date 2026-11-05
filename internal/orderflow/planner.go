@@ -210,6 +210,9 @@ func mirrorCommand(review orders.ReviewContext, decision orders.Decision, wareho
 		PostingNumber: decision.Posting.PostingNumber, Correlation: decision.Correlation, ConfigRevision: review.Config.Revision,
 		Credentials: review.Credentials, ExpectedSourceRevision: decision.Posting.Evidence.Revision, SourceOrigin: decision.Posting.Evidence.Origin,
 		SourceCommandID: decision.Posting.Evidence.SourceCommandID, Warehouse: warehouse, CustomerOrder: &write, IdempotencyKey: id, CreatedAt: now}
+	if permission, ok := review.SplitAncestorSettlements[command.PostingNumber]; ok {
+		command.SplitAncestorSettlement = &permission
+	}
 	command.SplitSourceWorkID = review.SplitReservePermissions[command.PostingNumber].SplitWorkID
 	command.RetainedSplitWorkID = review.SplitRetainedReserves[command.PostingNumber].SplitWorkID
 	if permission, ok := review.SplitReserveTransfers[command.PostingNumber]; ok {

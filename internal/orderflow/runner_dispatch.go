@@ -45,6 +45,10 @@ func (r *Runner) dispatchMirror(ctx context.Context, work orders.Work) error {
 	if err != nil {
 		return r.stop(ctx, work, "SPLIT_PARENT_SOURCE_OR_RESERVE_CHANGED")
 	}
+	checks, err = r.splitAncestorPreflight(ctx, work, client, checks)
+	if err != nil {
+		return r.stop(ctx, work, "SPLIT_ANCESTOR_SOURCE_OR_RESERVE_CHANGED")
+	}
 	target, err := freshTarget(ctx, client, work.Command, decision.Target)
 	if err != nil {
 		return r.stop(ctx, work, "FRESH_TARGET_CHANGED_OR_UNAVAILABLE")

@@ -13,6 +13,11 @@ type SaveConfigRequest struct {
 }
 
 type ReviewContext struct {
+	RevalidationWorkID             string `json:"-"`
+	RevalidationCommandFingerprint string `json:"-"`
+
+	SplitAncestorSettlements map[string]SplitAncestorSettlementPermission `json:"-"`
+
 	SplitSupersededReserves map[string]SplitSupersededReserveFacts    `json:"-"`
 	SplitTransferBusy       map[string]bool                           `json:"-"`
 	SplitReserveTransfers   map[string]SplitReserveTransferPermission `json:"-"`
@@ -142,6 +147,8 @@ type ClaimRequest struct {
 // Begin journals the exact intent before network I/O. Every check includes the
 // claim token, current config, mappings, credentials, grant and per-posting fence.
 type DispatchGuard struct {
+	SplitAncestorSources    []Posting
+	SplitAncestorTargets    []TargetObservation
 	SplitSupersededChildren []Posting
 	SplitSupersededTarget   *TargetObservation
 	SplitParentSource       *Posting

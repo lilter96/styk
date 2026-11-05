@@ -122,6 +122,9 @@ func validateOrderCommandCurrent(command orders.Command, posting orders.Posting,
 }
 
 func validateSplitReserveCommands(command orders.Command, posting orders.Posting, current orders.ReviewContext) error {
+	if err := validateOwnedAncestorCommand(command, posting, current); err != nil {
+		return err
+	}
 	if err := validateRetainedSplitCommand(command, posting, current); err != nil {
 		return err
 	}
