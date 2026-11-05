@@ -42,7 +42,7 @@ func (h *nativeConsumptionHistory) retryAuthorization(c orders.Command, checkedA
 		if m.Correlation.Kind != c.NativeMovement.Correlation.Kind || m.Event.Digest != c.NativeMovement.Event.Digest {
 			continue
 		}
-		if event.CreatedAt.IsZero() || event.CreatedAt.After(checkedAt) || !nativeConsumptionNoEffect(event) || !nativeRetryTargetMatches(c, event.Work.Command) {
+		if event.CreatedAt.IsZero() || event.CreatedAt.After(checkedAt) || !nativeRetryNoEffect(event) || !nativeRetryTargetMatches(c, event.Work.Command) {
 			return nil, consumptionIssue("native_retry_prior_effect_or_target_unverified")
 		}
 		if latest.Work.ID == "" || event.CreatedAt.After(latest.CreatedAt) || event.CreatedAt.Equal(latest.CreatedAt) && event.Work.ID > latest.Work.ID {
@@ -57,6 +57,18 @@ func (h *nativeConsumptionHistory) retryAuthorization(c orders.Command, checkedA
 		return nil, consumptionIssue("native_retry_authorization_invalid")
 	}
 	return retry, orders.Validation{}
+}
+
+func nativeRetryNoEffect(event orders.NativeConsumptionEvent) bool {
+	if !nativeConsumptionNoEffect(event) || event.Work.Receipt.HTTPStatus == 409 {
+		return false
+	}
+	switch event.Work.Receipt.State {
+	case "", orders.StateRejected, orders.StateBlocked:
+		return true
+	default:
+		return false
+	}
 }
 
 func nativeRetryTargetMatches(current, previous orders.Command) bool {
