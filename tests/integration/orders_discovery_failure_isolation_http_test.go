@@ -123,7 +123,12 @@ func (f discoveryFailureFixture) collect(t *testing.T, stream string, wantError 
 	if status != http.StatusOK {
 		t.Fatalf("authenticated check HTTP%d", status)
 	}
-	runner, err := orderflow.NewRunner(f.db, f.factory, orderflow.RunnerOptions{WorkerID: "discovery-tick", Service: f.service, Collector: discoveryFailureCollector{f.ingestor, stream}, AllowScope: func(s orders.Scope) bool { return s == f.config.Scope }})
+	collector := orderflow.Collector(discoveryFailureCollector{f.ingestor, stream})
+	if stream == "" {
+		collector = f.ingestor
+		stream = orderflow.DiscoveryStream
+	}
+	runner, err := orderflow.NewRunner(f.db, f.factory, orderflow.RunnerOptions{WorkerID: "discovery-tick", Service: f.service, Collector: collector, AllowScope: func(s orders.Scope) bool { return s == f.config.Scope }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +213,7 @@ func (f discoveryFailureFixture) assertMigrationHistory(t *testing.T) {
 
 func TestOrdersDiscoveryFailureIsolationHTTPGlobalFailureDefersAllListedKeys(t *testing.T) {
 	f := newDiscoveryFailureFixture(t, [][]string{{"a-good", "b-down", "c-deferred", "d-deferred"}}, map[string]int{"b-down": 503})
-	checkpoint := f.collect(t, orderflow.DiscoveryStream, true)
+	checkpoint := f.collect(t, "", true)
 	if checkpoint.Complete || !checkpoint.Exhausted || len(checkpoint.PageFailures) != 3 {
 		t.Fatalf("global failure did not retain every known identity: %+v", checkpoint)
 	}

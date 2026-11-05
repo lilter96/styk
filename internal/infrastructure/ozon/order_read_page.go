@@ -79,3 +79,11 @@ func orderPageStatusFailure(status int) (string, bool) {
 		return "POSTING_READ_FAILED", false
 	}
 }
+
+// This marker is emitted only after a valid discovery list identified every
+// current-page key. It never classifies failures of the list endpoint itself.
+type orderDetailPhaseError struct{ cause error }
+
+func (e orderDetailPhaseError) Error() string                { return "Ozon posting detail phase stopped" }
+func (e orderDetailPhaseError) Unwrap() error                { return e.cause }
+func (e orderDetailPhaseError) OzonDetailPhaseStopped() bool { return true }

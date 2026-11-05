@@ -21,7 +21,7 @@ func (i *Ingestor) Collect(ctx context.Context, scope orders.Scope) error {
 		return err
 	}
 	discoveryErr := i.CollectStream(ctx, scope, stream)
-	activeErr := i.CollectStream(ctx, scope, ActiveStream)
+	activeErr := i.collectActiveAfterDiscovery(ctx, scope, discoveryErr)
 	var nativeErr error
 	if i.options.NativeResolver != nil {
 		nativeErr = i.CollectStream(ctx, scope, orders.NativePointStream)
@@ -212,7 +212,7 @@ func (i *Ingestor) collectLeasedPage(ctx context.Context, config orders.Config, 
 			return err
 		}
 	}
-	return errors.Join(i.persistLeasedPage(ctx, config, &page, lease), readErr)
+	return i.persistLeasedResult(ctx, config, &page, lease, readErr)
 }
 
 func (i *Ingestor) persistLeasedPage(ctx context.Context, config orders.Config, page *orders.SourcePage, lease orders.IngestionLease) error {

@@ -129,7 +129,7 @@ func (c *OrdersClient) readOrderPageDetails(ctx context.Context, data []byte, cu
 			for _, deferred := range numbers[index+1:] {
 				page.Failures = append(page.Failures, orders.ReadFailure{PostingNumber: deferred, Code: "READ_DEFERRED"})
 			}
-			return page, readErr
+			return page, orderDetailPhaseError{cause: readErr}
 		}
 	}
 	return page, nil
