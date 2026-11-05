@@ -125,7 +125,9 @@ BEGIN
  SELECT * INTO link FROM orders_native_document_retries WHERE work_id=NEW.work_id;
  IF NOT FOUND THEN RAISE EXCEPTION 'duplicate native event requires explicit retry authorization' USING ERRCODE='23514'; END IF;
  SELECT * INTO prior FROM orders_work WHERE id=link.previous_work_id;
- IF prior.state<>'REJECTED' OR NOT orders_native_retry_no_effect(prior.id)
+ IF NOT (prior.state='REJECTED' OR (prior.state='BLOCKED' AND prior.dispatch_count=0
+  AND NOT EXISTS(SELECT 1 FROM orders_write_intents d WHERE d.work_id=prior.id)))
+ OR NOT orders_native_retry_no_effect(prior.id)
  OR frozen#>>'{previous_work_id}' IS DISTINCT FROM prior.id
  OR frozen#>>'{previous_command_fingerprint}' IS DISTINCT FROM prior.command_fingerprint
  OR frozen#>>'{event_digest}' IS DISTINCT FROM NEW.event_digest
