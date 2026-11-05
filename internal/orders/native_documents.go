@@ -40,6 +40,7 @@ type NativeMovementEvent struct {
 // The reference is accepted only in an authenticated request and then sealed.
 // It is never copied to a native document, preview, receipt or audit payload.
 type NativeMovementProposal struct {
+	RetryWorkID     string           `json:"retry_work_id,omitempty"`
 	PostingNumber   string           `json:"posting_number"`
 	Action          Action           `json:"action"`
 	Applicable      Field[bool]      `json:"applicable"`
@@ -65,6 +66,7 @@ type NativeMovementLine struct {
 }
 
 type NativeMovement struct {
+	Retry            *NativeRetryAuthorization   `json:"retry,omitempty"`
 	ParentEffect     NativeParentEffect          `json:"parent_effect,omitempty"`
 	ParentApplicable Field[bool]                 `json:"parent_applicable,omitzero"`
 	Consumption      *NativeConsumptionSeal      `json:"consumption,omitempty"`

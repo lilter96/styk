@@ -40,6 +40,9 @@ func (movement NativeMovement) Validate(command Command) error {
 	if err := movement.validateHeader(command); err != nil {
 		return err
 	}
+	if movement.Retry != nil && movement.Retry.Validate(command) != nil {
+		return ErrInvalid
+	}
 	if len(movement.Lines) == 0 || len(movement.Lines) > 100 {
 		return ErrInvalid
 	}

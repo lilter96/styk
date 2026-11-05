@@ -23,6 +23,8 @@ type NativeConsumptionFacts struct {
 }
 
 type NativeConsumptionEvent struct {
+	// CreatedAt is the immutable database work admission clock, not preview time.
+	CreatedAt   time.Time
 	Work        Work
 	Document    *NativeDocumentObservation
 	Parent      *TargetObservation
