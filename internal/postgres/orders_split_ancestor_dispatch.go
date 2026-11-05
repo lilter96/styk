@@ -9,6 +9,15 @@ import (
 )
 
 func validateOwnedAncestorCommand(c orders.Command, p orders.Posting, current orders.ReviewContext) error {
+	// Reserve authority belongs to native mirror writes. A separate reviewed
+	// fulfillment action must not require or borrow that authority; target and
+	// ancestor dispatch fences still apply to every action below.
+	if !c.Action.IsMirror() {
+		if c.SplitAncestorSettlement != nil {
+			return orders.ErrInvalid
+		}
+		return nil
+	}
 	actual, exists := current.SplitAncestorSettlements[c.PostingNumber]
 	if c.SplitAncestorSettlement == nil {
 		if exists {
