@@ -136,6 +136,9 @@ func preparePositionPatch(command *orders.Command, baselines []orders.PositionBa
 		if validation := ownedCompositionRequired(*command, baselines[0]); validation.Code != "" {
 			return validation
 		}
+		if _, replacementErr := orders.PlanPositionReplacement(*command, baselines[0], command.CustomerOrder.VATEnabled, command.CustomerOrder.Applicable); replacementErr == nil {
+			return orders.Validation{Field: "positions", Code: "composition_manual_confirmation_required"}
+		}
 		return orders.Validation{Field: "positions", Code: "position_ownership_or_replacement_unverified"}
 	}
 	command.Action = orders.ActionMirrorPositionUpdate
