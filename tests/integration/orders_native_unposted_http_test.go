@@ -40,8 +40,9 @@ func newUnpostedNativeHTTPFixture(t *testing.T) unpostedNativeHTTPFixture {
 }
 
 type unpostedNativeHTTPProvider struct {
-	native     *nativeMovementHTTPProvider
-	hideDemand atomic.Bool
+	native          *nativeMovementHTTPProvider
+	hideDemand      atomic.Bool
+	sourceCancelled atomic.Bool
 }
 
 func (p *unpostedNativeHTTPProvider) serve(w http.ResponseWriter, r *http.Request) {
@@ -143,25 +144,26 @@ func TestOrdersNativeHTTPUnpostedParentUsesGrossDemandConsumption(t *testing.T) 
 	f := newUnpostedNativeHTTPFixture(t)
 	first := f.ship(t, "unposted-demand-first")
 	f.assertUnpostedParent(t)
-	f.assertStock(t, "9")
+	f.assertDocumentAttribution(t, "9", true)
 	f.assertProposalBlocked(t, orders.ActionDemandCreate, "unposted-demand-first", "")
 	if f.native.writes.Load() != 1 {
 		t.Fatal("duplicate event dispatched another native document")
 	}
 	second := f.ship(t, "unposted-demand-second")
 	f.assertUnpostedParent(t)
-	f.assertStock(t, "8")
+	f.assertDocumentAttribution(t, "8", false)
 	f.assertProposalBlocked(t, orders.ActionDemandCreate, "unposted-demand-third", "")
 	f.receive(t, "unposted-return-first", first.ID)
-	f.assertStock(t, "9")
+	f.assertDocumentAttribution(t, "9", true)
 	f.receive(t, "unposted-return-second", second.ID)
-	f.assertStock(t, "10")
+	f.assertDocumentAttribution(t, "10", true)
 	f.assertUnpostedParent(t)
 	f.assertProposalBlocked(t, orders.ActionDemandCreate, "unposted-redelivery-after-return", "")
 	if f.native.writes.Load() != 4 {
 		t.Fatal("bounded demands/returns created duplicate documents")
 	}
 	assertOrdersRowCount(t, f.ordersStoreFixture, `SELECT count(*) FROM orders_work WHERE action IN ('demand_create','salesreturn_create') AND state='RECONCILED' AND dispatch_count=1`, 4)
+	f.assertIndependentCancellationSettles(t)
 }
 
 func (f unpostedNativeHTTPFixture) ship(t *testing.T, event string) orders.Work {
@@ -188,7 +190,7 @@ func (f unpostedNativeHTTPFixture) assertUnpostedParent(t *testing.T) {
 		t.Fatal("unposted or foreign native position changed")
 	}
 }
-func (f unpostedNativeHTTPFixture) assertStock(t *testing.T, wanted string) {
+func (f unpostedNativeHTTPFixture) assertStock(t *testing.T, wanted string) int64 {
 	t.Helper()
 	batch := nativeDurableStockImport(t, f.nativeMovementHTTPFixture)
 	var physical, reserve string
@@ -198,6 +200,7 @@ func (f unpostedNativeHTTPFixture) assertStock(t *testing.T, wanted string) {
 	if !orders.ExactDecimalEqual(orders.Decimal(physical), orders.Decimal(wanted)) || !orders.ExactDecimalEqual(orders.Decimal(reserve), "3") {
 		t.Fatalf("physical=%s reserve=%s; wanted physical=%s foreign reserve=3", physical, reserve, wanted)
 	}
+	return batch
 }
 func (f unpostedNativeHTTPFixture) assertProposalBlocked(t *testing.T, action orders.Action, event, demand string) {
 	t.Helper()
@@ -244,6 +247,14 @@ func (p *unpostedNativeHTTPProvider) independentSource(w http.ResponseWriter, r 
 	}
 	if json.Unmarshal(raw, &request) != nil {
 		w.WriteHeader(400)
+		return true
+	}
+	if request.PostingNumber == "position-http-posting" && p.sourceCancelled.Load() {
+		row := p.native.position.base.posting(request.PostingNumber, "FBS")
+		row["status"], row["substatus"] = "cancelled", "posting_canceled"
+		row["updated_at"] = time.Date(2026, 10, 29, 8, 0, 0, 0, time.UTC).Add(time.Duration(p.native.position.revision.Load()) * time.Minute).Format(time.RFC3339)
+		row["products"].([]any)[0].(map[string]any)["vat"] = "0"
+		p.native.position.base.reply(w, map[string]any{"result": row})
 		return true
 	}
 	if request.PostingNumber != "native-unposted-independent" {
@@ -335,4 +346,48 @@ func (f unpostedNativeHTTPFixture) assertUnpostedAuthority(t *testing.T, preview
 	if movement == nil || movement.ParentEffect != orders.NativeParentUnpostedDocument || !movement.ParentApplicable.IsKnown() || *movement.ParentApplicable.Value || movement.Consumption == nil || movement.Consumption.Digest == "" {
 		t.Fatal("explicit unposted parent consumption authority missing")
 	}
+}
+
+func (f unpostedNativeHTTPFixture) collectAllNativePoints(t *testing.T) {
+	t.Helper()
+	for range 8 {
+		collectNativeAttributionPoint(t, f.nativeMovementHTTPFixture)
+		checkpoint, err := f.db.OrderCheckpoint(f.ctx, f.config.Scope, orders.NativePointStream)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if checkpoint.Exhausted {
+			return
+		}
+	}
+	t.Fatal("normal parent/document point traversal did not exhaust its bounded pages")
+}
+func (f unpostedNativeHTTPFixture) assertDocumentAttribution(t *testing.T, physical string, blocked bool) {
+	t.Helper()
+	before := f.assertStock(t, physical)
+	if guard := nativeAttributionGuard(t, f.nativeMovementHTTPFixture, before); !guard.Blocked {
+		t.Fatal("fresh stock alone invented native document evidence")
+	}
+	f.collectAllNativePoints(t)
+	if guard := nativeAttributionGuard(t, f.nativeMovementHTTPFixture, before); !guard.Blocked {
+		t.Fatal("native document read admitted after stock was falsely covered by old traversal")
+	}
+	after := f.assertStock(t, physical)
+	if guard := nativeAttributionGuard(t, f.nativeMovementHTTPFixture, after); guard.Blocked != blocked {
+		t.Fatalf("fresh actual native document attribution blocked=%v want=%v: %+v", guard.Blocked, blocked, guard)
+	}
+
+}
+
+func (f unpostedNativeHTTPFixture) assertIndependentCancellationSettles(t *testing.T) {
+	t.Helper()
+	f.profile.sourceCancelled.Store(true)
+	f.provider.revision.Add(1)
+	f.preview(t) // Independent fake Ozon cancellation enters through the normal reader.
+	f.collectAllNativePoints(t)
+	terminal := f.assertStock(t, "10")
+	if guard := nativeAttributionGuard(t, f.nativeMovementHTTPFixture, terminal); guard.Blocked {
+		t.Fatalf("fresh cancelled order remained blocked: %+v", guard)
+	}
+	f.assertUnpostedParent(t)
 }
