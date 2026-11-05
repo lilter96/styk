@@ -640,3 +640,21 @@ with desktop/mobile screenshots inspected. No live provider request was made in
 this phase. Credentials/key/history remain intact; temporary automation and
 general publication remain OFF. Native-after-later-split and complete multi-SKU
 transfer histories remain explicit implementation boundaries.
+
+The next continuation runs clean **`c3aa0e9`** on both dev APIs/two workers,
+schema 62. Reviewed multi-SKU full transfer and retained-row reductions now pass
+through normal HTTP/PG/outbox/worker, preserving foreign UUIDs/reserves and
+UNKNOWN isolation. The [order report](orders-live-evidence.md) grades the affected
+integration/browser evidence and unchanged-input checks explicitly: lint **0**,
+PostgreSQL **183 pass events**, frontend **299 tests**, stock **116 pass events /
+2 documented skips**, actual nine-process merchant browser and separate mocked
+composition UI, with desktop/mobile inspected.
+
+A real bounded MoySklad full-collection probe made **9 reads / 2 writes, all HTTP
+200**, appending then removing only a new dedicated draft row while preserving
+both original UUIDs/full rows. No Ozon request, retry or new UNKNOWN. This proves
+the selected provider contract, not live posting E2E. Numeric stock comparisons
+were not persisted; only the matching comparison outcome was journalled. Key,
+credentials/history and OFF settings were preserved; deployment made zero
+provider calls. Later/nested admission and sequential scalar histories remain
+separate gaps; active fulfillment remains **NOT_OBSERVED_LIVE**.

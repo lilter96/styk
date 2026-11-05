@@ -1440,3 +1440,50 @@ manual/scalar/no-op native histories not covered by the current proof, and
 multi-SKU splits that move an entire SKU out of a retained parent's current
 lines. These remain explicit blockers, not fabricated zero/missing equivalence.
 Active real FBS/rFBS/Express fulfillment remains NOT_OBSERVED_LIVE.
+
+
+### Multi-SKU retained composition — 2026-11-05
+
+Clean code **`c3aa0e9`** supports explicit reviewed collection replacement that
+preserves foreign native rows by exact UUID and observed writable values. Normal
+API/PG/outbox/worker journeys cover transferring B3 from root A2+B3 to a child,
+and reducing root A4+B6 to A2+B3 before admitting child A2+B3. Retained owned UUIDs
+and foreign same-assortment B1 survive. ACK alone never releases the child reserve.
+Lost applied replacement remains UNKNOWN while an independent order completes,
+without replay. Restart/no-op passes. Missing owned identities cannot produce a
+false no-op; known UUID ownership cannot fall back to matching foreign values.
+Ordinary safe one-row planning remains; manual retained-only replacement can
+change several rows in one operation, with frozen readback and separate consent.
+
+Checks: normal/integration lint **0**, Go tests/race/build/vet PASS; PostgreSQL
+race **183 pass events**; frontend **299 tests** plus typecheck/lint/build PASS.
+Earlier successful checks are retained only through verified unchanged input
+hashes, not claimed as rerun. The affected integration union has **34 top-level
+passing scenarios**, including all three new multi-SKU journeys. Stock has
+**116 pass events / 2 skips**: subprocess helper and unrequested Shadow browser;
+the parent crash-after-dispatch case passed. Failed runs and harness errors are
+retained. Consolidated private evidence:
+`.local/orders-v11-final/acceptance-c3aa0e958b5b.json`.
+
+The actual React UNKNOWN/readback journey passed on **3 API + 2 scheduler + 4
+worker OS processes**, one PostgreSQL and isolated users. A separate composition
+UI case passed with mocked HTTP, displaying foreign rows and separate approval.
+Desktop/mobile screenshots were inspected. That UI case is not the new multi-SKU
+application E2E; the latter was verified through normal HTTP/backend integration.
+
+A real MoySklad contract probe appended B2 to the existing dedicated unposted
+draft, observed its distinct UUID, then PUT the full original collection omitting
+only the new row. **9 reads / 2 writes, all HTTP 200**; original A8/foreign B1
+UUIDs, full rows and headers survived; reserve/shipped stayed zero. No retries,
+UNKNOWN or Ozon requests. Normal transport/shared limits were used, but this is
+**not normal-application live E2E**. Stock comparisons matched in memory; numeric
+values were not persisted, so no numeric or causal claim is made. Private ledger:
+`.local/moy-native-composition-contract/result-ledger.json`, SHA256
+`a22c1efcbea414a7d532b0b5072254c56516a63b13e45fa50e01f376dbaca9d8`.
+
+Both dev APIs/two workers now run clean `c3aa0e9`, schema 62, health/readiness 200.
+Key, encrypted credentials and history remain intact; temporary automation,
+native grants and general publication are OFF. Deployment made zero provider
+calls. Later/nested initial native admission and complex sequential scalar
+histories still need separate coverage; active fulfillment remains
+**NOT_OBSERVED_LIVE**. Unrestricted production readiness is not established.
