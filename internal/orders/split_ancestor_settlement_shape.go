@@ -27,7 +27,7 @@ func ancestorSettlementNode(f SplitAncestorSettlementFacts) bool {
 	if split.Command.Action != ActionPostingSplitUnassembled || !unassembledAcknowledgedAllocation(split) || split.Command.Correlation != f.NodeOriginTarget.Correlation || split.Command.ExpectedSourceRevision != before.Evidence.Revision || !ancestorParentConsistent(before, f.RootTransfer.Parent.PostingNumber) {
 		return false
 	}
-	if len(split.Receipt.PostingNumbers) != 2 || !slices.Contains(split.Receipt.PostingNumbers, before.PostingNumber) || f.CurrentNode.PostingNumber != before.PostingNumber || !splitTransferSameAllocation(f.CurrentNode, ancestorNodeOutput(split, before.PostingNumber)) {
+	if len(split.Receipt.PostingNumbers) < 2 || !slices.Contains(split.Receipt.PostingNumbers, before.PostingNumber) || f.CurrentNode.PostingNumber != before.PostingNumber || !splitTransferSameAllocation(f.CurrentNode, ancestorNodeOutput(split, before.PostingNumber)) {
 		return false
 	}
 	for _, posting := range split.Receipt.ObservedPostings {
