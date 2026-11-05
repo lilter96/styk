@@ -90,14 +90,8 @@ func ancestorSettlementRoot(f SplitAncestorSettlementFacts) (SplitReserveTransfe
 	if !f.HistoryUnambiguous || len(f.Lineage.Splits) != 2 || len(f.Lineage.CurrentHeads) != 3 || f.Lineage.Scope != f.Selected.Scope {
 		return SplitReserveTransferPermission{}, ErrBlocked
 	}
-	for _, head := range f.Lineage.CurrentHeads {
-		checked := head.Evidence.CheckedAt
-		if checked.IsZero() {
-			checked = head.Evidence.ObservedAt
-		}
-		if f.CheckedAt.IsZero() || checked.Before(f.CheckedAt.Add(-30*time.Second)) || checked.After(f.CheckedAt.Add(5*time.Second)) {
-			return SplitReserveTransferPermission{}, ErrBlocked
-		}
+	if !ancestorSettlementHeadsFresh(f.Lineage.CurrentHeads, f.CheckedAt) {
+		return SplitReserveTransferPermission{}, ErrBlocked
 	}
 	graph, err := NewSplitLineage(f.Lineage)
 	if err != nil || !graph.CurrentMatches(f.Selected) {
@@ -111,17 +105,8 @@ func ancestorSettlementRoot(f SplitAncestorSettlementFacts) (SplitReserveTransfe
 	if err != nil || f.RootTransfer.Child.PostingNumber != f.NodeSplit.Before.PostingNumber || !splitTransferSameAllocation(f.RootTransfer.Child, f.NodeSplit.Before) {
 		return SplitReserveTransferPermission{}, ErrBlocked
 	}
-	split, b := f.NodeSplit.Work, f.NodeSplit.Before
-	if split.Command.Action != ActionPostingSplitUnassembled || !unassembledAcknowledgedAllocation(split) || split.Command.Correlation != f.NodeOriginTarget.Correlation || split.Command.ExpectedSourceRevision != b.Evidence.Revision || !b.ParentPostingNumber.IsKnown() || *b.ParentPostingNumber.Value != f.RootTransfer.Parent.PostingNumber {
+	if !ancestorSettlementNode(f) {
 		return SplitReserveTransferPermission{}, ErrBlocked
-	}
-	if len(split.Receipt.PostingNumbers) != 2 || !slices.Contains(split.Receipt.PostingNumbers, b.PostingNumber) || f.CurrentNode.PostingNumber != b.PostingNumber || !splitTransferSameAllocation(f.CurrentNode, ancestorNodeOutput(split, b.PostingNumber)) {
-		return SplitReserveTransferPermission{}, ErrBlocked
-	}
-	for _, p := range split.Receipt.ObservedPostings {
-		if !splitTransferProductIdentities(b.Lines, p.Lines) {
-			return SplitReserveTransferPermission{}, ErrBlocked
-		}
 	}
 	return root, nil
 }
@@ -176,7 +161,7 @@ func (p SplitAncestorSettlementPermission) Validate() error {
 	}
 	seen := make(map[string]bool, len(p.Ancestors))
 	for _, a := range p.Ancestors {
-		if seen[a.Posting.PostingNumber] || a.Posting.Scope != p.Scope || a.Posting.Validate() != nil || !validID(a.WorkID) || a.Target.Scope != p.Scope || !a.Target.Complete || a.Target.Correlation.PostingNumber != a.Posting.PostingNumber || a.Target.Revision == "" || !nativeDocumentPresent(a.Target.SourceDeleted) {
+		if seen[a.Posting.PostingNumber] || !validSplitAncestorNative(a, p.Scope) {
 			return ErrBlocked
 		}
 		seen[a.Posting.PostingNumber] = true
@@ -230,7 +215,7 @@ func ApplyAncestorSplitOpenQuantityReserve(posting Posting, write *CustomerOrder
 }
 
 func (p SplitAncestorSettlementPermission) AllowsCommand(c Command) bool {
-	if !c.Action.IsMirror() || c.Scope != p.Scope || c.CustomerOrder == nil || c.PostingNumber != p.Source.PostingNumber || c.ExpectedSourceRevision != p.Source.Evidence.Revision {
+	if !c.Action.IsMirror() || c.Scope != p.Scope || c.CustomerOrder == nil || c.PostingNumber != p.Source.PostingNumber || c.CommercialOrderID != p.Source.CommercialOrderID || c.ExpectedSourceRevision != p.Source.Evidence.Revision || !p.commandCorrelationMatches(c) {
 		return false
 	}
 	candidate := *c.CustomerOrder
