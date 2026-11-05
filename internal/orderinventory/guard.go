@@ -65,6 +65,9 @@ type Input struct {
 }
 
 type Obligation struct {
+	// Validated native pool reserve, including foreign positions. It supports
+	// aggregate baseline coverage and is never an additional stock deduction.
+	reserveCoverage *int64
 	Scope           orders.Scope `json:"scope"`
 	PostingNumber   string       `json:"posting_number"`
 	CustomerOrderID string       `json:"customer_order_id,omitempty"`

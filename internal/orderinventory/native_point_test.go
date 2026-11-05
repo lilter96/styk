@@ -1,12 +1,88 @@
 package orderinventory
 
 import (
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/orders"
 )
+
+func ownedSamePoolPointFixture(t *testing.T) Input {
+	t.Helper()
+	input := nativePointAttributionFixture()
+	o := &input.Observations[0]
+	binding, err := orders.CorrelationFor(o.Posting.Scope, o.Posting.PostingNumber)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding.CustomerOrderID = o.Binding.CustomerOrderID
+	o.Binding, o.Work.Command.Correlation, o.Target.Correlation = binding, binding, binding
+	o.NativeSyncID = ptr(binding.SyncID)
+	o.Work.ID, o.Work.Command.ID = "native-create", "native-create-command"
+	source := ownedSamePoolSource(input, *o)
+	o.Work.Command.CustomerOrder = &orders.CustomerOrderWrite{StoreID: input.Pool.WarehouseID, Positions: []orders.PositionWrite{source}}
+	baseline, err := orders.ProjectionPositionBaseline(*o.Work, *o.Target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appendSamePoolForeignPosition(o)
+	o.Work.Command.TargetPositions, o.Work.Command.TargetPositionsComplete = slices.Clone(o.Target.Positions), true
+	o.Work.ID, o.Work.Command.ID, o.Work.Command.Action = "native-reduction", "native-reduction-command", orders.ActionMirrorPositionUpdate
+	o.Work.Command.PositionPatch = &orders.PositionPatch{Baseline: baseline, PositionID: o.Target.Positions[0].ID, Identity: source.Identity, Quantity: orders.Present(orders.Decimal("1")), Reserve: orders.Present(orders.Decimal("1"))}
+	o.Work.Command.CustomerOrder.Positions[0].Quantity, o.Work.Command.CustomerOrder.Positions[0].Reserve = "1", orders.Present(orders.Decimal("1"))
+	o.Target.Positions[0].Quantity, o.Target.Positions[0].Reserve = "1", orders.Present(orders.Decimal("1"))
+	o.Posting.Lines[0].Quantity, o.Positions[0].Quantity, o.Positions[0].Reserve = "1", ptr("1"), ptr("1")
+	return input
+}
+
+func ownedSamePoolSource(input Input, o Observation) orders.PositionWrite {
+	identity := o.Posting.Lines[0].Identity
+	mapping := orders.ProductMappingRef{ID: "mapping", Version: 1, Scope: o.Posting.Scope, OzonProductID: "100", SKU: identity.SKU, OfferID: identity.OfferID, MoyskladKind: input.Pool.ItemKind, MoyskladID: input.Pool.ItemID, Confirmed: true, ConfirmedAt: input.Now.Add(-time.Hour)}
+	return orders.PositionWrite{Identity: identity, Mapping: mapping, Quantity: "3", Reserve: orders.Present(orders.Decimal("3"))}
+}
+
+func appendSamePoolForeignPosition(o *Observation) {
+	foreign := o.Target.Positions[0]
+	foreign.ID, foreign.Quantity, foreign.Reserve = "foreign-same-product", "7", orders.Present(orders.Decimal("2"))
+	o.Target.Positions = append(o.Target.Positions, foreign)
+	observed := o.Positions[0]
+	observed.PositionID, observed.Quantity, observed.Reserve = foreign.ID, ptr("7"), ptr("2")
+	o.Positions = append(o.Positions, observed)
+}
+
+func TestNativePointOwnedSamePoolForeignReserveUsesBaselineOnce(t *testing.T) {
+	t.Parallel()
+	input := ownedSamePoolPointFixture(t)
+	guard, decision := Assess(input), inventoryDecision(input)
+	if guard.Blocked || len(guard.Obligations) != 1 || guard.Obligations[0].Reserve != "1" || decision.Status != domain.StockReady || decision.Quantity == nil || *decision.Quantity != "7" {
+		t.Fatalf("owned reserve was confused with foreign same-product reserve: guard=%+v decision=%+v", guard, decision)
+	}
+	input.Observations[0].Positions[1].Reserve = nil
+	if !Assess(input).Blocked {
+		t.Fatal("UUID ownership hid an unknown foreign reserve")
+	}
+	input = ownedSamePoolPointFixture(t)
+	input.Observations[0].Work.Command.PositionPatch = nil
+	if !Assess(input).Blocked {
+		t.Fatal("ambiguous same-product rows were selected without UUID proof")
+	}
+}
+
+func TestNativePointForeignCoverageStillConstrainsTheWholePool(t *testing.T) {
+	t.Parallel()
+	input := ownedSamePoolPointFixture(t)
+	other := inventoryObservation(input.Now, "another-order", "4")
+	input.Observations = append(input.Observations, other)
+	input.Baseline.Reserve = ptr("5")
+	guard, decision := Assess(input), inventoryDecision(input)
+	// Owned obligations total five, but actual known native reserves total seven.
+	// The foreign two cannot be discarded merely because they are not ours.
+	if !guard.Blocked || decision.Quantity != nil || decision.Status != domain.StockBlocked {
+		t.Fatalf("foreign reserve disappeared from baseline coverage: guard=%+v decision=%+v", guard, decision)
+	}
+}
 
 func nativePointAttributionFixture() Input {
 	input := inventoryFixture()

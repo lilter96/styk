@@ -71,6 +71,11 @@ func assessNativeObservation(input Input, observation Observation, result Obliga
 	if !ok {
 		return pending(result, Unknown, "native_positions_incomplete")
 	}
+	coverage, covered := nativeReserveCoverage(observation)
+	if !covered {
+		return pending(result, Unknown, "native_positions_incomplete")
+	}
+	result.reserveCoverage = &coverage
 	result.Reserve = strconv.FormatInt(reserve, 10)
 	if !baselineOrdered(input, observation) {
 		return pending(result, ReserveObserved, nativeDemandOrderingBlocker(input, observation))
@@ -196,6 +201,10 @@ func uniqueAttribution(total int64, result Obligation, seen map[string]bool) (in
 	}
 	key := result.Scope.Tenant + "/" + result.Scope.MoyskladAccount + "/" + result.CustomerOrderID
 	reserve, ok := whole(result.Reserve)
+	if result.reserveCoverage != nil {
+		reserve = *result.reserveCoverage
+		ok = ok && reserve >= 0
+	}
 	if !ok || seen[key] || total > math.MaxInt64-reserve {
 		return total, pending(result, Unknown, "native_origin_not_unique")
 	}
