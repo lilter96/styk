@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,6 +49,10 @@ func merchantJourneyProvider(s *nativeProcessStack) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Client-Id") == s.b.scope.OzonAccount || r.Header.Get("Authorization") == "Bearer synthetic-orders-moysklad-"+s.b.scope.MoyskladAccount {
 			s.provider.serve(w, r)
+			return
+		}
+		if r.URL.Path == "/v4/posting/fbs/list" || r.URL.Path == "/v4/posting/fbs/unfulfilled/list" {
+			merchantJourneyList(w, r, s.provider)
 			return
 		}
 		if r.URL.Path != "/v3/posting/fbs/get" {
@@ -125,4 +131,69 @@ func merchantJourneyProxy(t *testing.T, s *nativeProcessStack, key string) *http
 		w.WriteHeader(http.StatusNoContent)
 	})
 	return proxy
+}
+
+// The shared small-stack provider intentionally returns all keys. This browser
+// fixture has more than25 keys and therefore must implement the v4 cursor/limit
+// contract rather than rely on a production parser accepting oversized pages.
+func merchantJourneyList(w http.ResponseWriter, r *http.Request, provider *ordersProcessProvider) {
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 8192))
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	var request struct {
+		Limit  int    `json:"limit"`
+		Cursor string `json:"cursor"`
+	}
+	if json.Unmarshal(raw, &request) != nil || request.Limit < 1 || request.Limit > 100 {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	offset, err := merchantJourneyOffset(request.Cursor)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	r.Body = io.NopCloser(bytes.NewReader(raw))
+	response := httptest.NewRecorder()
+	provider.serve(response, r) // Preserve exact account authentication and attempt accounting.
+	if response.Code != http.StatusOK {
+		merchantJourneyForward(w, response, provider.t)
+		return
+	}
+	var page struct {
+		Postings []json.RawMessage `json:"postings"`
+	}
+	if json.Unmarshal(response.Body.Bytes(), &page) != nil || offset > len(page.Postings) {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	end := min(offset+request.Limit, len(page.Postings))
+	cursor := ""
+	if end < len(page.Postings) {
+		cursor = "merchant-page:" + strconv.Itoa(end)
+	}
+	provider.reply(w, map[string]any{"postings": page.Postings[offset:end], "has_next": end < len(page.Postings), "cursor": cursor})
+}
+
+func merchantJourneyOffset(cursor string) (int, error) {
+	if cursor == "" {
+		return 0, nil
+	}
+	if !strings.HasPrefix(cursor, "merchant-page:") {
+		return 0, orders.ErrInvalid
+	}
+	offset, err := strconv.Atoi(strings.TrimPrefix(cursor, "merchant-page:"))
+	if err != nil || offset < 1 {
+		return 0, orders.ErrInvalid
+	}
+	return offset, nil
+}
+
+func merchantJourneyForward(w http.ResponseWriter, response *httptest.ResponseRecorder, t *testing.T) {
+	w.WriteHeader(response.Code)
+	if _, err := w.Write(response.Body.Bytes()); err != nil {
+		t.Error("forward merchant list provider response")
+	}
 }
