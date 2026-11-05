@@ -6,7 +6,7 @@ import "testing"
 
 func TestOrdersNativeSchemaConstraints(t *testing.T) {
 	f := newOrdersStoreFixture(t)
-	for _, table := range []string{"orders_native_document_intents", "orders_native_document_targets", "orders_native_document_results"} {
+	for _, table := range []string{"orders_native_document_intents", "orders_native_document_targets", "orders_native_document_results", "orders_native_document_reads", "orders_native_document_snapshots"} {
 		var count int
 		if err := f.db.Pool.QueryRow(f.ctx, "SELECT count(*) FROM "+table).Scan(&count); err != nil {
 			t.Fatal(err)

@@ -33,6 +33,9 @@ func validateCompositionProposals(request orders.PreviewRequest) error {
 func (s *Service) planComposition(ctx context.Context, review orders.ReviewContext, posting orders.Posting, automatic bool, now time.Time) (orders.Decision, error) {
 	posting.PII = nil
 	decision := orders.Decision{Posting: posting, Commands: []orders.Command{}, Validation: sourceValidation(posting, review, now)}
+	if review.NativeInventoryActionBlocked(orders.ActionMirrorCompositionUpdate, posting.PostingNumber) {
+		return compositionBlocked(decision, "native_split_fulfillment_allocation_unverified"), nil
+	}
 	if automatic {
 		return compositionBlocked(decision, "composition_manual_confirmation_required"), nil
 	}

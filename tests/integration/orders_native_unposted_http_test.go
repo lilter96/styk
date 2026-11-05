@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -164,6 +165,27 @@ func TestOrdersNativeHTTPUnpostedParentUsesGrossDemandConsumption(t *testing.T) 
 	}
 	assertOrdersRowCount(t, f.ordersStoreFixture, `SELECT count(*) FROM orders_work WHERE action IN ('demand_create','salesreturn_create') AND state='RECONCILED' AND dispatch_count=1`, 4)
 	f.assertIndependentCancellationSettles(t)
+	f.assertNativePointHistoryRetained(t)
+}
+
+func (f unpostedNativeHTTPFixture) assertNativePointHistoryRetained(t *testing.T) {
+	t.Helper()
+	var before, after int
+	if err := f.db.Pool.QueryRow(f.ctx, `SELECT count(*) FROM orders_native_document_reads`).Scan(&before); err != nil || before == 0 {
+		t.Fatal("missing fresh document history", err)
+	}
+	for _, statement := range []string{`UPDATE orders_native_document_reads SET code=code`, `DELETE FROM orders_native_document_snapshots`} {
+		if _, err := f.db.Pool.Exec(f.ctx, statement); err == nil {
+			t.Fatal("immutable document evidence was changed")
+		}
+	}
+	command := exec.CommandContext(f.ctx, "go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", f.db.Pool.Config().ConnString(), "down")
+	if output, err := command.CombinedOutput(); err == nil || !strings.Contains(string(output), "native document point history prevents rollback") {
+		t.Fatal("migration rollback did not preserve native document evidence")
+	}
+	if err := f.db.Pool.QueryRow(f.ctx, `SELECT count(*) FROM orders_native_document_reads`).Scan(&after); err != nil || after != before {
+		t.Fatal("guarded rollback altered document read history", err)
+	}
 }
 
 func (f unpostedNativeHTTPFixture) ship(t *testing.T, event string) orders.Work {

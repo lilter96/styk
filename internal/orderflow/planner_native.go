@@ -38,6 +38,9 @@ func validateNativeProposals(request orders.PreviewRequest) error {
 func (s *Service) planNativeMovement(ctx context.Context, review orders.ReviewContext, posting orders.Posting, proposal orders.NativeMovementProposal, automatic bool, now time.Time) (orders.Decision, error) {
 	posting.PII = nil
 	decision := orders.Decision{Posting: posting, Commands: []orders.Command{}, Validation: sourceValidation(posting, review, now)}
+	if review.NativeInventoryActionBlocked(proposal.Action, posting.PostingNumber) {
+		return nativePlanBlocked(decision, "native_documents", "native_split_fulfillment_allocation_unverified"), nil
+	}
 	if automatic || review.Config.NativeDocuments == nil || !proposal.Applicable.IsKnown() || !review.Config.NativeDocuments.Allows(proposal.Action, *proposal.Applicable.Value, now) {
 		return nativePlanBlocked(decision, "native_documents", "native_document_policy_required"), nil
 	}

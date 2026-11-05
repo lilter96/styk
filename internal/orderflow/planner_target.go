@@ -9,6 +9,9 @@ import (
 )
 
 func (s *Service) finishMirrorPlan(ctx context.Context, review orders.ReviewContext, decision orders.Decision, command orders.Command, automatic bool, now time.Time) (orders.Decision, error) {
+	if review.NativeInventoryActionBlocked(command.Action, command.PostingNumber) {
+		return nativePlanBlocked(decision, "native_documents", "native_split_fulfillment_allocation_unverified"), nil
+	}
 	if command.Action == orders.ActionMirrorUpdate {
 		target, err := s.readTarget(ctx, command.Scope, command.Credentials.Moysklad, command.Correlation)
 		if err != nil {

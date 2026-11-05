@@ -65,6 +65,9 @@ func validateOrderCommandCurrent(command orders.Command, posting orders.Posting,
 	if err := command.Validate(); err != nil {
 		return err
 	}
+	if current.NativeInventoryActionBlocked(command.Action, command.PostingNumber) {
+		return orders.ErrBlocked
+	}
 	if current.SplitTransferBusy[command.PostingNumber] {
 		return orders.ErrBlocked
 	}

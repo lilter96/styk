@@ -56,6 +56,9 @@ func (s *Service) planRequestedPosting(ctx context.Context, request orders.Previ
 func (s *Service) planAction(ctx context.Context, review orders.ReviewContext, posting orders.Posting, proposal orders.ActionProposal, now time.Time) (orders.Decision, error) {
 	posting.PII = nil
 	decision := orders.Decision{Posting: posting, Commands: []orders.Command{}, Validation: sourceValidation(posting, review, now)}
+	if review.NativeInventoryActionBlocked(proposal.Action, posting.PostingNumber) {
+		return nativePlanBlocked(decision, "native_documents", "native_split_fulfillment_allocation_unverified"), nil
+	}
 	warehouse, validation := postingWarehouse(posting, review)
 	if validation.Code != "" {
 		decision.Validation = append(decision.Validation, validation)
@@ -149,6 +152,9 @@ func (s *Service) postingActionOptions(ctx context.Context, review orders.Review
 	}
 	for _, action := range orderactions.ExecutionActions() {
 		plan := orderactions.PlanExecutionWithProof(posting, warehouse.Capability, action, review.ExemplarProofs[posting.PostingNumber], s.now())
+		if review.NativeInventoryActionBlocked(action, posting.PostingNumber) {
+			plan.Blockers = append(plan.Blockers, orders.Validation{Code: "native_split_fulfillment_allocation_unverified"})
+		}
 		plan.Blockers = append(plan.Blockers, sourceValidation(posting, review, s.now())...)
 		if validation.Code != "" {
 			plan.Blockers = append(plan.Blockers, validation)

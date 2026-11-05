@@ -52,6 +52,8 @@ func TestOrdersStartupRequiresNativePointStructures(t *testing.T) {
 		`ALTER TABLE orders_ingestion_leases RENAME COLUMN attempt_started_at TO missing_attempt_clock`,
 		`ALTER TABLE orders_native_point_reads RENAME TO missing_native_reads`,
 		`ALTER TABLE orders_native_point_snapshots RENAME TO missing_native_snapshots`,
+		`ALTER TABLE orders_native_document_reads RENAME TO missing_document_reads`,
+		`ALTER TABLE orders_native_document_snapshots RENAME TO missing_document_snapshots`,
 	} {
 		t.Run(statement, func(t *testing.T) {
 			db := catalogSyncDB(t)
