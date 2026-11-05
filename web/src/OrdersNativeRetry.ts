@@ -20,6 +20,7 @@ export function nativeRetryCandidate(
     !sameOrderScope(work.scope, scope) ||
     !sameOrderScope(work.command.scope, scope) ||
     work.command.posting_number !== posting ||
+    work.code === "NATIVE_RETRY_EXISTING_DOCUMENT_REQUIRES_REVIEW" ||
     (work.state !== "REJECTED" &&
       !(work.state === "BLOCKED" && work.dispatch_count === 0)) ||
     !movement ||
