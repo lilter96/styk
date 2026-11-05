@@ -1371,3 +1371,72 @@ provenance and the normalized-versus-wire negative fixture already cover its
 status/cancellation usefulness and lossy/heuristic fields. No third-party raw
 orders/PII or duplicate fixture was committed; this does not establish full HTTP
 schema, money, line allocation or delivery-capability evidence.
+
+
+### Mixed retained branches and NULL-safe history — 2026-11-05
+
+Clean code **`c523c77`** extends the existing reserve permission with complete,
+bounded mixed-branch history reconstruction. One scoped query loads all native
+mutation kinds/states for all involved identities, immutable approved sources,
+actual target UUIDs/readbacks and database clocks. Historical grants are checked
+against their event-time allocation/frontier; new decisions use current source
+heads and latest actual native frontiers. No historical timestamps are refreshed.
+One origin per identity, one reduction per split and non-overlapping same-identity
+native/split intervals are required. UNKNOWN is never replayed.
+
+The new normal API/PG/outbox/worker cases start with native root 8, split it to
+4+4, settle root 4 and create child 4. They then split both branches before
+settlement. Root **4 → 2** reconciles first; its new sibling 2 can be admitted
+while the other branch still holds 4. Child **4 → 2** then reconciles before its
+child 2 is admitted. Four final heads total eight; the foreign reserve two and
+both original native document/position UUIDs remain intact. Restart/no-op and
+stale-review rejection passed. A lost child reduction remains UNKNOWN and fences
+related work while an independent commercial order remains eligible. These are
+local provider scenarios, not live Ozon split operations.
+
+The first combined run caught a real regression: an inapplicable retained-forest
+proof cleared an existing native-free superseded-parent permission. The loader
+now declines non-retained graphs and leaf-only native history before attempting
+forest authority. The first-root permission shape remains on its existing
+validated path; old leaves select the owner's **latest** split for revalidation.
+Unresolved input-node native work remains blocking. The original failed run is
+retained; the formerly failing legacy journey passed on corrected code.
+
+SQL self-exclusion is now NULL-safe in both new and older ancestor queries.
+Only the exact fenced unsent command may be excluded; missing/null proof,
+other pending work, dispatched work and UNKNOWN remain visible. Nine actual
+PostgreSQL query cases exercise these boundaries, including the separate
+native-input anchor query. No trigger or tenant constraint was disabled.
+
+Final current-code gates: normal/integration lint **0**, Go tests/full race/build/
+vet PASS; full PostgreSQL race **181 PASS**, affected HTTP/process **34 PASS**,
+stock **116 PASS / 2 documented skips**. Counts include subtests. Additionally,
+the actual React merchant current-state browser passed on **3 APIs + 2 schedulers
++ 4 workers**, one PostgreSQL and two isolated users. It resolved UNKNOWN by
+reading, without repeating the external mutation. Desktop/mobile screenshots were
+inspected; source and received/check times, unknown money, history pagination and
+reconciliation were rendered truthfully. Frontend source is unchanged; its prior
+299-test/typecheck/lint/build results are not presented as newly rerun results.
+
+Private evidence: `gate-c523c770bee6-ce599f2ea7dd42d88b1c51bc4751b931`
+(current Go/PG/HTTP/stock gates) and
+`gate-c523c770bee6-4af556995fd548c6ab055075296d7d41` (current browser/screenshots).
+Both dev APIs/two workers now run clean `c523c77`, schema 62, health/readiness 200.
+Key, encrypted credentials and history were preserved. This phase made **zero
+live Seller/MoySklad requests**; deployment also made zero provider calls.
+All temporary automation/native grants and general publication remain OFF.
+
+A separate current-contract review established that
+`/v2/fbs/posting/sent-by-seller` was deprecated and removed from documentation on
+**2026-01-20** ([official RU notice](https://t.me/s/OzonSellerAPI?before=604),
+[official EN notice](https://t.me/s/OzonEnSellerAPI?before=293)). The method is no
+longer offered as a merchant command, and direct proposals receive an explicit
+deprecation blocker. Historical action/status enums, audit and UNKNOWN remain
+readable. The evidence file hashes short reviewed notice excerpts; neither an
+HTTP disable date nor a replacement endpoint/full Swagger hash is invented.
+
+Remaining scope includes initial native admission after later/nested splits,
+manual/scalar/no-op native histories not covered by the current proof, and
+multi-SKU splits that move an entire SKU out of a retained parent's current
+lines. These remain explicit blockers, not fabricated zero/missing equivalence.
+Active real FBS/rFBS/Express fulfillment remains NOT_OBSERVED_LIVE.

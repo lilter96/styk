@@ -627,3 +627,16 @@ Two earlier helper read failures HTTP 400 are included in those counts. Ozon
 requests were zero. No new UNKNOWN exists; the useful draft remains retained.
 This is provider contract evidence, not a claim of live active Ozon fulfillment.
 Credentials/key/history remain intact; all temporary automation/publication is OFF.
+
+
+The mixed-branch continuation runs clean **`c523c77`** on both dev APIs/workers,
+schema 62. Independent retained branches settle through the normal worker with
+UUID/foreign-reserve preservation, stale-review protection and UNKNOWN isolation.
+The existing [order report](orders-live-evidence.md) records the caught legacy
+regression and NULL-safe history fix. Current gates: Go lint **0**, PostgreSQL
+**181 PASS**, HTTP/process **34 PASS**, stock **116 PASS / 2 documented skips**;
+actual merchant React/browser verification passed on nine independent processes,
+with desktop/mobile screenshots inspected. No live provider request was made in
+this phase. Credentials/key/history remain intact; temporary automation and
+general publication remain OFF. Native-after-later-split and complete multi-SKU
+transfer histories remain explicit implementation boundaries.
