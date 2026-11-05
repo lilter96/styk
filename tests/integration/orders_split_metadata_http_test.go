@@ -44,6 +44,9 @@ func (m lateChildFixture) restoreNativeName(t *testing.T, number string, before 
 	})
 	m.changeNativeName(before.Correlation.CustomerOrderID)
 	preview := splitMemberHTTPPreview(t, m.f, number, nil)
+	if len(preview.Decisions[0].Commands) != 1 {
+		t.Fatalf("metadata preview has no single command: %+v", preview.Decisions[0].Validation)
+	}
 	c := preview.Decisions[0].Commands[0]
 	if c.Action != orders.ActionMirrorUpdate || c.CustomerOrder == nil || len(c.CustomerOrder.OwnedFields) != 1 || c.CustomerOrder.OwnedFields[0] != "name" || c.PositionBaseline == nil || c.PositionBaseline.WorkID != authority {
 		t.Fatal("metadata did not preserve the actual inventory authority")
