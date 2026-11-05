@@ -51,6 +51,9 @@ func forestCreation(f SplitForestFacts, e SplitForestNative) bool {
 	if e.Source.PostingNumber == f.Lineage.RootPosting {
 		return forestRootCreation(f, e)
 	}
+	if p := e.Work.Command.SplitAncestorSettlement; p != nil && p.Mode == SplitAncestorNodeAdmit {
+		return forestNodeCreation(f, e, *p)
+	}
 	step, found := forestBirth(f, e.Source.PostingNumber)
 	if !found || !forestSplitBefore(f, step, e) || !splitTransferSameAllocation(forestPrefix(f, e.Source.PostingNumber, e.Attempt.CreatedAt), e.Source) || !splitTransferSameAllocation(ancestorNodeOutput(step.Work, e.Source.PostingNumber), e.Source) {
 		return false

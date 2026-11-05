@@ -13,9 +13,19 @@ func forestCurrentPermission(f SplitForestFacts) (SplitAncestorSettlementPermiss
 	}
 	native, found := forestPrevious(f, owner, f.CheckedAt, "")
 	step, split := forestLastSplit(f, owner, f.CheckedAt)
-	if !found || !split {
+	if !split {
 		return SplitAncestorSettlementPermission{}, ErrBlocked
 	}
+	if !found {
+		if node {
+			return forestNodeAdmission(f, selected, step)
+		}
+		return SplitAncestorSettlementPermission{}, ErrBlocked
+	}
+	return forestOwnedPermission(f, selected, owner, node, native, step)
+}
+
+func forestOwnedPermission(f SplitForestFacts, selected Posting, owner string, node bool, native SplitForestNative, step SplitLineageStep) (SplitAncestorSettlementPermission, error) {
 	baseline, err := ProjectionPositionBaseline(native.Work, native.Target)
 	if err != nil {
 		return SplitAncestorSettlementPermission{}, ErrBlocked

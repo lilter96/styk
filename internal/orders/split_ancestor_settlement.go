@@ -9,6 +9,9 @@ import (
 const (
 	SplitAncestorReduce = "retained_reduction"
 	SplitAncestorAdmit  = "child_admission"
+	// The node has no native document yet. Baseline and NodeOriginWorkID refer
+	// to its actual nearest parent authority, never a fabricated node baseline.
+	SplitAncestorNodeAdmit = "node_admission"
 )
 
 // SplitAncestorNative is an exact native frontier backed by a scoped immutable
@@ -176,6 +179,9 @@ func ancestorSettlementReduced(f SplitAncestorSettlementFacts, before SplitAnces
 }
 
 func (p SplitAncestorSettlementPermission) Validate() error {
+	if p.Mode == SplitAncestorNodeAdmit {
+		return p.validateNodeAdmission()
+	}
 	if p.Scope.Validate() != nil || (p.Mode != SplitAncestorReduce && p.Mode != SplitAncestorAdmit) || !validID(p.SplitWorkID) || !validID(p.RootSplitWorkID) || !validID(p.NodeOriginWorkID) || p.SplitWorkID == p.RootSplitWorkID || len(p.Ancestors) < 1 || len(p.Ancestors) > MaxSplitLineageDepth || p.Baseline.Validate() != nil || p.Baseline.Scope != p.Scope {
 		return ErrBlocked
 	}
@@ -226,6 +232,9 @@ func ApplyAncestorSplitOpenQuantityReserve(posting Posting, write *CustomerOrder
 	if p.Mode == SplitAncestorReduce && !baseline.Equal(p.Baseline) {
 		return reservePolicyValidation("posting.lineage", "reservation_policy_ancestor_frontier_changed")
 	}
+	if p.Mode == SplitAncestorNodeAdmit && (baseline.WorkID != "" || len(baseline.Bindings) != 0) {
+		return reservePolicyValidation("posting.lineage", "reservation_policy_node_already_native")
+	}
 	candidate := *write
 	candidate.Positions = slices.Clone(write.Positions)
 	invalid := applyOpenQuantityReserve(posting, &candidate, baseline, true)
@@ -240,6 +249,9 @@ func ApplyAncestorSplitOpenQuantityReserve(posting Posting, write *CustomerOrder
 }
 
 func (p SplitAncestorSettlementPermission) AllowsCommand(c Command) bool {
+	if p.Mode == SplitAncestorNodeAdmit && (c.Action != ActionMirrorCreate || c.Correlation.CustomerOrderID != "") {
+		return false
+	}
 	if !c.Action.IsMirror() || c.Scope != p.Scope || c.CustomerOrder == nil || c.PostingNumber != p.Source.PostingNumber || c.CommercialOrderID != p.Source.CommercialOrderID || c.ExpectedSourceRevision != p.Source.Evidence.Revision || !p.commandCorrelationMatches(c) {
 		return false
 	}

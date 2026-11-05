@@ -19,11 +19,14 @@ type SplitForestNative struct {
 // Current heads remain provider observations; historical prefixes never receive
 // fabricated freshness or source revisions.
 type SplitForestFacts struct {
-	Lineage   SplitLineageFacts
-	Attempts  []NestedSplitAttempt
-	Native    []SplitForestNative
-	CheckedAt time.Time
-	Complete  bool
+	Lineage  SplitLineageFacts
+	Attempts []NestedSplitAttempt
+	Native   []SplitForestNative
+	// Required only for first native node admission. Empty arrays are a scoped
+	// database absence witness, not an inferred absence from a partial history.
+	NativeHistory []NestedSplitNativeHistory
+	CheckedAt     time.Time
+	Complete      bool
 }
 
 // NewSplitForestSettlement reconstructs reserve authority for mixed branches
