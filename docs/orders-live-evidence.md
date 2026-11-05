@@ -982,3 +982,66 @@ checking the new table and action had no data, its guarded rollback restored
 schema 60. No provider request was dispatched by that migration. The dedicated
 test migration was then run using an explicit **make command-line** database
 assignment. This incident did not change credentials, encryption keys or history.
+
+### Schema 61 release and real-browser follow-up — 2026-11-05
+
+**Deployed:** clean Go revision `5a68a45`, schema 61, two API processes and
+two normal workers. The guarded upgrade preserved encrypted credentials, the
+existing encryption key, publication history and historical UNKNOWN outcomes.
+Frontend revision `a97d7f6` fixes eager metadata reads: existing collapsed order
+settings no longer traverse provider metadata. Initial setup and explicit opening
+still load the required metadata through the scoped query.
+
+The current continuation recorded **29 Ozon reads + 76 MoySklad reads**, all
+**105 HTTP 200**, through the normal application pipeline; **new provider writes
+0**. This includes fresh durable imports, independent native-order reads and the
+final real authenticated desktop/mobile browser run. Unchanged imports reused
+batches 61/62 while recording fresh traversal evidence, without rewriting
+historical observation timestamps. Ordinary FBS, standard rFBS and Express target
+observations were explicit physical/reserve/free zeros at their recorded checks.
+The six earlier rFBS/Express stock writes were separately corroborated against
+immutable attempts, HTTP 200 per-target acknowledgements and reconciled 0→1→0
+readbacks; they are not counted as new writes here.
+
+**Budget incident retained:** failed browser harness runs consumed 33 MoySklad
+reads against a phase cap of 25, bringing the then-current cumulative count to
+66 against 60. Late metadata handlers continued after browser closure; the
+harness had incorrectly treated closure as completion. All were reads returning
+HTTP 200. Original ledgers remain unchanged. Before the corrected run, a new
+Ozon 10 / MoySklad 12 / writes 0 phase and cumulative MoySklad ceiling 80 were
+recorded. The corrected run used **8 / 10 / 0**, all HTTP 200, and drained tracked
+requests before closing. Closed existing order settings caused **zero provider
+reads**. This does not retrospectively erase the earlier overrun.
+
+A separate legacy integration invocation may have made **0–11 additional Ozon
+reads** before test credential isolation was corrected. Their actual count and
+HTTP outcomes were not traced; they are excluded from the confirmed 105 and
+remain explicitly uncertain. No write method exists in that legacy diagnostic.
+
+The final real browser run inspected actual cancelled postings, linked native
+orders, connections, history and action eligibility. Both split previews were
+correctly blocked by actual status/workflow evidence. Eight private masked
+screenshots cover desktop/mobile Orders, Integrations and Dashboard plus action
+forms. No synthetic response, action POST, JavaScript error or horizontal
+overflow was recorded. The applicable Seller FBS active posting is still absent;
+the documented separate Ozon Delivery OAuth sandbox is not substituted for it.
+New unassembled split execution therefore remains **NOT_OBSERVED_LIVE**.
+
+**Deterministic verification:** full Go lint reports **0**; unit tests, race and
+build passed. The final full PostgreSQL/integration run passed with **779 passed
+test/subtest events and 64 skipped events**. Separate correctly scoped runs
+passed **170 PostgreSQL tests with 0 skips**, and **92 stock tests with 2 skips**
+(standalone crash helper and opt-in legacy browser). Skips are not passes. The
+normal multi-process/browser suite passed again after the frontend change with
+three APIs, two schedulers and four workers; frontend typecheck, lint, build and
+**299 tests** passed. Synthetic providers cover fault injection; no real ambiguous
+write was deliberately generated.
+
+Native-before-split reserve transfer and strictly proven unmirrored-root child
+creation have deterministic normal-pipeline coverage. Native-first creation of a
+retained root after split, deep nested native settlement, and an unreadable old
+parent remain conservative blockers; structural lineage alone does not authorize
+reserve release. No new UNKNOWN write was introduced. Order configuration 36,
+stock configuration 39, native actions and automation grants ended OFF; pending
+work and active calls were zero. The exact-test eligibility gate is distinct from
+those disabled settings; unrestricted production publication remains disabled.
