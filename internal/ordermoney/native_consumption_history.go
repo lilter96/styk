@@ -62,7 +62,7 @@ func nativeConsumptionNoEffect(event orders.NativeConsumptionEvent) bool {
 		return false
 	}
 	switch r.HTTPStatus {
-	case 400, 401, 403, 404, 405, 409, 412, 413, 415, 422, 429:
+	case 400, 401, 403, 404, 405, 412, 413, 415, 422, 429:
 		return true // The existing adapter's explicit no-application responses.
 	default:
 		return false
