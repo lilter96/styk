@@ -345,7 +345,9 @@ func TestOrdersMultiskuRetainedUnknownCompositionFencesOnlyRelatedOrder(t *testi
 	}
 	m.f.runner = m.f.restartedRunner(t)
 	repeatedRetainedIndependentReady(t, m.f)
-	deepOwnedMirror(t, m.f, repeatedRetainedIndependent)
+	m.f.approve(t, splitMemberHTTPPreview(t, m.f, repeatedRetainedIndependent, nil))
+	nestedSettlementAdvance(t, m.f, orders.StateAcknowledged)
+	nestedSettlementAdvance(t, m.f, orders.StateReconciled)
 	m.assertUnknownUnchanged(t, unknown)
 	if m.p.composition.puts.Load() != 1 || m.p.attempts.Load() != 1 || m.p.writes.Load() != 1 {
 		t.Fatal("UNKNOWN collection mutation or Seller split was blindly replayed")
