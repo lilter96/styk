@@ -4,6 +4,7 @@ package integration
 
 import (
 	"encoding/json"
+	"net/http"
 	"slices"
 	"testing"
 
@@ -198,5 +199,66 @@ func TestOrdersDeferredRetainedUnknownCannotReleaseAnyHistoricalChild(t *testing
 	defer f.provider.base.mu.Unlock()
 	if len(f.provider.base.native) != 1 {
 		t.Fatal("unknown native root allowed a historical child order to be created")
+	}
+}
+
+func deferredRetainedNativeFirstFixture(t *testing.T) (positionHTTPFixture, *repeatedRetainedHTTPProvider, orders.TargetObservation, string) {
+	t.Helper()
+	f, _, _ := unmirroredSplitFixture(t)
+	p := &repeatedRetainedHTTPProvider{base: f.provider}
+	f.provider.base.server.Config.Handler = http.HandlerFunc(p.serve)
+	nestedSettlementSplit(t, f, nestedRoot, "4")
+	f.provider.base.mu.Lock()
+	before := len(f.provider.base.native)
+	f.provider.base.mu.Unlock()
+	if before != 0 {
+		t.Fatal("native-first fixture already created a whole-order native reserve")
+	}
+	deepOwnedMirror(t, f, nestedRoot)
+	root, origin := f.readNative(t), f.latestWork(t).ID
+	if len(root.Positions) != 1 || root.Positions[0].Quantity != "4" || !root.Positions[0].Reserve.IsKnown() || *root.Positions[0].Reserve.Value != "4" {
+		t.Fatal("native origin did not reserve only the actual post-split retained four")
+	}
+	f.addForeignLine(t)
+	return f, p, root, origin
+}
+
+func TestOrdersDeferredRetainedNativeFirstSettlesOlderChildren(t *testing.T) {
+	f, provider, root, origin := deferredRetainedNativeFirstFixture(t)
+	deferredRetainedSplits(t, f, "2", "1")
+	assertDeferredRetainedNativeRoot(t, f, root, "4")
+	if f.provider.patches.Load() != 0 {
+		t.Fatal("later seller splits invented a native whole-order or intermediate reduction")
+	}
+	children := []string{nestedChild, repeatedRetainedSecond, repeatedRetainedThird}
+	deferredRetainedReduce(t, f, root, origin, children, true)
+	deferredRetainedAdmit(t, f, children)
+	if provider.attempts.Load() != 3 || provider.writes.Load() != 3 || f.provider.patches.Load() != 1 {
+		t.Fatal("native-first settlement replayed a split or invented intermediate native writes")
+	}
+}
+
+func TestOrdersDeferredRetainedNativeFirstUnknownCannotReleaseChildren(t *testing.T) {
+	f, provider, root, origin := deferredRetainedNativeFirstFixture(t)
+	deferredRetainedSplits(t, f, "2", "1")
+	children := []string{nestedChild, repeatedRetainedSecond, repeatedRetainedThird}
+	deferredRetainedChildrenHeld(t, f, children)
+	preview := splitMemberHTTPPreview(t, f, nestedRoot, nil)
+	if command := preview.Decisions[0].Commands[0]; command.PositionPatch == nil || command.PositionPatch.Baseline.WorkID != origin || command.PositionPatch.PositionID != root.Positions[0].ID || len(command.PositionPatch.Baseline.Bindings) != 1 || !command.PositionPatch.Baseline.Bindings[0].Native.Reserve.IsKnown() || *command.PositionPatch.Baseline.Bindings[0].Native.Reserve.Value != "4" {
+		t.Fatal("native-first review invented an earlier full-eight native frontier")
+	}
+	f.approve(t, preview)
+	f.provider.losePatchResponse.Store(true)
+	f.run(t, orders.StateUnknown)
+	unknown := f.latestWork(t)
+	deferredRetainedChildrenHeld(t, f, append([]string{nestedRoot}, children...))
+	repeatedRetainedIndependentReady(t, f)
+	if latest := f.latestWork(t); latest.ID != unknown.ID || latest.State != orders.StateUnknown || latest.DispatchCount != 1 || provider.attempts.Load() != 3 || provider.writes.Load() != 3 || f.provider.patches.Load() != 1 {
+		t.Fatal("unknown native-first settlement was replayed or rewritten")
+	}
+	f.provider.base.mu.Lock()
+	defer f.provider.base.mu.Unlock()
+	if len(f.provider.base.native) != 1 {
+		t.Fatal("uncertain native-first root released an old or new child reserve")
 	}
 }
