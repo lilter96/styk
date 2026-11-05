@@ -30,7 +30,7 @@ func enrichNativeConsumption(ctx context.Context, q ordersQuerier, current *orde
 		}
 		current.NativeConsumption[correlation.PostingNumber] = facts
 	}
-	return nil
+	return enrichNativeSplitConsumption(ctx, q, current, now)
 }
 
 func readNativeConsumption(ctx context.Context, q ordersQuerier, correlation orders.Correlation, selfID, fingerprint string, now time.Time) (orders.NativeConsumptionFacts, error) {

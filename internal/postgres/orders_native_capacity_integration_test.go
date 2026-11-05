@@ -4,6 +4,7 @@ package postgres
 
 import (
 	"testing"
+	"time"
 
 	"github.com/lilter96/styk/internal/orders"
 )
@@ -45,4 +46,42 @@ func changedNativeConsumptionCorrelation(correlation orders.Correlation, change 
 		correlation.Marker = "another-marker"
 	}
 	return correlation
+}
+
+// A missing known ancestor blocks only its descendants. Omitting a parent in a
+// later short observation cannot erase that durable relation.
+func TestNativeConsumptionPostgresKeepsKnownAncestryScoped(t *testing.T) {
+	f, _ := nativePointStoreFixture(t)
+	child := orderInventoryPosting(t, f, "external-child", "awaiting_packaging")
+	independent := orderInventoryPosting(t, f, "independent-same-order", "awaiting_packaging")
+	child.ParentPostingNumber = orders.Present("unobserved-parent")
+	child.Evidence.Revision = "child-known-parent"
+	child.Evidence.ProviderUpdatedAt = orders.Present(f.now)
+	saveNativeConsumptionPosting(t, f, child)
+	child.ParentPostingNumber = orders.Field[string]{}
+	child.Evidence.Revision = "child-omitted-parent"
+	child.Evidence.ProviderUpdatedAt = orders.Present(f.now.Add(time.Second))
+	saveNativeConsumptionPosting(t, f, child)
+	current := orders.ReviewContext{Config: f.config, Postings: []orders.Posting{child, independent}}
+	if err := enrichNativeSplitConsumption(f.ctx, f.db.Pool, &current, f.now); err != nil {
+		t.Fatal(err)
+	}
+	if !current.NativeSplitBlocked[child.PostingNumber] || !current.NativeAncestorConsumed[child.PostingNumber] || current.NativeSplitBlocked[independent.PostingNumber] || current.NativeAncestorConsumed[independent.PostingNumber] {
+		t.Fatal("ancestry omission reopened child or blocked an unrelated posting")
+	}
+}
+
+func saveNativeConsumptionPosting(t *testing.T, f orderInventoryFixture, posting orders.Posting) {
+	t.Helper()
+	tx, err := f.db.Pool.Begin(f.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rollbackTransaction(tx)
+	if _, err = insertOrderPosting(f.ctx, tx, posting, f.now); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Commit(f.ctx); err != nil {
+		t.Fatal(err)
+	}
 }

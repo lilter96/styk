@@ -13,8 +13,10 @@ type SaveConfigRequest struct {
 }
 
 type ReviewContext struct {
-	RevalidationWorkID             string `json:"-"`
-	RevalidationCommandFingerprint string `json:"-"`
+	NativeSplitBlocked             map[string]bool `json:"-"`
+	NativeAncestorConsumed         map[string]bool `json:"-"`
+	RevalidationWorkID             string          `json:"-"`
+	RevalidationCommandFingerprint string          `json:"-"`
 
 	SplitAncestorSettlements map[string]SplitAncestorSettlementPermission `json:"-"`
 
