@@ -18,6 +18,7 @@ import {
   orderRequestError,
   orderStateLabels,
   type OrderScope,
+  type OrderOperation,
 } from "./OrdersTypes";
 
 export function OrdersOperations({
@@ -25,8 +26,10 @@ export function OrdersOperations({
   onLinks,
   onOutcomes,
   onRecoveryAuthorization,
+  postingNumber,
 }: {
   scope: OrderScope;
+  postingNumber?: string;
   onLinks?: (links: Record<string, string>) => void;
   onOutcomes?: (states: Record<string, string>) => void;
   onRecoveryAuthorization?: (
@@ -36,7 +39,11 @@ export function OrdersOperations({
 }) {
   const [cursors, setCursors] = useState([""]);
   const cursor = cursors[cursors.length - 1];
-  const { latest, page: history } = useOrdersHistory(scope, cursor);
+  const { latest, page: history } = useOrdersHistory(
+    scope,
+    cursor,
+    postingNumber,
+  );
   const labelNow = useLabelExpiryClock(history.data);
   useEffect(() => {
     const links: Record<string, string> = {};
@@ -57,10 +64,22 @@ export function OrdersOperations({
   return (
     <section
       className="orders-section"
-      aria-labelledby="orders-history-heading"
+      aria-labelledby={
+        postingNumber
+          ? "orders-detail-history-heading"
+          : "orders-history-heading"
+      }
     >
       <div className="orders-section-heading">
-        <h2 id="orders-history-heading">История передачи</h2>
+        <h2
+          id={
+            postingNumber
+              ? "orders-detail-history-heading"
+              : "orders-history-heading"
+          }
+        >
+          {postingNumber ? "История отправления" : "История передачи"}
+        </h2>
         <button
           type="button"
           className="secondary"
@@ -89,158 +108,178 @@ export function OrdersOperations({
             подтверждением.
           </p>
         )}
-      {(history.data?.operations ?? []).map((operation) => (
-        <article className="orders-posting" key={operation.id}>
-          <div className="orders-section-heading">
-            <h3>Передача от {orderDate(operation.created_at)}</h3>
-            <span className="orders-badge">
-              {orderStateLabels[operation.state] ?? operation.state}
-            </span>
-          </div>
-          {(operation.targets ?? []).map((work) => (
-            <div className="orders-work" key={work.id}>
-              <div>
-                <strong>{work.command.posting_number}</strong>
-                <span
-                  className={`orders-badge ${work.state === "UNKNOWN" || work.state === "BLOCKED" ? "warning" : work.state === "RECONCILED" ? "success" : ""}`}
-                >
-                  {work.command.action === "posting_country_set" &&
-                  work.state === "RECONCILED"
-                    ? "Требование страны снято"
-                    : (orderStateLabels[work.state] ?? work.state)}
-                </span>
-              </div>
-              <p>
-                {orderActionLabel(work.command.action)} ·{" "}
-                {work.automatic
-                  ? "По разрешению автоматизации"
-                  : "Подтверждено вручную"}
-              </p>
-              {work.command.position_patch && (
-                <OrdersPositionPatch value={work.command.position_patch} />
-              )}
-              {(work.command.action.startsWith("mirror_") ||
-                !!work.command.native_movement) && (
-                <MoyOrderLink
-                  id={
-                    work.command.correlation?.customer_order_id ||
-                    work.receipt?.external_id
-                  }
-                />
-              )}
-              {work.command.native_movement && (
-                <details>
-                  <summary>
-                    {work.state === "RECONCILED"
-                      ? "Складской документ подтверждён сверкой"
-                      : "Складской документ и параметры операции"}
-                  </summary>
-                  <OrdersNativeSummary command={work.command} historical />
-                  {nativeDocumentURL(
-                    work.command,
-                    work.native_document?.id ?? work.receipt?.external_id,
-                  ) && (
-                    <a
-                      href={nativeDocumentURL(
+      {(history.data?.operations ?? [])
+        .filter(
+          (operation) =>
+            !postingNumber ||
+            operation.targets?.some(
+              (work) => work.command.posting_number === postingNumber,
+            ),
+        )
+        .map((operation) => (
+          <article className="orders-posting" key={operation.id}>
+            <div className="orders-section-heading">
+              <h3>Передача от {orderDate(operation.created_at)}</h3>
+              <span className="orders-badge">
+                {orderStateLabels[
+                  operationSummaryState(operation, postingNumber)
+                ] ?? operationSummaryState(operation, postingNumber)}
+              </span>
+            </div>
+            {(operation.targets ?? [])
+              .filter(
+                (work) =>
+                  !postingNumber ||
+                  work.command.posting_number === postingNumber,
+              )
+              .map((work) => (
+                <div className="orders-work" key={work.id}>
+                  <div>
+                    <strong>{work.command.posting_number}</strong>
+                    <span
+                      className={`orders-badge ${work.state === "UNKNOWN" || work.state === "BLOCKED" ? "warning" : work.state === "RECONCILED" ? "success" : ""}`}
+                    >
+                      {work.command.action === "posting_country_set" &&
+                      work.state === "RECONCILED"
+                        ? "Требование страны снято"
+                        : (orderStateLabels[work.state] ?? work.state)}
+                    </span>
+                  </div>
+                  <p>
+                    {orderActionLabel(work.command.action)} ·{" "}
+                    {work.automatic
+                      ? "По разрешению автоматизации"
+                      : "Подтверждено вручную"}
+                  </p>
+                  {work.command.position_patch && (
+                    <OrdersPositionPatch value={work.command.position_patch} />
+                  )}
+                  {(work.command.action.startsWith("mirror_") ||
+                    !!work.command.native_movement) && (
+                    <MoyOrderLink
+                      id={
+                        work.command.correlation?.customer_order_id ||
+                        work.receipt?.external_id
+                      }
+                    />
+                  )}
+                  {work.command.native_movement && (
+                    <details>
+                      <summary>
+                        {work.state === "RECONCILED"
+                          ? "Складской документ подтверждён сверкой"
+                          : "Складской документ и параметры операции"}
+                      </summary>
+                      <OrdersNativeSummary command={work.command} historical />
+                      {nativeDocumentURL(
                         work.command,
                         work.native_document?.id ?? work.receipt?.external_id,
+                      ) && (
+                        <a
+                          href={nativeDocumentURL(
+                            work.command,
+                            work.native_document?.id ??
+                              work.receipt?.external_id,
+                          )}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Открыть складской документ МойСклад
+                        </a>
                       )}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      Открыть складской документ МойСклад
-                    </a>
+                    </details>
                   )}
-                </details>
-              )}
-              {work.command.posting_action && (
-                <details>
-                  <summary>Подтверждённые параметры действия</summary>
-                  <OrdersActionSummary command={work.command} />
-                </details>
-              )}
-              {work.receipt?.country_evidence && (
-                <p className="orders-note">
-                  SKU {work.receipt.country_evidence.sku}:{" "}
-                  {work.receipt.country_evidence.requirement_resolved
-                    ? "требование указать страну снято"
-                    : "снятие требования не подтверждено"}
-                  . Установленное значение страны отдельным чтением не
-                  подтверждено.
-                </p>
-              )}
-              {(work.receipt?.task_ids ?? []).map((task, index) => (
-                <p className="orders-note" key={`${task.id}:${index}`}>
-                  Задача обработки Ozon: {task.id}
-                </p>
-              ))}
-              {["posting_split", "posting_split_unassembled"].includes(
-                work.command.action,
-              ) && (
-                <OrdersSplitEvidence
-                  receipt={work.receipt}
-                  state={work.state}
-                />
-              )}
-              {work.state === "RECONCILED" &&
-                work.receipt?.artifact?.available &&
-                (!work.receipt.artifact.expires_at ||
-                  Date.parse(work.receipt.artifact.expires_at) > labelNow) &&
-                safeOrderArtifactURL(work.receipt.artifact.download_url) && (
-                  <a
-                    href={safeOrderArtifactURL(
+                  {work.command.posting_action && (
+                    <details>
+                      <summary>Подтверждённые параметры действия</summary>
+                      <OrdersActionSummary command={work.command} />
+                    </details>
+                  )}
+                  {work.receipt?.country_evidence && (
+                    <p className="orders-note">
+                      SKU {work.receipt.country_evidence.sku}:{" "}
+                      {work.receipt.country_evidence.requirement_resolved
+                        ? "требование указать страну снято"
+                        : "снятие требования не подтверждено"}
+                      . Установленное значение страны отдельным чтением не
+                      подтверждено.
+                    </p>
+                  )}
+                  {(work.receipt?.task_ids ?? []).map((task, index) => (
+                    <p className="orders-note" key={`${task.id}:${index}`}>
+                      Задача обработки Ozon: {task.id}
+                    </p>
+                  ))}
+                  {["posting_split", "posting_split_unassembled"].includes(
+                    work.command.action,
+                  ) && (
+                    <OrdersSplitEvidence
+                      receipt={work.receipt}
+                      state={work.state}
+                    />
+                  )}
+                  {work.state === "RECONCILED" &&
+                    work.receipt?.artifact?.available &&
+                    (!work.receipt.artifact.expires_at ||
+                      Date.parse(work.receipt.artifact.expires_at) >
+                        labelNow) &&
+                    safeOrderArtifactURL(
                       work.receipt.artifact.download_url,
+                    ) && (
+                      <a
+                        href={safeOrderArtifactURL(
+                          work.receipt.artifact.download_url,
+                        )}
+                      >
+                        Скачать этикетку
+                      </a>
                     )}
-                  >
-                    Скачать этикетку
-                  </a>
-                )}
-              {work.state === "RECONCILED" &&
-                work.receipt?.artifact?.expires_at && (
-                  <p className="orders-note">
-                    {Date.parse(work.receipt.artifact.expires_at) > labelNow
-                      ? `Этикетка доступна до ${orderDate(work.receipt.artifact.expires_at)}.`
-                      : "Срок хранения этикетки истёк."}
-                  </p>
-                )}
-              {work.state === "UNKNOWN" && (
-                <p className="orders-warning">
-                  Запрос мог выполниться. STYK сверяет результат чтением;
-                  повторная отправка автоматически не выполняется. Обновите
-                  статусы и дождитесь подтверждения.
-                </p>
-              )}
-              {work.state === "UNKNOWN" && (
-                <OrdersRecovery
-                  scope={scope}
-                  work={work}
-                  onAuthorization={onRecoveryAuthorization}
-                />
-              )}
-              {work.state === "BLOCKED" && (
-                <p className="orders-warning">
-                  Условия передачи изменились. Проверьте настройки и связи,
-                  затем создайте новый предпросмотр.
-                </p>
-              )}
-              {orderOperationProblem(work.code || work.receipt?.code) && (
-                <p className="orders-warning" role="status">
-                  {orderOperationProblem(work.code || work.receipt?.code)}
-                </p>
-              )}
-              {(work.code || work.receipt?.code) && (
-                <details>
-                  <summary>Сведения об операции</summary>
-                  <p>
-                    Код: <code>{work.code || work.receipt.code}</code>
-                  </p>
-                  <p>ID: {work.id}</p>
-                </details>
-              )}
-            </div>
-          ))}
-        </article>
-      ))}
+                  {work.state === "RECONCILED" &&
+                    work.receipt?.artifact?.expires_at && (
+                      <p className="orders-note">
+                        {Date.parse(work.receipt.artifact.expires_at) > labelNow
+                          ? `Этикетка доступна до ${orderDate(work.receipt.artifact.expires_at)}.`
+                          : "Срок хранения этикетки истёк."}
+                      </p>
+                    )}
+                  {work.state === "UNKNOWN" && (
+                    <p className="orders-warning">
+                      Запрос мог выполниться. STYK сверяет результат чтением;
+                      повторная отправка автоматически не выполняется. Обновите
+                      статусы и дождитесь подтверждения.
+                    </p>
+                  )}
+                  {work.state === "UNKNOWN" && (
+                    <OrdersRecovery
+                      scope={scope}
+                      work={work}
+                      onAuthorization={onRecoveryAuthorization}
+                    />
+                  )}
+                  {work.state === "BLOCKED" && (
+                    <p className="orders-warning">
+                      Условия передачи изменились. Проверьте настройки и связи,
+                      затем создайте новый предпросмотр.
+                    </p>
+                  )}
+                  {orderOperationProblem(work.code || work.receipt?.code) && (
+                    <p className="orders-warning" role="status">
+                      {orderOperationProblem(work.code || work.receipt?.code)}
+                    </p>
+                  )}
+                  {(work.code || work.receipt?.code) && (
+                    <details>
+                      <summary>Сведения об операции</summary>
+                      <p>
+                        Код: <code>{work.code || work.receipt.code}</code>
+                      </p>
+                      <p>ID: {work.id}</p>
+                    </details>
+                  )}
+                </div>
+              ))}
+          </article>
+        ))}
       <div className="orders-actions">
         <button
           className="secondary"
@@ -261,5 +300,18 @@ export function OrdersOperations({
         </button>
       </div>
     </section>
+  );
+}
+
+function operationSummaryState(
+  operation: OrderOperation,
+  postingNumber?: string,
+): string {
+  if (!postingNumber) return operation.state;
+  const targets = (operation.targets ?? []).filter(
+    (work) => work.command.posting_number === postingNumber,
+  );
+  return (
+    targets.find((work) => work.state !== "RECONCILED")?.state ?? "RECONCILED"
   );
 }

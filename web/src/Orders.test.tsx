@@ -214,8 +214,16 @@ it("shows unknown source total and provider update separately from known zero qu
   const choice = await screen.findByLabelText(
     "Выбрать отправление SYNTHETIC-1",
   );
-  const article = choice.closest("article")!;
-  expect(within(article).getByText("0", { exact: true })).toBeTruthy();
+  const row = choice.closest("tr")!;
+  expect(within(row).getByText("1 поз. · 0 шт.")).toBeTruthy();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Открыть отправление SYNTHETIC-1" }),
+  );
+  const article = screen.getByRole("dialog");
+  const sourceDetails = within(article)
+    .getByText("Сведения о связи и источнике")
+    .closest("details")!;
+  sourceDetails.open = true;
   expect(
     within(article).getByText("Сумма Ozon").nextElementSibling?.textContent,
   ).toBe("Неизвестно");
@@ -347,6 +355,8 @@ it("does not retry or reapprove an unknown outcome and exposes read-only history
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Закрыть" }));
+  fireEvent.click(screen.getByRole("tab", { name: "История передач" }));
   fireEvent.click(
     screen.getByRole("button", { name: "Обновить статусы заказов" }),
   );
@@ -560,6 +570,7 @@ it("blocks a previously unknown posting from the paginated history and shows its
       : undefined,
   );
   mount();
+  fireEvent.click(await screen.findByRole("tab", { name: "История передач" }));
   await screen.findByText(/Запрос мог выполниться/);
   await waitFor(() =>
     expect(
@@ -580,8 +591,247 @@ it("blocks a previously unknown posting from the paginated history and shows its
 });
 
 async function openOrderSettings() {
+  fireEvent.click(await screen.findByRole("button", { name: "Настройки" }));
   const summary = await screen.findByText("Настройки передачи в МойСклад");
   const details = summary.closest("details")!;
   details.open = true;
   fireEvent(details, new Event("toggle"));
 }
+
+it("selects only unfenced rows on the current page without opening or writing", async () => {
+  const fetcher = mockAPI((url) =>
+    url.pathname.endsWith("/postings")
+      ? json({
+          postings: [posting(), posting("SYNTHETIC-2")],
+          target_states: ["SYNTHETIC-1", "SYNTHETIC-2"].map(
+            (number, index) => ({
+              scope: orderScopeBody(scope),
+              posting_number: number,
+              has_operation: index === 1,
+              state: index === 1 ? "UNKNOWN" : undefined,
+              unresolved: index === 1,
+              source_changed: false,
+              checked_at: new Date().toISOString(),
+            }),
+          ),
+        })
+      : undefined,
+  );
+  mount();
+  const all = await screen.findByLabelText(
+    "Выбрать все доступные отправления на странице",
+  );
+  await screen.findByLabelText("Выбрать отправление SYNTHETIC-2");
+  fireEvent.click(all);
+  expect(
+    (
+      screen.getByLabelText(
+        "Выбрать отправление SYNTHETIC-1",
+      ) as HTMLInputElement
+    ).checked,
+  ).toBe(true);
+  expect(
+    (
+      screen.getByLabelText(
+        "Выбрать отправление SYNTHETIC-2",
+      ) as HTMLInputElement
+    ).checked,
+  ).toBe(false);
+  expect(
+    (
+      screen.getByLabelText(
+        "Выбрать отправление SYNTHETIC-2",
+      ) as HTMLInputElement
+    ).disabled,
+  ).toBe(true);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(
+    fetcher.mock.calls.filter(([, init]) => init?.method === "POST"),
+  ).toHaveLength(0);
+  fireEvent.click(all);
+  expect(screen.getByText("Выбрано отправлений: 0")).toBeTruthy();
+});
+
+it("sends status and attention to the server and resets their cursor", async () => {
+  const fetcher = mockAPI((url) =>
+    url.pathname.endsWith("/postings")
+      ? json({ postings: [posting()], next_cursor: "next" })
+      : undefined,
+  );
+  mount();
+  await screen.findByLabelText("Выбрать отправление SYNTHETIC-1");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Следующие отправления" }),
+  );
+  await waitFor(() =>
+    expect(
+      fetcher.mock.calls.some(
+        ([path]) =>
+          new URL(path, "http://localhost").searchParams.get("cursor") ===
+          "next",
+      ),
+    ).toBe(true),
+  );
+  fireEvent.change(
+    screen.getByLabelText("Статус Ozon", { selector: "select" }),
+    { target: { value: "delivered" } },
+  );
+  await waitFor(() =>
+    expect(
+      fetcher.mock.calls.some(([path]) => {
+        const params = new URL(path, "http://localhost").searchParams;
+        return (
+          params.get("status") === "delivered" && params.get("cursor") === ""
+        );
+      }),
+    ).toBe(true),
+  );
+  fireEvent.change(screen.getByLabelText("Состояние отправлений"), {
+    target: { value: "attention" },
+  });
+  await waitFor(() =>
+    expect(
+      fetcher.mock.calls.some(([path]) => {
+        const params = new URL(path, "http://localhost").searchParams;
+        return (
+          params.get("attention") === "true" &&
+          params.get("status") === "delivered" &&
+          params.get("cursor") === ""
+        );
+      }),
+    ).toBe(true),
+  );
+});
+
+it("opens a drawer without mutations, keeps tab keyboard navigation and closes on Escape", async () => {
+  const fetcher = mockAPI();
+  mount();
+  const opener = await screen.findByRole("button", {
+    name: "Открыть отправление SYNTHETIC-1",
+  });
+  opener.focus();
+  fireEvent.click(opener);
+  const drawer = screen.getByRole("dialog", { name: "SYNTHETIC-1" });
+  const overview = within(drawer).getByRole("tab", { name: "Обзор" });
+  fireEvent.keyDown(overview, { key: "ArrowRight" });
+  expect(
+    within(drawer)
+      .getByRole("tab", { name: "Товары" })
+      .getAttribute("aria-selected"),
+  ).toBe("true");
+  expect(within(drawer).getByText("Отменено: Неизвестно")).toBeTruthy();
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(opener);
+  expect(
+    fetcher.mock.calls.filter(([, init]) => init?.method === "POST"),
+  ).toHaveLength(0);
+});
+
+it("closes an old drawer and rejects stale data after an account change", async () => {
+  const next = { ...scope, ozon: "next-ozon" };
+  mockAPI((url) => {
+    if (url.searchParams.get("ozon_account") !== next.ozon) return;
+    if (url.pathname.endsWith("/config"))
+      return json(configuration({ scope: orderScopeBody(next) }));
+    if (url.pathname.endsWith("/postings"))
+      return json({ postings: [posting("WRONG-ACCOUNT")] });
+    if (url.pathname.endsWith("/operations")) return json({ operations: [] });
+  });
+  const mounted = mount();
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Открыть отправление SYNTHETIC-1",
+    }),
+  );
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  mounted.changeScope(next);
+  await screen.findByRole("alert");
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByText("WRONG-ACCOUNT")).toBeNull();
+  expect(screen.queryByLabelText("Выбрать отправление SYNTHETIC-1")).toBeNull();
+});
+
+it("shows a recoverable list error and an explicit empty filtered result", async () => {
+  let fail = true;
+  mockAPI((url) =>
+    url.pathname.endsWith("/postings")
+      ? json(
+          fail ? { error: "UNAVAILABLE" } : { postings: [] },
+          fail ? 503 : 200,
+        )
+      : undefined,
+  );
+  mount();
+  await screen.findByRole("alert");
+  fail = false;
+  fireEvent.click(screen.getByRole("button", { name: "Повторить загрузку" }));
+  await screen.findByText("Отправлений пока нет");
+  fireEvent.change(screen.getByLabelText("Найти отправление или заказ"), {
+    target: { value: "missing" },
+  });
+  await screen.findByText("Отправления не найдены");
+  fireEvent.click(screen.getByRole("button", { name: "Сбросить фильтры" }));
+  expect(
+    (screen.getByLabelText("Найти отправление или заказ") as HTMLInputElement)
+      .value,
+  ).toBe("");
+});
+
+it("loads only the requested posting history and keeps other targets out of its drawer", async () => {
+  const fetcher = mockAPI((url) =>
+    url.pathname.endsWith("/operations")
+      ? json({
+          operations: [
+            {
+              id: "mixed-operation",
+              scope: orderScopeBody(scope),
+              state: "UNKNOWN",
+              created_at: new Date().toISOString(),
+              targets: [
+                {
+                  id: "own",
+                  scope: orderScopeBody(scope),
+                  state: "RECONCILED",
+                  automatic: false,
+                  command: decision().commands[0],
+                  receipt: { state: "RECONCILED" },
+                },
+                {
+                  id: "other",
+                  scope: orderScopeBody(scope),
+                  state: "UNKNOWN",
+                  automatic: false,
+                  command: decision("SYNTHETIC-OTHER").commands[0],
+                  receipt: { state: "UNKNOWN" },
+                },
+              ],
+            },
+          ],
+        })
+      : undefined,
+  );
+  mount();
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Открыть отправление SYNTHETIC-1",
+    }),
+  );
+  const drawer = screen.getByRole("dialog");
+  fireEvent.click(within(drawer).getByRole("tab", { name: "История" }));
+  await within(drawer).findByText("Передача от", { exact: false });
+  expect(within(drawer).queryByText("SYNTHETIC-OTHER")).toBeNull();
+  expect(
+    within(drawer).queryByText("Результат неизвестен", { exact: true }),
+  ).toBeNull();
+  expect(
+    within(drawer).getAllByText("Подтверждено сверкой", { exact: true }).length,
+  ).toBeGreaterThan(0);
+  expect(
+    fetcher.mock.calls.some(
+      ([path]) =>
+        new URL(path, "http://localhost").searchParams.get("search") ===
+        "SYNTHETIC-1",
+    ),
+  ).toBe(true);
+});

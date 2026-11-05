@@ -1,7 +1,7 @@
 import { OrdersAddressMapping } from "./OrdersAddressMapping";
 import { OrdersReservationMapping } from "./OrdersReservationMapping";
 import { OrdersNativePolicy, nativePolicyValid } from "./OrdersNativePolicy";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useOrdersMetadata } from "./useOrdersMetadata";
 import { post } from "./api";
 import { OrdersMetadataSetup } from "./OrdersMetadataSetup";
@@ -90,12 +90,14 @@ export function OrdersConfig({
   onSaved,
   onDirty,
   moyLabel = "Подключённый аккаунт",
+  expanded,
 }: {
   scope: OrderScope;
   config: OrdersConfigData;
   onSaved: (config: OrdersConfigData) => void;
   onDirty: (dirty: boolean) => void;
   moyLabel?: string;
+  expanded?: boolean;
 }) {
   const [draft, setDraft] = useState(config);
   const [dirty, setDirty] = useState(false);
@@ -118,6 +120,9 @@ export function OrdersConfig({
   const [error, setError] = useState("");
   const lock = useRef(false);
   const [open, setOpen] = useState(!config.revision);
+  useEffect(() => {
+    if (expanded !== undefined) setOpen(expanded);
+  }, [expanded]);
   const metadata = useOrdersMetadata(scope, open);
   function change(next: OrdersConfigData) {
     setDraft(next);

@@ -44,16 +44,15 @@ test("current posting state stays independent of paginated history and reconcile
     .getByLabel("Найти отправление или заказ")
     .fill("position-http-posting");
   const posting = page
-    .locator(".orders-postings > .orders-posting")
+    .locator(".orders-table tbody tr")
     .filter({ hasText: "position-http-posting" });
   const checkbox = page.getByLabel(
     "Выбрать отправление position-http-posting",
     { exact: true },
   );
-  await expect(posting).toContainText(
-    "Последняя операция: Результат неизвестен",
-  );
+  await expect(posting).toContainText("Результат неизвестен");
   await expect(checkbox).toBeDisabled();
+  await page.getByRole("tab", { name: "История передач", exact: true }).click();
   const history = page.locator(
     'section[aria-labelledby="orders-history-heading"]',
   );
@@ -98,14 +97,27 @@ test("current posting state stays independent of paginated history and reconcile
     { headers: { "X-Orders-Test-Control": control } },
   );
   expect(response.status()).toBe(204);
-  await expect(posting).toContainText(
-    "Последняя операция: Подтверждено сверкой",
-    { timeout: 25_000 },
-  );
+  await expect(posting).toContainText("Подтверждено сверкой", {
+    timeout: 25_000,
+  });
   await expect(checkbox).toBeEnabled();
   await expect(history.getByText("Страница 2", { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(posting.getByText(/Состояние STYK проверено:/)).toBeVisible();
+  await page.getByRole("tab", { name: "Отправления", exact: true }).click();
+  await page
+    .getByRole("button", {
+      name: "Открыть отправление position-http-posting",
+      exact: true,
+    })
+    .click();
+  const drawer = page.getByRole("dialog", {
+    name: "position-http-posting",
+    exact: true,
+  });
+  await drawer
+    .getByText("Сведения о связи и источнике", { exact: true })
+    .click();
+  await expect(drawer.getByText(/Состояние STYK проверено:/)).toBeVisible();
   const widths = await page.evaluate(() => ({
     viewport: innerWidth,
     document: document.documentElement.scrollWidth,
@@ -120,7 +132,8 @@ test("current posting state stays independent of paginated history and reconcile
     { headers: { "X-Orders-Test-Control": control } },
   );
   expect(rejected.status()).toBe(204);
-  const documents = posting.locator("details").filter({
+  await drawer.getByRole("tab", { name: "Действия", exact: true }).click();
+  const documents = drawer.locator("details").filter({
     has: page.locator("summary", {
       hasText: /^Отгрузка и возврат в МойСклад$/,
     }),
@@ -164,7 +177,7 @@ test("current posting state stays independent of paginated history and reconcile
       .click();
   }
   await confirmNative();
-  await expect(posting).toContainText("Последняя операция: Отклонено", {
+  await expect(posting).toContainText("Отклонено", {
     timeout: 25000,
   });
   await expect
@@ -216,9 +229,8 @@ test("current posting state stays independent of paginated history and reconcile
     fullPage: true,
   });
   await confirmNative();
-  await expect(posting).toContainText(
-    "Последняя операция: Подтверждено сверкой",
-    { timeout: 25000 },
-  );
+  await expect(posting).toContainText("Подтверждено сверкой", {
+    timeout: 25000,
+  });
   expect(errors).toEqual([]);
 });

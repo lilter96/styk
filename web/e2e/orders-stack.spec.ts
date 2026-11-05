@@ -74,6 +74,7 @@ test("orders review reaches real API replicas and durable worker readback", asyn
     await expect(
       a.getByText("Подтверждение записано.", { exact: false }),
     ).toBeVisible();
+    await a.getByRole("tab", { name: "История передач", exact: true }).click();
     await expect
       .poll(
         async () => {
@@ -93,10 +94,18 @@ test("orders review reaches real API replicas and durable worker readback", asyn
       )
       .toBe(1);
     await a.reload();
+    await a.getByRole("tab", { name: "История передач", exact: true }).click();
     await expect(
       a.locator(".orders-work").filter({ hasText: "browser-create" }),
     ).toContainText("Подтверждено сверкой");
+    await a.getByRole("tab", { name: "Отправления", exact: true }).click();
     await a.getByLabel("Найти отправление или заказ").fill("browser-create");
+    await a
+      .getByRole("button", {
+        name: "Открыть отправление browser-create",
+        exact: true,
+      })
+      .click();
     await a.getByText("Связанные отправления сборки", { exact: true }).click();
     await a
       .getByRole("button", {
@@ -105,19 +114,25 @@ test("orders review reaches real API replicas and durable worker readback", asyn
       })
       .click();
     await expect(a.getByLabel("Найти отправление или заказ")).toHaveValue(
-      "browser-related",
+      "browser-create",
     );
-    await expect(a.locator(".orders-posting-title strong")).toHaveText([
-      "browser-related",
-    ]);
+    await expect(
+      a.getByRole("dialog", { name: "browser-related", exact: true }),
+    ).toBeVisible();
+    await a.keyboard.press("Escape");
     await a.getByLabel("Найти отправление или заказ").fill("browser-create");
+    await a
+      .getByRole("button", {
+        name: "Открыть отправление browser-create",
+        exact: true,
+      })
+      .click();
     await a.getByText("Связанные отправления сборки", { exact: true }).click();
     await expect(
       a.getByText("Связь сборки не означает, что резерв уже перенесён."),
     ).toBeVisible();
     await a
-      .locator(".orders-postings > .orders-posting")
-      .filter({ hasText: "browser-create" })
+      .getByRole("dialog", { name: "browser-create", exact: true })
       .screenshot({ path: "test-results/orders-related-desktop.png" });
     const query = new URLSearchParams(scope).toString();
     for (const resource of ["postings", "operations", "config", "metadata"]) {
@@ -127,6 +142,7 @@ test("orders review reaches real API replicas and durable worker readback", asyn
       expect(response.status()).toBe(404);
       expect(await response.text()).not.toContain("browser-create");
     }
+    await a.keyboard.press("Escape");
     await a.setViewportSize({ width: 390, height: 844 });
     await a.getByRole("button", { name: "Открыть меню" }).click();
     const menu = a.getByRole("dialog", { name: "Разделы STYK" });
@@ -148,8 +164,13 @@ test("orders review reaches real API replicas and durable worker readback", asyn
         .slice(0, 12),
     }));
     await a
-      .locator(".orders-postings > .orders-posting")
-      .filter({ hasText: "browser-create" })
+      .getByRole("button", {
+        name: "Открыть отправление browser-create",
+        exact: true,
+      })
+      .click();
+    await a
+      .getByRole("dialog", { name: "browser-create", exact: true })
       .screenshot({ path: "test-results/orders-related-mobile.png" });
     expect(overflow.document, JSON.stringify(overflow)).toBeLessThanOrEqual(
       overflow.viewport + 1,

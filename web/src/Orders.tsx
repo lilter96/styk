@@ -1,7 +1,7 @@
 import type { OrderTargetState } from "./OrdersTargetState";
 import type { OrderNativeProposal } from "./OrdersNativeTypes";
 import type { OrderCompositionProposal } from "./OrdersComposition";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useId, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, post } from "./api";
 import { OrdersConfig } from "./OrdersConfig";
@@ -10,6 +10,9 @@ import { OrdersPostings } from "./OrdersPostings";
 import { OrdersPreview } from "./OrdersPreview";
 import { OrdersOperations } from "./OrdersOperations";
 import { OrdersHeader } from "./OrdersHeader";
+import { Icon } from "./UI";
+import { IntegrationDialog } from "./IntegrationDialog";
+import { OrdersTabs } from "./OrdersTabs";
 import {
   ordersURL,
   orderScopeBody,
@@ -52,6 +55,12 @@ function OrdersAccount({
   ozonLabel = "Подключённый аккаунт",
 }: OrdersProps & { scope: OrderScope }) {
   const client = useQueryClient();
+  const tabsID = useId();
+  const [tab, setTab] = useState<"postings" | "history">("postings");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [previewOrigin, setPreviewOrigin] = useState<"bulk" | "detail">("bulk");
+  const generation = useRef(0);
   const configKey = ["orders-config", scope];
   const config = useQuery({
     queryKey: configKey,
@@ -84,18 +93,22 @@ function OrdersAccount({
       currentTargets.current[number]?.unresolved ||
       !(recoveries[number] > Date.now()),
   );
+  const [preview, setPreview] = useState<OrdersPreviewData | null>(null);
+  const invalidatePreview = useCallback(() => {
+    generation.current++;
+    setPreview(null);
+  }, []);
   const recoveryAuthorization = useCallback(
     (posting: string, until: string | undefined) => {
       setRecoveries((previous) => ({
         ...previous,
         [posting]: until ? Date.parse(until) : 0,
       }));
-      setPreview(null);
+      invalidatePreview();
       void client.invalidateQueries({ queryKey: ["orders-postings", scope] });
     },
-    [client, scope],
+    [client, scope, invalidatePreview],
   );
-  const [preview, setPreview] = useState<OrdersPreviewData | null>(null);
   const previewMetadata = useOrdersMetadata(
     scope,
     !!preview?.decisions.some((decision) =>
@@ -186,7 +199,7 @@ function OrdersAccount({
   function saved(value: OrdersConfigData) {
     client.setQueryData(configKey, value);
     setDirty(false);
-    setPreview(null);
+    invalidatePreview();
     setMessage("Настройки заказов сохранены.");
   }
   async function review(
@@ -216,7 +229,9 @@ function OrdersAccount({
     setBusy("preview");
     setError("");
     setMessage("");
-    setPreview(null);
+    invalidatePreview();
+    setPreviewOrigin(proposal ? "detail" : "bulk");
+    const requestGeneration = generation.current;
     setPreviewActions(allowedActions);
     try {
       const value = await post<OrdersPreviewData>(
@@ -258,7 +273,7 @@ function OrdersAccount({
         )
       )
         throw new Error("invalid preview");
-      setPreview(value);
+      if (generation.current === requestGeneration) setPreview(value);
     } catch (error) {
       setError(orderRequestError(error));
     } finally {
@@ -305,7 +320,7 @@ function OrdersAccount({
       );
       if (!value.id || !sameOrderScope(value.scope, scope))
         throw new Error("invalid approval acknowledgement");
-      setPreview(null);
+      invalidatePreview();
       setSelected([]);
       setActionReset((value) => value + 1);
       setMessage(
@@ -316,7 +331,7 @@ function OrdersAccount({
         error instanceof ApiError &&
         [400, 403, 409, 410, 422].includes(error.status)
       ) {
-        setPreview(null);
+        invalidatePreview();
         setError(orderRequestError(error));
       } else {
         setUncertain((previous) => [...new Set([...previous, ...numbers])]);
@@ -325,9 +340,10 @@ function OrdersAccount({
         );
       }
     } finally {
-      await client.invalidateQueries({
-        queryKey: ["orders-operations", scope],
-      });
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ["orders-operations", scope] }),
+        client.invalidateQueries({ queryKey: ["orders-postings", scope] }),
+      ]);
       lock.current = false;
       setBusy(null);
     }
@@ -355,127 +371,8 @@ function OrdersAccount({
       setBusy(null);
     }
   }
-  return (
-    <div className="orders-console">
-      <OrdersHeader moyLabel={moyLabel} ozonLabel={ozonLabel} />
-      {config.isLoading && <p role="status">Загружаем настройки заказов…</p>}
-      {config.isError && (
-        <p role="alert" className="orders-error">
-          {orderRequestError(config.error)}{" "}
-          <button className="text-action" onClick={() => void config.refetch()}>
-            Обновить настройки заказов
-          </button>
-        </p>
-      )}
-      {config.data && (
-        <>
-          {config.data.publication_available !== true && (
-            <p className="orders-warning">
-              Передача заказов для этих аккаунтов пока недоступна. Настройки и
-              проверка данных доступны. Включение настройки не снимает
-              ограничение передачи.
-            </p>
-          )}
-          <OrdersConfig
-            key={config.data.revision}
-            scope={scope}
-            moyLabel={moyLabel}
-            config={config.data}
-            onSaved={saved}
-            onDirty={(value) => {
-              setDirty(value);
-              setPreview(null);
-            }}
-          />
-          <div className="orders-source-action">
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy !== null || dirty || !config.data.enabled}
-              onClick={() => void check()}
-            >
-              {busy === "check"
-                ? "Планируем проверку…"
-                : "Проверить источник сейчас"}
-            </button>
-            <p>
-              Проверка читает Ozon по сохранённым настройкам. Создание и
-              обновление заказов требуют подтверждения или действующего
-              разрешения автоматизации.
-            </p>
-          </div>
-          {!config.data.enabled && (
-            <p className="orders-warning">
-              Передача выключена. Выберите реквизиты МойСклад, поля и сохраните
-              настройки, чтобы запрашивать новые данные Ozon.
-            </p>
-          )}
-          <OrdersPostings
-            scope={scope}
-            freshnessSeconds={config.data.source_freshness_seconds}
-            actionReset={actionReset}
-            onActionPreview={(proposal) => void review(proposal)}
-            onNativePreview={(proposal) => void review(proposal)}
-            onCompositionPreview={(proposal) => void review(proposal)}
-            onActionDraftChange={() => setPreview(null)}
-            selected={selected}
-            disabled={busy !== null}
-            uncertain={uncertain}
-            links={links}
-            onTargetStates={updateTargetStates}
-            onSelected={(numbers) => {
-              setSelected(numbers);
-              setPreview(null);
-              setMessage("");
-            }}
-          />
-          <div className="orders-source-action">
-            <button
-              type="button"
-              disabled={
-                busy !== null ||
-                dirty ||
-                !selected.length ||
-                selected.some((number) => uncertain.includes(number))
-              }
-              onClick={() => void review()}
-            >
-              {busy === "preview"
-                ? "Проверяем изменения…"
-                : "Проверить выбранные отправления"}
-            </button>
-            <p>
-              {dirty
-                ? "Сохраните настройки перед проверкой."
-                : "Предпросмотр показывает изменения и блокировки для каждого отправления. Он не передаёт изменения в МойСклад."}
-            </p>
-          </div>
-          {preview && (
-            <OrdersPreview
-              key={preview.id}
-              preview={preview}
-              permittedActions={previewActions}
-              actionOptions={client
-                .getQueriesData<OrderActionOptions>({
-                  queryKey: ["orders-action-options", scope],
-                })
-                .flatMap(([, options]) => (options ? [options] : []))}
-              metadata={previewMetadata.data}
-              blocked={
-                !canPublish ||
-                dirty ||
-                uncertain.some((number) =>
-                  preview.decisions.some(
-                    (decision) => decision.posting.posting_number === number,
-                  ),
-                )
-              }
-              busy={busy !== null}
-              onApprove={(numbers) => void approve(numbers)}
-            />
-          )}
-        </>
-      )}
+  const notice = (
+    <>
       {error && (
         <p role="alert" className="orders-error">
           {error}
@@ -486,12 +383,178 @@ function OrdersAccount({
           {message}
         </p>
       )}
-      <OrdersOperations
-        scope={scope}
-        onLinks={updateLinks}
-        onOutcomes={updateOutcomes}
-        onRecoveryAuthorization={recoveryAuthorization}
+    </>
+  );
+  const previewContent = preview && (
+    <OrdersPreview
+      key={preview.id}
+      preview={preview}
+      permittedActions={previewActions}
+      actionOptions={client
+        .getQueriesData<OrderActionOptions>({
+          queryKey: ["orders-action-options", scope],
+        })
+        .flatMap(([, options]) => (options ? [options] : []))}
+      metadata={previewMetadata.data}
+      blocked={
+        !canPublish ||
+        dirty ||
+        uncertain.some((number) =>
+          preview.decisions.some(
+            (decision) => decision.posting.posting_number === number,
+          ),
+        )
+      }
+      busy={busy !== null}
+      onApprove={(numbers) => void approve(numbers)}
+    />
+  );
+  return (
+    <div className="orders-console">
+      <OrdersHeader moyLabel={moyLabel} ozonLabel={ozonLabel}>
+        <button
+          type="button"
+          className="secondary"
+          aria-expanded={settingsOpen}
+          aria-controls="orders-settings-panel"
+          onClick={() => setSettingsOpen(!settingsOpen)}
+        >
+          <Icon name="settings" size="button" />
+          Настройки
+          {dirty && (
+            <span
+              className="orders-unsaved-dot"
+              aria-label="Есть несохранённые изменения"
+            />
+          )}
+        </button>
+        <button
+          type="button"
+          disabled={busy !== null || dirty || !config.data?.enabled}
+          onClick={() => void check()}
+          aria-label="Проверить источник сейчас"
+        >
+          <Icon name="arrow" size="button" />
+          {busy === "check" ? "Планируем проверку…" : "Проверить источник"}
+        </button>
+      </OrdersHeader>
+      {config.isLoading && <p role="status">Загружаем настройки заказов…</p>}
+      {config.isError && (
+        <p role="alert" className="orders-error">
+          {orderRequestError(config.error)}{" "}
+          <button className="text-action" onClick={() => void config.refetch()}>
+            Обновить настройки заказов
+          </button>
+        </p>
+      )}
+      <OrdersTabs
+        id={tabsID}
+        label="Заказы"
+        tabs={[
+          { value: "postings", label: "Отправления" },
+          { value: "history", label: "История передач" },
+        ]}
+        value={tab}
+        onChange={setTab}
       />
+      {config.data && (
+        <>
+          {config.data.publication_available !== true && (
+            <p className="orders-warning">
+              Передача заказов для этих аккаунтов пока недоступна. Настройки и
+              проверка данных доступны. Включение настройки не снимает
+              ограничение передачи.
+            </p>
+          )}
+          {!config.data.enabled && (
+            <p className="orders-warning">
+              Передача выключена. Выберите реквизиты МойСклад, поля и сохраните
+              настройки, чтобы запрашивать новые данные Ozon.
+            </p>
+          )}
+          <div
+            id="orders-settings-panel"
+            hidden={!settingsOpen && config.data.revision > 0}
+          >
+            <OrdersConfig
+              key={config.data.revision}
+              scope={scope}
+              moyLabel={moyLabel}
+              config={config.data}
+              expanded={settingsOpen || !config.data.revision}
+              onSaved={saved}
+              onDirty={(value) => {
+                setDirty(value);
+                invalidatePreview();
+              }}
+            />
+          </div>
+          <div
+            role="tabpanel"
+            id={`${tabsID}-postings-panel`}
+            aria-labelledby={`${tabsID}-postings-tab`}
+            hidden={tab !== "postings"}
+          >
+            <OrdersPostings
+              scope={scope}
+              freshnessSeconds={config.data.source_freshness_seconds}
+              actionReset={actionReset}
+              onActionPreview={(proposal) => void review(proposal)}
+              onNativePreview={(proposal) => void review(proposal)}
+              onCompositionPreview={(proposal) => void review(proposal)}
+              onActionDraftChange={invalidatePreview}
+              onSourceChange={invalidatePreview}
+              onRecoveryAuthorization={recoveryAuthorization}
+              onDetailChange={setDetailOpen}
+              selected={selected}
+              disabled={busy !== null}
+              uncertain={uncertain}
+              links={links}
+              onTargetStates={updateTargetStates}
+              onSelected={(numbers) => {
+                setSelected(numbers);
+                invalidatePreview();
+                setMessage("");
+              }}
+              onReview={() => void review()}
+              reviewing={busy === "preview"}
+              reviewDisabled={
+                busy !== null ||
+                dirty ||
+                !selected.length ||
+                selected.some((number) => uncertain.includes(number))
+              }
+              preview={previewOrigin === "detail" ? previewContent : null}
+              notice={notice}
+              onDismissPreview={invalidatePreview}
+            />
+          </div>
+          {preview && previewOrigin === "bulk" && (
+            <IntegrationDialog
+              title="Предпросмотр изменений"
+              className="orders-preview-dialog"
+              onClose={invalidatePreview}
+            >
+              {notice}
+              {previewContent}
+            </IntegrationDialog>
+          )}
+        </>
+      )}
+      {!detailOpen && !(preview && previewOrigin === "bulk") && notice}
+      <div
+        role="tabpanel"
+        id={`${tabsID}-history-panel`}
+        aria-labelledby={`${tabsID}-history-tab`}
+        hidden={tab !== "history"}
+      >
+        <OrdersOperations
+          scope={scope}
+          onLinks={updateLinks}
+          onOutcomes={updateOutcomes}
+          onRecoveryAuthorization={recoveryAuthorization}
+        />
+      </div>
     </div>
   );
 }

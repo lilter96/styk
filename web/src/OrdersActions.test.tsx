@@ -408,10 +408,21 @@ it("reviews and separately approves a scoped tracking proposal while the returne
   );
   mount(<Orders scope={scope} />);
   await screen.findByLabelText(`Выбрать отправление ${posting.posting_number}`);
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: `Открыть отправление ${posting.posting_number}`,
+    }),
+  );
+  fireEvent.click(screen.getByRole("tab", { name: "Действия" }));
   await openAction("posting_tracking");
   fireEvent.change(screen.getByLabelText("Трек-номер"), {
     target: { value: "TRACK-SYNTHETIC" },
   });
+  fireEvent.click(screen.getByRole("tab", { name: "Обзор" }));
+  fireEvent.click(screen.getByRole("tab", { name: "Действия" }));
+  expect((screen.getByLabelText("Трек-номер") as HTMLInputElement).value).toBe(
+    "TRACK-SYNTHETIC",
+  );
   fireEvent.click(checkButton());
   await screen.findByRole("heading", { name: "Проверка действия в Ozon" });
   expect(screen.getByText("Трек-номер введён; скрыт в журнале.")).toBeTruthy();

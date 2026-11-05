@@ -7,13 +7,20 @@ import {
   type OrdersOperationPage,
 } from "./OrdersTypes";
 
-function useHistoryPage(scope: OrderScope, cursor: string, enabled = true) {
+function useHistoryPage(
+  scope: OrderScope,
+  cursor: string,
+  enabled = true,
+  search = "",
+) {
   return useQuery({
-    queryKey: ["orders-operations", scope, cursor],
+    queryKey: search
+      ? ["orders-operations", scope, cursor, search]
+      : ["orders-operations", scope, cursor],
     enabled,
     queryFn: async ({ signal }) => {
       const value = await api<OrdersOperationPage>(
-        ordersURL("operations", scope, { cursor, limit: "25" }),
+        ordersURL("operations", scope, { cursor, limit: "25", search }),
         signal,
       );
       if (
@@ -52,8 +59,12 @@ function useHistoryPage(scope: OrderScope, cursor: string, enabled = true) {
 
 // Browsing immutable history must not replace the latest operation context.
 // The first page stays subscribed while the operator reads an older page.
-export function useOrdersHistory(scope: OrderScope, cursor: string) {
-  const latest = useHistoryPage(scope, "");
-  const older = useHistoryPage(scope, cursor, cursor !== "");
+export function useOrdersHistory(
+  scope: OrderScope,
+  cursor: string,
+  search = "",
+) {
+  const latest = useHistoryPage(scope, "", true, search);
+  const older = useHistoryPage(scope, cursor, cursor !== "", search);
   return { latest, page: cursor === "" ? latest : older };
 }

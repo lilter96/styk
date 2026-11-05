@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { readFile } from "node:fs/promises";
+import { auditButtonHovers } from "./hover-contrast";
 import type { OrderActionProposal, OrderCommand } from "../src/OrdersTypes";
 
 const origin = process.env.STYK_ORDERS_UI_ORIGIN || "http://127.0.0.1:5173";
@@ -129,9 +130,7 @@ test("reserve policy is explicit and separate from document posting on desktop a
     saved.push(body);
     return fulfill(route, { ...body.config, scope, revision: 2 });
   });
-  await page
-    .getByText("Настройки передачи в МойСклад", { exact: true })
-    .click();
+  await page.getByRole("button", { name: "Настройки", exact: true }).click();
   await expect(page.getByLabel("Резерв в МойСклад")).toHaveValue("");
   await expect(page.getByLabel("Проведение заказа МойСклад")).toHaveValue("");
   await page
@@ -229,11 +228,13 @@ test("label download appears after reconciliation and expires without another cr
       body: "%PDF-1.7\nSYNTHETIC\n%%EOF",
     }),
   );
+  await showHistory(page);
   await page.getByRole("button", { name: "Обновить статусы заказов" }).click();
   await expect(
     page.getByRole("link", { name: "Скачать этикетку" }),
   ).toHaveCount(0);
   state = "RECONCILED";
+  await showHistory(page);
   await page.getByRole("button", { name: "Обновить статусы заказов" }).click();
   await expect(
     page.getByRole("link", { name: "Скачать этикетку" }),
@@ -310,6 +311,7 @@ test("split history shows exact child identities and partial readback on desktop
       ],
     }),
   );
+  await showHistory(page);
   await page.getByRole("button", { name: "Обновить статусы заказов" }).click();
   const summary = page.getByText("Посылки после разделения (2)");
   await summary.focus();
@@ -710,6 +712,15 @@ async function openOrders(
   await expect(
     page.getByLabel("Выбрать отправление SYNTHETIC-1"),
   ).toBeVisible();
+  if (actionMode) {
+    await page
+      .getByRole("button", {
+        name: "Открыть отправление SYNTHETIC-1",
+        exact: true,
+      })
+      .click();
+    await page.getByRole("tab", { name: "Действия", exact: true }).click();
+  }
   return { approvals, errors, previews };
 }
 
@@ -765,6 +776,7 @@ test("orders desktop/mobile review uses keyboard and only explicitly approves el
       acknowledge: true,
     },
   ]);
+  await showHistory(page);
   await expect(
     page.getByText("Принято, ожидает сверки", { exact: true }).first(),
   ).toBeVisible();
@@ -791,7 +803,9 @@ test("unknown approval outcome shows read-only status refresh without another wr
   await expect(
     page.getByRole("button", { name: "Передать в МойСклад (1)" }),
   ).toBeDisabled();
+  await showHistory(page);
   await expect(page.getByText(/Запрос мог выполниться/)).toBeVisible();
+  await showHistory(page);
   await page.getByRole("button", { name: "Обновить статусы заказов" }).click();
   expect(approvals).toHaveLength(1);
   expect(errors).toEqual([]);
@@ -1276,6 +1290,7 @@ test("audited UNKNOWN recovery unlocks a fresh review but never writes automatic
     resolves++;
     return fulfill(route, view());
   });
+  await showHistory(page);
   await page.getByRole("button", { name: "Обновить статусы заказов" }).click();
   await page
     .getByText("Проверить неизвестный результат и варианты восстановления", {
@@ -1328,6 +1343,7 @@ test("audited UNKNOWN recovery unlocks a fresh review but never writes automatic
   expect(resolves).toBe(1);
   expect(approvals).toHaveLength(0);
   expect(previews).toHaveLength(0);
+  await page.getByRole("tab", { name: "Отправления", exact: true }).click();
   await page
     .getByRole("checkbox", { name: "Выбрать отправление SYNTHETIC-1" })
     .check();
@@ -1582,5 +1598,247 @@ test("current orders integrate with the redesigned shell on desktop and mobile",
     path: testInfo.outputPath("orders-shell-mobile.png"),
     fullPage: true,
   });
+  expect(errors).toEqual([]);
+});
+
+async function showHistory(page: Page) {
+  const preview = page.getByRole("dialog", {
+    name: "Предпросмотр изменений",
+    exact: true,
+  });
+  if (await preview.count())
+    await preview.getByRole("button", { name: "Закрыть", exact: true }).click();
+  await page.getByRole("tab", { name: "История передач", exact: true }).click();
+}
+
+test("table and drawer visual acceptance, focus, filters and responsive layouts", async ({
+  page,
+}) => {
+  const diagnostics: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") diagnostics.push(message.text());
+  });
+  page.on("response", (response) => {
+    if (response.status() >= 400)
+      diagnostics.push(
+        `${response.status()} ${new URL(response.url()).pathname}`,
+      );
+  });
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  const { approvals, previews, errors } = await openOrders(
+    page,
+    false,
+    false,
+    true,
+  );
+  const now = new Date().toISOString();
+  const statuses = [
+    "awaiting_packaging",
+    "awaiting_deliver",
+    "delivering",
+    "cancelled",
+    "delivered",
+    "awaiting_deliver",
+    "delivering",
+  ];
+  const rows = statuses.map((status, index) => ({
+    ...posting(`SYNTHETIC-${index + 1}`),
+    order_number: known(`TEST-ORDER-${index + 1}`),
+    status: known(status),
+    financial: {
+      order_total: known({
+        amount: String(1290 + index * 1500),
+        currency: "RUB",
+      }),
+    },
+    warehouse_id: known(index % 2 ? "Склад Ozon для теста" : "Склад Москва"),
+    evidence: { ...posting("x").evidence, observed_at: now, checked_at: now },
+    lines: [
+      {
+        identity: { sku: "581204", offer_id: "TEST-MOUSE" },
+        quantity: "1",
+        name: known("Беспроводная мышь"),
+        price: known({ amount: "1290", currency: "RUB" }),
+        cancelled_quantity: known("0"),
+      },
+      {
+        identity: { sku: "892102", offer_id: "TEST-KEYBOARD" },
+        quantity: "2",
+        name: known("Клавиатура компактная"),
+        price: known({ amount: "750", currency: "RUB" }),
+        cancelled_quantity: known("0"),
+      },
+    ],
+  }));
+  const requestFilters: URLSearchParams[] = [];
+  await page.route("**/api/orders/postings?*", (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    requestFilters.push(params);
+    return fulfill(route, {
+      postings: rows,
+      target_states: rows.map((row, index) => ({
+        scope,
+        posting_number: row.posting_number,
+        has_operation: index !== 3,
+        state: index === 1 || index === 5 ? "BLOCKED" : "RECONCILED",
+        unresolved: false,
+        source_changed: index === 1 || index === 5,
+        checked_at: now,
+      })),
+    });
+  });
+  await page
+    .getByRole("button", { name: "Обновить список отправлений" })
+    .click();
+  await expect(
+    page.getByRole("table", { name: "Отправления Ozon" }).locator("tbody tr"),
+  ).toHaveCount(7);
+  const capture = async (name: string) => {
+    await page.screenshot({
+      path: new URL(`../../.local/orders-redesign/${name}.png`, import.meta.url)
+        .pathname,
+      fullPage: false,
+      animations: "disabled",
+    });
+  };
+  await capture("01-table-desktop");
+  await page
+    .getByLabel("Выбрать отправление SYNTHETIC-1", { exact: true })
+    .check();
+  await page
+    .getByLabel("Выбрать отправление SYNTHETIC-2", { exact: true })
+    .check();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await capture("02-selected-desktop");
+  const opener = page.getByRole("button", {
+    name: "Открыть отправление SYNTHETIC-2",
+    exact: true,
+  });
+  await opener.focus();
+  await opener.press("Enter");
+  const drawer = page.getByRole("dialog", { name: "SYNTHETIC-2" });
+  await expect(drawer.getByRole("tab", { name: "Обзор" })).toBeFocused();
+  await capture("03-drawer-desktop");
+  await drawer.getByRole("tab", { name: "Действия" }).click();
+  await capture("04-actions-desktop");
+  await page.keyboard.press("Escape");
+  await expect(opener).toBeFocused();
+  await page
+    .getByRole("button", { name: "Проверить выбранные отправления" })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Проверка перед передачей" }),
+  ).toBeVisible();
+  await capture("05-preview-desktop");
+  await showHistory(page);
+  await capture("06-history-desktop");
+  await page.getByRole("tab", { name: "Отправления", exact: true }).click();
+  for (const [width, height] of [
+    [1440, 900],
+    [1280, 800],
+    [768, 1024],
+    [390, 844],
+  ]) {
+    await page.setViewportSize({ width, height });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(width);
+    await capture(`table-${width}`);
+    await page
+      .getByRole("button", {
+        name: "Открыть отправление SYNTHETIC-1",
+        exact: true,
+      })
+      .click();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(width);
+    await expect(
+      page
+        .getByRole("dialog")
+        .getByRole("button", { name: "Закрыть", exact: true }),
+    ).toBeInViewport();
+    await capture(`drawer-${width}`);
+    await page.keyboard.press("Escape");
+  }
+  await page
+    .getByRole("combobox", { name: "Статус Ozon", exact: true })
+    .selectOption("delivered");
+  await expect
+    .poll(() => requestFilters.at(-1)?.get("status"))
+    .toBe("delivered");
+  await page
+    .getByRole("combobox", { name: "Состояние отправлений", exact: true })
+    .selectOption("attention");
+  await expect.poll(() => requestFilters.at(-1)?.get("attention")).toBe("true");
+  expect(previews).toHaveLength(1);
+  expect(approvals).toHaveLength(0);
+  expect(errors).toEqual([]);
+  expect(diagnostics).toEqual([]);
+});
+
+test("hover keeps labels readable across orders tabs, table, drawer, settings and preview", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const { errors, approvals } = await openOrders(page, false, false, true);
+  const results: Record<string, unknown> = {};
+  results.table = await auditButtonHovers(page, "table and shared navigation");
+  await page
+    .getByLabel("Выбрать отправление SYNTHETIC-1", { exact: true })
+    .check();
+  results.selection = await auditButtonHovers(page, "bulk selection");
+  await page
+    .getByRole("button", {
+      name: "Открыть отправление SYNTHETIC-1",
+      exact: true,
+    })
+    .click();
+  results.overview = await auditButtonHovers(page, "drawer overview");
+  for (const name of ["Товары", "Действия", "История"]) {
+    await page
+      .getByRole("dialog")
+      .getByRole("tab", { name, exact: true })
+      .click();
+    results[name] = await auditButtonHovers(page, `drawer ${name}`);
+  }
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Настройки", exact: true }).click();
+  await expect(
+    page.getByRole("option", { name: "Тестовая организация" }),
+  ).toBeAttached();
+  results.settings = await auditButtonHovers(page, "settings");
+  await page.getByRole("button", { name: "Настройки", exact: true }).click();
+  await page
+    .getByRole("button", {
+      name: "Проверить выбранные отправления",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Проверка перед передачей" }),
+  ).toBeVisible();
+  results.preview = await auditButtonHovers(page, "preview");
+  await showHistory(page);
+  results.history = await auditButtonHovers(page, "history");
+  await page.getByRole("tab", { name: "Отправления", exact: true }).click();
+  const selectedTab = page.getByRole("tab", {
+    name: "Отправления",
+    exact: true,
+  });
+  await selectedTab.hover();
+  await page.screenshot({
+    path: new URL(
+      "../../.local/orders-redesign/hover-fixed.png",
+      import.meta.url,
+    ).pathname,
+    animations: "disabled",
+  });
+  await testInfo.attach("hover-contrast", {
+    body: JSON.stringify(results, null, 2),
+    contentType: "application/json",
+  });
+  expect(approvals).toHaveLength(0);
   expect(errors).toEqual([]);
 });

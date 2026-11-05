@@ -122,7 +122,7 @@ func orderPage(r *http.Request) orders.PageRequest {
 	if limit == 0 {
 		limit = 25
 	}
-	return orders.PageRequest{Limit: limit, Cursor: query.Get("cursor"), Search: query.Get("search")}
+	return orders.PageRequest{Limit: limit, Cursor: query.Get("cursor"), Search: query.Get("search"), Status: query.Get("status"), Attention: query.Get("attention") == "true"}
 }
 func (a *ordersAPI) postings(w http.ResponseWriter, r *http.Request) {
 	page, err := a.service.Postings(r.Context(), orderScope(r), orderPage(r))

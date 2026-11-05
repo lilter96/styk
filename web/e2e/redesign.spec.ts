@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { auditButtonHovers } from "./hover-contrast";
 
 // Presentation fixtures are confined to this test. Application requests and
 // production data flow are unchanged. These checks do not replace API e2e.
@@ -503,3 +504,23 @@ for (const width of [1440, 390]) {
     ).toHaveCount(0);
   });
 }
+
+test("hover preserves button labels across all workspace pages", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await fixtures(page);
+  const results: Record<string, unknown> = {};
+  for (const [path, heading] of routes) {
+    await page.goto(origin + path);
+    await expect(
+      page.getByRole("heading", { name: heading, exact: true }),
+    ).toBeVisible();
+    results[path] = await auditButtonHovers(page, heading);
+  }
+  await testInfo.attach("workspace-hover-contrast", {
+    body: JSON.stringify(results, null, 2),
+    contentType: "application/json",
+  });
+});

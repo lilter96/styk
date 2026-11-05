@@ -61,9 +61,11 @@ type Approval struct {
 }
 
 type PageRequest struct {
-	Limit  int    `json:"limit,omitempty"`
-	Cursor string `json:"cursor,omitempty"`
-	Search string `json:"search,omitempty"`
+	Limit     int    `json:"limit,omitempty"`
+	Cursor    string `json:"cursor,omitempty"`
+	Search    string `json:"search,omitempty"`
+	Status    string `json:"status,omitempty"`
+	Attention bool   `json:"attention,omitempty"`
 }
 
 type PostingPage struct {

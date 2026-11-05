@@ -18,14 +18,16 @@ type ordersCursor struct {
 
 func orderPageCursor(scope orders.Scope, page orders.PageRequest, kind string) (ordersCursor, error) {
 	var cursor ordersCursor
-	if scope.Validate() != nil || page.Limit < 1 || page.Limit > 100 || len(page.Search) > 256 || len(page.Cursor) > 2048 {
+	if scope.Validate() != nil || page.Limit < 1 || page.Limit > 100 || len(page.Search) > 256 || len(page.Status) > 100 || len(page.Cursor) > 2048 {
 		return cursor, orders.ErrInvalid
 	}
 	binding, err := ordersHash(struct {
-		Scope  orders.Scope
-		Search string
-		Kind   string
-	}{scope, page.Search, kind})
+		Scope     orders.Scope
+		Search    string
+		Kind      string
+		Status    string `json:",omitempty"`
+		Attention bool   `json:",omitempty"`
+	}{scope, page.Search, kind, page.Status, page.Attention})
 	if err != nil {
 		return cursor, err
 	}
@@ -55,7 +57,7 @@ func (s *Store) OrderPostings(ctx context.Context, scope orders.Scope, page orde
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
-	postings, err := readOrderPostings(ctx, s.Pool, scope, cursor.ID, page.Search, page.Limit+1)
+	postings, err := readFilteredOrderPostings(ctx, s.Pool, scope, cursor.ID, page)
 	if err != nil {
 		return result, err
 	}
@@ -106,7 +108,7 @@ func (s *Store) ActiveOrderPostings(ctx context.Context, scope orders.Scope, lim
 
 func readOrderPostings(ctx context.Context, q ordersQuerier, scope orders.Scope, after, search string, limit int) ([]orders.Posting, error) {
 	args := append(ordersScopeArgs(scope), after, search, limit)
-	rows, err := q.Query(ctx, `SELECT h.projection,h.checked_at,h.quarantined FROM orders_posting_heads h JOIN orders_posting_observations o ON o.id=h.observation_id AND o.tenant_id=h.tenant_id AND o.moysklad_account=h.moysklad_account AND o.ozon_account=h.ozon_account AND o.posting_number=h.posting_number WHERE h.tenant_id=$1 AND h.moysklad_account=$2 AND h.ozon_account=$3 AND h.posting_number>$4 AND ($5='' OR h.posting_number ILIKE '%'||$5||'%' OR o.commercial_order_id ILIKE '%'||$5||'%') ORDER BY h.posting_number LIMIT $6`, args...)
+	rows, err := q.Query(ctx, `SELECT h.projection,h.checked_at,h.quarantined FROM orders_posting_heads h JOIN orders_posting_observations o ON o.id=h.observation_id AND o.tenant_id=h.tenant_id AND o.moysklad_account=h.moysklad_account AND o.ozon_account=h.ozon_account AND o.posting_number=h.posting_number WHERE h.tenant_id=$1 AND h.moysklad_account=$2 AND h.ozon_account=$3 AND h.posting_number>$4 AND ($5='' OR h.posting_number ILIKE '%'||$5||'%' OR o.commercial_order_id ILIKE '%'||$5||'%' OR (h.projection#>>'{order_number,presence}' IN ('value','zero') AND h.projection#>>'{order_number,value}' ILIKE '%'||$5||'%')) ORDER BY h.posting_number LIMIT $6`, args...)
 	if err != nil {
 		return nil, ordersError("select order posting page", err)
 	}

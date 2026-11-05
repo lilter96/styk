@@ -1,92 +1,36 @@
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "./api";
+import { Icon } from "./UI";
+import {
+  OrderDetailDrawer,
+  type OrderDetailActions,
+} from "./OrderDetailDrawer";
 import {
   validateTargetStates,
   type CurrentPostingPage,
   type OrderTargetState,
 } from "./OrdersTargetState";
-import { OrdersRelatedPostings } from "./OrdersRelatedPostings";
-import { OrdersNativeDocuments } from "./OrdersNativeDocuments";
 import {
-  OrdersComposition,
-  type OrderCompositionProposal,
-} from "./OrdersComposition";
-import type { OrderNativeProposal } from "./OrdersNativeTypes";
-import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { api } from "./api";
-import { Icon } from "./UI";
-import { OrdersActionEligibility } from "./OrdersActionEligibility";
-import { OrdersActions } from "./OrdersActions";
+  orderQuantity,
+  postingTotal,
+  PostingStatus,
+  PostingTargetStatus,
+} from "./OrdersPresentation";
 import {
   knownOrderField,
   orderDate,
   orderFieldText,
-  orderMoney,
   orderRequestError,
-  orderStateLabels,
   ordersURL,
   postingStatusLabels,
   sameOrderScope,
-  MoyOrderLink,
   type OrderScope,
   type OrderPosting,
-  type OrderActionProposal,
 } from "./OrdersTypes";
+export { orderQuantity } from "./OrdersPresentation";
 
-export function orderQuantity(lines: OrderPosting["lines"]): string {
-  if (
-    !lines.length ||
-    lines.some((line) => !/^\d+(\.\d+)?$/.test(line.quantity))
-  )
-    return "Неизвестно";
-  const scale = Math.max(
-    ...lines.map((line) => line.quantity.split(".")[1]?.length ?? 0),
-  );
-  const sum = lines.reduce(
-    (total, line) =>
-      total +
-      BigInt(
-        line.quantity
-          .replace(".", "")
-          .padEnd(
-            line.quantity.replace(".", "").length +
-              scale -
-              (line.quantity.split(".")[1]?.length ?? 0),
-            "0",
-          ),
-      ),
-    0n,
-  );
-  if (!scale) return String(sum);
-  const digits = String(sum).padStart(scale + 1, "0");
-  return `${digits.slice(0, -scale)}.${digits.slice(-scale)}`.replace(
-    /\.?0+$/,
-    "",
-  );
-}
-function postingTotal(posting: OrderPosting) {
-  const money = knownOrderField(posting.financial?.order_total);
-  if (money !== undefined) return orderMoney(money);
-  const amount = knownOrderField(posting.financial?.order_total_amount);
-  const currency = knownOrderField(posting.financial?.currency);
-  if (amount !== undefined)
-    return `${amount} ${currency ?? "(валюта неизвестна)"}`;
-  return orderFieldText(posting.financial?.order_total);
-}
-export function OrdersPostings({
-  scope,
-  selected,
-  disabled,
-  uncertain,
-  links,
-  onSelected,
-  onTargetStates,
-  freshnessSeconds = 300,
-  onActionPreview,
-  onNativePreview,
-  onCompositionPreview,
-  onActionDraftChange,
-  actionReset = 0,
-}: {
+type Props = OrderDetailActions & {
   scope: OrderScope;
   selected: string[];
   disabled: boolean;
@@ -95,15 +39,39 @@ export function OrdersPostings({
   onSelected: (numbers: string[]) => void;
   onTargetStates?: (states: OrderTargetState[] | undefined) => void;
   freshnessSeconds?: number;
-  onActionPreview?: (proposal: OrderActionProposal) => void;
-  onNativePreview?: (proposal: OrderNativeProposal) => void;
-  onCompositionPreview?: (proposal: OrderCompositionProposal) => void;
-  onActionDraftChange?: () => void;
   actionReset?: number;
-}) {
+  onReview?: () => void;
+  reviewDisabled?: boolean;
+  reviewing?: boolean;
+  preview?: ReactNode;
+  notice?: ReactNode;
+  onDismissPreview?: () => void;
+  onSourceChange?: () => void;
+  onDetailChange?: (open: boolean) => void;
+};
+
+export function OrdersPostings(props: Props) {
+  const {
+    scope,
+    selected,
+    disabled,
+    uncertain,
+    links,
+    onSelected,
+    onTargetStates,
+  } = props;
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
+  const [attention, setAttention] = useState(false);
   const [cursors, setCursors] = useState<string[]>([""]);
+  const [opened, setOpened] = useState<OrderPosting | null>(null);
+  const [lookup, setLookup] = useState("");
+  useEffect(() => {
+    props.onDetailChange?.(!!opened);
+  }, [opened, props.onDetailChange]);
+  const all = useRef<HTMLInputElement>(null);
+  const revisions = useRef(new Map<string, string>());
   useEffect(() => {
     if (search.trim() === query) return;
     const timer = setTimeout(() => {
@@ -114,10 +82,16 @@ export function OrdersPostings({
   }, [search, query]);
   const cursor = cursors[cursors.length - 1];
   const page = useQuery({
-    queryKey: ["orders-postings", scope, query, cursor],
+    queryKey: ["orders-postings", scope, query, cursor, status, attention],
     queryFn: async ({ signal }) => {
       const value = await api<CurrentPostingPage>(
-        ordersURL("postings", scope, { search: query, cursor, limit: "25" }),
+        ordersURL("postings", scope, {
+          search: query,
+          cursor,
+          limit: "25",
+          status,
+          attention: String(attention),
+        }),
         signal,
       );
       if (
@@ -136,315 +110,415 @@ export function OrdersPostings({
   useEffect(() => {
     onTargetStates?.(page.data?.target_states);
   }, [page.data, onTargetStates]);
+  useEffect(() => {
+    let changed = false;
+    for (const posting of page.data?.postings ?? []) {
+      const previous = revisions.current.get(posting.posting_number);
+      if (previous && previous !== posting.evidence.revision) changed = true;
+      revisions.current.set(posting.posting_number, posting.evidence.revision);
+    }
+    if (changed) props.onSourceChange?.();
+  }, [page.data, props.onSourceChange]);
+  useEffect(() => {
+    if (!lookup || query !== lookup || !page.data) return;
+    const found = page.data.postings.find(
+      (posting) => posting.posting_number === lookup,
+    );
+    if (found) {
+      setOpened(found);
+      setLookup("");
+    }
+  }, [lookup, query, page.data]);
   const postings = page.data?.postings ?? [];
-  function findPosting(number: string) {
+  const states = new Map(
+    page.data?.target_states?.map((state) => [state.posting_number, state]),
+  );
+  const locked = (posting: OrderPosting) =>
+    states.get(posting.posting_number)?.unresolved ??
+    uncertain.includes(posting.posting_number);
+  const eligible = postings
+    .filter((posting) => !locked(posting))
+    .map((posting) => posting.posting_number);
+  const selectedOnPage = eligible.filter((number) => selected.includes(number));
+  useEffect(() => {
+    if (all.current)
+      all.current.indeterminate =
+        selectedOnPage.length > 0 && selectedOnPage.length < eligible.length;
+  }, [selectedOnPage.length, eligible.length]);
+  const current = opened
+    ? (postings.find(
+        (posting) => posting.posting_number === opened.posting_number,
+      ) ?? opened)
+    : null;
+  function open(posting: OrderPosting) {
+    props.onDismissPreview?.();
+    setOpened(posting);
+  }
+  function close() {
+    props.onDismissPreview?.();
+    setOpened(null);
+  }
+  function find(number: string) {
+    props.onDismissPreview?.();
+    const found = postings.find((posting) => posting.posting_number === number);
+    if (found) {
+      setOpened(found);
+      return;
+    }
+    setOpened(null);
+    setLookup(number);
+    setStatus("");
+    setAttention(false);
     setSearch(number);
+    setQuery(number);
+    setCursors([""]);
   }
   return (
     <section
-      className="orders-section"
+      className="orders-section orders-table-section"
       aria-labelledby="orders-postings-heading"
     >
-      <div className="orders-section-heading">
+      <div className="orders-table-heading">
         <h2 id="orders-postings-heading">Отправления Ozon</h2>
         <button
           type="button"
-          className="secondary"
+          className={`orders-attention ${attention ? "active" : ""}`}
+          aria-pressed={attention}
+          disabled={disabled}
+          onClick={() => {
+            setAttention(!attention);
+            setCursors([""]);
+          }}
+        >
+          <Icon name="error" size="button" />
+          Требуют внимания
+        </button>
+      </div>
+      <div className="orders-toolbar">
+        <label className="orders-search">
+          <span className="sr-only">Найти отправление или заказ</span>
+          <Icon name="search" size="button" />
+          <input
+            type="search"
+            value={search}
+            disabled={disabled}
+            maxLength={256}
+            placeholder="Номер отправления или заказа"
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </label>
+        <label>
+          <span className="sr-only">Статус Ozon</span>
+          <select
+            value={status}
+            disabled={disabled}
+            onChange={(event) => {
+              setStatus(event.target.value);
+              setCursors([""]);
+            }}
+          >
+            <option value="">Все статусы</option>
+            {Object.entries(postingStatusLabels).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span className="sr-only">Состояние отправлений</span>
+          <select
+            value={attention ? "attention" : ""}
+            disabled={disabled}
+            onChange={(event) => {
+              setAttention(event.target.value === "attention");
+              setCursors([""]);
+            }}
+          >
+            <option value="">Все отправления</option>
+            <option value="attention">Требуют внимания</option>
+          </select>
+        </label>
+        <button
+          type="button"
+          className="secondary orders-refresh"
+          aria-label="Обновить список отправлений"
           disabled={page.isFetching}
           onClick={() => void page.refetch()}
         >
           <Icon name="refresh" size="button" />
-          Обновить список отправлений
+          Обновить
         </button>
       </div>
-      <label className="orders-search">
-        Найти отправление или заказ
-        <input
-          type="search"
-          value={search}
-          placeholder="Номер отправления или заказа"
-          onChange={(event) => setSearch(event.target.value)}
-        />
-      </label>
-      <p className="orders-note">
-        Обновление списка читает сохранённые данные. «Проверить источник сейчас»
-        запрашивает новые данные Ozon.
+      <p className="orders-table-caption">
+        Сохранённые данные Ozon. Обновление списка не запускает проверку
+        источника.
       </p>
-      {page.isFetching && <p role="status">Загружаем отправления…</p>}
-      {page.isError && (
-        <p role="alert" className="orders-error">
-          {orderRequestError(page.error)}
-        </p>
-      )}
-      {!page.isLoading && !page.isError && !postings.length && (
-        <p className="orders-empty">
-          Отправлений пока нет{query ? " по этому запросу" : ""}.{" "}
-          {query
-            ? "Измените поиск."
-            : "Сохраните и включите настройки, затем запросите проверку источника."}
-        </p>
-      )}
-      <div className="orders-postings">
-        {postings.map((posting) => {
-          const status = knownOrderField(posting.status);
-          const parent = knownOrderField(posting.parent_posting_number);
-          const local = page.data?.target_states?.find(
-            (state) => state.posting_number === posting.posting_number,
-          );
-          const locked = local
-            ? local.unresolved
-            : uncertain.includes(posting.posting_number);
-          return (
-            <article className="orders-posting" key={posting.posting_number}>
-              <div className="orders-posting-title">
-                <label className="orders-check">
+      <div className="orders-table-feedback" aria-live="polite">
+        {page.isFetching && (
+          <p role="status">
+            {page.isLoading ? "Загружаем отправления…" : "Обновляем список…"}
+          </p>
+        )}
+        {page.isError && (
+          <p role="alert" className="orders-error">
+            {orderRequestError(page.error)}{" "}
+            <button
+              type="button"
+              className="text-action"
+              onClick={() => void page.refetch()}
+            >
+              Повторить загрузку
+            </button>
+          </p>
+        )}
+        {!page.isLoading && !page.isError && !postings.length && (
+          <div className="orders-empty">
+            <Icon name="search" />
+            <strong>
+              {query || status || attention
+                ? "Отправления не найдены"
+                : "Отправлений пока нет"}
+            </strong>
+            <p>
+              {query || status || attention
+                ? "Измените поиск или сбросьте фильтры."
+                : "Сохраните и включите настройки, затем запросите проверку источника."}
+            </p>
+            {(query || status || attention) && (
+              <button
+                type="button"
+                className="text-action"
+                onClick={() => {
+                  setSearch("");
+                  setQuery("");
+                  setStatus("");
+                  setAttention(false);
+                  setLookup("");
+                  setCursors([""]);
+                }}
+              >
+                Сбросить фильтры
+              </button>
+            )}
+          </div>
+        )}
+        {lookup &&
+          !page.isFetching &&
+          page.data &&
+          !postings.some((posting) => posting.posting_number === lookup) && (
+            <p className="orders-warning">
+              Связанное отправление ещё не найдено в сохранённых данных.
+              Запросите проверку источника.
+            </p>
+          )}
+      </div>
+      <div
+        className="orders-table-scroll"
+        role="region"
+        aria-label="Таблица отправлений, доступна горизонтальная прокрутка"
+        tabIndex={0}
+      >
+        <table
+          className="orders-table"
+          aria-label="Отправления Ozon"
+          aria-busy={page.isFetching}
+        >
+          <thead>
+            <tr>
+              <th scope="col">
+                <input
+                  ref={all}
+                  type="checkbox"
+                  aria-label="Выбрать все доступные отправления на странице"
+                  checked={
+                    eligible.length > 0 &&
+                    selectedOnPage.length === eligible.length
+                  }
+                  disabled={disabled || page.isFetching || !eligible.length}
+                  onChange={(event) =>
+                    onSelected(
+                      event.target.checked
+                        ? [...new Set([...selected, ...eligible])]
+                        : selected.filter(
+                            (number) => !eligible.includes(number),
+                          ),
+                    )
+                  }
+                />
+              </th>
+              <th scope="col">Отправление / заказ</th>
+              <th scope="col">Статус Ozon</th>
+              <th scope="col">Товары</th>
+              <th scope="col">Схема / склад</th>
+              <th scope="col">МойСклад</th>
+              <th scope="col" className="orders-money">
+                Сумма
+              </th>
+              <th scope="col">Проверено</th>
+              <th scope="col">
+                <span className="sr-only">Открыть</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {postings.map((posting) => (
+              <tr
+                key={posting.posting_number}
+                className={
+                  selected.includes(posting.posting_number) ? "is-selected" : ""
+                }
+                onClick={(event) => {
+                  if (
+                    !(event.target as HTMLElement).closest(
+                      "button, input, a, label",
+                    )
+                  )
+                    open(posting);
+                }}
+              >
+                <td>
                   <input
                     type="checkbox"
                     aria-label={`Выбрать отправление ${posting.posting_number}`}
                     checked={selected.includes(posting.posting_number)}
-                    disabled={disabled || locked}
+                    disabled={disabled || locked(posting) || page.isError}
                     onChange={(event) =>
                       onSelected(
                         event.target.checked
-                          ? [...selected, posting.posting_number]
+                          ? [...new Set([...selected, posting.posting_number])]
                           : selected.filter(
                               (number) => number !== posting.posting_number,
                             ),
                       )
                     }
                   />
-                  <strong>{posting.posting_number}</strong>
-                </label>
-                <span
-                  className={`orders-badge ${status === "cancelled" ? "warning" : ""}`}
-                >
-                  {status
-                    ? (postingStatusLabels[status] ?? status)
-                    : orderFieldText(posting.status)}
-                </span>
-              </div>
-              {local && (
-                <div className="orders-current-state">
-                  <p>
-                    Последняя операция:{" "}
-                    {local.has_operation
-                      ? (orderStateLabels[local.state ?? ""] ??
-                        "Состояние требует проверки")
-                      : "Передач ещё не было"}
-                    .
-                  </p>
-                  {local.unresolved && (
-                    <p className="orders-warning">
-                      Есть неизвестный результат. Откройте историю этого
-                      отправления для проверки; повторная отправка
-                      заблокирована.
-                    </p>
-                  )}
-                  {local.source_changed && (
-                    <p className="orders-note">
-                      После последней операции данные источника изменились.
-                      Нужен новый предпросмотр.
-                    </p>
-                  )}
-                  {local.state === "UNKNOWN" && !local.unresolved && (
-                    <p className="orders-note">
-                      Неизвестный исход сохранён в истории. Активная блокировка
-                      не найдена; это не подтверждение исполнения. Новые
-                      действия требуют отдельной проверки.
-                    </p>
-                  )}
-                  <small>
-                    Состояние STYK проверено: {orderDate(local.checked_at)}. Это
-                    не новое чтение Ozon.
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    className="orders-posting-link"
+                    title={posting.posting_number}
+                    aria-label={`Открыть отправление ${posting.posting_number}`}
+                    onClick={() => open(posting)}
+                  >
+                    {posting.posting_number}
+                  </button>
+                  <small title={knownOrderField(posting.order_number)}>
+                    Заказ {orderFieldText(posting.order_number)}
                   </small>
-                </div>
-              )}
-              <dl className="orders-facts">
-                <div>
-                  <dt>Заказ Ozon</dt>
-                  <dd>
-                    {orderFieldText(posting.order_number)}
-                    <small>ID {posting.commercial_order_id}</small>
-                  </dd>
-                </div>
-                <div>
-                  <dt>Схема / склад Ozon</dt>
-                  <dd>
-                    {orderFieldText(posting.scheme)} /{" "}
+                </td>
+                <td>
+                  <PostingStatus posting={posting} />
+                </td>
+                <td className="orders-quantity">
+                  {posting.lines?.length ?? 0} поз. ·{" "}
+                  {orderQuantity(posting.lines ?? [])} шт.
+                </td>
+                <td>
+                  <span>{orderFieldText(posting.scheme)}</span>
+                  <small title={knownOrderField(posting.warehouse_id)}>
                     {orderFieldText(posting.warehouse_id)}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Количество</dt>
-                  <dd>{orderQuantity(posting.lines ?? [])}</dd>
-                </div>
-                <div>
-                  <dt>Сумма Ozon</dt>
-                  <dd>{postingTotal(posting)}</dd>
-                </div>
-                <div>
-                  <dt>Обновлено в источнике</dt>
-                  <dd>
-                    {orderFieldText(
-                      posting.evidence.provider_updated_at,
-                      orderDate,
-                    )}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Проверено STYK</dt>
-                  <dd>
+                  </small>
+                </td>
+                <td>
+                  <PostingTargetStatus
+                    local={states.get(posting.posting_number)}
+                    locked={locked(posting)}
+                  />
+                </td>
+                <td className="orders-money">{postingTotal(posting)}</td>
+                <td className="orders-checked">
+                  <time
+                    dateTime={posting.evidence.checked_at}
+                    title={`Получено: ${orderDate(posting.evidence.observed_at)}`}
+                  >
                     {orderDate(posting.evidence.checked_at)}
-                    <small>
-                      Получено {orderDate(posting.evidence.observed_at)}
-                    </small>
-                  </dd>
-                </div>
-              </dl>
-              <p className="orders-note">
-                <MoyOrderLink id={links[posting.posting_number]} />
-              </p>
-              {locked && (
-                <p className="orders-warning">
-                  Результат подтверждения неизвестен. Повторная отправка
-                  запрещена до сверки.
-                </p>
-              )}
-              <details>
-                <summary>Условия для действий в Ozon</summary>
-                <OrdersActionEligibility
-                  posting={posting}
-                  freshnessSeconds={freshnessSeconds}
-                />
-              </details>
-              {onActionPreview && (
-                <OrdersActions
-                  key={`${posting.evidence.revision}:${actionReset}`}
-                  scope={scope}
-                  posting={posting}
-                  disabled={disabled || locked}
-                  onPreview={onActionPreview}
-                  onDraftChange={onActionDraftChange ?? (() => {})}
-                />
-              )}
-              {onNativePreview && (
-                <OrdersNativeDocuments
-                  key={`native:${posting.evidence.revision}:${actionReset}`}
-                  scope={scope}
-                  posting={posting}
-                  disabled={disabled || locked}
-                  onPreview={onNativePreview}
-                  onDraftChange={onActionDraftChange ?? (() => {})}
-                />
-              )}
-              {onCompositionPreview && (
-                <OrdersComposition
-                  key={`composition:${posting.evidence.revision}:${actionReset}`}
-                  postingNumber={posting.posting_number}
-                  disabled={disabled || locked}
-                  onPreview={onCompositionPreview}
-                  onDraftChange={onActionDraftChange ?? (() => {})}
-                />
-              )}
-              <OrdersRelatedPostings
-                group={posting.related_postings}
-                current={posting.posting_number}
-                onFind={findPosting}
-              />
-              {(parent || posting.child_posting_numbers?.length > 0) && (
-                <div className="orders-split">
-                  {parent && (
-                    <button
-                      type="button"
-                      className="text-action"
-                      onClick={() => findPosting(parent)}
-                    >
-                      Родительское отправление {parent}
-                    </button>
-                  )}
-                  {(posting.child_posting_numbers ?? []).map((number) => (
-                    <button
-                      className="text-action"
-                      type="button"
-                      key={number}
-                      onClick={() => findPosting(number)}
-                    >
-                      Дочернее отправление {number}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <details>
-                <summary>
-                  Позиции и сведения источника ({posting.lines?.length ?? 0})
-                </summary>
-                <div className="orders-detail-body">
-                  {(posting.lines ?? []).map((line, index) => (
-                    <div
-                      className="orders-line"
-                      key={`${line.identity.provider_line_id ?? line.identity.sku ?? line.identity.offer_id}:${index}`}
-                    >
-                      <strong>{orderFieldText(line.name)}</strong>
-                      <span>
-                        Артикул {line.identity.offer_id ?? "неизвестен"} · SKU{" "}
-                        {line.identity.sku ?? "неизвестен"}
-                      </span>
-                      <span>
-                        Количество: {line.quantity || "Неизвестно"} · Цена:{" "}
-                        {orderFieldText(line.price, orderMoney)}
-                      </span>
-                      <span>
-                        Отменено: {orderFieldText(line.cancelled_quantity)}
-                      </span>
-                    </div>
-                  ))}
-                  {knownOrderField(posting.substatus) !== undefined && (
-                    <p>Подстатус: {orderFieldText(posting.substatus)}</p>
-                  )}
-                  {(posting.drift ?? []).map((item, index) => (
-                    <p className="orders-warning" key={index}>
-                      Изменение схемы источника: <code>{item.path}</code> ·{" "}
-                      <code>{item.code}</code>. Нужна проверка совместимости.
-                    </p>
-                  ))}
-                </div>
-              </details>
-            </article>
-          );
-        })}
+                  </time>
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    className="orders-row-open"
+                    aria-label={`Подробнее об отправлении ${posting.posting_number}`}
+                    onClick={() => open(posting)}
+                  >
+                    <Icon name="chevron-right" size="button" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
-      <div className="orders-actions">
-        <button
-          className="secondary"
-          type="button"
-          disabled={cursors.length === 1 || page.isFetching}
-          onClick={() => setCursors((value) => value.slice(0, -1))}
-        >
-          Предыдущие отправления
-        </button>
-        <span>Страница {cursors.length}</span>
-        <button
-          className="secondary"
-          type="button"
-          disabled={!page.data?.next_cursor || page.isFetching}
-          onClick={() =>
-            setCursors((value) => [...value, page.data!.next_cursor!])
-          }
-        >
-          Следующие отправления
-        </button>
-        <span>Выбрано отправлений: {selected.length}</span>
-        {selected.length > 0 && (
+      <footer className="orders-table-footer">
+        <div className="orders-bulk-actions">
+          <span>Выбрано отправлений: {selected.length}</span>
+          {props.onReview && (
+            <button
+              type="button"
+              className="secondary"
+              disabled={props.reviewDisabled || !selected.length}
+              onClick={props.onReview}
+            >
+              {props.reviewing
+                ? "Проверяем изменения…"
+                : "Проверить выбранные отправления"}
+            </button>
+          )}
+          {selected.length > 0 && (
+            <button
+              type="button"
+              className="text-action"
+              disabled={disabled}
+              onClick={() => onSelected([])}
+            >
+              Снять выбор
+            </button>
+          )}
+        </div>
+        <div className="orders-pagination">
+          <span>
+            Страница {cursors.length}
+            {postings.length > 0 ? ` · ${postings.length} отправлений` : ""}
+          </span>
           <button
             type="button"
-            className="text-action"
-            disabled={disabled}
-            onClick={() => onSelected([])}
+            className="secondary"
+            aria-label="Предыдущие отправления"
+            disabled={cursors.length === 1 || page.isFetching}
+            onClick={() => setCursors((value) => value.slice(0, -1))}
           >
-            Снять выбор
+            <Icon name="chevron-left" size="button" />
           </button>
-        )}
-      </div>
+          <button
+            type="button"
+            className="secondary"
+            aria-label="Следующие отправления"
+            disabled={!page.data?.next_cursor || page.isFetching}
+            onClick={() =>
+              setCursors((value) => [...value, page.data!.next_cursor!])
+            }
+          >
+            <Icon name="chevron-right" size="button" />
+          </button>
+        </div>
+      </footer>
+      {current && (
+        <OrderDetailDrawer
+          {...props}
+          key={current.posting_number}
+          posting={current}
+          local={states.get(current.posting_number)}
+          link={links[current.posting_number]}
+          disabled={disabled || page.isError}
+          locked={locked(current)}
+          freshnessSeconds={props.freshnessSeconds ?? 300}
+          actionReset={props.actionReset ?? 0}
+          onClose={close}
+          onFind={find}
+        />
+      )}
     </section>
   );
 }

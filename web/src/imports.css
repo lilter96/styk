@@ -277,7 +277,9 @@ body {
 }
 .reference-shell button:hover:not(:disabled),
 .reference-shell .primary-button:hover {
-  background: var(--styk-primary-hover);
+  /* Component variants own their surfaces; tinting every background hides
+     purple/grey labels on tabs, icon buttons and transparent row actions. */
+  filter: brightness(0.96);
   text-decoration: none;
 }
 .reference-shell :is(button, .secondary).secondary,
