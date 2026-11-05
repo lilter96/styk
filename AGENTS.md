@@ -1,10 +1,24 @@
 # Go Development Guidelines
 
 ## Commands & Verification
-Always run and pass these checks before completing any task:
-- `golangci-lint run`
-- `go test -race ./...`
-- `go build ./...`
+Use the executable policy in [docs/testing-policy.md](docs/testing-policy.md).
+- Inspect existing work and run `make check-plan` before choosing checks.
+- Run `make check` for the changed scope: Go lint, race-enabled unit tests and
+  build for affected packages and their transitive consumers; frontend checks
+  only when frontend files changed. Documentation has no application test suite.
+- Run `make check-ui` for selected UI behavior/layout changes, and
+  `make check-integration` for selected database/contracts. These targets select
+  relevant tests; they do not run the entire integration suite. PostgreSQL is
+  disposable unless a validated dedicated loopback test DSN is supplied.
+- Full regression (`make check-full`) belongs to nightly/manual CI and changes
+  classified as high risk (schema, shared security/dispatch/dependencies or
+  unknown impact). Do not start it for routine edits or as a push prerequisite.
+- Reuse already-passed checks for unchanged content. A commit, push, docs-only
+  follow-up, or request for status does not invalidate prior verification.
+- Never run both ordinary and race versions of the same suite by default.
+  If a broader suite is needed, run it once with `-race`.
+- Report exactly which selected checks passed, failed, were skipped or stopped.
+  A stopped or unrun full suite must never be reported as passed.
 
 ## Code Style & Architecture
 - **Keep happy path left-aligned**: Return early, avoid nested `if-else` chains.
@@ -47,7 +61,7 @@ STYK is a modular monolith: domain types carry business meaning, application orc
 
 Use idiomatic Go, contexts, wrapped errors, structured logs without secrets, bounded work and explicit transaction boundaries. Never keep a transaction open across an external API call. Keep dependencies minimal, maintained, and justified in review; use the standard library where practical.
 
-Run `make lint`, `make test`, `go test -race ./...`, and `make build`. For database changes also run `make migrate` and `make test-integration` against a dedicated local test database. Tests must assert behavior, including rollback, concurrency and failure; never use production services. Review migrations for forward and rollback impact and never apply them to production as part of development.
+Select verification using `make check-plan` and the scoped targets above. For database changes run the selected contract tests against a dedicated local test database; schema migrations require the full CI lane and forward/rollback review. Tests must assert behavior, including rollback, concurrency and failure; never use production services or apply development migrations to production.
 
 External writes must not be added without an explicit design for idempotency, unknown outcomes, retries, reconciliation and partial success. Never log tokens, connection strings, customer data or credentials. The mock worker's lease recovery is not safe for arbitrary writes.
 

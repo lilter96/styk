@@ -22,6 +22,18 @@ docker compose exec postgres psql -U styk -d styk -c "SELECT o.operation_key,o.s
 
 Running the demo again reuses the same operation key and does not create another task. `make down` stops services without deleting their persistent volume. Migrations are applied explicitly with goose; never run them against production without review.
 
+## Verification
+
+Use `make check-plan` to inspect the affected scope, then `make check` for its fast
+checks. Run `make check-ui` or `make check-integration` when those lanes are
+selected. Documentation and frontend changes do not start PostgreSQL or the full
+backend integration suite. Already-passed checks can be reused for unchanged
+content; pushing a commit does not itself invalidate them.
+
+The same policy drives CI. Full regression is a separate nightly/manual or
+high-risk lane. See [verification policy](docs/testing-policy.md) for selection,
+database isolation, timeouts and the stable required CI gate.
+
 ## Merchant and order browser verification
 
 After `npm ci` and installing Playwright Chromium in `web`, run

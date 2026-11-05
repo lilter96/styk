@@ -1,0 +1,45 @@
+name: Full regression
+on:
+  workflow_call:
+  workflow_dispatch:
+  schedule:
+    - cron: '15 2 * * *'
+permissions:
+  contents: read
+concurrency:
+  group: regression-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    services:
+      postgres:
+        image: postgres:17.6
+        env:
+          POSTGRES_USER: styk
+          POSTGRES_PASSWORD: test_only
+          POSTGRES_DB: styk_orders_store_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U styk -d styk_orders_store_test"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgres://styk:test_only@localhost:5432/styk_orders_store_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.3'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: npx playwright install --with-deps chromium
+        working-directory: web
+      - run: go run ./cmd/checks run --lane full

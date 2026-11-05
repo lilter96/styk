@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run --environment jsdom src",
+    "test:ui": "node e2e/run-ui.mjs",
     "build": "tsc --noEmit && vite build",
     "test:browser": "node e2e/run-stack.mjs"
   },

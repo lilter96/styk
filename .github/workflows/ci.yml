@@ -1,8 +1,91 @@
 name: CI
-on: [push, pull_request]
+on:
+  push:
+    branches: [master]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
-  test:
+  plan:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      go: ${{ steps.plan.outputs.go }}
+      web: ${{ steps.plan.outputs.web }}
+      browser: ${{ steps.plan.outputs.browser }}
+      browser_specs: ${{ steps.plan.outputs.browser_specs }}
+      integration: ${{ steps.plan.outputs.integration }}
+      full: ${{ steps.plan.outputs.full }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.3'
+      - id: plan
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          go run ./cmd/checks plan --base "$BASE_SHA" --head "$HEAD_SHA" --format github >> "$GITHUB_OUTPUT"
+          go run ./cmd/checks plan --base "$BASE_SHA" --head "$HEAD_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+  go:
+    needs: plan
+    if: needs.plan.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.3'
+      - env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: go run ./cmd/checks run --base "$BASE_SHA" --head "$HEAD_SHA" --lane go
+
+  web:
+    needs: plan
+    if: needs.plan.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: npm run typecheck && npm run lint && npm test && npm run build
+        working-directory: web
+      - if: needs.plan.outputs.browser == 'true'
+        run: npx playwright install --with-deps chromium
+        working-directory: web
+      - if: needs.plan.outputs.browser == 'true'
+        env:
+          SPECS: ${{ needs.plan.outputs.browser_specs }}
+        run: |
+          node --input-type=module -e 'import {spawnSync} from "node:child_process"; const r=spawnSync(process.execPath,["e2e/run-ui.mjs",...JSON.parse(process.env.SPECS)],{stdio:"inherit"}); process.exit(r.status??1)'
+        working-directory: web
+
+  integration:
+    needs: plan
+    if: needs.plan.outputs.integration == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
     services:
       postgres:
         image: postgres:17.6
@@ -15,17 +98,42 @@ jobs:
           --health-cmd "pg_isready -U styk -d styk_orders_store_test"
           --health-interval 2s --health-timeout 3s --health-retries 30
     env:
-      DATABASE_URL: postgres://styk:test_only@localhost:5432/styk_orders_store_test?sslmode=disable
       TEST_DATABASE_URL: postgres://styk:test_only@localhost:5432/styk_orders_store_test?sslmode=disable
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-go@v5
         with:
           go-version: '1.27.3'
-      - run: make lint
-      - run: make test
-      - run: go test -race ./...
-      - run: make build
-      - run: make migrate
-      - run: make test-integration
-      - run: go test -race -timeout=40m -tags=integration -count=1 ./tests/integration/...
+      - env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: go run ./cmd/checks run --base "$BASE_SHA" --head "$HEAD_SHA" --lane integration
+
+  full:
+    needs: plan
+    if: needs.plan.outputs.full == 'true'
+    uses: ./.github/workflows/regression.yml
+
+  # Keep a stable required status even when application lanes are skipped.
+  test:
+    if: always()
+    needs: [plan, go, web, integration, full]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          jobs = json.loads(os.environ['RESULTS'])
+          failed = [name for name, job in jobs.items() if job['result'] not in ('success', 'skipped')]
+          for name in ('go', 'web', 'integration', 'full'):
+              if jobs['plan']['outputs'].get(name) == 'true' and jobs[name]['result'] != 'success':
+                  failed.append(name)
+          if jobs['plan']['result'] != 'success' or failed:
+              sys.exit('Required checks failed or were cancelled: ' + ', '.join(failed))
+          print('All selected checks passed; unrelated lanes were skipped.')
+          PY

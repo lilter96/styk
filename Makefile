@@ -1,12 +1,34 @@
 SHELL := /bin/sh
+.DEFAULT_GOAL := up
 export GOTOOLCHAIN := go1.27.3
+# Test/build entry points must never implicitly load provider credentials.
+ifneq ($(filter up down migrate,$(or $(MAKECMDGOALS),up)),)
 -include .env
 export
+endif
 GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
 INTEGRATION_TEST_TIMEOUT ?= 40m
 INTEGRATION_TEST_FLAGS ?=
 GOOSE := go run -tags="no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql" github.com/pressly/goose/v3/cmd/goose@v3.25.0
-.PHONY: up down migrate test test-integration lint build
+.PHONY: up down migrate test test-integration lint build check-plan check check-go check-web check-ui check-integration check-full
+
+# Without BASE/HEAD, inspect staged, unstaged and untracked changes.
+export STYK_CHECK_BASE := $(value BASE)
+export STYK_CHECK_HEAD := $(value HEAD)
+check-plan:
+	go run ./cmd/checks plan
+check:
+	go run ./cmd/checks run --lane fast
+check-go:
+	go run ./cmd/checks run --lane go
+check-web:
+	go run ./cmd/checks run --lane web
+check-ui:
+	go run ./cmd/checks run --lane browser
+check-integration:
+	go run ./cmd/checks run --lane integration
+check-full:
+	go run ./cmd/checks run --lane full
 up:
 	docker compose up -d --wait
 down:
