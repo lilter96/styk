@@ -34,7 +34,7 @@ func enrichNativeConsumption(ctx context.Context, q ordersQuerier, current *orde
 }
 
 func readNativeConsumption(ctx context.Context, q ordersQuerier, correlation orders.Correlation, selfID, fingerprint string, now time.Time) (orders.NativeConsumptionFacts, error) {
-	facts := orders.NativeConsumptionFacts{Scope: correlation.Scope, Correlation: correlation, CheckedAt: now}
+	facts := orders.NativeConsumptionFacts{Scope: correlation.Scope, Correlation: correlation, CheckedAt: now, Events: []orders.NativeConsumptionEvent{}}
 	bound, err := nativeConsumptionBinding(ctx, q, correlation)
 	if err != nil || !bound {
 		return facts, err
