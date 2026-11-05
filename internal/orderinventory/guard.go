@@ -30,6 +30,10 @@ const (
 // Observation preserves native facts separately from the correlation binding.
 // A resolved binding or a successful mirror alone cannot prove stock coverage.
 type Observation struct {
+	NativeConsumption        *orders.NativeConsumptionFacts
+	NativeDocumentPoints     map[string]orders.NativeDocumentPointEvidence
+	NativeParentPoint        *orders.NativeOrderPoint
+	NativeCredentialRevision int64
 	// Constructed from scoped immutable split/release work and current child heads.
 	SplitSuperseded           *orders.SplitReserveTransferPermission
 	ReconciledAt              time.Time
