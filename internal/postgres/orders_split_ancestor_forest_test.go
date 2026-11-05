@@ -1,0 +1,124 @@
+//go:build integration
+
+package postgres
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/lilter96/styk/internal/orders"
+)
+
+type forestVisibilityCase struct {
+	name, proof string
+	action      orders.Action
+	state       orders.State
+	dispatched  int
+	otherSelf   bool
+	visible     bool
+}
+
+// Exercise the actual production query against constrained durable work, not a
+// rewritten predicate. Missing JSON proof must not turn NOT(NULL) into absence.
+func TestOwnedForestSelfExclusionPreservesUnknownOrMissingProof(t *testing.T) {
+	f := orderInventoryDBFixture(t)
+	initial := orderInventoryPosting(t, f, "forest-original", "awaiting_packaging")
+	orderInventoryReconciled(t, f, initial, "1")
+	cases := []forestVisibilityCase{
+		{"missing", "missing", orders.ActionMirrorPositionUpdate, orders.StateQueued, 0, false, true},
+		{"null", "null", orders.ActionMirrorPositionUpdate, orders.StateQueued, 0, false, true},
+		{"matching_reduction", "matching", orders.ActionMirrorPositionUpdate, orders.StateQueued, 0, false, false},
+		{"matching_admission", "matching", orders.ActionMirrorCreate, orders.StateClaimed, 0, false, false},
+		{"other_pending", "matching", orders.ActionMirrorPositionUpdate, orders.StateQueued, 0, true, true},
+		{"already_dispatched", "matching", orders.ActionMirrorPositionUpdate, orders.StatePolling, 1, false, true},
+		{"unknown", "matching", orders.ActionMirrorPositionUpdate, orders.StateUnknown, 1, false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) { assertForestHistoryVisibility(t, f, tc) })
+	}
+}
+
+func assertForestHistoryVisibility(t *testing.T, f orderInventoryFixture, tc forestVisibilityCase) {
+	t.Helper()
+	posting := orderInventoryPosting(t, f, "forest-"+tc.name, "awaiting_packaging")
+	work := seedForestVisibilityWork(t, f, posting, tc)
+	self := work.ID
+	if tc.otherSelf {
+		self = "different-current-work"
+	}
+	args := append(ordersScopeArgs(f.config.Scope), []string{posting.PostingNumber}, self, work.CommandFingerprint, posting.PostingNumber, posting.PostingNumber, "forest-split", 3)
+	rows, err := f.db.Pool.Query(f.ctx, ownedForestNativeSQL, args...)
+	if err != nil {
+		t.Fatal("query native forest history", err)
+	}
+	defer rows.Close()
+	count := 0
+	for rows.Next() {
+		count++
+	}
+	if err = rows.Err(); err != nil || (count == 1) != tc.visible || count > 1 {
+		t.Fatalf("forest history visible=%t count=%d: %v", tc.visible, count, err)
+	}
+}
+
+func seedForestVisibilityWork(t *testing.T, f orderInventoryFixture, posting orders.Posting, tc forestVisibilityCase) orders.Work {
+	t.Helper()
+	correlation, err := orders.CorrelationFor(posting.Scope, posting.PostingNumber)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := orders.Command{ID: "command-" + tc.name, Scope: posting.Scope, Action: tc.action, PostingNumber: posting.PostingNumber, CommercialOrderID: posting.CommercialOrderID, Correlation: correlation, ExpectedSourceRevision: posting.Evidence.Revision}
+	if tc.proof == "matching" {
+		mode := orders.SplitAncestorReduce
+		if tc.action == orders.ActionMirrorCreate {
+			mode = orders.SplitAncestorAdmit
+		}
+		command.SplitAncestorSettlement = &orders.SplitAncestorSettlementPermission{Mode: mode, SplitWorkID: "forest-split"}
+	}
+	work := orders.Work{ID: "work-" + tc.name, OperationID: "native-operation", Scope: posting.Scope, ConfigRevision: f.config.Revision, State: tc.state, DispatchCount: tc.dispatched, Command: command, CommandFingerprint: strings.Repeat("b", 64), Receipt: orders.Receipt{ObservedAt: f.now}}
+	raw := forestVisibilityJSON(t, work, tc)
+	tx, err := f.db.Pool.Begin(f.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rollbackTransaction(tx)
+	var dispatched any
+	if tc.dispatched == 1 {
+		dispatched = f.now
+	}
+	_, err = tx.Exec(f.ctx, `INSERT INTO orders_work(id,operation_id,tenant_id,moysklad_account,ozon_account,config_revision,posting_number,command_id,command_fingerprint,action,state,work,dispatch_count,dispatched_at,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15)`, work.ID, work.OperationID, work.Scope.Tenant, work.Scope.MoyskladAccount, work.Scope.OzonAccount, work.ConfigRevision, posting.PostingNumber, command.ID, work.CommandFingerprint, command.Action, work.State, raw, tc.dispatched, dispatched, f.now)
+	if err != nil {
+		t.Fatal("insert constrained forest work", err)
+	}
+	seedForestVisibilityOutbox(t, f, tx, work)
+	if err = tx.Commit(f.ctx); err != nil {
+		t.Fatal("commit constrained forest work", err)
+	}
+	return work
+}
+
+func forestVisibilityJSON(t *testing.T, work orders.Work, tc forestVisibilityCase) []byte {
+	t.Helper()
+	var raw map[string]any
+	if err := json.Unmarshal(inventoryJSON(t, work), &raw); err != nil {
+		t.Fatal(err)
+	}
+	command := raw["command"].(map[string]any)
+	if tc.proof == "null" {
+		command["split_ancestor_settlement"] = nil
+	}
+	return inventoryJSON(t, raw)
+}
+
+func seedForestVisibilityOutbox(t *testing.T, f orderInventoryFixture, tx pgx.Tx, work orders.Work) {
+	t.Helper()
+	_, err := tx.Exec(f.ctx, `INSERT INTO outbox_tasks(operation_key,task_type,state,orders_operation_id,orders_work_id,orders_tenant_id,orders_moysklad_account,orders_ozon_account,max_attempts) VALUES($1,'orders_sync','pending',$2,$3,$4,$5,$6,1)`, work.ID+"-outbox", work.OperationID, work.ID, work.Scope.Tenant, work.Scope.MoyskladAccount, work.Scope.OzonAccount)
+	if err != nil {
+		t.Fatal("insert forest work outbox", err)
+	}
+	if work.DispatchCount == 1 {
+		seedSplitReadbackDispatch(t, splitReadbackTestFixture{orderInventoryFixture: f, work: work}, tx)
+	}
+}
