@@ -59,6 +59,11 @@ func splitTransferRootVerified(facts SplitReserveTransferFacts) bool {
 	if command.Action == ActionPostingSplitUnassembled && !unassembledAcknowledgedAllocation(split) {
 		return false
 	}
+	for _, member := range split.Receipt.ObservedPostings {
+		if !splitTransferProductIdentities(before.Lines, member.Lines) {
+			return false
+		}
+	}
 	original := facts.OriginalCorrelation
 	return original.Validate() == nil && original.Scope == before.Scope && original.PostingNumber == before.PostingNumber && original.CustomerOrderID != "" && command.Correlation == original && split.Receipt.CommandID == command.ID && split.Receipt.State == StateReconciled && split.Receipt.HTTPStatus >= 200 && split.Receipt.HTTPStatus < 300
 }
