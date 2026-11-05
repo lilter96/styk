@@ -252,13 +252,13 @@ func TestOrdersCompositionHTTPAddRemoveRetainedUUIDReadbackAndNoop(t *testing.T)
 	assertOrdersRowCount(t, f.ordersStoreFixture, `SELECT count(*) FROM orders_work WHERE action='mirror_composition_update' AND state='RECONCILED' AND dispatch_count=1`, 2)
 }
 
-func TestOrdersCompositionHTTPRejectsForeignReserveAndSourceOrManualRace(t *testing.T) {
+func TestOrdersCompositionHTTPRejectsUnsafeForeignReserveAndSourceOrManualRace(t *testing.T) {
 	cases := []struct {
 		name          string
 		beforePreview bool
 		change        func(compositionHTTPFixture, *testing.T)
 	}{
-		{"foreign reserve before review", true, func(f compositionHTTPFixture, t *testing.T) { f.addForeignLine(t) }},
+		{"unsupported foreign row before review", true, compositionUnsupportedForeignRow},
 		{"native manual edit after approval", false, func(f compositionHTTPFixture, t *testing.T) { f.editOwned(t, "reserve", json.Number("1")) }},
 		{"source changed after approval", false, func(f compositionHTTPFixture, _ *testing.T) { f.mode(3) }},
 	}
@@ -287,6 +287,17 @@ func TestOrdersCompositionHTTPRejectsForeignReserveAndSourceOrManualRace(t *test
 				t.Fatal("changed source/native state dispatched collection overwrite")
 			}
 		})
+	}
+}
+
+func compositionUnsupportedForeignRow(f compositionHTTPFixture, t *testing.T) {
+	t.Helper()
+	f.addForeignLine(t)
+	f.provider.base.mu.Lock()
+	defer f.provider.base.mu.Unlock()
+	for _, native := range f.provider.base.native {
+		rows := native.body["positions"].([]any)
+		rows[len(rows)-1].(map[string]any)["pack"] = map[string]any{"quantity": json.Number("2")}
 	}
 }
 
