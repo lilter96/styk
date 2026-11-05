@@ -114,7 +114,7 @@ func retainedUnmirroredUnassembled(t *testing.T) (positionHTTPFixture, *unmirror
 	return f, base, f.latestWork(t)
 }
 
-func TestOrdersUnmirroredUnassembledRetainedNativeFirstRemainsExplicitlyBlocked(t *testing.T) {
+func TestOrdersUnmirroredUnassembledRetainedNativeFirstWaitsForReconciliation(t *testing.T) {
 	f, provider, split := retainedUnmirroredUnassembled(t)
 	root := split.Command.PostingNumber
 	ready := unmirroredUnassembledHTTPReview(t, f, "split-http-child")
@@ -131,9 +131,7 @@ func TestOrdersUnmirroredUnassembledRetainedNativeFirstRemainsExplicitlyBlocked(
 	}
 	f.run(t, orders.StateAcknowledged)
 	f.run(t, orders.StateReconciled)
-	if next := unmirroredUnassembledHTTPReview(t, f, "split-http-child"); next.Decisions[0].Ready {
-		t.Fatal("known root native order bypassed explicit transfer proof")
-	}
+	completeRetainedAdmissionChild(t, f)
 	if provider.writes.Load() != 1 {
 		t.Fatal("native first path replayed split")
 	}

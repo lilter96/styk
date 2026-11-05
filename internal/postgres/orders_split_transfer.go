@@ -40,6 +40,13 @@ WHERE NOT EXISTS (SELECT 1 FROM orders_target_fences f WHERE f.tenant_id=split.t
 ORDER BY selected.number LIMIT 10001`
 
 func enrichOrderSplitTransfers(ctx context.Context, q ordersQuerier, result *orders.ReviewContext, dependencies map[string]string) error {
+	if err := enrichReducedSplitTransfers(ctx, q, result, dependencies); err != nil {
+		return err
+	}
+	return enrichRetainedSplitAdmissions(ctx, q, result, dependencies)
+}
+
+func enrichReducedSplitTransfers(ctx context.Context, q ordersQuerier, result *orders.ReviewContext, dependencies map[string]string) error {
 	if len(dependencies) == 0 {
 		return nil
 	}
