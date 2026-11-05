@@ -6,6 +6,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { OrdersRecovery } from "./OrdersRecovery";
@@ -144,7 +145,9 @@ it("opening recovery only reads and requires check plus explicit uncertainty ack
   });
   expect(approved?.idempotency_key).toBeTypeOf("string");
   expect(calls.filter((call) => call.startsWith("POST"))).toHaveLength(2);
-  expect(authorization).toHaveBeenCalledWith("POSTING", expect.any(String));
+  await waitFor(() =>
+    expect(authorization).toHaveBeenCalledWith("POSTING", expect.any(String)),
+  );
   expect(localStorage.length).toBe(0);
 });
 it("does not show another account's recovery evidence", async () => {

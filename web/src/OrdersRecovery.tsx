@@ -280,14 +280,16 @@ export function OrdersRecovery({
           </>
         )}
         {(value?.blockers ?? []).map((item, index) => (
-          <p className="orders-warning" key={index}>
-            {blockers[item.code] ??
-              "Условия восстановления не подтверждены. Проверьте настройки, текущий источник и связанную операцию."}
+          <div className="orders-warning" key={index}>
+            <p>
+              {blockers[item.code] ??
+                "Условия восстановления не подтверждены. Проверьте настройки, текущий источник и связанную операцию."}
+            </p>
             <details>
               <summary>Код ограничения</summary>
               <code>{item.code}</code>
             </details>
-          </p>
+          </div>
         ))}
         {value?.resolution && (
           <p className="orders-note">
