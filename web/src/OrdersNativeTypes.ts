@@ -21,11 +21,12 @@ export type OrderNativeProposal = {
   applicable: OrderField<boolean>;
   lines: { identity: OrderLine["identity"]; quantity: string }[];
   demand_work_id?: string;
+  retry_work_id?: string;
   event_kind: "draft_plan" | "shipment_dispatched" | "return_received";
   event_occurred_at?: string;
   event_confirmed: boolean;
   planned_moment?: string;
-  event_reference: string;
+  event_reference?: string;
 };
 export type NativeDemandWork = OrderWork & {
   native_document?: { id: string; kind: string; observed_at: string };

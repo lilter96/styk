@@ -215,6 +215,12 @@ export type OrderPositionPatch = {
   price: OrderField<OrderMoney>;
 };
 export type OrderNativeMovement = {
+  event?: { kind: string; occurred_at: string; confirmed: boolean };
+  retry?: {
+    previous_work_id: string;
+    previous_command_fingerprint: string;
+    event_digest: string;
+  };
   applicable: OrderField<boolean>;
   parent_effect?: "UNPOSTED_DOCUMENT_ZERO_COUNTER";
   consumption?: {
@@ -290,11 +296,13 @@ export type OrderWork = {
   native_document?: { id: string; kind: string; observed_at: string };
   id: string;
   state: string;
+  dispatch_count?: number;
   command: OrderCommand;
   code?: string;
   automatic: boolean;
   receipt: {
     state: string;
+    http_status?: number;
     posting_numbers?: string[];
     split_read_count?: number;
     unassembled_split?: {
@@ -449,6 +457,22 @@ export const orderActionLabel = (action: string) =>
     posting_exemplar_set: "Передать сведения экземпляров в Ozon",
   })[action] || action;
 const issueLabels: Record<string, string> = {
+  native_retry_prior_rejection_unavailable:
+    "Отклонённая попытка не найдена для этого отправления или её результат изменился. Обновите историю; неизвестный результат требует сверки.",
+  native_retry_latest_rejection_required:
+    "Появилась более новая попытка этого события. Обновите историю и выберите последнюю отклонённую операцию.",
+  native_retry_prior_effect_or_target_unverified:
+    "Не подтверждено отсутствие применения предыдущих попыток либо изменился заказ, склад или товар. Повторная запись заблокирована; проверьте исходную операцию.",
+  native_retry_protected_event_unavailable:
+    "Исходные защищённые сведения события недоступны или срок их хранения истёк. Новый идентификатор события нельзя выдумывать; проверьте исходный документ и историю.",
+  native_retry_physical_event_confirmation_required:
+    "Для повторной попытки нужно заново подтвердить реальное складское событие. Его исходное время менять нельзя.",
+  native_retry_event_identity_changed:
+    "Повторная попытка должна относиться к прежнему событию и тому же действию. Создайте новый предпросмотр из отклонённой операции.",
+  native_retry_authorization_changed:
+    "Сведения предыдущей попытки изменились после проверки. Повторите предпросмотр; запись не отправлена.",
+  native_retry_authorization_invalid:
+    "Не подтверждено разрешение новой попытки. Выберите отклонённую операцию и создайте новый предпросмотр.",
   native_consumption_event_already_recorded:
     "Это складское событие уже связано с операцией. Повторный документ не создаётся; проверьте исходную операцию и её результат.",
   native_split_fulfillment_allocation_unverified:

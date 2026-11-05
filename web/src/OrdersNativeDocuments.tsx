@@ -17,6 +17,11 @@ import type {
   NativeOperationPage,
   OrderNativeProposal,
 } from "./OrdersNativeTypes";
+import {
+  nativeRetryCandidate,
+  nativeRetryLocalTime,
+  nativeRetryQuantities,
+} from "./OrdersNativeRetry";
 
 type Props = {
   scope: OrderScope;
@@ -107,6 +112,8 @@ function NativeForm({
   const [cursors, setCursors] = useState([""]);
   const [now, setNow] = useState(Date.now);
   const [error, setError] = useState("");
+  const [retryEnabled, setRetryEnabled] = useState(false);
+  const [retryID, setRetryID] = useState("");
   const config = useQuery({
     queryKey: ["orders-config", scope],
     queryFn: async ({ signal }) => {
@@ -139,7 +146,7 @@ function NativeForm({
         throw new Error("native document account mismatch");
       return data;
     },
-    enabled: open && mode === "return",
+    enabled: open && (mode === "return" || retryEnabled),
     retry: false,
     refetchOnWindowFocus: false,
   });
@@ -176,6 +183,16 @@ function NativeForm({
       .filter((work) => eligibleDemand(work, posting.posting_number, scope))
       .map((work) => ({ work, at: op.created_at })),
   );
+  const retries = (history.data?.operations ?? []).flatMap((op) =>
+    op.targets
+      .filter((work) =>
+        nativeRetryCandidate(work, posting.posting_number, scope),
+      )
+      .map((work) => ({ work, at: op.created_at })),
+  );
+  const retryWork = retryEnabled
+    ? retries.find(({ work }) => work.id === retryID)?.work
+    : undefined;
   const action = mode === "return" ? "salesreturn_create" : "demand_create";
   const available =
     config.data?.enabled &&
@@ -206,6 +223,7 @@ function NativeForm({
     );
   const basisValid =
     mode !== "return" ||
+    (!!retryWork && !!retryWork.command.native_movement?.demand_work_id) ||
     (!!demands.find(({ work }) => work.id === basis) &&
       !history.isFetching &&
       !history.isError);
@@ -223,8 +241,9 @@ function NativeForm({
     quantitiesValid &&
     basisValid &&
     timeValid &&
-    reference.trim().length > 0 &&
-    reference.trim().length <= 4096 &&
+    (retryEnabled
+      ? !!retryWork && !history.isFetching && !history.isError
+      : reference.trim().length > 0 && reference.trim().length <= 4096) &&
     (mode === "draft" || confirmed);
   function changed() {
     onDraftChange();
@@ -252,12 +271,41 @@ function NativeForm({
             ? "shipment_dispatched"
             : "return_received",
       event_confirmed: mode !== "draft" && confirmed,
-      event_reference: reference.trim(),
+      ...(retryWork
+        ? { retry_work_id: retryWork.id }
+        : { event_reference: reference.trim() }),
       ...(mode === "draft"
         ? { planned_moment: time }
-        : { event_occurred_at: time }),
+        : retryWork
+          ? {}
+          : { event_occurred_at: time }),
       ...(mode === "return" ? { demand_work_id: basis } : {}),
     });
+  }
+  function chooseRetry(id: string) {
+    const work = retries.find((item) => item.work.id === id)?.work;
+    setRetryID(id);
+    setConfirmed(false);
+    setReference("");
+    setMode("draft");
+    setBasis("");
+    setOccurred("");
+    setPlanned("");
+    setQuantities(work ? nativeRetryQuantities(posting.lines, work) : {});
+    if (work?.command.native_movement) {
+      const movement = work.command.native_movement;
+      setMode(
+        knownOrderField(movement.applicable) !== true
+          ? "draft"
+          : work.command.action === "salesreturn_create"
+            ? "return"
+            : "demand",
+      );
+      setOccurred(nativeRetryLocalTime(movement.event?.occurred_at));
+      setPlanned(nativeRetryLocalTime(movement.moment));
+      setBasis(movement.demand_work_id ?? "");
+    }
+    changed();
   }
   return (
     <details
@@ -283,9 +331,89 @@ function NativeForm({
       <form onSubmit={submit} aria-label="Документ движения МойСклад">
         <fieldset disabled={disabled || config.isLoading || config.isError}>
           <legend>Действие</legend>
+          <label className="orders-check">
+            <input
+              type="checkbox"
+              checked={retryEnabled}
+              onChange={(event) => {
+                setRetryEnabled(event.target.checked);
+                chooseRetry("");
+                setCursors([""]);
+              }}
+            />
+            Подготовить повтор после отказа API
+          </label>
+          {retryEnabled && (
+            <fieldset>
+              <legend>Ранее отклонённая операция</legend>
+              <p className="orders-note">
+                Будет создана новая операция с прежним идентификатором события.
+                Сервер отдельно проверит, что все предыдущие попытки отклонены
+                без применения. Неизвестный результат повторять здесь нельзя.
+              </p>
+              {history.isLoading && (
+                <p role="status">Ищем отклонённые операции…</p>
+              )}
+              {history.isError && (
+                <p role="alert">{orderRequestError(history.error)}</p>
+              )}
+              <label>
+                Операция для проверки повторной попытки
+                <select
+                  value={retryID}
+                  disabled={history.isFetching || history.isError}
+                  onChange={(event) => chooseRetry(event.target.value)}
+                >
+                  <option value="">Выберите отклонённую операцию</option>
+                  {retries.map(({ work, at }) => (
+                    <option key={work.id} value={work.id}>
+                      {work.command.action === "salesreturn_create"
+                        ? "Возврат"
+                        : "Отгрузка"}{" "}
+                      от {orderDate(at)} ·{" "}
+                      {work.receipt.http_status
+                        ? `HTTP ${work.receipt.http_status}`
+                        : "До отправки"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {!history.isLoading && !history.isError && !retries.length && (
+                <p>
+                  На этой странице нет подходящих отказов. Неизвестный результат
+                  требует отдельной сверки в истории операций.
+                </p>
+              )}
+              <div className="orders-actions">
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={history.isFetching || cursors.length === 1}
+                  onClick={() => {
+                    setCursors(cursors.slice(0, -1));
+                    chooseRetry("");
+                  }}
+                >
+                  Предыдущие операции
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={history.isFetching || !history.data?.next_cursor}
+                  onClick={() => {
+                    setCursors([...cursors, history.data?.next_cursor ?? ""]);
+                    chooseRetry("");
+                  }}
+                >
+                  Ещё операции
+                </button>
+              </div>
+            </fieldset>
+          )}
           <label>
             Документ
             <select
+              disabled={retryEnabled}
               value={mode}
               onChange={(event) => {
                 setMode(event.target.value as Mode);
@@ -309,7 +437,7 @@ function NativeForm({
               освобождаются.
             </p>
           )}
-          {mode === "return" && (
+          {mode === "return" && !retryEnabled && (
             <fieldset>
               <legend>Исходная отгрузка STYK</legend>
               {history.isLoading && (
@@ -435,6 +563,7 @@ function NativeForm({
               : "Фактическое время события"}
             <input
               type="datetime-local"
+              disabled={!!retryWork && mode !== "draft"}
               step="0.001"
               value={eventTime}
               onChange={(event) => {
@@ -445,28 +574,31 @@ function NativeForm({
             />
           </label>
           <p className="orders-note">
-            Время указывается в часовом поясе вашего браузера. Оно не
-            подставляется из даты заказа или статуса доставки.
+            {retryWork && mode !== "draft"
+              ? "Сохранено время исходного физического события. Новая попытка API не меняет время передачи или возврата товара."
+              : "Время указывается в часовом поясе вашего браузера. Оно не подставляется из даты заказа или статуса доставки."}
           </p>
-          <label>
-            {mode === "draft"
-              ? "Идентификатор планирования"
-              : "Идентификатор реального события"}
-            <input
-              type="password"
-              autoComplete="off"
-              maxLength={4096}
-              value={reference}
-              onChange={(event) => {
-                setReference(event.target.value);
-                changed();
-              }}
-            />
-          </label>
+          {!retryEnabled && (
+            <label>
+              {mode === "draft"
+                ? "Идентификатор планирования"
+                : "Идентификатор реального события"}
+              <input
+                type="password"
+                autoComplete="off"
+                maxLength={4096}
+                value={reference}
+                onChange={(event) => {
+                  setReference(event.target.value);
+                  changed();
+                }}
+              />
+            </label>
+          )}
           <p className="orders-note">
-            Используйте уникальный внутренний номер акта или события без
-            персональных данных. Он сохраняется зашифрованным; повторное событие
-            не создаёт второй документ.
+            {retryEnabled
+              ? "Исходный идентификатор события будет восстановлен сервером из защищённой записи. Повторно вводить или менять его не нужно; отказ и новая попытка останутся в истории."
+              : "Используйте уникальный внутренний номер акта или события без персональных данных. Он сохраняется зашифрованным; повторное событие не создаёт второй документ."}
           </p>
           {mode !== "draft" && (
             <label className="orders-check">

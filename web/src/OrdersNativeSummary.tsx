@@ -46,6 +46,14 @@ export function OrdersNativeSummary({
         </p>
       )}
       <p>Дата документа: {orderDate(document.moment)}.</p>
+      {document.retry && (
+        <p className="orders-note">
+          Новая попытка после подтверждённого отказа без применения. Исходное
+          событие сохранено; прежняя операция {document.retry.previous_work_id}{" "}
+          не изменяется. Подтверждение этого предпросмотра создаст отдельное
+          поручение.
+        </p>
+      )}
       {document.parent_effect === "UNPOSTED_DOCUMENT_ZERO_COUNTER" && (
         <p className="orders-warning">
           Заказ МойСклад остаётся непроведённым. Его счётчик отгрузки не
@@ -77,7 +85,10 @@ export function OrdersNativeSummary({
             учитывается: {orderFieldText(line.vat_enabled)}.
           </p>
           {document.consumption?.positions
-            .filter((position) => position.order_position_id === line.order_position_id)
+            .filter(
+              (position) =>
+                position.order_position_id === line.order_position_id,
+            )
             .map((position) => (
               <p key={position.order_position_id}>
                 Ранее учтено отгрузок по этой позиции: {position.gross_demand}.

@@ -258,6 +258,74 @@ function history(targets: unknown[], next = "") {
   };
 }
 
+it("previews an explicitly confirmed rejected event without revealing or replacing its reference", async () => {
+  const rejected = demand("rejected-event", {
+    state: "REJECTED",
+    dispatch_count: 1,
+    command: {
+      scope: orderScopeBody(scope),
+      action: "demand_create",
+      posting_number: posting.posting_number,
+      native_movement: {
+        applicable: { presence: "value", value: true },
+        correlation: { kind: "demand" },
+        event: {
+          kind: "shipment_dispatched",
+          occurred_at: new Date(Date.now() - 5000).toISOString(),
+          confirmed: true,
+        },
+        moment: new Date().toISOString(),
+        lines: [{ identity: posting.lines[0].identity, quantity: "1" }],
+      },
+    },
+    receipt: { state: "REJECTED", http_status: 403, code: "PROVIDER_REJECTED" },
+  });
+  const f = setup({
+    history: history([
+      rejected,
+      { ...rejected, id: "unknown", state: "UNKNOWN" },
+      {
+        ...rejected,
+        id: "conflict",
+        receipt: { state: "REJECTED", http_status: 409 },
+      },
+    ]),
+  });
+  await open();
+  fireEvent.click(screen.getByLabelText("Подготовить повтор после отказа API"));
+  await screen.findByRole("option", { name: /HTTP 403/ });
+  expect(screen.getAllByRole("option", { name: /HTTP/ })).toHaveLength(1);
+  fireEvent.change(
+    screen.getByLabelText("Операция для проверки повторной попытки"),
+    { target: { value: "rejected-event" } },
+  );
+  expect(screen.getByLabelText("Документ")).toBeDisabled();
+  expect(screen.getByLabelText("Фактическое время события")).toBeDisabled();
+  expect(
+    screen.queryByLabelText("Идентификатор реального события"),
+  ).not.toBeInTheDocument();
+  expect(previewButton()).toBeDisabled();
+  fireEvent.click(
+    screen.getByLabelText(/Подтверждаю: выбранный товар фактически передан/),
+  );
+  expect(previewButton()).not.toBeDisabled();
+  fireEvent.click(previewButton());
+  expect(f.onPreview).toHaveBeenCalledWith(
+    expect.objectContaining({
+      retry_work_id: "rejected-event",
+      event_confirmed: true,
+      lines: [{ identity: posting.lines[0].identity, quantity: "1" }],
+    }),
+  );
+  expect(f.onPreview.mock.calls[0][0]).not.toHaveProperty("event_reference");
+  expect(f.onPreview.mock.calls[0][0]).not.toHaveProperty("event_occurred_at");
+  expect(
+    f.fetch.mock.calls.every(
+      (call) => !call[1]?.method || call[1].method === "GET",
+    ),
+  ).toBe(true);
+});
+
 it("allows only a verified posted demand for the exact posting as return basis", async () => {
   const f = setup({
     history: history([
