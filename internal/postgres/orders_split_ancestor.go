@@ -20,6 +20,10 @@ func enrichOwnedAncestorSettlements(ctx context.Context, q ordersQuerier, result
 	for _, number := range numbers {
 		facts, err := readOwnedAncestorSettlement(ctx, q, result.Config.Scope, number, result.RevalidationWorkID, result.RevalidationCommandFingerprint)
 		if err != nil {
+			if errors.Is(err, errDeferredOwnedUnsafe) {
+				blockDeferredOwnedTarget(result, number)
+				continue
+			}
 			if historicalSplitUnavailable(err) {
 				continue
 			}
@@ -56,7 +60,15 @@ func readOwnedAncestorSettlement(ctx context.Context, q ordersQuerier, scope ord
 	if err != nil {
 		return result, err
 	}
-	return loadOwnedAncestorPath(ctx, q, nested, number, selfID, selfFingerprint)
+	facts, previousErr := loadOwnedAncestorPath(ctx, q, nested, number, selfID, selfFingerprint)
+	if previousErr == nil {
+		if _, proofErr := orders.NewSplitAncestorSettlement(facts); proofErr == nil {
+			return facts, nil
+		}
+	} else if !historicalSplitUnavailable(previousErr) {
+		return facts, previousErr
+	}
+	return loadDeferredOwnedSettlement(ctx, q, nested, number, selfID, selfFingerprint)
 }
 
 func readOwnedAncestorNativeRows(ctx context.Context, q ordersQuerier, scope orders.Scope, numbers []string, selfID, selfFingerprint, node, splitID string) ([]ownedAncestorNativeRow, error) {
@@ -100,6 +112,9 @@ func assignOwnedAncestorRows(f *orders.SplitAncestorSettlementFacts, rows []owne
 }
 
 func ownedAncestorMappingsCurrent(f orders.SplitAncestorSettlementFacts, current *orders.ReviewContext) bool {
+	if f.Deferred != nil {
+		return deferredOwnedMappingsCurrent(f.Deferred, current)
+	}
 	if len(f.RetainedHistory) > 0 {
 		return retainedOwnedMappingsCurrent(f.RetainedHistory, current)
 	}
