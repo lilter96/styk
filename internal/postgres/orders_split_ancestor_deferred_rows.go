@@ -47,7 +47,7 @@ const deferredOwnedRowsSQL = `SELECT w.work,r.observed_target,w.created_at,w.dis
  ORDER BY w.created_at,w.id LIMIT $8`
 
 func readDeferredOwnedRows(ctx context.Context, q ordersQuerier, scope orders.Scope, spine []orders.SplitLineageStep, selfID, fingerprint string) ([]deferredOwnedRow, error) {
-	maximum := 2 * len(spine)
+	maximum := orders.MaxSplitForestNative
 	rows, err := q.Query(ctx, deferredOwnedRowsSQL, append(ordersScopeArgs(scope), spine[0].Before.PostingNumber, selfID, fingerprint, spine[len(spine)-1].Work.ID, maximum+1)...)
 	if err != nil {
 		return nil, ordersError("read deferred owned history", err)
@@ -88,7 +88,7 @@ func assignDeferredOwnedRows(f *orders.SplitAncestorSettlementFacts, rows []defe
 	for _, step := range f.Deferred.Spine {
 		steps[step.Work.ID] = true
 	}
-	used, reduced := make(map[string]bool, len(rows)), make(map[string]bool, len(rows))
+	used := make(map[string]bool, len(rows))
 	for i, row := range rows {
 		w := row.work
 		if w.State != orders.StateReconciled || w.DispatchCount != 1 || used[w.ID] {
@@ -99,10 +99,9 @@ func assignDeferredOwnedRows(f *orders.SplitAncestorSettlementFacts, rows []defe
 			f.Deferred.Origin = native
 		} else {
 			id := retainedNativeSplitID(w)
-			if id == "" || !steps[id] || reduced[id] || w.Command.Correlation != f.Deferred.Origin.Target.Correlation {
+			if id == "" || !steps[id] || w.Command.Correlation != f.Deferred.Origin.Target.Correlation {
 				return false
 			}
-			reduced[id] = true
 			f.Deferred.Reductions = append(f.Deferred.Reductions, native)
 		}
 		used[w.ID] = true

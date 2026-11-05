@@ -21,7 +21,7 @@ func loadOwnedForestSettlement(ctx context.Context, q ordersQuerier, nested orde
 		}
 		return f, err
 	}
-	forest.Native, err = readOwnedForestNative(ctx, q, f.Lineage.Scope, numbers, len(f.Lineage.Splits), selfID, fingerprint, number, node, split)
+	forest.Native, err = readOwnedForestNative(ctx, q, f.Lineage.Scope, numbers, selfID, fingerprint, number, node, split)
 	if err != nil {
 		return f, err
 	}
@@ -65,8 +65,8 @@ func ownedForestReadScope(lineage orders.SplitLineageFacts) ([]string, string, s
 	return nil, "", "", orders.ErrBlocked
 }
 
-func readOwnedForestNative(ctx context.Context, q ordersQuerier, scope orders.Scope, numbers []string, splitCount int, selfID, fingerprint, selected, node, split string) ([]orders.SplitForestNative, error) {
-	maximum := len(numbers) + splitCount
+func readOwnedForestNative(ctx context.Context, q ordersQuerier, scope orders.Scope, numbers []string, selfID, fingerprint, selected, node, split string) ([]orders.SplitForestNative, error) {
+	maximum := orders.MaxSplitForestNative
 	rows, err := q.Query(ctx, ownedForestNativeSQL, append(ordersScopeArgs(scope), numbers, selfID, fingerprint, selected, node, split, maximum+1)...)
 	if err != nil {
 		return nil, ordersError("read forest native history", err)
