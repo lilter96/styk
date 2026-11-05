@@ -1279,3 +1279,95 @@ performed splits, admission of older siblings after later retained updates,
 native-first-after-split deep combinations and additional ancestor/manual-edit
 histories require further work. No all-profile production-readiness claim is
 made from these selected successful histories.
+
+
+### Deferred retained settlement and observed native headers — 2026-11-05
+
+`57894f9` / `cdd868f` reconstruct the complete same-root retained spine and
+all native operations, rather than requiring an intermediate native PATCH after
+every Seller split. The immutable approved source, actual UUID/ACK/readback,
+complete allocations and PostgreSQL chronology remain mandatory. Normal
+HTTP/outbox/worker journeys cover native **8 → 1** after three Seller splits,
+continuation from a settled native **4**, and admission of older children
+**4, 2, 1** only after the current root reconciliation. UNKNOWN fences related
+targets without stopping an independent commercial order.
+
+`476f996` / `f2f8194` additionally support the root first created in MoySklad
+**after the original split**: split 8 → 4+4, actual native creation of 4,
+later retained splits to 2 and 1, then one native 4 → 1 reduction. The existing
+retained-admission validator proves that origin; a native reserve of 8 is never
+invented. `ecc2184` separates chronology applicability from history validity:
+malformed later history must reach the unsafe-history fence instead of selecting
+a legacy fallback. Origins first created after later splits and mixed-branch
+coalescing remain outside this deliberately bounded extension.
+
+The primary reduction may preserve newly appended, unowned native rows. Original
+rows and owned UUID bindings remain exact; other ancestors and child admission
+retain strict matching. Header comparison uses a SHA256 commitment to **typed
+observed header fields**, sealed before durable desired-field projection and
+privacy redaction. It is neither a provider version nor a watermark/CAS. Legacy
+redacted observations without that commitment stay blocked. Unknown raw provider
+fields are not claimed to participate in this comparison.
+
+Two real gate failures were retained and corrected: protected address fields
+were initially absent from the hash-only representation, and reconciliation
+initially sealed projected desired fields rather than the actual observation.
+The later native-first fixture initially retained an old imported quantity of 2;
+`4afc2fd` refreshes the actual source 8 through the normal read/import path before
+splitting, without creating an artificial native order of 8.
+
+Clean code **`4afc2fd`** passed normal/integration lint **0**, Go unit tests,
+full race, build and vet; full PostgreSQL race **171 PASS**, affected HTTP/process
+**32 PASS**, and stock regression **116 PASS / 2 documented skips**. These
+counts include subtests. The two stock skips are the subprocess helper entrypoint
+and the separately opted-in Shadow browser test. The independent native process
+stack passed; frontend inputs remain identical to the prior 299-test gate, so
+no new React/browser result is inferred. Final evidence is in the private
+`gate-4afc2fd389ba-c15ea2e7f16b4418badefbdb8a5dceb7` directory.
+
+Both APIs and both workers now run that clean code on schema 62, health/readiness
+HTTP 200. Credentials, encryption key and history were preserved. Deployment
+made zero provider calls; order/stock/catalog automation, native grants and
+general publication remain OFF.
+
+### Real MoySklad append contract probe — 2026-11-05
+
+A separate owner-authorized provider contract check used the **same normal
+MoySklad HTTP transport and shared PostgreSQL request coordination**. It created
+unposted synthetic customerorder `29c82474-d8dc-11f1-0a80-0720009985b8` and appended
+one position through the documented positions POST. Both writes returned HTTP
+200; independent header/complete-position reads confirmed two distinct rows.
+Original position `29c82913-d8dc-11f1-0a80-0720009985b9` remained unchanged; appended
+position is `2bf1880d-d8dc-11f1-0a80-1d6b00990c34`. Quantities are 8 and 1, both
+reserve/shipped zero, and selected header fields stayed unchanged. The draft is
+retained with its immutable local manifest; no payment/shipment was created.
+
+Optional prices, VAT, discounts and rate were omitted rather than invented.
+Provider-returned zero prices/discounts/VAT and disabled VAT were recorded as
+observations, not merchant tax/compliance assertions. Physical stock observations
+were 10 and 0 before and after; their equality is not a causal proof.
+
+This phase used **26 MoySklad reads and 2 writes**, **0 Ozon requests**: 24 reads
+HTTP 200, two early diagnostic-helper preflight reads HTTP 400, both writes HTTP
+200. The helper was corrected to match the normal client's headers; no normal
+runtime transport defect is attributed to those 400s. A fresh diagnostic exposed
+an unnecessary same-currency price prerequisite and missing optional foreign VAT.
+The immutable aggregate budget was explicitly revised from 16 reads/3 writes to
+28 reads/3 writes before the minimal-payload continuation, retaining recovery
+capacity. Every attempt and mutation intent is journalled; **no new UNKNOWN** or
+blind retry occurred. Key/ciphertext, STYK history and OFF settings were verified
+unchanged after the final read.
+
+Private final evidence: `result-ledger-v2.json`, SHA256
+`c5906175ccd6f9bb514e4ce1ff1e6f4e6188247584840579cf5f4cf1db6c4de6`, under
+`.local/moy-native-append-contract/`. This proves the selected **MoySklad append
+contract**, not a live Ozon posting projection or reserve 8 → 1 transition.
+Active real FBS/rFBS/Express fulfillment remains **NOT_OBSERVED_LIVE**.
+
+The user-supplied pinned normalized FBS/rFBS corpus was independently rechecked:
+all four fetched file hashes match existing curated provenance; the selected
+window contains 519 unique posting keys (220 FBS, 290 rFBS, 9 ambiguous). Existing
+provenance and the normalized-versus-wire negative fixture already cover its
+status/cancellation usefulness and lossy/heuristic fields. No third-party raw
+orders/PII or duplicate fixture was committed; this does not establish full HTTP
+schema, money, line allocation or delivery-capability evidence.

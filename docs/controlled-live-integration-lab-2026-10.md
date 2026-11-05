@@ -610,3 +610,20 @@ paths, calculator checks and remaining history combinations are recorded in the
 HTTP/process **27 PASS**, stock **116 PASS / 2 skips**, Go lint **0**. Both API and
 worker replicas are updated; no additional real provider call or migration was
 needed, and temporary automation stays OFF.
+
+
+The deferred retained continuation now runs clean **`4afc2fd`** on both APIs and
+workers, schema 62. It supports coalesced retained reductions and a root first
+mirrored after the original split, with older-child admission after readback and
+UNKNOWN isolation. Final Go lint **0**, PostgreSQL **171 PASS**, related
+HTTP/process **32 PASS**, stock **116 PASS / 2 documented skips**. Frontend inputs
+are unchanged. The existing [order report](orders-live-evidence.md) records exact
+revision-scoped gates and remaining mixed-history limitations.
+
+A separately journalled real MoySklad append-contract check created one unposted,
+zero-reserve synthetic draft and appended a row: **26 reads / 2 writes**, both
+writes HTTP 200, original native row unchanged, physical observations unchanged.
+Two earlier helper read failures HTTP 400 are included in those counts. Ozon
+requests were zero. No new UNKNOWN exists; the useful draft remains retained.
+This is provider contract evidence, not a claim of live active Ozon fulfillment.
+Credentials/key/history remain intact; all temporary automation/publication is OFF.
