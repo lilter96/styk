@@ -80,7 +80,8 @@ CREATE TRIGGER orders_native_document_retries_immutable BEFORE UPDATE OR DELETE 
 -- +goose StatementBegin
 CREATE FUNCTION orders_native_retry_no_effect(wid text) RETURNS boolean LANGUAGE sql STABLE AS $$
  SELECT COALESCE(bool_and(
- COALESCE(w.work#>>'{receipt,http_status}','0')<>'409'
+ COALESCE(w.work->>'code','')<>'NATIVE_RETRY_EXISTING_DOCUMENT_REQUIRES_REVIEW'
+ AND COALESCE(w.work#>>'{receipt,http_status}','0')<>'409'
  AND NOT EXISTS(SELECT 1 FROM orders_reconciliations r WHERE r.work_id=w.id)
  AND NOT EXISTS(SELECT 1 FROM orders_native_document_results n WHERE n.work_id=w.id)
  AND ((w.dispatch_count=0 AND w.state IN('REJECTED','BLOCKED')

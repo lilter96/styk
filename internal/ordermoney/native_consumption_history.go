@@ -56,7 +56,9 @@ func (h *nativeConsumptionHistory) event(c orders.Command, f orders.NativeConsum
 
 func nativeConsumptionNoEffect(event orders.NativeConsumptionEvent) bool {
 	w, r := event.Work, event.Work.Receipt
-	if event.Document != nil || event.Parent != nil || !event.ConfirmedAt.IsZero() || event.WriteIntent.Validate() != nil || !event.WriteIntent.IsKnown() {
+	// An unsent attempt can still discover a document contradicting the prior
+	// rejection. That observed contradiction must not free shipment capacity.
+	if w.Code == "NATIVE_RETRY_EXISTING_DOCUMENT_REQUIRES_REVIEW" || event.Document != nil || event.Parent != nil || !event.ConfirmedAt.IsZero() || event.WriteIntent.Validate() != nil || !event.WriteIntent.IsKnown() {
 		return false
 	}
 	if w.DispatchCount == 0 && (w.State == orders.StateBlocked || w.State == orders.StateRejected) {

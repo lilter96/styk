@@ -30,16 +30,17 @@ type nativeMovementHTTPDocument struct {
 	body              map[string]any
 }
 type nativeMovementHTTPProvider struct {
-	position         *positionHTTPProvider
-	mu               sync.Mutex
-	documents        map[string]*nativeMovementHTTPDocument
-	writes           atomic.Int32
-	requests         atomic.Int64
-	rejectNextNative atomic.Int32
-	loseResponse     atomic.Bool
-	shipped          atomic.Int64
-	returned         atomic.Int64
-	includedTax      bool
+	position             *positionHTTPProvider
+	mu                   sync.Mutex
+	documents            map[string]*nativeMovementHTTPDocument
+	writes               atomic.Int32
+	requests             atomic.Int64
+	rejectNextNative     atomic.Int32
+	applyBeforeRejection atomic.Bool
+	loseResponse         atomic.Bool
+	shipped              atomic.Int64
+	returned             atomic.Int64
+	includedTax          bool
 }
 type nativeMovementHTTPFixture struct {
 	positionHTTPFixture
@@ -365,6 +366,13 @@ func (p *nativeMovementHTTPProvider) native(w http.ResponseWriter, r *http.Reque
 	if r.Method == http.MethodPost && len(parts) == 1 {
 		p.writes.Add(1)
 		if status := p.rejectNextNative.Swap(0); status != 0 {
+			if p.applyBeforeRejection.Swap(false) {
+				capture := httptest.NewRecorder()
+				p.create(capture, r, account, kind)
+				if capture.Code != http.StatusOK {
+					p.position.base.t.Error("synthetic contradictory response did not create the native document")
+				}
+			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(int(status))
 			p.position.base.reply(w, map[string]any{"errors": []any{map[string]any{"error": "Synthetic native write rejected before application", "code": status}}})

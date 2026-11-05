@@ -277,3 +277,53 @@ func assertNativeRetryReadback(t *testing.T, f nativeMovementHTTPFixture, work o
 		t.Fatal("native retry independent provider readback disagrees", err)
 	}
 }
+
+func TestOrdersNativeHTTPKnownRejectionExistingDocumentBlocksFurtherEvents(t *testing.T) {
+	f := newNativeMovementHTTPFixture(t)
+	const reference = "native-retry-contradictory-existing-document"
+	first := f.proposal(t, orders.ActionDemandCreate, false, reference, "")
+	f.approve(t, first)
+	f.native.applyBeforeRejection.Store(true)
+	f.native.rejectNextNative.Store(http.StatusForbidden)
+	f.run(t, orders.StateRejected)
+	failed := f.latestWork(t)
+	originalHash := nativeRetryWorkHash(t, f, failed.ID)
+	assertNativeRetryContradictoryDocument(t, f, failed)
+	retry := nativeRetryReadyPreview(t, f, nativeRetryHTTPProposal(failed, failed.ID, ""), reference)
+	f.approve(t, retry)
+	nativeRetryAwaitPermission(t, f)
+	f.run(t, orders.StateBlocked)
+	blocked := f.latestWork(t)
+	if blocked.Code != "NATIVE_RETRY_EXISTING_DOCUMENT_REQUIRES_REVIEW" || blocked.DispatchCount != 0 {
+		t.Fatal("unexpected existing document did not preserve its contradiction blocker")
+	}
+	var noEffect bool
+	if err := f.db.Pool.QueryRow(f.ctx, `SELECT orders_native_retry_no_effect($1)`, blocked.ID).Scan(&noEffect); err != nil || noEffect {
+		t.Fatal("database classified a known existing document as no application", err)
+	}
+	next := nativeRetryHTTPProposal(failed, "", "native-retry-different-shipment-event")
+	next.Applicable, next.EventKind, next.EventConfirmed = orders.Present(true), "shipment_dispatched", true
+	next.EventOccurredAt = time.Now().UTC().Truncate(time.Second)
+	assertNativeRetryPreviewBlocked(t, f, next)
+	assertNativeRetryPreviewBlocked(t, f, nativeRetryHTTPProposal(blocked, blocked.ID, ""))
+	if f.native.writes.Load() != 1 || nativeRetryWorkHash(t, f, failed.ID) != originalHash {
+		t.Fatal("contradictory provider evidence caused another POST or changed the original history")
+	}
+	assertOrdersRowCount(t, f.ordersStoreFixture, `SELECT count(*) FROM orders_native_document_results`, 0)
+}
+
+func assertNativeRetryContradictoryDocument(t *testing.T, f nativeMovementHTTPFixture, work orders.Work) {
+	t.Helper()
+	client, err := f.factory.ResolveOrder(f.ctx, work.Scope, "moysklad", work.Scope.MoyskladAccount, work.Credentials.Moysklad)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, ok := client.Client.(orders.NativeDocumentReader)
+	if !ok {
+		t.Fatal("native contradictory-document reader unavailable")
+	}
+	actual, err := reader.ReadNativeDocument(f.ctx, orders.NativeDocumentRequest{Scope: work.Scope, Correlation: work.Command.NativeMovement.Correlation, IncludeReturns: true})
+	if err != nil || !orders.NativeDocumentMatches(work.Command, actual) || !actual.Applicable.IsKnown() || *actual.Applicable.Value {
+		t.Fatal("provider did not independently confirm the contradictory draft document", err)
+	}
+}
