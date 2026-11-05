@@ -19,7 +19,7 @@ func (r *Runner) splitAncestorPreflight(ctx context.Context, w orders.Work, targ
 	if !ok {
 		return checks, orders.ErrBlocked
 	}
-	for _, a := range proof.Ancestors {
+	for i, a := range proof.Ancestors {
 		p, e := source.ReadOrderPosting(ctx, w.Scope, a.Posting.PostingNumber)
 		if e != nil || !a.SourceMatches(p) {
 			return checks, orders.ErrStale
@@ -29,7 +29,7 @@ func (r *Runner) splitAncestorPreflight(ctx context.Context, w orders.Work, targ
 			return checks, orders.ErrStale
 		}
 		native, e := reader.ReadCustomerOrder(ctx, correlation)
-		if e != nil || !a.TargetMatches(native) {
+		if e != nil || !proof.AncestorTargetMatches(i, native) {
 			return checks, orders.ErrStale
 		}
 		p.PII, p.Customer = nil, orders.ProtectedCustomer{}
