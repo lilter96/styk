@@ -52,7 +52,7 @@ func (h *nativeConsumptionHistory) event(c orders.Command, f orders.NativeConsum
 
 func nativeConsumptionNoEffect(event orders.NativeConsumptionEvent) bool {
 	w, r := event.Work, event.Work.Receipt
-	if event.WriteIntent.Validate() != nil || !event.WriteIntent.IsKnown() {
+	if event.Document != nil || event.Parent != nil || !event.ConfirmedAt.IsZero() || event.WriteIntent.Validate() != nil || !event.WriteIntent.IsKnown() {
 		return false
 	}
 	if w.DispatchCount == 0 && (w.State == orders.StateBlocked || w.State == orders.StateRejected) {
