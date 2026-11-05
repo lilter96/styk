@@ -49,10 +49,27 @@ func PlanPositionReplacement(command Command, baseline PositionBaseline, vatEnab
 			result.Removed = append(result.Removed, PositionIdentityRef{binding.Source.Identity, binding.Native.ID})
 		}
 	}
-	if len(result.Added)+len(result.Removed) == 0 {
+	if len(result.Added)+len(result.Removed) == 0 && !replacementRetainedChanged(command, result) {
 		return nil, ErrBlocked
 	}
 	return result, nil
+}
+
+// A full collection review can change several retained rows without creating
+// or deleting an identity. Ownership is still proved by the baseline UUIDs and
+// replacementFrontier; coincidentally matching unowned assortments are ignored.
+func replacementRetainedChanged(command Command, replacement *PositionReplacement) bool {
+	for _, wanted := range command.CustomerOrder.Positions {
+		binding, found := replacementBinding(replacement.Baseline, wanted.Identity)
+		if !found {
+			continue
+		}
+		current, present := nativePositionByID(command.TargetPositions, binding.Native.ID)
+		if present && !PositionRepresented(wanted, current) {
+			return true
+		}
+	}
+	return false
 }
 
 func replacementWanted(command Command, result *PositionReplacement) error {

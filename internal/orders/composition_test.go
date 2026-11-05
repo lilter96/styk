@@ -148,6 +148,41 @@ func TestCompositionRemovalPreservesRetainedUUIDAndDoesNotRecreate(t *testing.T)
 	}
 }
 
+func TestCompositionRetainedValueReviewRequiresAChangeAndExactOwnedFrontier(t *testing.T) {
+	t.Parallel()
+	command, _ := compositionFixture(t)
+	first := compositionResult(command)
+	work := Work{ID: "retained-values-origin", Scope: command.Scope, State: StateReconciled, DispatchCount: 1, Command: command, Receipt: Receipt{State: StateAcknowledged, HTTPStatus: 200, CommandID: command.ID, ExternalID: command.Correlation.CustomerOrderID}}
+	baseline, err := ProjectionPositionBaseline(work, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command.TargetPositions, command.ExpectedTargetRevision = slices.Clone(first.Positions), first.Revision
+	if _, err = PlanPositionReplacement(command, baseline, Present(false), Present(false)); err == nil {
+		t.Fatal("unchanged retained values created a collection write")
+	}
+	wanted := *command.CustomerOrder
+	wanted.Positions = slices.Clone(wanted.Positions)
+	command.CustomerOrder = &wanted
+	command.CustomerOrder.Positions[0].Quantity = "2"
+	command.CustomerOrder.Positions[1].Quantity = "3"
+	replacement, err := PlanPositionReplacement(command, baseline, Present(false), Present(false))
+	if err != nil || len(replacement.Retained) != 2 || len(replacement.Added)+len(replacement.Removed) != 0 {
+		t.Fatal("explicit retained-value review was blocked or changed identity", err)
+	}
+	command.PositionReplacement = replacement
+	if err = command.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = OwnedSplitReductionBaseline(command); err != nil {
+		t.Fatal("split reduction did not accept the sealed retained-value review", err)
+	}
+	command.TargetPositions[0].Quantity = "4"
+	if _, err = PlanPositionReplacement(command, baseline, Present(false), Present(false)); err == nil {
+		t.Fatal("manual change to an owned native row was adopted")
+	}
+}
+
 func TestCompositionRejectsNonzeroTaxAndOverReservation(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
