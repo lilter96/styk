@@ -449,6 +449,8 @@ export const orderActionLabel = (action: string) =>
     posting_exemplar_set: "Передать сведения экземпляров в Ozon",
   })[action] || action;
 const issueLabels: Record<string, string> = {
+  native_consumption_event_already_recorded:
+    "Это складское событие уже связано с операцией. Повторный документ не создаётся; проверьте исходную операцию и её результат.",
   native_split_fulfillment_allocation_unverified:
     "По исходному заказу уже учтена или проверяется отгрузка. Без отдельного распределения отгруженного количества разделение, новое резервирование дочернего заказа и повторная отгрузка заблокированы. Возврат не сбрасывает этот лимит.",
   native_unposted_parent_policy_required:

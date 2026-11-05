@@ -53,6 +53,9 @@ func (h *nativeConsumptionHistory) capacity(c orders.Command) orders.Validation 
 	if m.ParentEffect == orders.NativeParentUnpostedDocument && !orders.NativeUnpostedParentSelection(c) {
 		return consumptionIssue("native_consumption_zero_parent_unverified")
 	}
+	if h.eventAlreadyRecorded(m) {
+		return consumptionIssue("native_consumption_event_already_recorded")
+	}
 	for _, line := range m.Lines {
 		quantity, err := parseDecimal(line.Quantity)
 		if err != nil || quantity.coefficient.Sign() <= 0 {
@@ -69,6 +72,16 @@ func (h *nativeConsumptionHistory) capacity(c orders.Command) orders.Validation 
 		}
 	}
 	return orders.Validation{}
+}
+
+func (h *nativeConsumptionHistory) eventAlreadyRecorded(m *orders.NativeMovement) bool {
+	for _, event := range h.works {
+		previous := event.Work.Command.NativeMovement
+		if previous != nil && previous.Correlation.Kind == m.Correlation.Kind && previous.Event.Digest == m.Event.Digest {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *nativeConsumptionHistory) demandCapacity(c orders.Command, line orders.NativeMovementLine) orders.Validation {
