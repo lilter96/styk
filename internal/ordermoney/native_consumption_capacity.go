@@ -53,8 +53,8 @@ func (h *nativeConsumptionHistory) capacity(c orders.Command) orders.Validation 
 	if m.ParentEffect == orders.NativeParentUnpostedDocument && !orders.NativeUnpostedParentSelection(c) {
 		return consumptionIssue("native_consumption_zero_parent_unverified")
 	}
-	if h.eventAlreadyRecorded(m) {
-		return consumptionIssue("native_consumption_event_already_recorded")
+	if issue := h.requestRetry(c); issue.Code != "" {
+		return issue
 	}
 	for _, line := range m.Lines {
 		quantity, err := parseDecimal(line.Quantity)

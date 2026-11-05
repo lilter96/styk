@@ -5,16 +5,18 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"sort"
+	"time"
 
 	"github.com/lilter96/styk/internal/orders"
 )
 
 type nativeConsumptionHistory struct {
-	seal    orders.NativeConsumptionSeal
-	demands map[string][]orders.Decimal
-	works   map[string]orders.NativeConsumptionEvent
-	docs    map[string]bool
-	keys    []nativeConsumptionIdentity
+	checkedAt time.Time
+	seal      orders.NativeConsumptionSeal
+	demands   map[string][]orders.Decimal
+	works     map[string]orders.NativeConsumptionEvent
+	docs      map[string]bool
+	keys      []nativeConsumptionIdentity
 }
 
 type nativeConsumptionIdentity struct {
@@ -59,7 +61,7 @@ func readNativeConsumption(c orders.Command, f orders.NativeConsumptionFacts) (n
 	if c.NativeMovement == nil || !c.Action.IsNativeMovement() || !f.Complete || f.CheckedAt.IsZero() || f.Events == nil || len(f.Events) > orders.MaxNativeConsumptionEvents || f.Scope != c.Scope || f.Correlation != c.Correlation || c.Correlation.CustomerOrderID == "" || c.NativeMovement.SourceBaseline.Validate() != nil || c.NativeMovement.SourceBaseline.Scope != c.Scope || c.NativeMovement.SourceBaseline.Correlation != c.Correlation {
 		return nativeConsumptionHistory{}, consumptionIssue("native_consumption_coverage_unproven")
 	}
-	h := nativeConsumptionHistory{seal: orders.NativeConsumptionSeal{Positions: []orders.NativeConsumedPosition{}, Events: []orders.NativeConsumedEvent{}}, demands: make(map[string][]orders.Decimal), works: make(map[string]orders.NativeConsumptionEvent, len(f.Events)), docs: make(map[string]bool), keys: make([]nativeConsumptionIdentity, 0, len(f.Events))}
+	h := nativeConsumptionHistory{checkedAt: f.CheckedAt, seal: orders.NativeConsumptionSeal{Positions: []orders.NativeConsumedPosition{}, Events: []orders.NativeConsumedEvent{}}, demands: make(map[string][]orders.Decimal), works: make(map[string]orders.NativeConsumptionEvent, len(f.Events)), docs: make(map[string]bool), keys: make([]nativeConsumptionIdentity, 0, len(f.Events))}
 	if issue := h.read(c, f); issue.Code != "" {
 		return h, issue
 	}
