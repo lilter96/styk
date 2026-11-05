@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"encoding/json"
 	"slices"
 	"testing"
 
@@ -55,6 +56,7 @@ func deferredRetainedReduce(t *testing.T, f positionHTTPFixture, root orders.Tar
 func assertDeferredAppendOnlyFrontier(t *testing.T, f positionHTTPFixture, command orders.Command) {
 	t.Helper()
 	proof, target := command.SplitAncestorSettlement, f.readNative(t)
+	deferredAppendDiagnostics(t, proof, target)
 	if proof == nil || proof.Mode != orders.SplitAncestorReduce || len(proof.Ancestors) != 1 || len(target.Positions) <= len(proof.Ancestors[0].Target.Positions) || !proof.AncestorTargetMatches(0, target) {
 		t.Fatal("actual appended foreign position was not preserved by the primary reduction proof")
 	}
@@ -87,6 +89,34 @@ func assertDeferredAppendOnlyFrontier(t *testing.T, f positionHTTPFixture, comma
 	if admit.AncestorTargetMatches(0, target) {
 		t.Fatal("child admission borrowed the primary reduction append allowance")
 	}
+}
+
+func deferredAppendDiagnostics(t *testing.T, proof *orders.SplitAncestorSettlementPermission, target orders.TargetObservation) {
+	t.Helper()
+	if proof == nil || len(proof.Ancestors) == 0 {
+		t.Logf("append diagnostic: proof_nil=%v ancestor_count_zero=%v", proof == nil, proof != nil)
+		return
+	}
+	expected := proof.Ancestors[0].Target
+	raw, err := json.Marshal(target)
+	if err != nil {
+		t.Fatal("diagnostic target marshal failed")
+	}
+	var masked orders.TargetObservation
+	if json.Unmarshal(raw, &masked) != nil {
+		t.Fatal("diagnostic target unmarshal failed")
+	}
+	positions, baseline := true, true
+	for _, before := range expected.Positions {
+		i := slices.IndexFunc(target.Positions, func(after orders.TargetPosition) bool { return before.ID == after.ID })
+		positions = positions && i >= 0 && orders.NativePositionEqual(before, target.Positions[i])
+	}
+	for _, binding := range proof.Baseline.Bindings {
+		i := slices.IndexFunc(expected.Positions, func(before orders.TargetPosition) bool { return before.ID == binding.Native.ID })
+		baseline = baseline && i >= 0 && orders.NativePositionEqual(binding.Native, expected.Positions[i])
+	}
+	t.Logf("append diagnostic: reduce=%v ancestors=%d expected_positions=%d fresh_positions=%d validate=%v match=%v scope=%v correlation=%v complete=%v/%v original_positions=%v baseline_positions=%v", proof.Mode == orders.SplitAncestorReduce, len(proof.Ancestors), len(expected.Positions), len(target.Positions), proof.Validate() == nil, proof.AncestorTargetMatches(0, target), expected.Scope == target.Scope, expected.Correlation == target.Correlation, expected.Complete, target.Complete, positions, baseline)
+	t.Logf("append diagnostic: expected_hash_present=%v fresh_hash_present=%v fresh_roundtrip_hash_equal=%v expected_redacted_count=%d fresh_redacted_count=%d fresh_roundtrip_redacted_count=%d", expected.HeaderRevision != "", masked.HeaderRevision != "", expected.HeaderRevision == masked.HeaderRevision, len(expected.RedactedFields), len(target.RedactedFields), len(masked.RedactedFields))
 }
 
 func deferredRetainedAdmit(t *testing.T, f positionHTTPFixture, children []string) {
