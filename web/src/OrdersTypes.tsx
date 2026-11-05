@@ -442,6 +442,12 @@ export const orderActionLabel = (action: string) =>
     posting_exemplar_set: "Передать сведения экземпляров в Ozon",
   })[action] || action;
 const issueLabels: Record<string, string> = {
+  SPLIT_ANCESTOR_SOURCE_OR_RESERVE_CHANGED:
+    "После проверки изменился состав отправлений или резерв одного из исходных заказов. Действие не отправлено. Обновите данные и создайте новый предпросмотр всей связанной цепочки.",
+  reservation_policy_ancestor_settlement_required:
+    "Для этой части разделённого заказа ещё не подтверждён перенос резервов всех исходных отправлений. Сначала завершите сверку предыдущих операций; повторное резервирование заблокировано.",
+  reservation_policy_ancestor_frontier_changed:
+    "Позиции или резервы исходного заказа изменились после проверки. STYK сохраняет чужие резервы и требует новой сверки перед продолжением.",
   NATIVE_DOCUMENT_DELETED_REQUIRES_REVIEW:
     "Складской документ удалён в МойСклад. STYK не подтвердит его исполнение и не создаст замену автоматически. Проверьте документ и фактическое движение товара.",
   NATIVE_PARENT_DELETED_REQUIRES_REVIEW:
@@ -632,6 +638,7 @@ export function orderOperationProblem(code: string | undefined) {
     [
       "NATIVE_DOCUMENT_DELETED_REQUIRES_REVIEW",
       "NATIVE_PARENT_DELETED_REQUIRES_REVIEW",
+      "SPLIT_ANCESTOR_SOURCE_OR_RESERVE_CHANGED",
     ].includes(code)
     ? orderIssueLabel(code)
     : undefined;

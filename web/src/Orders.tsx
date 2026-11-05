@@ -1,3 +1,4 @@
+import type { OrderTargetState } from "./OrdersTargetState";
 import type { OrderNativeProposal } from "./OrdersNativeTypes";
 import type { OrderCompositionProposal } from "./OrdersComposition";
 import { useCallback, useRef, useState } from "react";
@@ -76,8 +77,11 @@ function OrdersAccount({
   const [selected, setSelected] = useState<string[]>([]);
   const [unresolved, setUncertain] = useState<string[]>([]);
   const [recoveries, setRecoveries] = useState<Record<string, number>>({});
+  const currentTargets = useRef<Record<string, OrderTargetState>>({});
   const uncertain = unresolved.filter(
-    (number) => !(recoveries[number] > Date.now()),
+    (number) =>
+      currentTargets.current[number]?.unresolved ||
+      !(recoveries[number] > Date.now()),
   );
   const recoveryAuthorization = useCallback(
     (posting: string, until: string | undefined) => {
@@ -86,8 +90,9 @@ function OrdersAccount({
         [posting]: until ? Date.parse(until) : 0,
       }));
       setPreview(null);
+      void client.invalidateQueries({ queryKey: ["orders-postings", scope] });
     },
-    [],
+    [client, scope],
   );
   const [preview, setPreview] = useState<OrdersPreviewData | null>(null);
   const previewMetadata = useOrdersMetadata(
@@ -113,18 +118,62 @@ function OrdersAccount({
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [links, setLinks] = useState<Record<string, string>>({});
+  const updateTargetStates = useCallback(
+    (states: OrderTargetState[] | undefined) => {
+      if (!states) {
+        currentTargets.current = {};
+        return;
+      }
+      const current = Object.fromEntries(
+        states.map((state) => [state.posting_number, state]),
+      );
+      currentTargets.current = current;
+      setUncertain((previous) => [
+        ...new Set([
+          ...previous.filter(
+            (number) => !current[number] || current[number].unresolved,
+          ),
+          ...states
+            .filter((state) => state.unresolved)
+            .map((state) => state.posting_number),
+        ]),
+      ]);
+      setLinks((previous) => ({
+        ...previous,
+        ...Object.fromEntries(
+          states.map((state) => [
+            state.posting_number,
+            state.customer_order_id ?? "",
+          ]),
+        ),
+      }));
+    },
+    [],
+  );
   const updateLinks = useCallback(
     (value: Record<string, string>) =>
-      setLinks((previous) => ({ ...previous, ...value })),
+      setLinks((previous) => ({
+        ...previous,
+        ...Object.fromEntries(
+          Object.entries(value).filter(
+            ([number]) => !currentTargets.current[number],
+          ),
+        ),
+      })),
     [],
   );
   const updateOutcomes = useCallback((states: Record<string, string>) => {
     setUncertain((previous) => [
       ...new Set([
         ...previous.filter(
-          (number) => !["RECONCILED", "REJECTED"].includes(states[number]),
+          (number) =>
+            currentTargets.current[number] ||
+            !["RECONCILED", "REJECTED"].includes(states[number]),
         ),
-        ...Object.keys(states).filter((number) => states[number] === "UNKNOWN"),
+        ...Object.keys(states).filter(
+          (number) =>
+            !currentTargets.current[number] && states[number] === "UNKNOWN",
+        ),
       ]),
     ]);
   }, []);
@@ -382,6 +431,7 @@ function OrdersAccount({
             disabled={busy !== null}
             uncertain={uncertain}
             links={links}
+            onTargetStates={updateTargetStates}
             onSelected={(numbers) => {
               setSelected(numbers);
               setPreview(null);

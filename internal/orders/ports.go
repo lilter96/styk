@@ -64,8 +64,9 @@ type PageRequest struct {
 }
 
 type PostingPage struct {
-	Postings   []Posting `json:"postings"`
-	NextCursor string    `json:"next_cursor,omitempty"`
+	Postings     []Posting            `json:"postings"`
+	NextCursor   string               `json:"next_cursor,omitempty"`
+	TargetStates []PostingTargetState `json:"target_states,omitempty"`
 }
 
 type HistoryPage struct {

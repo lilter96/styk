@@ -389,3 +389,16 @@
 .orders-action-form textarea {
   resize: vertical;
 }
+
+.orders-current-state {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: #f8fafc;
+  border-left: 3px solid #cbd5e1;
+  overflow-wrap: anywhere;
+}
+.orders-current-state small {
+  color: #475569;
+}

@@ -1,9 +1,8 @@
 import { OrdersNativeSummary, nativeDocumentURL } from "./OrdersNativeSummary";
 import { OrdersRecovery } from "./OrdersRecovery";
+import { useOrdersHistory } from "./useOrdersHistory";
 import { useLabelExpiryClock } from "./useLabelExpiryClock";
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { api } from "./api";
 import { OrdersPositionPatch } from "./OrdersPositionPatch";
 import { OrdersSplitEvidence } from "./OrdersSplitEvidence";
 import {
@@ -16,11 +15,8 @@ import {
   orderOperationProblem,
   orderDate,
   orderRequestError,
-  ordersURL,
   orderStateLabels,
-  sameOrderScope,
   type OrderScope,
-  type OrdersOperationPage,
 } from "./OrdersTypes";
 
 export function OrdersOperations({
@@ -39,56 +35,24 @@ export function OrdersOperations({
 }) {
   const [cursors, setCursors] = useState([""]);
   const cursor = cursors[cursors.length - 1];
-  const history = useQuery({
-    queryKey: ["orders-operations", scope, cursor],
-    queryFn: async ({ signal }) => {
-      const value = await api<OrdersOperationPage>(
-        ordersURL("operations", scope, { cursor, limit: "25" }),
-        signal,
-      );
-      if (
-        (value.operations ?? []).some(
-          (item) => !sameOrderScope(item.scope, scope),
-        )
-      )
-        throw new Error("operation scope mismatch");
-      return value;
-    },
-    retry: false,
-    refetchOnWindowFocus: false,
-    refetchInterval: (query) =>
-      (query.state.data?.operations ?? []).some((operation) =>
-        (operation.targets ?? []).some((work) =>
-          [
-            "QUEUED",
-            "CLAIMED",
-            "DISPATCHING",
-            "ACKNOWLEDGED",
-            "POLLING",
-            "UNKNOWN",
-          ].includes(work.state),
-        ),
-      )
-        ? 10000
-        : false,
-  });
+  const { latest, page: history } = useOrdersHistory(scope, cursor);
   const labelNow = useLabelExpiryClock(history.data);
   useEffect(() => {
     const links: Record<string, string> = {};
     const states: Record<string, string> = {};
-    for (const operation of history.data?.operations ?? [])
+    for (const operation of latest.data?.operations ?? [])
       for (const work of operation.targets ?? []) {
         const id =
           work.command.correlation?.customer_order_id ||
           (work.command.action.startsWith("mirror_")
             ? work.receipt?.external_id
             : undefined);
-        if (id) links[work.command.posting_number] = id;
+        if (id) links[work.command.posting_number] ??= id;
         states[work.command.posting_number] ??= work.state;
       }
     onLinks?.(links);
     onOutcomes?.(states);
-  }, [history.data, onLinks, onOutcomes]);
+  }, [latest.data, onLinks, onOutcomes]);
   return (
     <section
       className="orders-section"
@@ -153,7 +117,8 @@ export function OrdersOperations({
               {work.command.position_patch && (
                 <OrdersPositionPatch value={work.command.position_patch} />
               )}
-              {work.command.action.startsWith("mirror_") && (
+              {(work.command.action.startsWith("mirror_") ||
+                !!work.command.native_movement) && (
                 <MoyOrderLink
                   id={
                     work.command.correlation?.customer_order_id ||

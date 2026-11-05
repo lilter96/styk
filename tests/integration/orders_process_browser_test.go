@@ -64,7 +64,7 @@ func ordersProcessProxy(t *testing.T, apis []*ordersProcessChild, mailbox *testM
 	}))
 }
 
-func ordersProcessPlaywright(t *testing.T, ctx context.Context, proxy string, scope orders.Scope, mailSecret string) {
+func ordersProcessPlaywright(t *testing.T, ctx context.Context, proxy string, scope orders.Scope, mailSecret string, specs ...string) {
 	t.Helper()
 	web, err := filepath.Abs("../../web")
 	if err != nil {
@@ -96,7 +96,7 @@ func ordersProcessPlaywright(t *testing.T, ctx context.Context, proxy string, sc
 	}
 	defer ordersProcessStopCommand(t, vite)
 	ordersProcessViteReady(t, logs)
-	ordersProcessRunBrowser(t, ctx, web, scope, mailSecret)
+	ordersProcessRunBrowser(t, ctx, web, scope, mailSecret, specs...)
 }
 
 func ordersProcessViteReady(t *testing.T, logs *ordersProcessLog) {
@@ -116,13 +116,18 @@ func ordersProcessViteReady(t *testing.T, logs *ordersProcessLog) {
 	}
 }
 
-func ordersProcessRunBrowser(t *testing.T, ctx context.Context, web string, scope orders.Scope, mailSecret string) {
+func ordersProcessRunBrowser(t *testing.T, ctx context.Context, web string, scope orders.Scope, mailSecret string, specs ...string) {
 	t.Helper()
 	raw, err := json.Marshal(scope)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.CommandContext(ctx, "node", "node_modules/@playwright/test/cli.js", "test", "e2e/smoke.spec.ts", "e2e/orders-stack.spec.ts", "--workers=1", "--reporter=line")
+	if len(specs) == 0 {
+		specs = []string{"e2e/smoke.spec.ts", "e2e/orders-stack.spec.ts"}
+	}
+	args := append([]string{"node_modules/@playwright/test/cli.js", "test"}, specs...)
+	args = append(args, "--workers=1", "--reporter=line")
+	cmd := exec.CommandContext(ctx, "node", args...)
 	cmd.Dir = web
 	cmd.Env = append(os.Environ(), "STYK_ORDERS_STACK_ORIGIN="+ordersProcessOrigin, "STYK_ORDERS_STACK_SCOPE="+string(raw), "STYK_ORDERS_MAIL_SECRET="+mailSecret)
 	output, err := cmd.CombinedOutput()

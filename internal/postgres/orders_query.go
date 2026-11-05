@@ -68,7 +68,8 @@ func (s *Store) OrderPostings(ctx context.Context, scope orders.Scope, page orde
 		}
 	}
 	result.Postings = postings
-	return result, nil
+	result.TargetStates, err = readOrderTargetStates(ctx, s.Pool, scope, postings)
+	return result, err
 }
 
 // ActiveOrderPostings refreshes active keys and retained terminal corrections,

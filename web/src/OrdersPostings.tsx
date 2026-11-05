@@ -1,3 +1,8 @@
+import {
+  validateTargetStates,
+  type CurrentPostingPage,
+  type OrderTargetState,
+} from "./OrdersTargetState";
 import { OrdersRelatedPostings } from "./OrdersRelatedPostings";
 import { OrdersNativeDocuments } from "./OrdersNativeDocuments";
 import {
@@ -16,13 +21,13 @@ import {
   orderFieldText,
   orderMoney,
   orderRequestError,
+  orderStateLabels,
   ordersURL,
   postingStatusLabels,
   sameOrderScope,
   MoyOrderLink,
   type OrderScope,
   type OrderPosting,
-  type OrdersPostingPage,
   type OrderActionProposal,
 } from "./OrdersTypes";
 
@@ -73,6 +78,7 @@ export function OrdersPostings({
   uncertain,
   links,
   onSelected,
+  onTargetStates,
   freshnessSeconds = 300,
   onActionPreview,
   onNativePreview,
@@ -86,6 +92,7 @@ export function OrdersPostings({
   uncertain: string[];
   links: Record<string, string>;
   onSelected: (numbers: string[]) => void;
+  onTargetStates?: (states: OrderTargetState[] | undefined) => void;
   freshnessSeconds?: number;
   onActionPreview?: (proposal: OrderActionProposal) => void;
   onNativePreview?: (proposal: OrderNativeProposal) => void;
@@ -108,7 +115,7 @@ export function OrdersPostings({
   const page = useQuery({
     queryKey: ["orders-postings", scope, query, cursor],
     queryFn: async ({ signal }) => {
-      const value = await api<OrdersPostingPage>(
+      const value = await api<CurrentPostingPage>(
         ordersURL("postings", scope, { search: query, cursor, limit: "25" }),
         signal,
       );
@@ -118,11 +125,16 @@ export function OrdersPostings({
         )
       )
         throw new Error("posting scope mismatch");
+      validateTargetStates(value, scope);
       return value;
     },
     retry: false,
     refetchOnWindowFocus: false,
+    refetchInterval: 10000,
   });
+  useEffect(() => {
+    onTargetStates?.(page.data?.target_states);
+  }, [page.data, onTargetStates]);
   const postings = page.data?.postings ?? [];
   function findPosting(number: string) {
     setSearch(number);
@@ -174,7 +186,12 @@ export function OrdersPostings({
         {postings.map((posting) => {
           const status = knownOrderField(posting.status);
           const parent = knownOrderField(posting.parent_posting_number);
-          const locked = uncertain.includes(posting.posting_number);
+          const local = page.data?.target_states?.find(
+            (state) => state.posting_number === posting.posting_number,
+          );
+          const locked = local
+            ? local.unresolved
+            : uncertain.includes(posting.posting_number);
           return (
             <article className="orders-posting" key={posting.posting_number}>
               <div className="orders-posting-title">
@@ -204,6 +221,42 @@ export function OrdersPostings({
                     : orderFieldText(posting.status)}
                 </span>
               </div>
+              {local && (
+                <div className="orders-current-state">
+                  <p>
+                    Последняя операция:{" "}
+                    {local.has_operation
+                      ? (orderStateLabels[local.state ?? ""] ??
+                        "Состояние требует проверки")
+                      : "Передач ещё не было"}
+                    .
+                  </p>
+                  {local.unresolved && (
+                    <p className="orders-warning">
+                      Есть неизвестный результат. Откройте историю этого
+                      отправления для проверки; повторная отправка
+                      заблокирована.
+                    </p>
+                  )}
+                  {local.source_changed && (
+                    <p className="orders-note">
+                      После последней операции данные источника изменились.
+                      Нужен новый предпросмотр.
+                    </p>
+                  )}
+                  {local.state === "UNKNOWN" && !local.unresolved && (
+                    <p className="orders-note">
+                      Неизвестный исход сохранён в истории. Активная блокировка
+                      не найдена; это не подтверждение исполнения. Новые
+                      действия требуют отдельной проверки.
+                    </p>
+                  )}
+                  <small>
+                    Состояние STYK проверено: {orderDate(local.checked_at)}. Это
+                    не новое чтение Ozon.
+                  </small>
+                </div>
+              )}
               <dl className="orders-facts">
                 <div>
                   <dt>Заказ Ozon</dt>
