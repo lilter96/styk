@@ -60,7 +60,7 @@ func assertForestHistoryVisibility(t *testing.T, f orderInventoryFixture, tc for
 	if tc.otherSelf {
 		self = "different-current-work"
 	}
-	args := append(ordersScopeArgs(f.config.Scope), []string{posting.PostingNumber}, self, work.CommandFingerprint, posting.PostingNumber, posting.PostingNumber, "forest-split", 3)
+	args := append(ordersScopeArgs(f.config.Scope), []string{posting.PostingNumber}, self, work.CommandFingerprint, posting.PostingNumber, posting.PostingNumber, "forest-split", false, 3)
 	rows, err := f.db.Pool.Query(f.ctx, ownedForestNativeSQL, args...)
 	if err != nil {
 		t.Fatal("query native forest history", err)
