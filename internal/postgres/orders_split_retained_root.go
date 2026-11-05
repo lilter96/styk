@@ -11,8 +11,14 @@ import (
 // A first retained-root create has no native baseline. Its exact source split
 // marker must be reconstructed both before approval and before dispatch.
 func enrichRetainedRootAdmissions(ctx context.Context, q ordersQuerier, result *orders.ReviewContext, numbers []string) error {
+	bound := make(map[string]bool, len(result.Correlations))
+	for _, correlation := range result.Correlations {
+		if correlation.Scope == result.Config.Scope && correlation.CustomerOrderID != "" {
+			bound[correlation.PostingNumber] = true
+		}
+	}
 	for _, number := range numbers {
-		if result.Correlations[number].CustomerOrderID != "" {
+		if bound[number] {
 			continue
 		}
 		facts, err := readRetainedRootAdmission(ctx, q, result, number)
