@@ -74,11 +74,28 @@ func nativeConsumptionReconciled(event orders.NativeConsumptionEvent, f orders.N
 	if w.State != orders.StateReconciled || w.DispatchCount != 1 || d == nil || p == nil || event.ConfirmedAt.IsZero() || event.ConfirmedAt.After(f.CheckedAt) || d.ObservedAt.After(event.ConfirmedAt) || p.ObservedAt.After(event.ConfirmedAt) || event.WriteIntent.Validate() != nil || !event.WriteIntent.IsKnown() || !*event.WriteIntent.Value {
 		return false
 	}
-	r := w.Receipt
-	if r.State != orders.StateAcknowledged || r.HTTPStatus < 200 || r.HTTPStatus >= 300 || r.CommandID != w.Command.ID || r.ExternalID != d.Correlation.DocumentID || r.ExternalID == "" {
+	if !nativeConsumptionReceiptIdentified(w, d.Correlation.DocumentID) {
 		return false
 	}
 	return orders.NativeDocumentMatches(w.Command, *d) && orders.NativeParentReadback(w.Command, *p) && NativeParentEffectObserved(w.Command, *p) && NativeDocumentTotal(w.Command, *d).Code == ""
+}
+
+// Independent readback may reconcile a lost write response. It proves the
+// document, not receipt of an acknowledgment or causality of the original HTTP
+// request; the original UNKNOWN receipt remains unchanged in durable history.
+func nativeConsumptionReceiptIdentified(work orders.Work, documentID string) bool {
+	r := work.Receipt
+	if documentID == "" || r.CommandID != work.Command.ID {
+		return false
+	}
+	switch r.State {
+	case orders.StateAcknowledged:
+		return r.HTTPStatus >= 200 && r.HTTPStatus < 300 && r.ExternalID == documentID
+	case orders.StateUnknown:
+		return (r.ExternalID == "" || r.ExternalID == documentID) && (r.HTTPStatus == 0 || r.HTTPStatus >= 100 && r.HTTPStatus <= 599)
+	default:
+		return false
+	}
 }
 
 func (h *nativeConsumptionHistory) appendEvent(c orders.Command, event orders.NativeConsumptionEvent) orders.Validation {
