@@ -1153,3 +1153,37 @@ manually changed ancestor histories remain conservative blockers. Active real
 FBS/rFBS/Express fulfillment transitions are **NOT_OBSERVED_LIVE**: only cancelled
 postings exist in these accounts, and paid purchases were not fabricated.
 Official/generated fixtures do not turn this into a live ship/delivery claim.
+
+### Optional provider parent: exact local ancestry — 2026-11-05
+
+The mandatory-parent limitation above is superseded by `b1173b3` / `ca0a3b4`.
+Native-owned two-generation settlement now proves the exact selected path
+`[root split, node split]` from immutable acknowledged work, source revisions and
+the node's observed output allocation. Missing provider parent fields remain
+missing in persisted source/command evidence; STYK does not manufacture them.
+Known contradictory direct parents still block dispatch, including a grandchild
+that names the real root ancestor instead of its immediate parent. Selecting a
+retained root/sibling or substituting a command under an unchanged work ID does
+not establish the required path. Native ownership, fresh observations, reduction
+reconciliation, group fences and UNKNOWN handling remain mandatory.
+
+Two existing normal HTTP/PostgreSQL/worker journeys now run without provider
+parent fields: reduction-before-child admission with restart/no-op/conservation,
+and lost-reduction-response fencing without resend. A third journey approves a
+clean review, injects a fresh contradictory ancestor and verifies BLOCKED with
+dispatch count zero and no additional native write. These are deterministic
+provider fixtures, **not live nested-split evidence**.
+
+The coherent final gate at clean `ca0a3b4` passed normal/integration Go lint **0**,
+unit tests, full Go race, build, explicit vet, full PostgreSQL race **170 PASS**,
+affected HTTP/process tests **23 PASS**, and stock regression **116 PASS / 2
+documented skips**. Frontend inputs are unchanged from the previous 299-test
+verification. An initial formatting gate stopped on a private benchmark cleanup
+helper; only that ignored file was formatted before the single resumed gate.
+
+Both APIs and both workers now run clean `ca0a3b4`, schema 62. Restart health and
+readiness returned HTTP 200; encrypted credentials, key and history fingerprints
+were unchanged, with **zero provider calls**. All temporary automation remains
+OFF. No new live read is claimed to validate an absent active nested posting.
+The two-retained-generation/three-current-head bound still remains; deeper
+native-owned graphs are not yet supported.
