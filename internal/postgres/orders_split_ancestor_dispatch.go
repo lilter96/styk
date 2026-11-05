@@ -50,7 +50,7 @@ func validateOwnedAncestorDispatch(ctx context.Context, tx pgx.Tx, w orders.Work
 		return orders.ErrBlocked
 	}
 	for i, a := range proof.Ancestors {
-		if !freshSplitPosting(g.SplitAncestorSources[i], now) || !freshSplitParentCheck(g.SplitAncestorTargets[i].ObservedAt, now) || !a.SourceMatches(g.SplitAncestorSources[i]) || !proof.AncestorTargetMatches(i, g.SplitAncestorTargets[i]) {
+		if !freshSplitPosting(g.SplitAncestorSources[i], now) || !freshSplitParentCheck(g.SplitAncestorTargets[i].ObservedAt, now) || !a.SourceMatches(g.SplitAncestorSources[i]) || !proof.AncestorTargetMatches(i, g.SplitAncestorTargets[i]) && !orders.SplitScalarMetadataAncestorTarget(w.Command, i, g.SplitAncestorTargets[i]) {
 			return orders.ErrStale
 		}
 	}

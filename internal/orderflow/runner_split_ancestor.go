@@ -29,7 +29,7 @@ func (r *Runner) splitAncestorPreflight(ctx context.Context, w orders.Work, targ
 			return checks, orders.ErrStale
 		}
 		native, e := reader.ReadCustomerOrder(ctx, correlation)
-		if e != nil || !proof.AncestorTargetMatches(i, native) {
+		if e != nil || !proof.AncestorTargetMatches(i, native) && !orders.SplitScalarMetadataAncestorTarget(w.Command, i, native) {
 			return checks, orders.ErrStale
 		}
 		p.PII, p.Customer = nil, orders.ProtectedCustomer{}
