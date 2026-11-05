@@ -1068,3 +1068,88 @@ Already read cells remain durable; a missing individual posting (404) does not
 stop unrelated point reads. Deterministic 401/403/429/500/503 recovery cases verify
 one read in the restricted phase and eventual recovery without a second write.
 Full Go lint remained 0; tests, race and build passed after this correction.
+
+### Schema 62: nested reserves, read repair and merchant recovery — 2026-11-05
+
+Runtime is now clean `7de01a9`, schema **62**, with two APIs and two normal
+workers. The additive upgrade followed a 912,154-byte private backup checked
+with `pg_restore --list`;
+key, encrypted credential fingerprints and historical operation counts were
+checked before and after restart. No provider call was made by deployment.
+
+Integrated changes include native-first retained-parent admission, refreshed
+scalar/no-op witnesses, unmirrored nested lineage and conditional two-generation
+native-owned reserve settlement. Every transfer still requires conserving
+quantities, original product identities, current mappings, owned native history
+and fresh readback. A deleted native document blocks reconciliation; deletion is
+not evidence of physical reversal or permission to recreate it.
+
+Discovery now retains successful details and continuation evidence when another
+posting fails. Immutable per-page failures and the scoped derived
+`orders_read_repairs` index preserve unsuccessful identities across windows and
+restarts. Repair uses the existing collector, not a second queue. Partial
+traversal never becomes complete coverage. Method-wide failures stop further
+same-method detail reads in that cycle without stopping independent native or
+account work.
+
+The merchant screen loads current target state independently of paginated
+history. An UNKNOWN outside the latest 25 operations still blocks the target;
+later readback can clear that current block without rewriting history or sending
+another POST. Historical parameters explicitly distinguish drafts from posted
+documents and from actual execution. Desktop/mobile screenshots were inspected
+in the normal nine-process browser scenario, including keyboard recovery access.
+
+The official-contract corpus contains **35** graded cases. Selected new-label
+request and HTTP-200 response schemas were completely reviewed; this does not
+establish complete error, delivery-profile or live coverage. The public
+FBS/rFBS corpus has **519 normalized posting rows**, including **9 ambiguous
+schemes**. Its date comes from `in_process_at`, scheme uses heuristics, and money
+and positions lose information during normalization. It is not a raw API
+contract or our live evidence. Source hashes and independent synthetic derivatives
+are recorded in
+[`curated_20261105/provenance.json`](../internal/ordercontract/testdata/curated_20261105/provenance.json);
+foreign identifiers and raw buyer data were not committed or used as write targets.
+
+**Verification and discovered defects:** the full integration run at `98ac012`
+passed **806 test/subtest events, 64 skips**, including three APIs, two schedulers
+and four workers. The separate PostgreSQL run exposed SQLSTATE `22023`: a
+JSON-null preview could reach lateral array expansion before state filtering.
+`7de01a9` guards all three affected expressions without granting reserve authority
+or dropping UNKNOWN fences. On that corrected revision: normal and integration
+Go lint **0**, unit tests, full Go race, build and explicit `go vet` passed;
+full PostgreSQL race **170 PASS / 0 SKIP**, affected HTTP/process regression
+**80 PASS / 0 SKIP**, dedicated stock regression **116 PASS / 2 SKIP**. Frontend
+inputs are unchanged from `98ac012`: typecheck, lint, **299 tests** and build
+passed. The unrelated full integration suite was not falsely claimed rerun on
+`7de01a9`. All 51 stock tests skipped under the general release database passed
+under the dedicated database; helper and opt-in skips remain explicit in
+[`orders-test-skips.json`](orders-test-skips.json).
+
+**Live compatibility:** a new bounded normal API/outbox/worker phase made
+**6 Ozon + 14 MoySklad reads, all 20 HTTP 200, zero writes**, within a declared
+12/20/0 budget. Both existing cancelled postings were reread; fresh native reads
+11/12 reused immutable snapshots 1/2 and observed quantity 1, reserve 0, shipped
+0, unposted. Confirmed continuation totals are now **Ozon 41 + MoySklad 104 =
+145 HTTP-200 reads, zero new writes**. The separately untraced legacy 0–11 Ozon
+reads remain excluded, and the earlier budget overrun above is not erased.
+Settings ended **order revision 40 OFF, stock 39 OFF, native actions OFF,
+grants 0**, with no pending task, active provider call or new UNKNOWN outcome.
+General stock/catalog publication remains disabled; exact-test order eligibility
+is a separate restricted gate.
+
+**Local measurements:** Go 1.27.3/PostgreSQL 17.6, two synthetic merchants,
+100/1,000/10,000 postings per merchant, compact one-line records and 20 measured
+calls per case. A 100-row posting page used **2 SQL calls** at every size, with
+median/p95 **3.771/4.826, 2.865/4.857, 3.423/4.825 ms** respectively. The 10,000-row
+keyset traversal took **457.531 ms, 100 pages, 200 SQL**; all temporary schemas
+were removed. These are absolute local measurements, not a speedup claim or a
+production latency guarantee. Scheduler latency, lock contention and RSS were
+not measured.
+
+**Remaining boundaries:** native-owned nested settlement currently supports two
+retained generations/three current heads and requires known parent fields;
+`parent_posting_number` is documented but optional. Deeper, abbreviated or
+manually changed ancestor histories remain conservative blockers. Active real
+FBS/rFBS/Express fulfillment transitions are **NOT_OBSERVED_LIVE**: only cancelled
+postings exist in these accounts, and paid purchases were not fabricated.
+Official/generated fixtures do not turn this into a live ship/delivery claim.

@@ -33,6 +33,13 @@ describes independent posting-level hybrid/PVZ conditions; warehouse type alone
 does not establish those conditions. The complete official Seller API schema
 remains unverified in the executable order manifest.
 
+The 2026-11-05 review completely verified only the selected new-label request and
+HTTP-200 response schemas, not the complete Seller API or every delivery profile.
+The [graded corpus provenance](../internal/ordercontract/testdata/curated_20261105/provenance.json)
+separates official schemas/examples, generated failure cases and third-party
+normalized status shapes. In particular, heuristic FBS/rFBS labels in a public
+normalized corpus do not establish warehouse or action capabilities.
+
 Migration 47 persists tenant/account/warehouse/method/revision observations with
 exact contract hash, contract check date, observation/check times and expiry.
 Fact revisions remain stable across freshness checks. Empty method identity is

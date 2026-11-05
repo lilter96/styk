@@ -579,3 +579,15 @@ cancellations only; a real active replacement split is **NOT_OBSERVED_LIVE**.
 Order settings are **30 OFF**, stock settings **39 OFF**, all publication flags
 OFF, key/history intact. Nested/unreadable-parent limitations and exact test
 evidence remain explicit in the [order report](orders-live-evidence.md).
+
+The schema-62 continuation is deployed as clean `7de01a9` on two APIs and two
+workers. It adds conditional nested reserve settlement, durable failed-detail
+repair and history-independent merchant target status. A real compatibility
+phase used **6 Ozon + 14 MoySklad reads, all HTTP 200, zero writes**; order settings
+**40 OFF**, stock **39 OFF**, native actions and grants OFF, no pending work.
+Credentials, key and history were preserved. Corrected-source Go lint remains
+**0**; PostgreSQL race, affected HTTP/process and stock suites passed. The
+[existing order report](orders-live-evidence.md#schema-62-nested-reserves-read-repair-and-merchant-recovery--2026-11-05)
+records exact verification revisions, skips, local measurements and the remaining
+conditional nested-split/live-fulfillment limits. No unrestricted production
+publication or real active fulfillment coverage is claimed.

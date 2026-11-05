@@ -2228,5 +2228,366 @@
       "NOT_RUN": 9,
       "INTENTIONAL_SUBPROCESS_ENTRYPOINT": 4
     }
+  },
+  "schema62_followup": {
+    "date": "2026-11-05",
+    "complete_integration_revision": "98ac012ce88fb39eadb2865641d6023813fa383c",
+    "complete_integration_events": {
+      "pass": 806,
+      "skip": 64
+    },
+    "corrected_sql_revision": "7de01a9aafbc53eb424827ed516aa155c256b297",
+    "verification_scope": "Full integration passed before three guarded JSON array SQL expressions changed. Corrected revision passed full PostgreSQL race and affected normal HTTP/process tests, not a falsely claimed rerun of unrelated full integration tests. Frontend inputs unchanged;299 tests passed.",
+    "corrected_postgres_race": {
+      "pass": 170
+    },
+    "corrected_http_process": {
+      "pass": 80
+    },
+    "corrected_stock": {
+      "pass": 116,
+      "skip": 2
+    },
+    "dispositions": {
+      "NOT_RUN_SEPARATE_OPT_IN_BROWSER": 7,
+      "NOT_RUN_OPT_IN_LIVE_DIAGNOSTIC": 2,
+      "SUBPROCESS_ENTRYPOINT_NOT_STANDALONE": 4,
+      "PASS_IN_DEDICATED_STOCK_DATABASE": 51
+    },
+    "skips": [
+      {
+        "test": "TestCatalogMerchantBrowserStack",
+        "reason": "=== RUN   TestCatalogMerchantBrowserStack\n    catalog_browser_stack_test.go:44: catalog browser stack not requested\n--- SKIP: TestCatalogMerchantBrowserStack (0.00s)\n",
+        "status": "NOT_RUN_SEPARATE_OPT_IN_BROWSER"
+      },
+      {
+        "test": "TestControlledStockPublicationBrowser",
+        "reason": "=== RUN   TestControlledStockPublicationBrowser\n    controlled_stock_browser_test.go:38: browser E2E not requested\n--- SKIP: TestControlledStockPublicationBrowser (0.00s)\n",
+        "status": "NOT_RUN_SEPARATE_OPT_IN_BROWSER"
+      },
+      {
+        "test": "TestControlledStockRecoveryBrowser",
+        "reason": "=== RUN   TestControlledStockRecoveryBrowser\n    controlled_stock_browser_test.go:45: recovery browser E2E not requested\n--- SKIP: TestControlledStockRecoveryBrowser (0.00s)\n",
+        "status": "NOT_RUN_SEPARATE_OPT_IN_BROWSER"
+      },
+      {
+        "test": "TestControlledStockAutomaticBrowser",
+        "reason": "=== RUN   TestControlledStockAutomaticBrowser\n    controlled_stock_browser_test.go:52: automatic browser E2E not requested\n--- SKIP: TestControlledStockAutomaticBrowser (0.00s)\n",
+        "status": "NOT_RUN_SEPARATE_OPT_IN_BROWSER"
+      },
+      {
+        "test": "TestControlledStockAutomaticMultiBrowser",
+        "reason": "=== RUN   TestControlledStockAutomaticMultiBrowser\n    controlled_stock_browser_test.go:59: automatic multi-product browser E2E not requested\n--- SKIP: TestControlledStockAutomaticMultiBrowser (0.00s)\n",
+        "status": "NOT_RUN_SEPARATE_OPT_IN_BROWSER"
+      },
+      {
+        "test": "TestMerchantBrowserWorkspaces",
+        "reason": "=== RUN   TestMerchantBrowserWorkspaces\n    merchant_browser_test.go:41: merchant browser E2E not requested\n--- SKIP: TestMerchantBrowserWorkspaces (0.00s)\n",
+        "status": "NOT_RUN_SEPARATE_OPT_IN_BROWSER"
+      },
+      {
+        "test": "TestOrderFlowFullE2E",
+        "reason": "=== RUN   TestOrderFlowFullE2E\n    orders_flow_full_e2e_test.go:41: explicit legacy live diagnostic opt-in required\n--- SKIP: TestOrderFlowFullE2E (0.00s)\n",
+        "status": "NOT_RUN_OPT_IN_LIVE_DIAGNOSTIC"
+      },
+      {
+        "test": "TestOrdersNativeProcessChild",
+        "reason": "=== RUN   TestOrdersNativeProcessChild\n    orders_native_process_test.go:33: native worker subprocess only\n--- SKIP: TestOrdersNativeProcessChild (0.00s)\n",
+        "status": "SUBPROCESS_ENTRYPOINT_NOT_STANDALONE"
+      },
+      {
+        "test": "TestOrdersProcessChild",
+        "reason": "=== RUN   TestOrdersProcessChild\n    orders_process_child_test.go:42: orders process subprocess only\n--- SKIP: TestOrdersProcessChild (0.00s)\n",
+        "status": "SUBPROCESS_ENTRYPOINT_NOT_STANDALONE"
+      },
+      {
+        "test": "TestOzonFulfillmentFbsE2E",
+        "reason": "=== RUN   TestOzonFulfillmentFbsE2E\n    ozon_fulfillment_e2e_test.go:26: explicit journaled live Ozon read opt-in required\n--- SKIP: TestOzonFulfillmentFbsE2E (0.00s)\n",
+        "status": "NOT_RUN_OPT_IN_LIVE_DIAGNOSTIC"
+      },
+      {
+        "test": "TestProviderCoordinatorProcessChild",
+        "reason": "=== RUN   TestProviderCoordinatorProcessChild\n    provider_process_test.go:87: provider coordination subprocess only\n--- SKIP: TestProviderCoordinatorProcessChild (0.00s)\n",
+        "status": "SUBPROCESS_ENTRYPOINT_NOT_STANDALONE"
+      },
+      {
+        "test": "TestStockPublicationOperatorAssertionsAreNeverProviderProof",
+        "reason": "=== RUN   TestStockPublicationOperatorAssertionsAreNeverProviderProof\n    stock_publication_test.go:113: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationOperatorAssertionsAreNeverProviderProof (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationReviewExpiresWhenMarketplaceTraversalAgesOut",
+        "reason": "=== RUN   TestStockPublicationReviewExpiresWhenMarketplaceTraversalAgesOut\n    stock_publication_test.go:175: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationReviewExpiresWhenMarketplaceTraversalAgesOut (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationRequiresProofsScopedReviewAndExplicitIntent",
+        "reason": "=== RUN   TestStockPublicationRequiresProofsScopedReviewAndExplicitIntent\n    stock_publication_test.go:191: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationRequiresProofsScopedReviewAndExplicitIntent (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationUnknownNeverReplaysAndReadbackIsExplicit",
+        "reason": "=== RUN   TestStockPublicationUnknownNeverReplaysAndReadbackIsExplicit\n    stock_publication_test.go:232: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationUnknownNeverReplaysAndReadbackIsExplicit (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationSuccessfulResultAndContinuousChangedEvidence",
+        "reason": "=== RUN   TestStockPublicationSuccessfulResultAndContinuousChangedEvidence\n    stock_publication_test.go:304: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationSuccessfulResultAndContinuousChangedEvidence (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationPartialReadbackKeepsUnknownTargetsVisible",
+        "reason": "=== RUN   TestStockPublicationPartialReadbackKeepsUnknownTargetsVisible\n    stock_publication_test.go:356: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationPartialReadbackKeepsUnknownTargetsVisible (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationStaleReviewAndExpiredProofsFailClosed",
+        "reason": "=== RUN   TestStockPublicationStaleReviewAndExpiredProofsFailClosed\n    stock_publication_test.go:408: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationStaleReviewAndExpiredProofsFailClosed (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationConcurrentIntentAndDispatchAreSingle",
+        "reason": "=== RUN   TestStockPublicationConcurrentIntentAndDispatchAreSingle\n    stock_publication_test.go:432: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationConcurrentIntentAndDispatchAreSingle (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationTargetFenceSpansMoyskladScopes",
+        "reason": "=== RUN   TestStockPublicationTargetFenceSpansMoyskladScopes\n    stock_publication_test.go:483: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationTargetFenceSpansMoyskladScopes (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationCredentialRevisionRequiresNewReview",
+        "reason": "=== RUN   TestStockPublicationCredentialRevisionRequiresNewReview\n    stock_publication_test.go:533: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationCredentialRevisionRequiresNewReview (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationHTTPExplicitEnableReplayAndDisable",
+        "reason": "=== RUN   TestStockPublicationHTTPExplicitEnableReplayAndDisable\n    stock_publication_test.go:560: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationHTTPExplicitEnableReplayAndDisable (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationRejectsRecoveredStaleWorkerClaim",
+        "reason": "=== RUN   TestStockPublicationRejectsRecoveredStaleWorkerClaim\n    stock_publication_test.go:697: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationRejectsRecoveredStaleWorkerClaim (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationRejectsOutOfOrderImports/moysklad",
+        "reason": "=== RUN   TestStockPublicationRejectsOutOfOrderImports/moysklad\n    stock_publication_test.go:725: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationRejectsOutOfOrderImports/moysklad (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationRejectsOutOfOrderImports/ozon",
+        "reason": "=== RUN   TestStockPublicationRejectsOutOfOrderImports/ozon\n    stock_publication_test.go:725: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationRejectsOutOfOrderImports/ozon (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationRequiresCurrentCatalogIdentity/offer_changed",
+        "reason": "=== RUN   TestStockPublicationRequiresCurrentCatalogIdentity/offer_changed\n    stock_publication_test.go:773: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationRequiresCurrentCatalogIdentity/offer_changed (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationRequiresCurrentCatalogIdentity/stock_sku_differs",
+        "reason": "=== RUN   TestStockPublicationRequiresCurrentCatalogIdentity/stock_sku_differs\n    stock_publication_test.go:773: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationRequiresCurrentCatalogIdentity/stock_sku_differs (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationRequiresCurrentCatalogIdentity/sku_changed_consistently",
+        "reason": "=== RUN   TestStockPublicationRequiresCurrentCatalogIdentity/sku_changed_consistently\n    stock_publication_test.go:773: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationRequiresCurrentCatalogIdentity/sku_changed_consistently (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationRequiresCurrentCatalogIdentity/offer_archived",
+        "reason": "=== RUN   TestStockPublicationRequiresCurrentCatalogIdentity/offer_archived\n    stock_publication_test.go:773: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationRequiresCurrentCatalogIdentity/offer_archived (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationRequiresCurrentCatalogIdentity/warehouse_becomes_rfbs",
+        "reason": "=== RUN   TestStockPublicationRequiresCurrentCatalogIdentity/warehouse_becomes_rfbs\n    stock_publication_test.go:773: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationRequiresCurrentCatalogIdentity/warehouse_becomes_rfbs (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationRequiresCurrentCatalogIdentity/source_item_missing",
+        "reason": "=== RUN   TestStockPublicationRequiresCurrentCatalogIdentity/source_item_missing\n    stock_publication_test.go:773: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationRequiresCurrentCatalogIdentity/source_item_missing (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationBlocksProductAndVariantSharedPool",
+        "reason": "=== RUN   TestStockPublicationBlocksProductAndVariantSharedPool\n    stock_publication_test.go:831: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationBlocksProductAndVariantSharedPool (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationPartialErrorKeepsUncertainTargetFenced",
+        "reason": "=== RUN   TestStockPublicationPartialErrorKeepsUncertainTargetFenced\n    stock_publication_test.go:876: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationPartialErrorKeepsUncertainTargetFenced (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationLostResponseNeverReissuesRegardlessOfEffect/applied_false",
+        "reason": "=== RUN   TestStockPublicationLostResponseNeverReissuesRegardlessOfEffect/applied_false\n    stock_publication_test.go:907: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationLostResponseNeverReissuesRegardlessOfEffect/applied_false (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationLostResponseNeverReissuesRegardlessOfEffect/applied_true",
+        "reason": "=== RUN   TestStockPublicationLostResponseNeverReissuesRegardlessOfEffect/applied_true\n    stock_publication_test.go:907: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationLostResponseNeverReissuesRegardlessOfEffect/applied_true (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationDatabaseFailureAfterDispatchDoesNotReplay",
+        "reason": "=== RUN   TestStockPublicationDatabaseFailureAfterDispatchDoesNotReplay\n    stock_publication_test.go:946: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationDatabaseFailureAfterDispatchDoesNotReplay (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationZeroAndMissingQuantitiesAreDistinct",
+        "reason": "=== RUN   TestStockPublicationZeroAndMissingQuantitiesAreDistinct\n    stock_publication_test.go:989: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationZeroAndMissingQuantitiesAreDistinct (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationRejectsInvalidMarketplaceNumbers/present",
+        "reason": "=== RUN   TestStockPublicationRejectsInvalidMarketplaceNumbers/present\n    stock_publication_test.go:1015: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationRejectsInvalidMarketplaceNumbers/present (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationRejectsInvalidMarketplaceNumbers/reserved",
+        "reason": "=== RUN   TestStockPublicationRejectsInvalidMarketplaceNumbers/reserved\n    stock_publication_test.go:1015: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationRejectsInvalidMarketplaceNumbers/reserved (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationRejectsInvalidMarketplaceNumbers/free",
+        "reason": "=== RUN   TestStockPublicationRejectsInvalidMarketplaceNumbers/free\n    stock_publication_test.go:1015: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationRejectsInvalidMarketplaceNumbers/free (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationReusedBatchDoesNotRefreshObservationTime",
+        "reason": "=== RUN   TestStockPublicationReusedBatchDoesNotRefreshObservationTime\n    stock_publication_test.go:1040: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationReusedBatchDoesNotRefreshObservationTime (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationFreshDurableTraversalReusesHistoricalBatch",
+        "reason": "=== RUN   TestStockPublicationFreshDurableTraversalReusesHistoricalBatch\n    stock_publication_test.go:1058: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationFreshDurableTraversalReusesHistoricalBatch (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationDisableCannotUndoInFlightRequest",
+        "reason": "=== RUN   TestStockPublicationDisableCannotUndoInFlightRequest\n    stock_publication_test.go:1130: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationDisableCannotUndoInFlightRequest (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationDisabledWorkerDoesNotClaimPreviouslyEnabledPolicy",
+        "reason": "=== RUN   TestStockPublicationDisabledWorkerDoesNotClaimPreviouslyEnabledPolicy\n    stock_publication_test.go:1163: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationDisabledWorkerDoesNotClaimPreviouslyEnabledPolicy (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationFrozenMappingRevisionChangesBlockDispatch/product_mappings",
+        "reason": "=== RUN   TestStockPublicationFrozenMappingRevisionChangesBlockDispatch/product_mappings\n    stock_publication_test.go:1183: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationFrozenMappingRevisionChangesBlockDispatch/product_mappings (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationFrozenMappingRevisionChangesBlockDispatch/warehouse_mappings",
+        "reason": "=== RUN   TestStockPublicationFrozenMappingRevisionChangesBlockDispatch/warehouse_mappings\n    stock_publication_test.go:1183: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationFrozenMappingRevisionChangesBlockDispatch/warehouse_mappings (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationRejectsMissingReservationAttribution",
+        "reason": "=== RUN   TestStockPublicationRejectsMissingReservationAttribution\n    stock_publication_test.go:1213: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationRejectsMissingReservationAttribution (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationCrashHelper",
+        "reason": "=== RUN   TestStockPublicationCrashHelper\n    stock_publication_test.go:1239: subprocess fixture\n--- SKIP: TestStockPublicationCrashHelper (0.00s)\n",
+        "status": "SUBPROCESS_ENTRYPOINT_NOT_STANDALONE"
+      },
+      {
+        "test": "TestStockPublicationWorkerCrashAfterDispatchIsNotRetried",
+        "reason": "=== RUN   TestStockPublicationWorkerCrashAfterDispatchIsNotRetried\n    stock_publication_test.go:1256: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationWorkerCrashAfterDispatchIsNotRetried (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationRejectsProofAfterSourceTraversalStarted",
+        "reason": "=== RUN   TestStockPublicationRejectsProofAfterSourceTraversalStarted\n    stock_publication_test.go:1310: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationRejectsProofAfterSourceTraversalStarted (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationRejectsLongRunningTraversalEvenIfRecentlyFinished/moysklad",
+        "reason": "=== RUN   TestStockPublicationRejectsLongRunningTraversalEvenIfRecentlyFinished/moysklad\n    stock_publication_test.go:1334: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationRejectsLongRunningTraversalEvenIfRecentlyFinished/moysklad (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationRejectsLongRunningTraversalEvenIfRecentlyFinished/ozon",
+        "reason": "=== RUN   TestStockPublicationRejectsLongRunningTraversalEvenIfRecentlyFinished/ozon\n    stock_publication_test.go:1334: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationRejectsLongRunningTraversalEvenIfRecentlyFinished/ozon (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockPublicationRejectsIdenticalStartTimesForDifferentBatches",
+        "reason": "=== RUN   TestStockPublicationRejectsIdenticalStartTimesForDifferentBatches\n    stock_publication_test.go:1376: dedicated local stock publication test database required\n--- SKIP: TestStockPublicationRejectsIdenticalStartTimesForDifferentBatches (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockShadowBrowser",
+        "reason": "=== RUN   TestStockShadowBrowser\n    stock_shadow_browser_test.go:43: shadow browser E2E not requested\n--- SKIP: TestStockShadowBrowser (0.00s)\n",
+        "status": "NOT_RUN_SEPARATE_OPT_IN_BROWSER"
+      },
+      {
+        "test": "TestStockShadowProjectionBoundaries/explicit_zero",
+        "reason": "=== RUN   TestStockShadowProjectionBoundaries/explicit_zero\n    stock_shadow_test.go:112: dedicated local stock publication test database required\n--- SKIP: TestStockShadowProjectionBoundaries/explicit_zero (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockShadowProjectionBoundaries/missing_observation",
+        "reason": "=== RUN   TestStockShadowProjectionBoundaries/missing_observation\n    stock_shadow_test.go:112: dedicated local stock publication test database required\n--- SKIP: TestStockShadowProjectionBoundaries/missing_observation (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockShadowProjectionBoundaries/missing_reserve",
+        "reason": "=== RUN   TestStockShadowProjectionBoundaries/missing_reserve\n    stock_shadow_test.go:112: dedicated local stock publication test database required\n--- SKIP: TestStockShadowProjectionBoundaries/missing_reserve (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockShadowProjectionBoundaries/negative_stock",
+        "reason": "=== RUN   TestStockShadowProjectionBoundaries/negative_stock\n    stock_shadow_test.go:112: dedicated local stock publication test database required\n--- SKIP: TestStockShadowProjectionBoundaries/negative_stock (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockShadowProjectionBoundaries/fractional_stock",
+        "reason": "=== RUN   TestStockShadowProjectionBoundaries/fractional_stock\n    stock_shadow_test.go:112: dedicated local stock publication test database required\n--- SKIP: TestStockShadowProjectionBoundaries/fractional_stock (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockShadowRejectsParentVariantOverlap",
+        "reason": "=== RUN   TestStockShadowRejectsParentVariantOverlap\n    stock_shadow_test.go:192: dedicated local stock publication test database required\n--- SKIP: TestStockShadowRejectsParentVariantOverlap (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockShadowStaleReusedAndUnknown/reused_batch",
+        "reason": "=== RUN   TestStockShadowStaleReusedAndUnknown/reused_batch\n    stock_shadow_test.go:238: dedicated local stock publication test database required\n--- SKIP: TestStockShadowStaleReusedAndUnknown/reused_batch (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockShadowStaleReusedAndUnknown/stale_traversal",
+        "reason": "=== RUN   TestStockShadowStaleReusedAndUnknown/stale_traversal\n    stock_shadow_test.go:255: dedicated local stock publication test database required\n--- SKIP: TestStockShadowStaleReusedAndUnknown/stale_traversal (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockShadowStaleReusedAndUnknown/unknown_write",
+        "reason": "=== RUN   TestStockShadowStaleReusedAndUnknown/unknown_write\n    stock_shadow_test.go:268: dedicated local stock publication test database required\n--- SKIP: TestStockShadowStaleReusedAndUnknown/unknown_write (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      },
+      {
+        "test": "TestStockShadowStaleReusedAndUnknown/expired_attestation",
+        "reason": "=== RUN   TestStockShadowStaleReusedAndUnknown/expired_attestation\n    stock_shadow_test.go:285: dedicated local stock publication test database required\n--- SKIP: TestStockShadowStaleReusedAndUnknown/expired_attestation (0.00s)\n",
+        "status": "PASS_IN_DEDICATED_STOCK_DATABASE"
+      }
+    ],
+    "supplemental_stock_skips": [
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockPublicationCrashHelper",
+        "reason": "=== RUN   TestStockPublicationCrashHelper\n    stock_publication_test.go:1239: subprocess fixture\n--- SKIP: TestStockPublicationCrashHelper (0.00s)\n"
+      },
+      {
+        "package": "github.com/lilter96/styk/tests/integration",
+        "test": "TestStockShadowBrowser",
+        "reason": "=== RUN   TestStockShadowBrowser\n    stock_shadow_browser_test.go:43: shadow browser E2E not requested\n--- SKIP: TestStockShadowBrowser (0.00s)\n"
+      }
+    ],
+    "live_diagnostics": "Legacy tests deliberately remain opt-in/OFF. Actual new journaled read-only compatibility was executed separately through the normal application, not substituted for these skipped test cases."
   }
 }
