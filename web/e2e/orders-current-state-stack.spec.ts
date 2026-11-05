@@ -42,6 +42,7 @@ test("current posting state stays independent of paginated history and reconcile
   await selector
     .getByRole("combobox", { name: "Ozon", exact: true })
     .selectOption(scope.ozon_account);
+  await selector.locator("summary").click();
   await page.getByRole("link", { name: "Заказы", exact: true }).click();
   await page
     .getByLabel("Найти отправление или заказ")

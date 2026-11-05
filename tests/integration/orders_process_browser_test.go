@@ -82,7 +82,7 @@ func ordersProcessPlaywright(t *testing.T, ctx context.Context, proxy string, sc
 			t.Error("remove orders Vite fixture config")
 		}
 	})
-	_, err = fmt.Fprintf(config, `import {defineConfig} from 'vite'; export default defineConfig({server:{host:'127.0.0.1',port:15183,strictPort:true,proxy:{'/api':{target:%q,changeOrigin:false},'/__test/orders/mail':{target:%q,changeOrigin:false}}}});`, proxy, proxy)
+	_, err = fmt.Fprintf(config, `import {defineConfig} from 'vite'; export default defineConfig({server:{host:'127.0.0.1',port:15183,strictPort:true,proxy:{'/api':{target:%q,changeOrigin:false},'/__test/orders/mail':{target:%q,changeOrigin:false},'/__test/orders/merchant-reconcile':{target:%q,changeOrigin:false}}}});`, proxy, proxy, proxy)
 	closeErr := config.Close()
 	if err != nil || closeErr != nil {
 		t.Fatal("write orders Vite fixture config")
