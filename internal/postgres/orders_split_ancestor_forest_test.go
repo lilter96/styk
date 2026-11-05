@@ -67,6 +67,21 @@ func assertForestHistoryVisibility(t *testing.T, f orderInventoryFixture, tc for
 		t.Fatalf("forest history visible=%t count=%d: %v", tc.visible, count, err)
 	}
 	assertForestAnchorVisibility(t, f, work, self, tc.anchor)
+	assertRetainedRootNativeVisibility(t, f, work, self, tc)
+}
+
+func assertRetainedRootNativeVisibility(t *testing.T, f orderInventoryFixture, work orders.Work, self string, tc forestVisibilityCase) {
+	t.Helper()
+	history, err := readRetainedRootNativeHistory(f.ctx, f.db.Pool, work.Scope, work.Command.PostingNumber, "forest-split", self, work.CommandFingerprint)
+	if err != nil || len(history) != 1 || history[0].BindingIDs == nil || history[0].MirrorWorkIDs == nil {
+		t.Fatal("actual retained-root native history traversal failed", err)
+	}
+	// A source marker on this exact unsent create is required. Unknown, absent,
+	// null, other-target and already dispatched proof never become absence.
+	absent := tc.proof == "source" && !tc.otherSelf && tc.action == orders.ActionMirrorCreate && tc.dispatched == 0 && (tc.state == orders.StateQueued || tc.state == orders.StateClaimed)
+	if (len(history[0].MirrorWorkIDs) == 0) != absent {
+		t.Fatal("retained-root self exception hid unproved or dispatched work")
+	}
 }
 
 func assertForestAnchorVisibility(t *testing.T, f orderInventoryFixture, work orders.Work, self string, expected bool) {
