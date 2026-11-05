@@ -170,3 +170,62 @@ func ownedCompositionRequired(command orders.Command, baseline orders.PositionBa
 	}
 	return orders.Validation{Field: "positions", Code: code}
 }
+
+// Metadata can be updated after a merchant recreates otherwise identical native
+// rows. This exception never claims ownership of those UUIDs: every source
+// inventory value must be unchanged, and readback freezes the entire actual
+// frontier with PositionBaseline deliberately absent.
+func metadataOnlyWithoutPositionAdoption(command orders.Command, baseline orders.PositionBaseline) bool {
+	if command.Action != orders.ActionMirrorUpdate || command.CustomerOrder == nil || command.PositionBaseline != nil || !command.TargetPositionsComplete || baseline.Validate() != nil || baseline.Scope != command.Scope || baseline.Correlation != command.Correlation || !safeMetadataFields(command.CustomerOrder.OwnedFields) {
+		return false
+	}
+	wanted := command.CustomerOrder.Positions
+	if len(wanted) != len(baseline.Bindings) || !wantedPositionsRepresented(wanted, command.TargetPositions) {
+		return false
+	}
+	previous := make(map[string]orders.PositionWrite, len(baseline.Bindings))
+	for _, binding := range baseline.Bindings {
+		previous[binding.Source.Identity.Key()] = binding.Source
+	}
+	for _, source := range wanted {
+		prior, found := previous[source.Identity.Key()]
+		if !found || !unchangedMetadataInventory(source, prior) {
+			return false
+		}
+		delete(previous, source.Identity.Key())
+	}
+	return len(previous) == 0
+}
+
+func safeMetadataFields(fields []string) bool {
+	if len(fields) == 0 {
+		return false
+	}
+	for _, field := range fields {
+		switch field {
+		case "name", "description", "moment", "delivery_at", "state", "attribute", "shipment_address":
+			continue
+		default:
+			if !orders.ShipmentAddressTargetValid(field) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func unchangedMetadataInventory(source, prior orders.PositionWrite) bool {
+	left, right := source.Mapping, prior.Mapping
+	left.ConfirmedAt, right.ConfirmedAt = left.ConfirmedAt.UTC(), right.ConfirmedAt.UTC()
+	return source.Identity == prior.Identity && left == right && orders.ExactDecimalEqual(source.Quantity, prior.Quantity) && orders.SameObservedDecimal(source.Reserve, prior.Reserve) && orders.SameObservedDecimal(source.VAT, prior.VAT) && unchangedMetadataPrice(source.Price, prior.Price)
+}
+
+func unchangedMetadataPrice(left, right orders.Field[orders.Money]) bool {
+	if left.Validate() != nil || right.Validate() != nil {
+		return false
+	}
+	if left.IsKnown() && right.IsKnown() {
+		return left.Value.Currency == right.Value.Currency && orders.ExactDecimalEqual(left.Value.Amount, right.Value.Amount)
+	}
+	return sameField(left, right)
+}

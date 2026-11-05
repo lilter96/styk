@@ -98,3 +98,50 @@ func TestOwnedPositionCannotBecomeForeignMatchingNoop(t *testing.T) {
 		})
 	}
 }
+
+func TestMetadataOnlyUpdateCannotAdoptRecreatedPosition(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name   string
+		change func(*orders.Command, *orders.TargetObservation)
+		allow  bool
+	}{
+		{"name_only", func(*orders.Command, *orders.TargetObservation) {}, true},
+		{"no_metadata", func(c *orders.Command, target *orders.TargetObservation) { target.Fields.Name = c.CustomerOrder.Name }, false},
+		{"quantity", func(c *orders.Command, target *orders.TargetObservation) {
+			c.CustomerOrder.Positions[0].Quantity, target.Positions[0].Quantity = "3", "3"
+		}, false},
+		{"mapping_revision", func(c *orders.Command, _ *orders.TargetObservation) { c.CustomerOrder.Positions[0].Mapping.Version++ }, false},
+		{"reserve_missing", func(c *orders.Command, _ *orders.TargetObservation) {
+			c.CustomerOrder.Positions[0].Reserve = orders.Field[orders.Decimal]{}
+		}, false},
+		{"application", func(c *orders.Command, target *orders.TargetObservation) {
+			c.CustomerOrder.Applicable, target.Fields.Applicable = orders.Present(false), orders.Present(true)
+		}, false},
+		{"tax_flags", func(c *orders.Command, target *orders.TargetObservation) {
+			c.CustomerOrder.VATEnabled, target.Fields.VATEnabled = orders.Present(false), orders.Present(true)
+		}, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			command, target := scalarPositionRegression(t)
+			baseline := orders.PositionBaseline{Scope: command.Scope, WorkID: "native-origin", CommandID: "native-origin-command", Correlation: target.Correlation, ObservedAt: target.ObservedAt, Bindings: []orders.PositionBinding{{Source: command.CustomerOrder.Positions[0], Native: target.Positions[0]}}}
+			command.CustomerOrder.Name, target.Fields.Name = orders.Present("source-name"), orders.Present("manual-name")
+			target.Fields.StateID = command.CustomerOrder.StateID
+			target.Positions[0].ID = "recreated-position"
+			test.change(&command, &target)
+			validation := prepareMirrorUpdate(&command, target, baseline)
+			assertScalarMetadataIntent(t, command, target, validation, test.allow)
+		})
+	}
+}
+
+func assertScalarMetadataIntent(t *testing.T, command orders.Command, target orders.TargetObservation, validation orders.Validation, allowed bool) {
+	t.Helper()
+	if (validation.Code == "") != allowed || command.PositionBaseline != nil || command.PositionPatch != nil {
+		t.Fatal("metadata exception changed source inventory or adopted native UUID", validation)
+	}
+	if allowed && (command.Action != orders.ActionMirrorUpdate || !slices.Equal(command.CustomerOrder.OwnedFields, []string{"name"}) || !orders.NativePositionsEqual(command.TargetPositions, target.Positions)) {
+		t.Fatal("metadata update lost its scalar-only frozen frontier")
+	}
+}
