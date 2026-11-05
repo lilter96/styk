@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/lilter96/styk/internal/orders"
@@ -28,7 +29,7 @@ func deferredRetainedChildrenHeld(t *testing.T, f positionHTTPFixture, children 
 	}
 }
 
-func deferredRetainedReduce(t *testing.T, f positionHTTPFixture, root orders.TargetObservation, baseline string, children []string) {
+func deferredRetainedReduce(t *testing.T, f positionHTTPFixture, root orders.TargetObservation, baseline string, children []string, checkAppendOnly bool) {
 	t.Helper()
 	deferredRetainedChildrenHeld(t, f, children)
 	preview := splitMemberHTTPPreview(t, f, nestedRoot, nil)
@@ -36,6 +37,9 @@ func deferredRetainedReduce(t *testing.T, f positionHTTPFixture, root orders.Tar
 	patch := command.PositionPatch
 	if command.Action != orders.ActionMirrorPositionUpdate || patch == nil || patch.Baseline.WorkID != baseline || patch.PositionID != root.Positions[0].ID || command.Correlation.CustomerOrderID != root.Correlation.CustomerOrderID || !patch.Quantity.IsKnown() || *patch.Quantity.Value != "1" || !patch.Reserve.IsKnown() || *patch.Reserve.Value != "1" {
 		t.Fatal("deferred settlement did not reduce the exact latest native frontier directly to one")
+	}
+	if checkAppendOnly {
+		assertDeferredAppendOnlyFrontier(t, f, command)
 	}
 	f.approve(t, preview)
 	f.run(t, orders.StateAcknowledged)
@@ -46,6 +50,38 @@ func deferredRetainedReduce(t *testing.T, f positionHTTPFixture, root orders.Tar
 		t.Fatal("deferred settlement recreated the native root")
 	}
 	assertRepeatedRetainedPosition(t, current, root.Positions[0].ID, "1")
+}
+
+func assertDeferredAppendOnlyFrontier(t *testing.T, f positionHTTPFixture, command orders.Command) {
+	t.Helper()
+	proof, target := command.SplitAncestorSettlement, f.readNative(t)
+	if proof == nil || proof.Mode != orders.SplitAncestorReduce || len(proof.Ancestors) != 1 || len(target.Positions) <= len(proof.Ancestors[0].Target.Positions) || !proof.AncestorTargetMatches(0, target) {
+		t.Fatal("actual appended foreign position was not preserved by the primary reduction proof")
+	}
+	if command.ExpectedTargetRevision != target.Revision || !command.TargetPositionsComplete || len(command.TargetPositions) != len(target.Positions) {
+		t.Fatal("append-only allowance did not freeze the actual complete review frontier")
+	}
+	owned := slices.IndexFunc(target.Positions, func(position orders.TargetPosition) bool { return position.ID == command.PositionPatch.PositionID })
+	if owned < 0 {
+		t.Fatal("review lost the original owned native position")
+	}
+	changed := target
+	changed.Positions = slices.Clone(target.Positions)
+	changed.Positions[owned].Quantity = "999"
+	if proof.AncestorTargetMatches(0, changed) {
+		t.Fatal("appended foreign position hid a changed original quantity")
+	}
+	missing := target
+	missing.Positions = slices.Clone(target.Positions)
+	missing.Positions[owned].ID = "missing-original-position"
+	if proof.AncestorTargetMatches(0, missing) {
+		t.Fatal("append-only allowance accepted a missing original position")
+	}
+	admit := *proof
+	admit.Mode = orders.SplitAncestorAdmit
+	if admit.AncestorTargetMatches(0, target) {
+		t.Fatal("child admission borrowed the primary reduction append allowance")
+	}
 }
 
 func deferredRetainedAdmit(t *testing.T, f positionHTTPFixture, children []string) {
@@ -80,7 +116,7 @@ func TestOrdersDeferredRetainedSplitsSettleOnceBeforeOlderChildren(t *testing.T)
 		t.Fatal("seller splits silently issued intermediate native reductions")
 	}
 	children := []string{nestedChild, repeatedRetainedSecond, repeatedRetainedThird}
-	deferredRetainedReduce(t, f, root, origin, children)
+	deferredRetainedReduce(t, f, root, origin, children, true)
 	deferredRetainedAdmit(t, f, children)
 	if provider.attempts.Load() != 3 || provider.writes.Load() != 3 || f.provider.patches.Load() != 1 {
 		t.Fatal("deferred settlement replayed a split or wrote artificial native frontiers")
@@ -98,7 +134,7 @@ func TestOrdersDeferredRetainedSplitsContinueFromSettledPrefix(t *testing.T) {
 		t.Fatal("later seller splits invented an intermediate native frontier")
 	}
 	children := []string{repeatedRetainedSecond, repeatedRetainedThird}
-	deferredRetainedReduce(t, f, root, prefix, children)
+	deferredRetainedReduce(t, f, root, prefix, children, false)
 	deferredRetainedAdmit(t, f, children)
 	if provider.attempts.Load() != 3 || provider.writes.Load() != 3 || f.provider.patches.Load() != 2 {
 		t.Fatal("settled prefix was replayed or replaced with stale native authority")
