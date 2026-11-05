@@ -1622,3 +1622,79 @@ intermediate native ancestry, legacy projected headers without adequate actual
 facts, unposted-parent demand effect attribution and native return attribution
 remain separate implementation boundaries. Active Ozon fulfillment remains
 NOT_OBSERVED_LIVE; full production readiness is not established.
+
+### Schema64 release: sparse ancestry and explicit native retries — 2026-11-05
+
+Both requested gaps are implemented and verified on clean source **`25702c0`**.
+A native-free intermediate posting no longer requires an invented MoySklad order:
+source ancestry and actual native authority are separate, scoped proofs. The
+HTTP journey creates a leaf before its intermediate, subsequently admits that
+intermediate, updates metadata, splits again and restarts without duplicating
+owned8/foreign2 reserve. Complete absence witnesses and the full source path are
+required; UNKNOWN work still fences the affected ancestry. Main commits:
+`35af922`, `d76585e`, `8897a87`.
+
+A proved rejection or proved unsent BLOCKED attempt can receive a separately
+reviewed retry for the same physical event. Migration64 retains one canonical
+identity and immutable, non-forking predecessor/approval records. The original
+work, receipt and ciphertext remain unchanged. Fresh source, policy, credentials,
+capacity and operator authority are checked again under the event lock. A narrow,
+session-authorized reader restores only the exact unexpired rejected event after
+a configuration revision; ordinary historical action-secret reads stay blocked.
+UNKNOWN,409, applied history and contradictory existing documents cannot be
+replayed. Discovering such a document also blocks a different subsequent native
+event instead of treating its BLOCKED0 attempt as zero effect. The React form
+uses the normal preview/confirmation/outbox/worker path. Main commits:
+`5370bf1`, `73d941d`, `631cbc9`, `6ad35dd`, `9cb2c95`, `cacbc79`.
+
+This release also integrates the preceding unposted-parent native-document work:
+explicit default-off policy, gross demand consumption, fresh known-document
+traversals, linked return evidence and read-confirmed crash recovery. A return
+does not reopen the gross shipment allowance or erase a buyer obligation. Missing
+ancestry is kept distinct from actual consumed inventory. Historical UNKNOWN or
+absent receipts are preserved even when independent readback later confirms a
+specific document; no acknowledgment is fabricated.
+
+All **15 final stages PASS**, using three disjoint current-source integration
+partitions, without inherited older-source passes: **839 PASS test events /
+468 top-level PASS,64 SKIP,zero FAIL**. PostgreSQL race: **194 PASS events /
+72 top-level**, zero skips. Dedicated stock: **116 PASS events /56 top-level,
+two skips**. Go unit/race each pass33 packages; the existing nonverbose logs do
+not expose individual case counts. Normal and integration-tag lint both report
+**0**; vet, Go build, frontend typecheck/lint/build and **300 frontend tests** pass.
+Clean migrations, upgrade/backfill, immutable history and rollback guards pass.
+
+The64 integration skips remain explicit:51 dedicated-stock database cases
+(exact named supplemental PASS), seven other optional browsers, four direct
+subprocess entrypoints and two live opt-ins. Stock's own two skips are its direct
+crash helper and optional Shadow browser. Neither skips nor older failed runs are
+relabelled PASS. Both native and ordinary nine-OS-process stacks pass, including
+lost responses, restart/failover and stale claimants. The merchant browser checks
+UNKNOWN readback and explicit403 retry; four fresh desktop/mobile screenshots
+were inspected. The fixture uses a bounded synthetic permission clock and waits
+for its actual PostgreSQL cooldown; production's one-minute403 cooldown is intact.
+Private evidence: `.local/orders-v11-final/acceptance-25702c0.json`, SHA256
+`b62b79c3ad056305595227408af78ea97830bdb6b16790affd822a6aeb62a50f`.
+
+Both dev APIs and two workers now execute clean **`25702c0`**, schema**64**;
+liveness/readiness200 on8080/8082. The actual5173 login was also checked on desktop
+and mobile. A fresh schema62 dump was validated before upgrading. Two private
+rollout-helper setup errors were retained in separate journals; Goose applied
+63/64 once, and root verified the actual schema, old row fingerprints and keys
+before explicit continuation. No down migration or automatic rollback ran.
+Every pre-existing table's rows/fingerprint, encryption key and encrypted
+credentials are preserved. Canonical backfill contains exactly one event derived
+from its existing intent; new document reads/snapshots and retry records are empty.
+Application history remains5 order operations/5 intents/35 stock targets/38
+readbacks. All temporary automation/grants and general publication remain OFF.
+
+Deployment issued **zero provider calls**; the shared started-attempt count stays
+**1073**. The preceding journalled normal-adapter parser probe made **21 real
+MoySklad GETs, all HTTP200, zero writes/retries/UNKNOWN**, including linked return
+coverage. It proves the selected read contract; the new retry/sparse acceptance
+uses deterministic providers through the real application. Private probe ledger:
+`.local/native-parser-probe/result-ledger.json`, SHA256
+`c36f7a419658905b0cdfb286cb9fc1da56627400ecf0ba14e63d46ae5e31edad`.
+The previously recorded native fixtures remain retained. Active Ozon fulfillment
+is still **NOT_OBSERVED_LIVE** because the account has no active postings; this
+release does not claim unrestricted production activation.

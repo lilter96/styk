@@ -687,3 +687,24 @@ transport/shared-limiter contract evidence, not live cross-system order E2E.
 The [order report](orders-live-evidence.md) records IDs, journal hash, exact test
 scope and remaining boundaries. Key, encrypted credentials/history are preserved;
 temporary automation/grants and general stock/catalog publication remain OFF.
+
+The next local release runs clean **`25702c0`** on both APIs/two workers, schema64.
+Sparse source ancestry now permits a native leaf before its native-free
+intermediate. Known-rejection retries use a fresh operator review and the same
+canonical event, preserving the original operation; UNKNOWN/409 and unexpected
+existing documents remain blocked. Configuration changes no longer lose the
+exact unexpired protected rejection event. These paths pass normal HTTP,
+PostgreSQL outbox/worker, nine-process and merchant-browser acceptance.
+
+Final gates: strict lint0, Go/race/vet/build, PostgreSQL race194 PASS events,
+stock116 PASS/two classified skips, frontend300 tests and build; integration
+839 PASS/64 classified skips/zero FAIL across disjoint current-source partitions.
+Desktop/mobile were inspected. Upgrade62→64 preserved every old row fingerprint,
+credentials/key and history5/5/35/38; one canonical event was derived from its old
+intent. Temporary automation/grants and general publication are OFF.
+
+The preceding normal-adapter parser check made21 real MoySklad GETs, all200,
+zero writes/retries/UNKNOWN. Deployment made no provider request; attempt count
+remains1073. Active Ozon fulfillment remains NOT_OBSERVED_LIVE. The
+[order report](orders-live-evidence.md) records exact scope, evidence, skipped
+checks and the retained rollout-helper failure journals.
