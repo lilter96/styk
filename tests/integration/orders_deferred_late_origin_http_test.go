@@ -15,6 +15,9 @@ func deferredLateOriginFixture(t *testing.T) (positionHTTPFixture, *repeatedReta
 	f, _, _ := unmirroredSplitFixture(t)
 	p := &repeatedRetainedHTTPProvider{base: f.provider}
 	f.provider.base.server.Config.Handler = http.HandlerFunc(p.serve)
+	if source := f.preview(t).Decisions[0].Posting; len(source.Lines) != 1 || source.Lines[0].Quantity != "8" {
+		t.Fatal("late origin fixture did not freshly import the unsplit source eight")
+	}
 	deferredRetainedSplits(t, f, "4", "2")
 	f.provider.base.mu.Lock()
 	defer f.provider.base.mu.Unlock()
