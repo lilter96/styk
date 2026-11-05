@@ -35,14 +35,17 @@ func TestOrdersMerchantCurrentStateBrowserStack(t *testing.T) {
 	seedMerchantHistoryOutsideLatestPage(t, s)
 	key := ordersProcessRandom(t)
 	proxy := merchantJourneyProxy(t, s, key)
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 130*time.Second)
 	defer cancel()
 	ordersProcessPlaywright(t, ctx, proxy.URL, s.a.scope, key, "e2e/orders-current-state-stack.spec.ts")
 	s.awaitState(t, "position-http-posting", orders.StateReconciled)
 	s.workersEnabled(t, false)
-	if s.native.writes.Load() != 1 || s.native.shipped.Load() != 0 || s.native.returned.Load() != 0 {
+	if s.native.writes.Load() != 3 || s.native.shipped.Load() != 0 || s.native.returned.Load() != 0 {
 		t.Fatal("browser current-state recovery repeated native mutation or physical effect")
 	}
+	fixture := ordersStoreFixture{db: s.db, ctx: ctx}
+	assertOrdersRowCount(t, fixture, `SELECT count(*) FROM orders_native_document_retries`, 1)
+	assertOrdersRowCount(t, fixture, `SELECT count(*) FROM orders_work WHERE action='demand_create' AND state='REJECTED' AND work#>>'{receipt,http_status}'='403'`, 1)
 }
 
 func merchantJourneyProvider(s *nativeProcessStack) http.Handler {
@@ -120,6 +123,11 @@ func merchantJourneyProxy(t *testing.T, s *nativeProcessStack, key string) *http
 		}
 		if r.Method != http.MethodPost || r.Header.Get("X-Orders-Test-Control") != key {
 			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		if r.URL.Query().Get("reject_native") == "403" {
+			s.native.rejectNextNative.Store(http.StatusForbidden)
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		s.hidden.Store(false)

@@ -11,7 +11,7 @@ test("current posting state stays independent of paginated history and reconcile
     !origin || !serializedScope || !control,
     "requires isolated merchant current-state stack",
   );
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   expect(new URL(origin).hostname).toBe("127.0.0.1");
   const scope = JSON.parse(serializedScope) as {
     tenant: string;
@@ -119,5 +119,99 @@ test("current posting state stays independent of paginated history and reconcile
     path: "test-results/orders-current-state-mobile.png",
     fullPage: true,
   });
+  const rejected = await page.request.post(
+    `${origin}/__test/orders/merchant-reconcile?reject_native=403`,
+    { headers: { "X-Orders-Test-Control": control } },
+  );
+  expect(rejected.status()).toBe(204);
+  const documents = posting.locator("details").filter({
+    has: page.locator("summary", {
+      hasText: /^Отгрузка и возврат в МойСклад$/,
+    }),
+  });
+  await documents.locator("summary").click();
+  await documents
+    .getByLabel(/^Количество ·/)
+    .first()
+    .fill("1");
+  const planned = new Date(Date.now() + 3600000);
+  await documents
+    .getByLabel("Плановое время документа")
+    .fill(
+      new Date(planned.getTime() - planned.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, -1),
+    );
+  await documents
+    .getByLabel("Идентификатор планирования")
+    .fill("browser-native-known-rejection");
+  await documents
+    .getByRole("button", { name: "Проверить документ перед созданием" })
+    .click();
+  const preview = page.locator(
+    'section[aria-labelledby="orders-preview-heading"]',
+  );
+  async function confirmNative() {
+    await preview
+      .getByLabel("Подтвердить отправление position-http-posting", {
+        exact: true,
+      })
+      .check();
+    await preview
+      .getByLabel(
+        "Я проверил фактическое основание, состав и проведение документа и подтверждаю создание складского документа в МойСклад.",
+        { exact: true },
+      )
+      .check();
+    await preview
+      .getByRole("button", { name: "Создать складские документы (1)" })
+      .click();
+  }
+  await confirmNative();
+  await expect(posting).toContainText("Последняя операция: Отклонено", {
+    timeout: 25000,
+  });
+  if ((await documents.getAttribute("open")) === null)
+    await documents.locator("summary").click();
+  await documents.getByLabel("Подготовить повтор после отказа API").check();
+  await expect(documents.getByRole("option", { name: /HTTP 403/ })).toHaveCount(
+    1,
+  );
+  await documents
+    .getByLabel("Операция для проверки повторной попытки")
+    .selectOption({
+      label: await documents
+        .getByRole("option", { name: /HTTP 403/ })
+        .innerText(),
+    });
+  await expect(documents.getByLabel("Идентификатор планирования")).toHaveCount(
+    0,
+  );
+  await documents
+    .getByRole("button", { name: "Проверить документ перед созданием" })
+    .click();
+  await expect(preview).toContainText(
+    "Новая попытка после подтверждённого отказа без применения",
+  );
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.screenshot({
+    path: "test-results/orders-native-retry-desktop.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth + 1,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: "test-results/orders-native-retry-mobile.png",
+    fullPage: true,
+  });
+  await confirmNative();
+  await expect(posting).toContainText(
+    "Последняя операция: Подтверждено сверкой",
+    { timeout: 25000 },
+  );
   expect(errors).toEqual([]);
 });

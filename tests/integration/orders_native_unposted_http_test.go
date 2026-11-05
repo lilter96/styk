@@ -218,6 +218,7 @@ func (f unpostedNativeHTTPFixture) assertNativePointHistoryRetained(t *testing.T
 			t.Fatal("immutable document evidence was changed")
 		}
 	}
+	catalogSyncMigrate(t, f.db.Pool.Config().ConnString(), "down-to", "63")
 	command := exec.CommandContext(f.ctx, "go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", f.db.Pool.Config().ConnString(), "down")
 	if output, err := command.CombinedOutput(); err == nil || !strings.Contains(string(output), "native document point history prevents rollback") {
 		t.Fatal("migration rollback did not preserve native document evidence")
@@ -225,6 +226,7 @@ func (f unpostedNativeHTTPFixture) assertNativePointHistoryRetained(t *testing.T
 	if err := f.db.Pool.QueryRow(f.ctx, `SELECT count(*) FROM orders_native_document_reads`).Scan(&after); err != nil || after != before {
 		t.Fatal("guarded rollback altered document read history", err)
 	}
+	catalogSyncMigrate(t, f.db.Pool.Config().ConnString(), "up")
 }
 
 func (f unpostedNativeHTTPFixture) ship(t *testing.T, event string) orders.Work {
