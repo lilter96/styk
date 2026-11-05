@@ -34,6 +34,10 @@ func enrichOwnedAncestorSettlements(ctx context.Context, q ordersQuerier, result
 		}
 		result.SplitAncestorSettlements[number] = proof
 		delete(result.SplitReserveBlocked, number)
+		delete(result.SplitRetainedReserves, number)
+		delete(result.SplitReserveTransfers, number)
+		delete(result.SplitReservePermissions, number)
+		delete(result.SplitSupersededReserves, number)
 	}
 	return nil
 }
@@ -96,6 +100,9 @@ func assignOwnedAncestorRows(f *orders.SplitAncestorSettlementFacts, rows []owne
 }
 
 func ownedAncestorMappingsCurrent(f orders.SplitAncestorSettlementFacts, current *orders.ReviewContext) bool {
+	if len(f.RetainedHistory) > 0 {
+		return retainedOwnedMappingsCurrent(f.RetainedHistory, current)
+	}
 	works := []orders.Work{f.RootTransfer.ParentRelease, f.NodeOrigin}
 	for _, generation := range f.Path {
 		works = append(works, generation.Origin)

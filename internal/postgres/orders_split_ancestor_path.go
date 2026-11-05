@@ -26,15 +26,11 @@ func ownedAncestorPath(lineage orders.SplitLineageFacts, number string) ([]order
 		byID[step.Work.ID] = step
 	}
 	result := make([]orders.SplitLineageStep, 0, len(ids))
-	seen := make(map[string]bool, len(ids))
 	for _, id := range ids {
 		step, exists := byID[id]
-		if !exists || seen[step.Before.PostingNumber] {
-			// Repeated retained identities require a prior-frontier history
-			// chain, not a second interpretation of the same native rows.
+		if !exists {
 			return nil, orders.ErrBlocked
 		}
-		seen[step.Before.PostingNumber] = true
 		result = append(result, step)
 	}
 	return result, nil
@@ -63,6 +59,12 @@ func loadOwnedAncestorPath(ctx context.Context, q ordersQuerier, nested orders.N
 		return f, ordersRowsError("read owned ancestor settlement clock", err)
 	}
 	assignOwnedAncestorHeads(&f, number)
+	if ownedPathRepeats(path) {
+		if !assignRetainedOwnedHistory(&f, rows, path) {
+			return f, orders.ErrBlocked
+		}
+		return f, nil
+	}
 	if len(path) == 2 {
 		if !assignOwnedAncestorRows(&f, rows, path[0]) {
 			return f, orders.ErrBlocked
