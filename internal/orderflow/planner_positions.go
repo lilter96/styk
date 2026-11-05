@@ -56,6 +56,9 @@ func updatePositionsRepresented(command orders.Command, actual []orders.TargetPo
 	if !command.TargetPositionsComplete {
 		return positionsRepresented(command.CustomerOrder.Positions, actual)
 	}
+	if command.PositionBaseline != nil {
+		return nativePositionsUnchanged(command.TargetPositions, actual) && orders.ScalarPositionFrontier(command, *command.PositionBaseline, actual)
+	}
 	return nativePositionsUnchanged(command.TargetPositions, actual) && wantedPositionsRepresented(command.CustomerOrder.Positions, actual)
 }
 

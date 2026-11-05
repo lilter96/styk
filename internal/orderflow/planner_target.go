@@ -70,12 +70,12 @@ func prepareMirrorUpdate(command *orders.Command, target orders.TargetObservatio
 		}
 	}
 	wanted.OwnedFields = changedScalarFields(*wanted, target.Fields)
-	if !updatePositionsRepresented(*command, target.Positions) {
-		return preparePositionPatch(command, baselines)
-	}
 	if len(baselines) == 1 && orders.ScalarPositionFrontier(*command, baselines[0], target.Positions) {
 		proof := baselines[0]
 		command.PositionBaseline = &proof
+	}
+	if !updatePositionsRepresented(*command, target.Positions) {
+		return preparePositionPatch(command, baselines)
 	}
 	if command.WritesApplication() {
 		if len(baselines) != 1 {
