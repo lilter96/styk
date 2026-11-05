@@ -152,6 +152,7 @@ func TestOrdersNativeHTTPDraftAndPostedDemandThenLinkedReturn(t *testing.T) {
 	if demand.Command.Action != orders.ActionDemandCreate {
 		t.Fatal("native demand work missing")
 	}
+	f.assertNativeUpgradeHistory(t)
 	returned := f.proposal(t, orders.ActionSalesReturnCreate, true, "native-http-return-event", demand.ID)
 	f.approve(t, returned)
 	f.run(t, orders.StateAcknowledged)
@@ -167,6 +168,22 @@ func TestOrdersNativeHTTPDraftAndPostedDemandThenLinkedReturn(t *testing.T) {
 	if len(parent.Positions) != 2 || !parent.Positions[1].Reserve.IsKnown() || *parent.Positions[1].Reserve.Value != "2" || !parent.Positions[1].Shipped.IsKnown() || *parent.Positions[1].Shipped.Value != "0" {
 		t.Fatal("native accounting workflow changed foreign reservation")
 	}
+}
+
+func (f nativeMovementHTTPFixture) assertNativeUpgradeHistory(t *testing.T) {
+	t.Helper()
+	const query = `SELECT md5(string_agg(work::text,'|' ORDER BY id)) FROM orders_work`
+	var before, after string
+	if err := f.db.Pool.QueryRow(f.ctx, query).Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	dsn := f.db.Pool.Config().ConnString()
+	catalogSyncMigrate(t, dsn, "down-to", "62")
+	catalogSyncMigrate(t, dsn, "up")
+	if err := f.db.Pool.QueryRow(f.ctx, query).Scan(&after); err != nil || before != after {
+		t.Fatal("native document history changed during 62-to-63 upgrade", err)
+	}
+	assertOrdersRowCount(t, f.ordersStoreFixture, `SELECT count(*) FROM orders_native_document_results`, 2)
 }
 
 func TestOrdersNativeHTTPLostCreateAcknowledgementOnlyReconciles(t *testing.T) {

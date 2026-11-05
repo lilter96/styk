@@ -44,6 +44,7 @@ type unpostedNativeHTTPProvider struct {
 	native          *nativeMovementHTTPProvider
 	hideDemand      atomic.Bool
 	sourceCancelled atomic.Bool
+	relatedPeer     atomic.Bool
 }
 
 func (p *unpostedNativeHTTPProvider) serve(w http.ResponseWriter, r *http.Request) {
@@ -144,6 +145,7 @@ func (p *unpostedNativeHTTPProvider) distinctNativePosition(r *http.Request, bod
 func TestOrdersNativeHTTPUnpostedParentUsesGrossDemandConsumption(t *testing.T) {
 	f := newUnpostedNativeHTTPFixture(t)
 	first := f.ship(t, "unposted-demand-first")
+	f.assertSplitBlocked(t)
 	f.assertUnpostedParent(t)
 	f.assertDocumentAttribution(t, "9", true)
 	f.assertProposalBlocked(t, orders.ActionDemandCreate, "unposted-demand-first", "")
@@ -166,6 +168,43 @@ func TestOrdersNativeHTTPUnpostedParentUsesGrossDemandConsumption(t *testing.T) 
 	assertOrdersRowCount(t, f.ordersStoreFixture, `SELECT count(*) FROM orders_work WHERE action IN ('demand_create','salesreturn_create') AND state='RECONCILED' AND dispatch_count=1`, 4)
 	f.assertIndependentCancellationSettles(t)
 	f.assertNativePointHistoryRetained(t)
+	f.assertChildMirrorBlocked(t)
+}
+
+func (f unpostedNativeHTTPFixture) assertSplitBlocked(t *testing.T) {
+	t.Helper()
+	source := f.preview(t).Decisions[0].Posting
+	body, err := json.Marshal(map[string]any{"tenant": f.config.Scope.Tenant, "moysklad_account": f.config.Scope.MoyskladAccount, "ozon_account": f.config.Scope.OzonAccount, "expected_revision": f.config.Revision, "posting_numbers": []string{source.PostingNumber}, "proposals": []orders.ActionProposal{{PostingNumber: source.PostingNumber, Action: orders.ActionPostingSplitUnassembled}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, raw := f.merchant.request(t, http.MethodPost, "/api/orders/preview", string(body), true)
+	var preview orders.Preview
+	if status != http.StatusOK || json.Unmarshal(raw, &preview) != nil || len(preview.Decisions) != 1 {
+		t.Fatal("split preview failed")
+	}
+	assertConsumedAllocationBlocked(t, preview.Decisions[0])
+}
+
+func assertConsumedAllocationBlocked(t *testing.T, decision orders.Decision) {
+	t.Helper()
+	if decision.Ready || len(decision.Commands) != 0 {
+		t.Fatal("consumed allocation authorized another split or child reservation")
+	}
+	for _, issue := range decision.Validation {
+		if issue.Code == "native_split_fulfillment_allocation_unverified" {
+			return
+		}
+	}
+	t.Fatal("consumed allocation blocker missing")
+}
+
+func (f unpostedNativeHTTPFixture) assertChildMirrorBlocked(t *testing.T) {
+	t.Helper()
+	f.profile.relatedPeer.Store(true)
+	preview := f.peerPreview(t)
+	assertConsumedAllocationBlocked(t, preview.Decisions[0])
+	assertOrdersRowCount(t, f.ordersStoreFixture, `SELECT count(*) FROM orders_native_document_results`, 4)
 }
 
 func (f unpostedNativeHTTPFixture) assertNativePointHistoryRetained(t *testing.T) {
@@ -288,6 +327,10 @@ func (p *unpostedNativeHTTPProvider) independentSource(w http.ResponseWriter, r 
 	}
 	row := p.native.position.base.posting(request.PostingNumber, "FBS")
 	row["order_id"] = json.Number("5002")
+	if p.relatedPeer.Load() {
+		row["order_id"] = p.native.position.base.posting("position-http-posting", "FBS")["order_id"]
+		row["parent_posting_number"] = "position-http-posting"
+	}
 	row["products"].([]any)[0].(map[string]any)["vat"] = "0"
 	p.native.position.base.reply(w, map[string]any{"result": row})
 	return true
@@ -319,6 +362,19 @@ func TestOrdersNativeHTTPUnpostedUnknownAllowsIndependentZeroReserveMirror(t *te
 }
 func (f unpostedNativeHTTPFixture) independentPreview(t *testing.T) orders.Preview {
 	t.Helper()
+	preview := f.peerPreview(t)
+	if !preview.Decisions[0].Ready || len(preview.Decisions[0].Commands) != 1 {
+		t.Fatalf("independent mirror blocked: %+v", preview.Decisions[0].Validation)
+	}
+	command := preview.Decisions[0].Commands[0]
+	if command.Action != orders.ActionMirrorCreate || command.CustomerOrder == nil || len(command.CustomerOrder.Positions) != 1 || !command.CustomerOrder.Positions[0].Reserve.IsKnown() || *command.CustomerOrder.Positions[0].Reserve.Value != "0" {
+		t.Fatal("independent path attempted inventory effects")
+	}
+	return preview
+}
+
+func (f unpostedNativeHTTPFixture) peerPreview(t *testing.T) orders.Preview {
+	t.Helper()
 	binding, err := f.factory.ResolveOrder(f.ctx, f.config.Scope, "ozon", f.config.Scope.OzonAccount, 1)
 	if err != nil {
 		t.Fatal(err)
@@ -334,12 +390,8 @@ func (f unpostedNativeHTTPFixture) independentPreview(t *testing.T) orders.Previ
 	}
 	status, raw := f.merchant.request(t, http.MethodPost, "/api/orders/preview", string(body), true)
 	var preview orders.Preview
-	if status != http.StatusOK || json.Unmarshal(raw, &preview) != nil || len(preview.Decisions) != 1 || !preview.Decisions[0].Ready || len(preview.Decisions[0].Commands) != 1 {
-		t.Fatalf("independent mirror blocked HTTP%d %s", status, raw)
-	}
-	command := preview.Decisions[0].Commands[0]
-	if command.Action != orders.ActionMirrorCreate || command.CustomerOrder == nil || len(command.CustomerOrder.Positions) != 1 || !command.CustomerOrder.Positions[0].Reserve.IsKnown() || *command.CustomerOrder.Positions[0].Reserve.Value != "0" {
-		t.Fatal("independent path attempted inventory effects")
+	if status != http.StatusOK || json.Unmarshal(raw, &preview) != nil || len(preview.Decisions) != 1 {
+		t.Fatalf("peer mirror preview HTTP%d %s", status, raw)
 	}
 	return preview
 }
