@@ -77,6 +77,11 @@ func assertDeferredAppendOnlyFrontier(t *testing.T, f positionHTTPFixture, comma
 	if proof.AncestorTargetMatches(0, missing) {
 		t.Fatal("append-only allowance accepted a missing original position")
 	}
+	headerChanged := target
+	headerChanged.Fields.Name = orders.Present("changed native header")
+	if proof.AncestorTargetMatches(0, headerChanged) {
+		t.Fatal("foreign append hid a changed native header")
+	}
 	admit := *proof
 	admit.Mode = orders.SplitAncestorAdmit
 	if admit.AncestorTargetMatches(0, target) {

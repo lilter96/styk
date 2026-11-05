@@ -1,7 +1,5 @@
 package orders
 
-import "reflect"
-
 // AncestorTargetMatches keeps historical and non-primary ancestor matching
 // strict. Only the primary owned-position reduction may preserve appended rows;
 // its actual full target revision is separately frozen by the command review.
@@ -24,9 +22,7 @@ func (p SplitAncestorSettlementPermission) appendedPrimaryTarget(ancestor SplitA
 	if !nativeDocumentPresent(expected.SourceDeleted) || !nativeDocumentPresent(target.SourceDeleted) || !validID(target.Revision) || target.ObservedAt.IsZero() || len(target.Positions) <= len(expected.Positions) || len(target.Positions) > MaxNativeOrderPointPositions {
 		return false
 	}
-	left, right := expected.Fields, target.Fields
-	left.Positions, right.Positions = nil, nil
-	if !reflect.DeepEqual(left, right) || !reflect.DeepEqual(expected.RedactedFields, target.RedactedFields) {
+	if !nativeHeadersMatch(expected, target) {
 		return false
 	}
 	return appendedNativePositions(expected.Positions, target.Positions, p.Baseline)

@@ -351,6 +351,24 @@ func TestOrderReadbackDecodesReviewedTextAttributesAndRedactsValues(t *testing.T
 	if err != nil || strings.Contains(string(projected), "private") || !strings.Contains(string(projected), "fields.attributes") || !strings.Contains(string(projected), "fields.shipment_address") {
 		t.Fatalf("target JSON leaked protected values: %s err=%v", projected, err)
 	}
+	assertNativeHeaderPrivacyCommitment(t, target, projected)
+}
+
+func assertNativeHeaderPrivacyCommitment(t *testing.T, target orders.TargetObservation, raw []byte) {
+	t.Helper()
+	var masked, repeated, changed orders.TargetObservation
+	if json.Unmarshal(raw, &masked) != nil || len(masked.HeaderRevision) != 64 {
+		t.Fatal("redaction lost the native header commitment")
+	}
+	roundtrip, err := json.Marshal(masked)
+	if err != nil || json.Unmarshal(roundtrip, &repeated) != nil || repeated.HeaderRevision != masked.HeaderRevision {
+		t.Fatal("masked fields replaced the original header commitment")
+	}
+	target.Fields.ShipmentAddress = orders.Present("changed private address")
+	updated, err := json.Marshal(target)
+	if err != nil || json.Unmarshal(updated, &changed) != nil || changed.HeaderRevision == masked.HeaderRevision {
+		t.Fatal("native header commitment ignored a changed protected field")
+	}
 }
 
 func TestOrderJSONRejectsDuplicateAndDeepKeys(t *testing.T) {
