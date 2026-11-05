@@ -58,5 +58,7 @@ func forestNodeAncestorAt(f SplitForestFacts, e SplitForestNative, a SplitAncest
 	}
 	posting := forestPrefix(f, number, e.Attempt.CreatedAt)
 	baseline, err := ProjectionPositionBaseline(native.Work, native.Target)
-	return baseline, err == nil && splitTransferSameAllocation(posting, a.Posting) && splitTransferAllParentLinesReserved(posting, baseline)
+	// The split prefix proves allocation, not the later observed status. Keep
+	// reserve semantics bound to the actual immutable source sealed in the grant.
+	return baseline, err == nil && splitTransferSameAllocation(posting, a.Posting) && splitTransferAllParentLinesReserved(a.Posting, baseline)
 }
