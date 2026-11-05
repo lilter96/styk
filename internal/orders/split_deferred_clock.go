@@ -31,11 +31,34 @@ const (
 	deferredOriginPostFirstSplit
 )
 
-// DeferredOriginChronologySupported checks only the immutable database-clock
-// cut. It grants no reserve authority: source allocation, complete native
-// history and exact binding must still pass NewSplitAncestorSettlement.
+// DeferredOriginChronologySupported classifies the origin's database-clock cut,
+// not the validity of the complete history. Invalid later clocks must reach the
+// settlement factory and block competing permissions, not select a fallback.
+// Source allocation, all clocks and exact bindings remain factory prerequisites.
 func DeferredOriginChronologySupported(f SplitAncestorSettlementFacts) bool {
-	return deferredOriginCut(f) != 0
+	d := f.Deferred
+	if d == nil || len(d.Spine) < 2 {
+		return false
+	}
+	origin, present := deferredOriginAttempt(f.NativeAttempts, d.Origin.Work.ID)
+	first, found := deferredOriginAttempt(f.Attempts, d.Spine[0].Work.ID)
+	if !present || !found {
+		return false
+	}
+	if !first.CreatedAt.Before(origin.ReconciledAt) {
+		return true
+	}
+	next, found := deferredOriginAttempt(f.Attempts, d.Spine[1].Work.ID)
+	return found && !origin.CreatedAt.Before(first.ReconciledAt) && !next.CreatedAt.Before(origin.ReconciledAt)
+}
+
+func deferredOriginAttempt(attempts []NestedSplitAttempt, id string) (NestedSplitAttempt, bool) {
+	for _, attempt := range attempts {
+		if attempt.WorkID == id {
+			return attempt, true
+		}
+	}
+	return NestedSplitAttempt{}, false
 }
 
 func deferredOriginCut(f SplitAncestorSettlementFacts) int {
