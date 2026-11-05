@@ -52,10 +52,11 @@ func deferredOrigin(f SplitAncestorSettlementFacts) bool {
 	if o.Work.Command.Action != ActionMirrorCreate || !deferredNativeBound(f, o) {
 		return false
 	}
-	if deferredOriginCut(f) == deferredOriginPostFirstSplit {
-		return deferredOriginAfterFirst(f)
+	cut := deferredOriginCut(f)
+	if cut >= deferredOriginPostFirstSplit {
+		return deferredOriginAfterSplit(f, cut-deferredOriginPostFirstSplit)
 	}
-	if deferredOriginCut(f) != deferredOriginPreSplit || !splitTransferPostingEqual(o.Source, first.Before) || o.Target.Correlation != first.Work.Command.Correlation {
+	if cut != deferredOriginPreSplit || !splitTransferPostingEqual(o.Source, first.Before) || o.Target.Correlation != first.Work.Command.Correlation {
 		return false
 	}
 	baseline, err := ProjectionPositionBaseline(o.Work, o.Target)

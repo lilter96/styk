@@ -40,7 +40,9 @@ func newDeferredSettlement(f SplitAncestorSettlementFacts) (SplitAncestorSettlem
 		return p, ErrBlocked
 	}
 	if f.Selected.PostingNumber != d.Current.PostingNumber {
-		if len(d.Reductions) == 0 || !splitTransferAllParentLinesReserved(d.Current, p.Baseline) || !splitTransferChildReservable(f.Selected) || !ancestorParentConsistent(f.Selected, d.Current.PostingNumber) {
+		// A first native create after the last split may already own exactly
+		// this allocation. Preserve that actual work ID; do not invent a release.
+		if !splitTransferAllParentLinesReserved(d.Current, p.Baseline) || !splitTransferChildReservable(f.Selected) || !ancestorParentConsistent(f.Selected, d.Current.PostingNumber) {
 			return p, ErrBlocked
 		}
 		p.Mode, p.Source, p.NodeReductionWorkID = SplitAncestorAdmit, minimalSupersededPosting(f.Selected), frontier.Work.ID

@@ -27,29 +27,22 @@ func deferredClocks(f SplitAncestorSettlementFacts) bool {
 }
 
 const (
-	deferredOriginPreSplit = iota + 1
-	deferredOriginPostFirstSplit
+	deferredOriginPreSplit       = iota + 1
+	deferredOriginPostFirstSplit // Later cuts are this value plus the spine index.
 )
 
-// DeferredOriginChronologySupported classifies the origin's database-clock cut,
-// not the validity of the complete history. Invalid later clocks must reach the
-// settlement factory and block competing permissions, not select a fallback.
-// Source allocation, all clocks and exact bindings remain factory prerequisites.
+// DeferredOriginChronologySupported selects bounded same-root origin histories,
+// not their validity. An invalid or overlapping clock must reach the settlement
+// factory and block competing permissions, not select a legacy fallback.
+// The factory validates every split cut, source allocation and native binding.
 func DeferredOriginChronologySupported(f SplitAncestorSettlementFacts) bool {
 	d := f.Deferred
 	if d == nil || len(d.Spine) < 2 {
 		return false
 	}
-	origin, present := deferredOriginAttempt(f.NativeAttempts, d.Origin.Work.ID)
-	first, found := deferredOriginAttempt(f.Attempts, d.Spine[0].Work.ID)
-	if !present || !found {
-		return false
-	}
-	if !first.CreatedAt.Before(origin.ReconciledAt) {
-		return true
-	}
-	next, found := deferredOriginAttempt(f.Attempts, d.Spine[1].Work.ID)
-	return found && !origin.CreatedAt.Before(first.ReconciledAt) && !next.CreatedAt.Before(origin.ReconciledAt)
+	_, present := deferredOriginAttempt(f.NativeAttempts, d.Origin.Work.ID)
+	_, found := deferredOriginAttempt(f.Attempts, d.Spine[0].Work.ID)
+	return present && found
 }
 
 func deferredOriginAttempt(attempts []NestedSplitAttempt, id string) (NestedSplitAttempt, bool) {
@@ -82,16 +75,18 @@ func deferredOriginClockCut(f SplitAncestorSettlementFacts, splits, native map[s
 		return 0
 	}
 	origin, present := native[d.Origin.Work.ID]
-	first, found := splits[d.Spine[0].Work.ID]
-	if !present || !found {
+	if !present {
 		return 0
 	}
-	if !first.CreatedAt.Before(origin.ReconciledAt) {
-		return deferredOriginPreSplit
+	cut := deferredOriginPreSplit
+	for index, step := range d.Spine {
+		timing, found := splits[step.Work.ID]
+		if !found || timing.CreatedAt.Before(origin.ReconciledAt) && origin.CreatedAt.Before(timing.ReconciledAt) {
+			return 0 // No provider/native mutation may straddle a split.
+		}
+		if !origin.CreatedAt.Before(timing.ReconciledAt) {
+			cut = deferredOriginPostFirstSplit + index
+		}
 	}
-	next, found := splits[d.Spine[1].Work.ID]
-	if found && !origin.CreatedAt.Before(first.ReconciledAt) && !next.CreatedAt.Before(origin.ReconciledAt) {
-		return deferredOriginPostFirstSplit
-	}
-	return 0
+	return cut
 }

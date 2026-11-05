@@ -1,10 +1,14 @@
 package orders
 
-// The first native order may already contain only the original split's retained
-// allocation. Reuse its actual admission proof; never invent the pre-split reserve.
-func deferredOriginAfterFirst(f SplitAncestorSettlementFacts) bool {
+// The first native order may already contain a later split's retained
+// allocation. Its actual creation cut selects that exact acknowledged receipt;
+// earlier larger allocations are never fabricated as a native reserve.
+func deferredOriginAfterSplit(f SplitAncestorSettlementFacts, index int) bool {
 	d := f.Deferred
-	o, first := d.Origin, d.Spine[0]
+	if index < 0 || index >= len(d.Spine) {
+		return false
+	}
+	o, first := d.Origin, d.Spine[index]
 	splits, ok := deepAncestorTimes(f.Attempts, f.CheckedAt)
 	if !ok {
 		return false
@@ -13,7 +17,11 @@ func deferredOriginAfterFirst(f SplitAncestorSettlementFacts) bool {
 	if !ok {
 		return false
 	}
-	origin, split := native[o.Work.ID], splits[first.Work.ID]
+	return deferredOriginAdmission(f, first, native[o.Work.ID], splits[first.Work.ID])
+}
+
+func deferredOriginAdmission(f SplitAncestorSettlementFacts, first SplitLineageStep, origin, split NestedSplitAttempt) bool {
+	o := f.Deferred.Origin
 	for _, child := range first.Work.Receipt.ObservedPostings {
 		if child.PostingNumber == first.Before.PostingNumber {
 			continue
