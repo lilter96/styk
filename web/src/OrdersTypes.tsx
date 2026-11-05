@@ -234,6 +234,7 @@ export type OrderNativeMovement = {
 };
 export type OrderCompositionReplacement = {
   confirm_replacement: boolean;
+  preserved?: string[];
   retained: {
     source_identity: OrderLine["identity"];
     native_position_id: string;
@@ -547,6 +548,8 @@ const issueLabels: Record<string, string> = {
     "Нет подтверждённой связи позиции с ранее созданной строкой МойСклад. Автоматическая замена состава не выполняется.",
   position_ownership_or_replacement_unverified:
     "Состав или чужой резерв изменился. Проверьте заказ МойСклад: STYK обновляет только ранее согласованные позиции.",
+  composition_split_replacement_required:
+    "После разделения товар целиком перешёл в другое отправление. Откройте «Изменить состав заказа МойСклад», проверьте удаляемые строки STYK и подтвердите замену состава. Чужие строки сохраняются.",
   hybrid_printed_label_required:
     "Выберите этикетку этого отправления и подтвердите, что она распечатана и наклеена.",
   hybrid_label_evidence_unavailable:

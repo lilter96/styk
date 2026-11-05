@@ -55,6 +55,7 @@ it("distinguishes added and removed identities without interpreting SKU as a num
     <OrdersCompositionSummary
       value={{
         confirm_replacement: true,
+        preserved: ["foreign-1", "foreign-2"],
         retained: [
           { source_identity: { sku: "1" }, native_position_id: "native-1" },
         ],
@@ -71,4 +72,7 @@ it("distinguishes added and removed identities without interpreting SKU as a num
   expect(screen.getByText("Добавить: 9007199254740993")).toBeVisible();
   expect(screen.getByText("Удалить: OLD-OFFER")).toBeVisible();
   expect(screen.getByText(/Изменения ещё не отправлены/)).toBeVisible();
+  expect(
+    screen.getByText("Чужие строки без изменений").nextElementSibling,
+  ).toHaveTextContent("2");
 });

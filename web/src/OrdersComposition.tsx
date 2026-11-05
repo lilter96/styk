@@ -28,10 +28,9 @@ export function OrdersComposition({
     <details>
       <summary>Изменить состав заказа МойСклад</summary>
       <p className="orders-note">
-        Отдельная проверка добавления и удаления позиций существующего заказа.
-        Чужие строки, отгруженные позиции и неподтверждённые данные блокируют
-        замену. Проведение, статус, оплата и отгрузка этим действием не
-        меняются.
+        STYK изменит свои подтверждённые строки по текущему отправлению Ozon.
+        Чужие строки сохраняются без изменений. Отгруженные позиции и неполные
+        данные требуют отдельной проверки.
       </p>
       <label className="orders-check orders-warning">
         <input
@@ -84,6 +83,7 @@ export function OrdersCompositionSummary({
   const retained = value.retained ?? [];
   const added = value.added ?? [];
   const removed = value.removed ?? [];
+  const preserved = value.preserved ?? [];
   return (
     <div className="orders-detail-body">
       <p className="orders-warning">
@@ -101,6 +101,10 @@ export function OrdersCompositionSummary({
         <div>
           <dt>Удалить позиции</dt>
           <dd>{removed.length}</dd>
+        </div>
+        <div>
+          <dt>Чужие строки без изменений</dt>
+          <dd>{preserved.length}</dd>
         </div>
       </dl>
       {added.map((identity, index) => (
@@ -122,7 +126,7 @@ export function OrdersCompositionSummary({
         </div>
       ))}
       <p className="orders-note">
-        Существующие позиции сохраняют свои идентификаторы. Отсутствующие
+        У сохранённых строк останутся прежние идентификаторы. Отсутствующие
         сведения не считаются нулём или разрешением очистить поле.
       </p>
     </div>
