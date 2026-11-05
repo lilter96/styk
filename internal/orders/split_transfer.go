@@ -240,10 +240,12 @@ func splitTransferProductIdentities(before, after []PostingLine) bool {
 	return true
 }
 
-// Assembly membership is retained for display/audit but is not an allocation
-// proof. Parent/child identities, quantities, statuses and drift remain checked.
+// Compare the same minimal allocation on both sides: SQL proof reads omit
+// unmanaged customer, delivery and financial metadata. Those blocks and display
+// names cannot establish reserve ownership. Identity, quantities, line money,
+// status, cancellation, source versions and drift remain checked.
 func splitTransferAllocationPosting(posting Posting) Posting {
-	result := splitTransferSafePosting(posting)
+	result := minimalSupersededPosting(posting)
 	result.RelatedPostings = nil
 	return result
 }
