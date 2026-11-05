@@ -591,3 +591,13 @@ Credentials, key and history were preserved. Corrected-source Go lint remains
 records exact verification revisions, skips, local measurements and the remaining
 conditional nested-split/live-fulfillment limits. No unrestricted production
 publication or real active fulfillment coverage is claimed.
+
+The subsequent deep-native continuation runs clean `66cdc22` on those same two
+APIs/two workers and schema 62. Three distinct retained generations passed the
+normal deterministic HTTP/worker path with native reserve conservation and
+UNKNOWN isolation. Go lint remains **0**; PostgreSQL race **171 PASS**, related
+HTTP/process **25 PASS**, stock **116 PASS / 2 documented skips**. No new live
+provider request or migration was needed for this domain change. The
+[order report](orders-live-evidence.md) preserves the failed third-split review,
+its mirror-authority validation fix, source-attributed verification and remaining
+repeated-identity/native-first deep cases. Automation remains OFF.

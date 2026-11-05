@@ -1187,3 +1187,50 @@ were unchanged, with **zero provider calls**. All temporary automation remains
 OFF. No new live read is claimed to validate an absent active nested posting.
 The two-retained-generation/three-current-head bound still remains; deeper
 native-owned graphs are not yet supported.
+
+### Deep native-owned paths — 2026-11-05
+
+The distinct-identity depth restriction above is superseded by `4e04bc5` and
+`9e2d0b4`. The existing lineage proof now feeds a bounded native path, with each
+generation's actual creation, owned reduction and reconciliation. Historical
+grants are compared with their immutable source/allocation and native frontier;
+they are not made fresh by rewriting timestamps. Current full-graph heads and
+ancestor targets are validated separately. Scoped PostgreSQL creation, dispatch
+and reconciliation times establish causal ordering. Old two-generation serialized
+permissions remain compatible; the existing depth/step/head bounds remain.
+
+The new normal API/PostgreSQL/worker journeys exercised three retained generations:
+root **8 → 4+4**, child **4 → 2+2**, grandchild **2 → 1+1**. Native quantities and
+reserves total eight, with an unrelated reserve of two preserved. Readback is
+required before descendant admission; restart/no-op does not duplicate writes.
+A lost third reduction response remains UNKNOWN and fences the four related
+postings while an independent commercial order remains eligible. All provider
+parent fields remain missing. These are local provider fixtures, **not real Ozon
+fulfillment operations**.
+
+The first journey exposed a production validation defect: mirror reserve
+authority was incorrectly required for a separately reviewed posting split.
+`a91d8b8` scopes that check to mirror actions and rejects injected authority on
+other actions. General fulfillment validation and pending/UNKNOWN ancestor
+dispatch fences remain unchanged. Its original failed run is retained.
+
+`09b25ab` removes an unused native-history materialization from owned-path reads.
+The unmirrored absence policy now needs at most one actual native-work existence
+witness, regardless of state, rather than exporting every historical ID. Empty
+results still require the exact scoped database predicate; an existing work can
+never become evidence of absence. A PostgreSQL regression checks real witness
+identity, explicit absence and account isolation. No speedup claim is made.
+
+Final clean code `66cdc22` passed normal/integration Go lint **0**, unit tests,
+full Go race, build, explicit vet, full PostgreSQL race **171 PASS**, affected
+HTTP/process tests **25 PASS**, and stock regression **116 PASS / 2 existing
+documented skips**. Frontend inputs remain unchanged from the 299-test gate.
+Both APIs and both workers now run that clean code, schema 62, health/readiness
+HTTP 200. Credentials, key and historical counts were preserved; deployment
+issued **zero provider calls**. Temporary automation remains OFF.
+
+Remaining cases are explicit: repeated splitting of the same retained posting
+identity, roots first mirrored after the original split in a deep native chain,
+and extra ancestor edits beyond the supported owned frontier still block.
+Active real fulfillment remains NOT_OBSERVED_LIVE; the earlier 145 confirmed
+live reads are not counted again or relabelled as deep-split validation.
