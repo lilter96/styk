@@ -151,6 +151,58 @@ func TestOrdersMultiskuRetainedFullTransferPreservesForeignSameSKU(t *testing.T)
 	if m.p.writes.Load() != 1 || m.p.attempts.Load() != 1 || m.p.composition.puts.Load() != 1 || m.f.provider.patches.Load() != 0 {
 		t.Fatal("multi-SKU transfer repeated or issued an intermediate scalar mutation")
 	}
+	m.assertForeignRetainedNoop(t)
+}
+
+func (m multiskuRetainedFixture) assertForeignRetainedNoop(t *testing.T) {
+	t.Helper()
+	m.appendForeignRetained(t)
+	preview := unmirroredUnassembledHTTPReview(t, m.f, nestedRoot)
+	decision := preview.Decisions[0]
+	if !decision.Ready || len(decision.Commands) != 0 || decision.Target == nil || len(decision.Target.Positions) != 3 {
+		t.Fatal("foreign retained-assortment row prevented an unchanged owned-UUID no-op")
+	}
+	index := slices.IndexFunc(decision.Target.Positions, func(p orders.TargetPosition) bool { return p.ID == ordersProcessID(1100) })
+	if index < 0 {
+		t.Fatal("fresh normal preview did not observe the additional foreign UUID")
+	}
+	extra := decision.Target.Positions[index]
+	if extra.MoyskladID != m.first.MoyskladID || extra.Quantity != "1" || !extra.Reserve.IsKnown() || *extra.Reserve.Value != "0" || m.p.composition.puts.Load() != 1 || m.f.provider.patches.Load() != 0 {
+		t.Fatal("retained-assortment no-op changed foreign quantity or dispatched a write")
+	}
+	base := m.f.provider.base
+	base.mu.Lock()
+	defer base.mu.Unlock()
+	if len(base.native) != 2 {
+		t.Fatal("foreign retained-assortment row created a duplicate customerorder")
+	}
+}
+
+func (m multiskuRetainedFixture) appendForeignRetained(t *testing.T) {
+	t.Helper()
+	base := m.f.provider.base
+	base.mu.Lock()
+	defer base.mu.Unlock()
+	for _, native := range base.native {
+		if native.id != m.original.Correlation.CustomerOrderID {
+			continue
+		}
+		rows := native.body["positions"].([]any)
+		for _, item := range rows {
+			row := item.(map[string]any)
+			if row["id"] != m.first.ID {
+				continue
+			}
+			foreign := make(map[string]any, len(row))
+			for key, value := range row {
+				foreign[key] = value
+			}
+			foreign["id"], foreign["quantity"], foreign["reserve"] = ordersProcessID(1100), json.Number("1"), json.Number("0")
+			native.body["positions"] = append(rows, foreign)
+			return
+		}
+	}
+	t.Fatal("retained owned UUID unavailable for the independent foreign-row fixture")
 }
 
 func (m multiskuRetainedFixture) assertRoot(t *testing.T) {
