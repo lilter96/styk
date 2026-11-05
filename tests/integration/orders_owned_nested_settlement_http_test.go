@@ -5,15 +5,18 @@ package integration
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/lilter96/styk/internal/orders"
 )
 
-func ownedNestedHTTPFixture(t *testing.T) (positionHTTPFixture, *nestedSettlementHTTPProvider) {
+func ownedNestedHTTPFixture(t *testing.T) (positionHTTPFixture, *nestedSettlementHTTPProvider, *ownedNestedParentHTTPProvider) {
 	t.Helper()
 	f, p, _ := nestedSettlementHTTPFixture(t, true)
-	f.provider.base.server.Config.Handler = http.HandlerFunc(ownedNestedHTTPProvider{p}.serve)
+	wire := &ownedNestedParentHTTPProvider{base: ownedNestedHTTPProvider{p}, t: t}
+	f.provider.base.server.Config.Handler = http.HandlerFunc(wire.serve)
 	f.approve(t, f.preview(t))
 	f.run(t, orders.StateAcknowledged)
 	f.run(t, orders.StateReconciled)
@@ -29,11 +32,11 @@ func ownedNestedHTTPFixture(t *testing.T) (positionHTTPFixture, *nestedSettlemen
 	f.run(t, orders.StateReconciled)
 	nestedSettlementSplit(t, f, nestedChild, "1")
 	_ = unmirroredUnassembledHTTPReview(t, f, nestedRoot)
-	return f, p
+	return f, p, wire
 }
 
 func TestOrdersOwnedNestedRetainedReductionPrecedesGrandchildReserve(t *testing.T) {
-	f, p := ownedNestedHTTPFixture(t)
+	f, p, _ := ownedNestedHTTPFixture(t)
 	held := unmirroredUnassembledHTTPReview(t, f, nestedGrandB)
 	if held.Decisions[0].Ready {
 		t.Fatal("grandchild admitted before actual native reduction")
@@ -45,6 +48,7 @@ func TestOrdersOwnedNestedRetainedReductionPrecedesGrandchildReserve(t *testing.
 	}
 	f.approve(t, reduce)
 	f.run(t, orders.StateAcknowledged)
+	assertOwnedNestedMissingParentProof(t, f.latestWork(t))
 	if held = unmirroredUnassembledHTTPReview(t, f, nestedGrandB); held.Decisions[0].Ready {
 		t.Fatal("ACK alone released nested reserve")
 	}
@@ -57,6 +61,7 @@ func TestOrdersOwnedNestedRetainedReductionPrecedesGrandchildReserve(t *testing.
 	f.runner = f.restartedRunner(t)
 	f.run(t, orders.StateAcknowledged)
 	f.run(t, orders.StateReconciled)
+	assertOwnedNestedMissingParentProof(t, f.latestWork(t))
 	assertOwnedNestedConserved(t, f)
 	if noop := splitMemberHTTPPreview(t, f, nestedGrandB, nil); len(noop.Decisions[0].Commands) != 0 {
 		t.Fatal("nested no-op created a duplicate")
@@ -107,7 +112,7 @@ func assertOwnedNestedConserved(t *testing.T, f positionHTTPFixture) {
 }
 
 func TestOrdersOwnedNestedUnknownReductionKeepsAncestorFence(t *testing.T) {
-	f, p := ownedNestedHTTPFixture(t)
+	f, p, _ := ownedNestedHTTPFixture(t)
 	reduce := splitMemberHTTPPreview(t, f, nestedChild, nil)
 	f.approve(t, reduce)
 	f.provider.losePatchResponse.Store(true)
@@ -122,5 +127,87 @@ func TestOrdersOwnedNestedUnknownReductionKeepsAncestorFence(t *testing.T) {
 	}
 	if p.writes.Load() != 2 || f.provider.patches.Load() != 2 {
 		t.Fatal("UNKNOWN nested update was replayed")
+	}
+}
+
+// The official parent_posting_number is optional. These two existing journeys
+// exercise native-owned settlement using immutable local split lineage without
+// inventing a provider parent field in observations or frozen commands.
+type ownedNestedParentHTTPProvider struct {
+	base                  ownedNestedHTTPProvider
+	t                     *testing.T
+	conflictingGrandchild atomic.Bool
+	conflictingReads      atomic.Int32
+}
+
+func (p *ownedNestedParentHTTPProvider) serve(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/v3/posting/fbs/get" {
+		p.base.serve(w, r)
+		return
+	}
+	recorded := httptest.NewRecorder()
+	p.base.serve(recorded, r)
+	if recorded.Code != http.StatusOK {
+		w.WriteHeader(recorded.Code)
+		return
+	}
+	var body, row map[string]json.RawMessage
+	if json.Unmarshal(recorded.Body.Bytes(), &body) != nil || json.Unmarshal(body["result"], &row) != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	delete(row, "parent_posting_number")
+	if p.conflictingGrandchild.Load() && string(row["posting_number"]) == `"nested-grand-b"` {
+		row["parent_posting_number"] = json.RawMessage(`"unrelated-native-owner"`)
+		p.conflictingReads.Add(1)
+	}
+	raw, err := json.Marshal(row)
+	if err != nil {
+		p.t.Error("encode synthetic optional-parent posting")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	body["result"] = raw
+	w.Header().Set("Content-Type", "application/json")
+	if err = json.NewEncoder(w).Encode(body); err != nil {
+		p.t.Error("write synthetic optional-parent posting")
+	}
+}
+
+func assertOwnedNestedMissingParentProof(t *testing.T, work orders.Work) {
+	t.Helper()
+	proof := work.Command.SplitAncestorSettlement
+	if proof == nil {
+		t.Fatal("missing durable local ancestry permission")
+	}
+	postings := []orders.Posting{proof.Before, proof.Node, proof.Source}
+	for _, ancestor := range proof.Ancestors {
+		postings = append(postings, ancestor.Posting)
+	}
+	for _, posting := range postings {
+		if posting.ParentPostingNumber.Presence != orders.PresenceMissing || posting.ParentPostingNumber.Value != nil {
+			t.Fatal("local lineage fabricated a provider parent observation")
+		}
+	}
+}
+
+func TestOrdersOwnedNestedConflictingFreshGrandchildParentBlocksDispatch(t *testing.T) {
+	f, p, wire := ownedNestedHTTPFixture(t)
+	reduce := splitMemberHTTPPreview(t, f, nestedChild, nil)
+	f.approve(t, reduce)
+	f.run(t, orders.StateAcknowledged)
+	f.run(t, orders.StateReconciled)
+	admit := splitMemberHTTPPreview(t, f, nestedGrandB, nil)
+	f.approve(t, admit)
+	wire.conflictingGrandchild.Store(true)
+	f.run(t, orders.StateBlocked)
+	work := f.latestWork(t)
+	if wire.conflictingReads.Load() == 0 || work.DispatchCount != 0 || p.writes.Load() != 2 || f.provider.patches.Load() != 2 {
+		t.Fatal("contradictory fresh provider ancestry permitted a write or replay")
+	}
+	f.provider.base.mu.Lock()
+	defer f.provider.base.mu.Unlock()
+	if len(f.provider.base.native) != 2 {
+		t.Fatal("conflicting grandchild created a native order")
 	}
 }
