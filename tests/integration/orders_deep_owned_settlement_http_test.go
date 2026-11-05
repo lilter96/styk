@@ -23,10 +23,14 @@ func deepOwnedHTTPFixture(t *testing.T) (positionHTTPFixture, *deepOwnedHTTPProv
 		parent, child string
 		quantity      orders.Decimal
 	}{{nestedRoot, nestedChild, "4"}, {nestedChild, deepOwnedGrand, "2"}} {
+		t.Logf("deep setup: split %s", stage.parent)
 		nestedSettlementSplit(t, f, stage.parent, stage.quantity)
+		t.Logf("deep setup: reduce %s", stage.parent)
 		deepOwnedMirror(t, f, stage.parent)
+		t.Logf("deep setup: admit %s", stage.child)
 		deepOwnedMirror(t, f, stage.child)
 	}
+	t.Log("deep setup: third split")
 	nestedSettlementSplit(t, f, deepOwnedGrand, "1")
 	_ = unmirroredUnassembledHTTPReview(t, f, nestedRoot)
 	return f, p
