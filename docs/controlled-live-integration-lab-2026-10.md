@@ -601,3 +601,12 @@ provider request or migration was needed for this domain change. The
 [order report](orders-live-evidence.md) preserves the failed third-split review,
 its mirror-authority validation fix, source-attributed verification and remaining
 repeated-identity/native-first deep cases. Automation remains OFF.
+
+Clean `bb1aad2` subsequently validates repeated retained-root native frontiers
+without recreating the customerorder, plus active same-pool foreign-reserve
+attribution using proven position UUIDs. The actual normal deterministic worker
+paths, calculator checks and remaining history combinations are recorded in the
+[order report](orders-live-evidence.md). PostgreSQL **171 PASS**, related
+HTTP/process **27 PASS**, stock **116 PASS / 2 skips**, Go lint **0**. Both API and
+worker replicas are updated; no additional real provider call or migration was
+needed, and temporary automation stays OFF.

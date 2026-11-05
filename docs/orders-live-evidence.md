@@ -1234,3 +1234,48 @@ identity, roots first mirrored after the original split in a deep native chain,
 and extra ancestor edits beyond the supported owned frontier still block.
 Active real fulfillment remains NOT_OBSERVED_LIVE; the earlier 145 confirmed
 live reads are not counted again or relabelled as deep-split validation.
+
+### Repeated retained identity and native pool coverage — 2026-11-05
+
+`a9b24d0` / `62ecc7f` remove the repeated-identity block for a validated selected
+history. Repeated generations use the previous actual reconciled reduction of
+the **same native UUID**, not another customerorder creation. Each split and
+reduction has its own immutable identity and DB chronology. Historical retained
+outputs are not labelled current; current heads and native frontiers are checked
+separately. Repeated ancestors replace that identity's frontier instead of
+duplicating UUIDs. Extra/manual/UNKNOWN history remains blocking. Positive
+reconstruction removes only competing legacy permissions for the selected target;
+busy states, ancestor fences and other targets are not cleared.
+
+Two normal HTTP/PostgreSQL/worker journeys exercise the same retained root
+**8 → 4 → 2 → 1**, with children **4, 2, 1**. Customerorder and owned position UUIDs
+remain stable; quantities/reserves total eight and an unrelated reserve of two
+is preserved. ACK without readback cannot admit the next child. Restart/no-op
+and submitting an old review with a new request key create no duplicate mutation.
+UNKNOWN of the final reduction fences root/new child while an independent order
+remains eligible. These are deterministic providers, not live Seller postings.
+
+`bb1aad2` separately fixes active stock attribution when a manual native row uses
+the **same product/pool**. Existing authoritative position bindings identify the
+owned UUID; SKU equality alone never selects a row. Own reserve is matched to the
+Ozon obligation, while the **full** validated pool reserve, including foreign
+rows, must fit the source baseline. Thus physical 10/source reserve 3/own reserve
+1/foreign reserve 2 calculates 7 through the existing calculator. A second
+native order makes known coverage 7 against source reserve 5 and stays blocked.
+Unknown foreign values and absent UUID proof remain blocking. Cancellation and
+superseded-parent attribution keep their prior conservative semantics; this is
+not a claim that every same-pool manual-edit lifecycle is resolved.
+
+Clean `bb1aad2` passed normal/integration lint **0**, unit tests, full Go race,
+build, explicit vet, full PostgreSQL race **171 PASS**, affected HTTP/process
+**27 PASS**, and stock regression **116 PASS / 2 documented skips**. Frontend
+inputs remain unchanged. Both APIs/two workers now run that code on schema 62,
+all health/readiness responses HTTP 200. Key, encrypted credentials and history
+were preserved; deployment and this block issued **zero real provider calls**.
+Temporary automation remains OFF.
+
+The broader objective is still incomplete: late settlement of several already
+performed splits, admission of older siblings after later retained updates,
+native-first-after-split deep combinations and additional ancestor/manual-edit
+histories require further work. No all-profile production-readiness claim is
+made from these selected successful histories.
