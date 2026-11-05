@@ -227,7 +227,11 @@ func insertOrderReconciliation(ctx context.Context, tx pgx.Tx, work orders.Work,
 	}
 	var target []byte
 	if completion.ObservedTarget != nil {
-		observed := sanitizedOrderTarget(work.Command, *completion.ObservedTarget)
+		observed, sealErr := completion.ObservedTarget.WithHeaderRevision()
+		if sealErr != nil {
+			return ordersError("seal native header evidence", sealErr)
+		}
+		observed = sanitizedOrderTarget(work.Command, observed)
 		if work.Command.Action.IsNativeMovement() {
 			observed = orders.NativeParentFacts(observed)
 		}

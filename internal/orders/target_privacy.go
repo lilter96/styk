@@ -43,6 +43,10 @@ func (target TargetObservation) MarshalJSON() ([]byte, error) {
 }
 
 func nativeHeaderRevision(target TargetObservation) (string, error) {
+	if target.HeaderRevision != "" {
+		// A sealed observation can contain a projected/redacted Fields view.
+		return target.HeaderRevision, nil
+	}
 	if len(target.RedactedFields) > 0 {
 		// Legacy redacted observations cannot acquire invented header evidence.
 		return target.HeaderRevision, nil
@@ -62,6 +66,18 @@ func nativeHeaderRevision(target TargetObservation) (string, error) {
 	}
 	digest := sha256.Sum256(raw)
 	return hex.EncodeToString(digest[:]), nil
+}
+
+// WithHeaderRevision seals the observed header before a durable projection may
+// replace its Fields. Provider decoders construct fresh observations without an
+// incoming commitment; this is not an authorization supplied by a provider.
+func (target TargetObservation) WithHeaderRevision() (TargetObservation, error) {
+	header, err := nativeHeaderRevision(target)
+	if err != nil {
+		return target, err
+	}
+	target.HeaderRevision = header
+	return target, nil
 }
 
 func nativeHeadersMatch(before, after TargetObservation) bool {
