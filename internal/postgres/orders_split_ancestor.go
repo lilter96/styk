@@ -8,8 +8,9 @@ import (
 )
 
 type ownedAncestorNativeRow struct {
-	work   orders.Work
-	target orders.TargetObservation
+	work    orders.Work
+	target  orders.TargetObservation
+	attempt orders.NestedSplitAttempt
 }
 
 func enrichOwnedAncestorSettlements(ctx context.Context, q ordersQuerier, result *orders.ReviewContext, numbers []string) error {
@@ -51,47 +52,22 @@ func readOwnedAncestorSettlement(ctx context.Context, q ordersQuerier, scope ord
 	if err != nil {
 		return result, err
 	}
-	if len(nested.Lineage.Splits) != 2 || len(nested.Lineage.CurrentHeads) != 3 {
-		return result, orders.ErrBlocked
-	}
-	result.CheckedAt = nested.CheckedAt
-	result.Lineage = nested.Lineage
-	result.Lineage.SelectedPosting = number
-	root, node := result.Lineage.Splits[0], result.Lineage.Splits[1]
-	result.NodeSplit = node
-	for _, head := range result.Lineage.CurrentHeads {
-		if head.PostingNumber == number {
-			result.Selected = head
-		}
-		if head.PostingNumber == node.Before.PostingNumber {
-			result.CurrentNode = head
-		}
-	}
-	rows, err := readOwnedAncestorNativeRows(ctx, q, scope, []string{root.Before.PostingNumber, node.Before.PostingNumber}, selfID, selfFingerprint, node.Before.PostingNumber, node.Work.ID)
-	if err != nil {
-		return result, err
-	}
-	if !assignOwnedAncestorRows(&result, rows, root) {
-		return result, orders.ErrBlocked
-	}
-	return result, nil
+	return loadOwnedAncestorPath(ctx, q, nested, number, selfID, selfFingerprint)
 }
 
 func readOwnedAncestorNativeRows(ctx context.Context, q ordersQuerier, scope orders.Scope, numbers []string, selfID, selfFingerprint, node, splitID string) ([]ownedAncestorNativeRow, error) {
-	rows, err := q.Query(ctx, `SELECT w.work,r.observed_target,EXISTS(SELECT 1 FROM orders_projection_bindings b WHERE b.tenant_id=w.tenant_id AND b.moysklad_account=w.moysklad_account AND b.ozon_account=w.ozon_account AND b.posting_number=w.posting_number AND b.customer_order_id=r.observed_target#>>'{correlation,customer_order_id}') FROM orders_work w LEFT JOIN orders_reconciliations r ON r.work_id=w.id AND r.tenant_id=w.tenant_id AND r.moysklad_account=w.moysklad_account AND r.ozon_account=w.ozon_account WHERE w.tenant_id=$1 AND w.moysklad_account=$2 AND w.ozon_account=$3 AND w.posting_number=ANY($4::text[]) AND w.action IN('mirror_create','mirror_update','mirror_position_update','mirror_composition_update') AND NOT(w.id=$5 AND w.command_fingerprint=$6 AND w.dispatch_count=0 AND w.state IN('QUEUED','CLAIMED') AND w.action='mirror_position_update' AND w.posting_number=$7 AND w.work#>>'{command,split_ancestor_settlement,mode}'='retained_reduction' AND w.work#>>'{command,split_ancestor_settlement,split_work_id}'=$8 AND EXISTS(SELECT 1 FROM orders_target_fences f WHERE f.work_id=w.id AND f.tenant_id=w.tenant_id AND f.moysklad_account=w.moysklad_account AND f.ozon_account=w.ozon_account AND f.posting_number=w.posting_number)) ORDER BY w.created_at,w.id LIMIT 5`, append(ordersScopeArgs(scope), numbers, selfID, selfFingerprint, node, splitID)...)
+	rows, err := q.Query(ctx, `SELECT w.work,r.observed_target,w.created_at,w.dispatched_at,r.created_at,EXISTS(SELECT 1 FROM orders_projection_bindings b WHERE b.tenant_id=w.tenant_id AND b.moysklad_account=w.moysklad_account AND b.ozon_account=w.ozon_account AND b.posting_number=w.posting_number AND b.customer_order_id=r.observed_target#>>'{correlation,customer_order_id}') FROM orders_work w LEFT JOIN orders_reconciliations r ON r.work_id=w.id AND r.tenant_id=w.tenant_id AND r.moysklad_account=w.moysklad_account AND r.ozon_account=w.ozon_account WHERE w.tenant_id=$1 AND w.moysklad_account=$2 AND w.ozon_account=$3 AND w.posting_number=ANY($4::text[]) AND w.action IN('mirror_create','mirror_update','mirror_position_update','mirror_composition_update') AND NOT(w.id=$5 AND w.command_fingerprint=$6 AND w.dispatch_count=0 AND w.state IN('QUEUED','CLAIMED') AND w.action='mirror_position_update' AND w.posting_number=$7 AND w.work#>>'{command,split_ancestor_settlement,mode}'='retained_reduction' AND w.work#>>'{command,split_ancestor_settlement,split_work_id}'=$8 AND EXISTS(SELECT 1 FROM orders_target_fences f WHERE f.work_id=w.id AND f.tenant_id=w.tenant_id AND f.moysklad_account=w.moysklad_account AND f.ozon_account=w.ozon_account AND f.posting_number=w.posting_number)) ORDER BY w.created_at,w.id LIMIT $9`, append(ordersScopeArgs(scope), numbers, selfID, selfFingerprint, node, splitID, 2*len(numbers)+1)...)
 	if err != nil {
 		return nil, ordersError("read owned ancestor native history", err)
 	}
 	defer rows.Close()
-	result := make([]ownedAncestorNativeRow, 0, 4)
+	result := make([]ownedAncestorNativeRow, 0, 2*len(numbers))
 	for rows.Next() {
-		var row ownedAncestorNativeRow
-		var work, target []byte
-		var bindingCurrent bool
-		if err = rows.Scan(&work, &target, &bindingCurrent); err != nil {
-			return nil, ordersError("decode owned native history", err)
+		row, e := decodeOwnedAncestorNativeRow(rows, scope)
+		if e != nil {
+			return nil, e
 		}
-		if !bindingCurrent || ordersDecode(work, &row.work) != nil || len(target) == 0 || ordersDecode(target, &row.target) != nil {
+		if len(result) >= 2*len(numbers) {
 			return nil, orders.ErrBlocked
 		}
 		result = append(result, row)
@@ -120,7 +96,14 @@ func assignOwnedAncestorRows(f *orders.SplitAncestorSettlementFacts, rows []owne
 }
 
 func ownedAncestorMappingsCurrent(f orders.SplitAncestorSettlementFacts, current *orders.ReviewContext) bool {
-	for _, w := range []orders.Work{f.RootTransfer.ParentRelease, f.NodeOrigin} {
+	works := []orders.Work{f.RootTransfer.ParentRelease, f.NodeOrigin}
+	for _, generation := range f.Path {
+		works = append(works, generation.Origin)
+		if generation.Reduction != nil {
+			works = append(works, *generation.Reduction)
+		}
+	}
+	for _, w := range works {
 		if w.Command.CustomerOrder == nil || !retainedAdmissionMappingsCurrent(orders.RetainedSplitAdmissionFacts{Admission: w}, current) {
 			return false
 		}
