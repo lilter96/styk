@@ -1,6 +1,7 @@
 package ozon
 
 import (
+	"bytes"
 	"slices"
 	"strings"
 	"time"
@@ -195,7 +196,7 @@ func orderCustomerAddress(customer orderFields) orders.Field[orders.Address] {
 
 func addOrderUnsupportedGroups(f orderFields, posting *orders.Posting) {
 	for _, key := range []string{"barcodes", "legal_info", "tariffication", "optional", "addressee", "quantum_id", "scanit", "pickup_code_verified_at"} {
-		if _, present := f.raw[key]; present {
+		if raw, present := f.raw[key]; present && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 			posting.Drift = append(posting.Drift, orders.Drift{Path: "$.result." + key, Code: "unsupported_typed_field"})
 		}
 	}

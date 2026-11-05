@@ -104,6 +104,9 @@ func (p *unassembledSplitHTTPProvider) posting(w http.ResponseWriter, r *http.Re
 }
 
 func (p *unassembledSplitHTTPProvider) afterSplit(row map[string]any, root bool) {
+	// The reviewed official v3 get example includes addressee:null. A null
+	// optional group must not poison independent allocation readback evidence.
+	row["addressee"] = nil
 	row["updated_at"], row["available_actions"] = "2026-11-04T12:00:03Z", []string{}
 	if root {
 		row["status"] = "cancelled_from_split_pending"
