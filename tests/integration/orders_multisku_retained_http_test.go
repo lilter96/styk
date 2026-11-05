@@ -24,6 +24,11 @@ type multiskuRetainedFixture struct {
 
 func newMultiskuRetainedFixture(t *testing.T) multiskuRetainedFixture {
 	t.Helper()
+	return newMultiskuRetainedMode(t, false)
+}
+
+func newMultiskuRetainedMode(t *testing.T, retainBoth bool) multiskuRetainedFixture {
+	t.Helper()
 	f, _, _ := unmirroredSplitFixture(t)
 	f.config.FieldMappings = append(f.config.FieldMappings, orders.FieldMapping{Source: "constant.false", Target: "vat_enabled"}, orders.FieldMapping{Source: "constant.true", Target: "vat_included"})
 	var err error
@@ -32,7 +37,7 @@ func newMultiskuRetainedFixture(t *testing.T) multiskuRetainedFixture {
 		t.Fatal(err)
 	}
 	compositionSecondMapping(t, f)
-	p := &multiskuRetainedHTTPProvider{composition: &compositionHTTPProvider{base: f.provider}}
+	p := &multiskuRetainedHTTPProvider{composition: &compositionHTTPProvider{base: f.provider}, retainBoth: retainBoth}
 	f.provider.base.server.Config.Handler = http.HandlerFunc(p.serve)
 	f.approve(t, f.preview(t))
 	f.run(t, orders.StateAcknowledged)
@@ -44,8 +49,12 @@ func newMultiskuRetainedFixture(t *testing.T) multiskuRetainedFixture {
 	m := multiskuRetainedFixture{f: f, p: p, original: original}
 	m.first = multiskuPosition(t, original, ordersProcessID(8))
 	m.removed = multiskuPosition(t, original, ordersProcessID(9))
-	assertRepeatedRetainedPosition(t, original, m.first.ID, "2")
-	assertRepeatedRetainedPosition(t, original, m.removed.ID, "3")
+	first, second := orders.Decimal("2"), orders.Decimal("3")
+	if retainBoth {
+		first, second = "4", "6"
+	}
+	assertRepeatedRetainedPosition(t, original, m.first.ID, first)
+	assertRepeatedRetainedPosition(t, original, m.removed.ID, second)
 	m.foreign = m.appendForeign(t)
 	m.splitPosting(t)
 	return m
@@ -105,6 +114,17 @@ func (m multiskuRetainedFixture) splitPosting(t *testing.T) {
 	for _, line := range posting.Lines {
 		packages = append(packages, orders.ActionPackage{Lines: []orders.ActionQuantity{{Identity: line.Identity, Quantity: line.Quantity}}})
 	}
+	if m.p.retainBoth {
+		lines := make([]orders.ActionQuantity, 0, 2)
+		for _, line := range posting.Lines {
+			quantity := orders.Decimal("2")
+			if line.Identity.SKU == "2002" {
+				quantity = "3"
+			}
+			lines = append(lines, orders.ActionQuantity{Identity: line.Identity, Quantity: quantity})
+		}
+		packages = []orders.ActionPackage{{Lines: lines}, {Lines: slices.Clone(lines)}}
+	}
 	proposal := orders.ActionProposal{PostingNumber: nestedRoot, Action: orders.ActionPostingSplitUnassembled, Parameters: orders.ActionParameters{Packages: packages}}
 	m.f.approve(t, splitMemberHTTPPreview(t, m.f, nestedRoot, []orders.ActionProposal{proposal}))
 	m.f.run(t, orders.StateAcknowledged)
@@ -114,7 +134,11 @@ func (m multiskuRetainedFixture) splitPosting(t *testing.T) {
 func (m multiskuRetainedFixture) compositionPreview(t *testing.T) orders.Preview {
 	t.Helper()
 	regular := unmirroredUnassembledHTTPReview(t, m.f, nestedRoot)
-	if regular.Decisions[0].Ready || len(regular.Decisions[0].Commands) != 0 || !slices.ContainsFunc(regular.Decisions[0].Validation, func(v orders.Validation) bool { return v.Code == "composition_split_replacement_required" }) {
+	code := "composition_split_replacement_required"
+	if m.p.retainBoth {
+		code = "composition_manual_confirmation_required"
+	}
+	if regular.Decisions[0].Ready || len(regular.Decisions[0].Commands) != 0 || !slices.ContainsFunc(regular.Decisions[0].Validation, func(v orders.Validation) bool { return v.Code == code }) {
 		t.Fatal("ordinary preview did not explain that full owned-line transfer needs explicit composition consent")
 	}
 	repeatedRetainedHeld(t, m.f, multiskuRetainedChild)
@@ -123,10 +147,24 @@ func (m multiskuRetainedFixture) compositionPreview(t *testing.T) orders.Preview
 		t.Fatalf("explicit multi-SKU composition blocked: %+v", preview.Decisions[0].Validation)
 	}
 	replacement := preview.Decisions[0].Commands[0].PositionReplacement
-	if replacement == nil || len(replacement.Retained) != 1 || replacement.Retained[0].NativePositionID != m.first.ID || len(replacement.Removed) != 1 || replacement.Removed[0].NativePositionID != m.removed.ID || len(replacement.Added) != 0 || !slices.Equal(replacement.Preserved, []string{m.foreign.ID}) {
+	if replacement == nil || len(replacement.Added) != 0 || !slices.Equal(replacement.Preserved, []string{m.foreign.ID}) {
 		t.Fatal("composition consent lost exact retained, removed or foreign UUID ownership")
 	}
+	m.assertReplacementOwnership(t, *replacement)
 	return preview
+}
+
+func (m multiskuRetainedFixture) assertReplacementOwnership(t *testing.T, replacement orders.PositionReplacement) {
+	t.Helper()
+	if m.p.retainBoth {
+		if len(replacement.Retained) != 2 || len(replacement.Removed) != 0 || !slices.ContainsFunc(replacement.Retained, func(p orders.PositionIdentityRef) bool { return p.NativePositionID == m.first.ID }) || !slices.ContainsFunc(replacement.Retained, func(p orders.PositionIdentityRef) bool { return p.NativePositionID == m.removed.ID }) {
+			t.Fatal("retained-only composition did not freeze both owned native UUIDs")
+		}
+		return
+	}
+	if len(replacement.Retained) != 1 || replacement.Retained[0].NativePositionID != m.first.ID || len(replacement.Removed) != 1 || replacement.Removed[0].NativePositionID != m.removed.ID {
+		t.Fatal("full transfer did not preserve retained A and remove only owned B")
+	}
 }
 
 func TestOrdersMultiskuRetainedFullTransferPreservesForeignSameSKU(t *testing.T) {
@@ -207,6 +245,14 @@ func (m multiskuRetainedFixture) appendForeignRetained(t *testing.T) {
 
 func (m multiskuRetainedFixture) assertRoot(t *testing.T) {
 	t.Helper()
+	root := m.readRoot(t)
+	if !orders.NativePositionsEqual(root.Positions, []orders.TargetPosition{m.first, m.foreign}) {
+		t.Fatal("composition changed retained A2 or foreign same-SKU B1 UUID/values")
+	}
+}
+
+func (m multiskuRetainedFixture) readRoot(t *testing.T) orders.TargetObservation {
+	t.Helper()
 	binding, err := m.f.factory.ResolveOrder(m.f.ctx, m.f.config.Scope, "moysklad", m.f.config.Scope.MoyskladAccount, 1)
 	if err != nil {
 		t.Fatal(err)
@@ -216,11 +262,50 @@ func (m multiskuRetainedFixture) assertRoot(t *testing.T) {
 		t.Fatal("multi-SKU native reader unavailable")
 	}
 	root, err := reader.ReadCustomerOrder(m.f.ctx, m.original.Correlation)
-	if err != nil || !root.Complete || root.Correlation != m.original.Correlation || len(root.Positions) != 2 {
+	if err != nil || !root.Complete || root.Correlation != m.original.Correlation {
 		t.Fatal("composition replaced the original native document or lost complete readback", err)
 	}
-	if !orders.NativePositionsEqual(root.Positions, []orders.TargetPosition{m.first, m.foreign}) {
-		t.Fatal("composition changed retained A2 or foreign same-SKU B1 UUID/values")
+	return root
+}
+
+func TestOrdersMultiskuRetainedBothRowsReduceBeforeChildReserve(t *testing.T) {
+	m := newMultiskuRetainedMode(t, true)
+	m.f.approve(t, m.compositionPreview(t))
+	m.f.run(t, orders.StateAcknowledged)
+	repeatedRetainedHeld(t, m.f, multiskuRetainedChild)
+	m.f.run(t, orders.StateReconciled)
+	m.assertBothRetained(t)
+	m.f.runner = m.f.restartedRunner(t)
+	deepOwnedMirror(t, m.f, multiskuRetainedChild)
+	child := m.f.readNative(t)
+	if child.Correlation.CustomerOrderID == m.original.Correlation.CustomerOrderID || len(child.Positions) != 2 {
+		t.Fatal("same-set child did not obtain a separate exact native document")
+	}
+	for _, product := range []struct {
+		id       string
+		quantity orders.Decimal
+	}{{ordersProcessID(8), "2"}, {ordersProcessID(9), "3"}} {
+		position := multiskuPosition(t, child, product.id)
+		assertRepeatedRetainedPosition(t, child, position.ID, product.quantity)
+	}
+	m.assertBothRetained(t)
+	for _, number := range []string{nestedRoot, multiskuRetainedChild} {
+		if next := splitMemberHTTPPreview(t, m.f, number, nil); len(next.Decisions[0].Commands) != 0 {
+			t.Fatal("same-set retained settlement repeated native work after restart")
+		}
+	}
+	if m.p.writes.Load() != 1 || m.p.attempts.Load() != 1 || m.p.composition.puts.Load() != 1 || m.f.provider.patches.Load() != 0 {
+		t.Fatal("same-set reduction replayed its split or issued scalar intermediate writes")
+	}
+}
+
+func (m multiskuRetainedFixture) assertBothRetained(t *testing.T) {
+	t.Helper()
+	first, second := m.first, m.removed
+	first.Quantity, first.Reserve = "2", orders.Present(orders.Decimal("2"))
+	second.Quantity, second.Reserve = "3", orders.Present(orders.Decimal("3"))
+	if !orders.NativePositionsEqual(m.readRoot(t).Positions, []orders.TargetPosition{first, second, m.foreign}) {
+		t.Fatal("same-set reduction lost owned UUIDs or changed the foreign B1 reserve")
 	}
 }
 
