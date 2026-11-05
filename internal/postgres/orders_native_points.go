@@ -14,35 +14,43 @@ import (
 // same transaction. Failed native reads are evidence, never successful zeros.
 func saveOrderNativePointPage(ctx context.Context, tx pgx.Tx, page orders.SourcePage, now time.Time) error {
 	if page.Stream != orders.NativePointStream {
-		if len(page.NativeReads) > 0 {
+		if len(page.NativeReads) > 0 || len(page.NativeDocumentReads) > 0 {
 			return orders.ErrInvalid
 		}
 		return nil
 	}
-	var pageID string
-	err := tx.QueryRow(ctx, `SELECT id FROM orders_ingestion_pages WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND stream=$4 AND request_key=$5`, append(ordersScopeArgs(page.Scope), page.Stream, page.IdempotencyKey)...).Scan(&pageID)
+	pageID, admitted, err := nativePointPageAdmission(ctx, tx, page, now)
 	if err != nil {
-		return ordersError("read journaled native point page", err)
-	}
-	var admitted *time.Time
-	err = tx.QueryRow(ctx, `SELECT attempt_started_at FROM orders_ingestion_leases WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND stream=$4 AND token=$5`, append(ordersScopeArgs(page.Scope), page.Stream, page.FenceToken)...).Scan(&admitted)
-	if err != nil {
-		return ordersError("read native point admission clock", err)
-	}
-	if admitted == nil || admitted.IsZero() || admitted.After(now) {
-		return orders.ErrStale
+		return err
 	}
 	for _, read := range page.NativeReads {
-		if err = saveOrderNativePointRead(ctx, tx, page, read, pageID, *admitted, now); err != nil {
+		if err = saveOrderNativePointRead(ctx, tx, page, read, pageID, admitted, now); err != nil {
 			return err
 		}
 	}
 	for _, read := range page.NativeDocumentReads {
-		if err = saveNativeDocumentPointRead(ctx, tx, page, read, pageID, *admitted, now); err != nil {
+		if err = saveNativeDocumentPointRead(ctx, tx, page, read, pageID, admitted, now); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func nativePointPageAdmission(ctx context.Context, tx pgx.Tx, page orders.SourcePage, now time.Time) (string, time.Time, error) {
+	var pageID string
+	err := tx.QueryRow(ctx, `SELECT id FROM orders_ingestion_pages WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND stream=$4 AND request_key=$5`, append(ordersScopeArgs(page.Scope), page.Stream, page.IdempotencyKey)...).Scan(&pageID)
+	if err != nil {
+		return "", time.Time{}, ordersError("read journaled native point page", err)
+	}
+	var admitted *time.Time
+	err = tx.QueryRow(ctx, `SELECT attempt_started_at FROM orders_ingestion_leases WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND stream=$4 AND token=$5`, append(ordersScopeArgs(page.Scope), page.Stream, page.FenceToken)...).Scan(&admitted)
+	if err != nil {
+		return "", time.Time{}, ordersError("read native point admission clock", err)
+	}
+	if admitted == nil || admitted.IsZero() || admitted.After(now) {
+		return "", time.Time{}, orders.ErrStale
+	}
+	return pageID, *admitted, nil
 }
 
 func saveOrderNativePointRead(ctx context.Context, tx pgx.Tx, page orders.SourcePage, read orders.NativeOrderPointRead, pageID string, admittedAt, now time.Time) error {

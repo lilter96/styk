@@ -46,6 +46,14 @@ export function OrdersNativeSummary({
         </p>
       )}
       <p>Дата документа: {orderDate(document.moment)}.</p>
+      {document.parent_effect === "UNPOSTED_DOCUMENT_ZERO_COUNTER" && (
+        <p className="orders-warning">
+          Заказ МойСклад остаётся непроведённым. Его счётчик отгрузки не
+          подтверждает исполнение: STYK отдельно проверяет проведённый складской
+          документ и учитывает суммарное отгруженное количество. Возврат не
+          открывает лимит для повторной отгрузки.
+        </p>
+      )}
       <p>
         Склад МойСклад: {document.store_id}. Организация:{" "}
         {document.organization_id}. Контрагент учёта: {document.agent_id}.
@@ -68,6 +76,13 @@ export function OrdersNativeSummary({
             {orderFieldText(line.discount)}%. НДС: {orderFieldText(line.vat)};
             учитывается: {orderFieldText(line.vat_enabled)}.
           </p>
+          {document.consumption?.positions
+            .filter((position) => position.order_position_id === line.order_position_id)
+            .map((position) => (
+              <p key={position.order_position_id}>
+                Ранее учтено отгрузок по этой позиции: {position.gross_demand}.
+              </p>
+            ))}
         </div>
       ))}
       <p className="orders-note">

@@ -10,10 +10,14 @@ func applyInventoryNativePoint(pool domain.StockPool, observation *orderinventor
 	observation.NativePointAdmittedAt, observation.NativePointRecordedAt = read.AdmittedAt, read.RecordedAt
 	observation.NativeReadCode, observation.Positions, observation.NativeSyncID = read.Code, nil, nil
 	observation.NativePointTargetRevision = ""
+	observation.NativeParentPoint = nil
+	observation.NativeCredentialRevision = 0
 	point := read.Point
 	if point == nil || read.Code != "" {
 		return
 	}
+	observation.NativeParentPoint = point
+	observation.NativeCredentialRevision = read.CredentialRevision
 	observation.NativeStartedAt, observation.NativeFinishedAt = point.StartedAt, point.FinishedAt
 	observation.NativePointTargetRevision = point.TargetRevision
 	syncID := point.Correlation.SyncID

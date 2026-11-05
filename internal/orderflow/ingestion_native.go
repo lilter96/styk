@@ -13,6 +13,54 @@ type nativePointReader interface {
 }
 
 func (i *Ingestor) readNativePointPage(ctx context.Context, scope orders.Scope, credentials orders.CredentialRevisions, cursor string) (orders.OrderSourcePage, error) {
+	position, err := decodeNativePointCursor(cursor)
+	if err != nil {
+		return orders.OrderSourcePage{}, err
+	}
+	_, documentsAvailable := i.store.(NativeDocumentCandidateReader)
+	if position.Documents {
+		return i.readNativeDocumentPage(ctx, scope, credentials, position)
+	}
+	page, err := i.readNativeParentPage(ctx, scope, credentials, position.ParentAfter)
+	if err != nil {
+		return page, err
+	}
+	return i.finishNativeParentPage(ctx, scope, position, page, documentsAvailable)
+}
+
+func (i *Ingestor) finishNativeParentPage(ctx context.Context, scope orders.Scope, position nativePointCursor, page orders.OrderSourcePage, documentsAvailable bool) (orders.OrderSourcePage, error) {
+	var err error
+	if documentsAvailable && position.DocumentsDone {
+		due, e := i.hasNativeDocumentCandidates(ctx, scope)
+		if e != nil {
+			return page, e
+		}
+		if due {
+			position.DocumentsDone, position.DocumentAfter = false, ""
+		}
+	}
+	if documentsAvailable && page.NextCursor == "" && position.DocumentAfter == "" && !position.DocumentsDone {
+		documentsAvailable, err = i.hasNativeDocumentCandidates(ctx, scope)
+		if err != nil {
+			return page, err
+		}
+	}
+	page.NextCursor, err = position.next(page.NextCursor, documentsAvailable)
+	page.Exhausted = page.NextCursor == ""
+	page.Complete = page.Complete && page.Exhausted
+	return page, err
+}
+
+func (i *Ingestor) hasNativeDocumentCandidates(ctx context.Context, scope orders.Scope) (bool, error) {
+	reader, ok := i.store.(NativeDocumentCandidateReader)
+	if !ok {
+		return false, nil
+	}
+	candidates, err := reader.NativeDocumentCandidates(ctx, scope, 1, "")
+	return len(candidates.Documents) > 0, err
+}
+
+func (i *Ingestor) readNativeParentPage(ctx context.Context, scope orders.Scope, credentials orders.CredentialRevisions, cursor string) (orders.OrderSourcePage, error) {
 	store, ok := i.store.(NativePointCandidateReader)
 	if !ok || i.options.NativeResolver == nil {
 		return orders.OrderSourcePage{}, orders.ErrBlocked

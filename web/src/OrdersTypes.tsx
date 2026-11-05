@@ -216,6 +216,10 @@ export type OrderPositionPatch = {
 };
 export type OrderNativeMovement = {
   applicable: OrderField<boolean>;
+  parent_effect?: "UNPOSTED_DOCUMENT_ZERO_COUNTER";
+  consumption?: {
+    positions: { order_position_id: string; gross_demand: string }[];
+  };
   organization_id: string;
   agent_id: string;
   store_id: string;

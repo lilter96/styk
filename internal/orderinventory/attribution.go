@@ -47,6 +47,9 @@ func assessObservation(input Input, observation Observation) Obligation {
 	if observation.NativeReadCode != "" {
 		return pending(result, Unknown, "native_point_read_failed:"+observation.NativeReadCode)
 	}
+	if obligation, handled := assessNativeConsumption(input, observation, result, quantity); handled {
+		return obligation
+	}
 	if observation.Work != nil && observation.Work.Command.Action == orders.ActionSalesReturnCreate {
 		return pending(result, Unknown, "native_return_obligation_attribution_unverified")
 	}

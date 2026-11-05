@@ -52,7 +52,10 @@ const nativeDocumentCandidatesSQL = `SELECT w.id,n.posting_number,n.customer_ord
  WHERE r.tenant_id=n.tenant_id AND r.moysklad_account=n.moysklad_account AND r.ozon_account=n.ozon_account
  AND r.work_id=n.work_id ORDER BY r.admitted_at DESC,r.id DESC LIMIT 1) latest ON true
  WHERE n.tenant_id=$1 AND n.moysklad_account=$2 AND n.ozon_account=$3 AND w.id>$4 AND w.state='RECONCILED'
- AND w.work#>>'{command,native_movement,parent_effect}'='UNPOSTED_DOCUMENT_ZERO_COUNTER'
+ AND EXISTS(SELECT 1 FROM orders_work profile WHERE profile.tenant_id=n.tenant_id
+ AND profile.moysklad_account=n.moysklad_account AND profile.ozon_account=n.ozon_account
+ AND profile.posting_number=n.posting_number
+ AND profile.work#>>'{command,native_movement,parent_effect}'='UNPOSTED_DOCUMENT_ZERO_COUNTER')
  AND (latest.admitted_at IS NULL OR latest.credential_revision<>credential.revision
  OR latest.admitted_at<=clock_timestamp()-make_interval(secs=>(cfg.config->>'interval_seconds')::int)
  OR n.observed_at>latest.admitted_at)

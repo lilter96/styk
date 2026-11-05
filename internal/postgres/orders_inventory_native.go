@@ -37,7 +37,7 @@ func readOrderInventoryNative(ctx context.Context, tx pgx.Tx, input *orderinvent
 			return err
 		}
 	}
-	return nil
+	return enrichInventoryNativeDocuments(ctx, tx, input, start)
 }
 
 func readOrderInventoryPositions(ctx context.Context, tx pgx.Tx, pool domain.StockPool, batch int64, observation *orderinventory.Observation) error {
