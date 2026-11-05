@@ -37,6 +37,7 @@ type SplitAncestorSettlementPermission struct {
 }
 
 type SplitAncestorSettlementFacts struct {
+	Deferred            *SplitDeferredSettlementFacts
 	RetainedHistory     []SplitRetainedGeneration
 	Path                []SplitAncestorGeneration
 	Attempts            []NestedSplitAttempt
@@ -58,6 +59,9 @@ type SplitAncestorSettlementFacts struct {
 }
 
 func NewSplitAncestorSettlement(f SplitAncestorSettlementFacts) (SplitAncestorSettlementPermission, error) {
+	if f.Deferred != nil {
+		return newDeferredSettlement(f)
+	}
 	if len(f.RetainedHistory) > 1 {
 		return newRetainedHistorySettlement(f)
 	}
