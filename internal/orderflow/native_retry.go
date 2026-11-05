@@ -42,7 +42,7 @@ func nativeRetryPrior(review orders.ReviewContext, proposal orders.NativeMovemen
 		if work.ID != proposal.RetryWorkID {
 			continue
 		}
-		if prior.ID != "" || work.State != orders.StateRejected || work.Scope != review.Config.Scope || work.Command.Scope != work.Scope || work.Command.Correlation != facts.Correlation || work.Command.PostingNumber != proposal.PostingNumber || work.Command.Action != proposal.Action || work.Command.NativeMovement == nil || work.Command.Validate() != nil {
+		if prior.ID != "" || !ordermoney.NativeRetryCandidate(event) || work.Scope != review.Config.Scope || work.Command.Scope != work.Scope || work.Command.Correlation != facts.Correlation || work.Command.PostingNumber != proposal.PostingNumber || work.Command.Action != proposal.Action || work.Command.NativeMovement == nil || work.Command.Validate() != nil {
 			return orders.Work{}, false
 		}
 		prior = work

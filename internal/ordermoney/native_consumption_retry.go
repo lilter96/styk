@@ -49,7 +49,7 @@ func (h *nativeConsumptionHistory) retryAuthorization(c orders.Command, checkedA
 			latest = event
 		}
 	}
-	if latest.Work.ID == "" || latest.Work.ID != previousID || latest.Work.State != orders.StateRejected {
+	if latest.Work.ID == "" || latest.Work.ID != previousID || !NativeRetryCandidate(latest) {
 		return nil, consumptionIssue("native_retry_latest_rejection_required")
 	}
 	retry := &orders.NativeRetryAuthorization{PreviousWorkID: latest.Work.ID, PreviousCommandFingerprint: latest.Work.CommandFingerprint, EventDigest: c.NativeMovement.Event.Digest}
@@ -57,6 +57,16 @@ func (h *nativeConsumptionHistory) retryAuthorization(c orders.Command, checkedA
 		return nil, consumptionIssue("native_retry_authorization_invalid")
 	}
 	return retry, orders.Validation{}
+}
+
+// NativeRetryCandidate excludes every ambiguous or applied attempt. A blocked
+// attempt is eligible only when the immutable ledger proves it never dispatched
+// and no external write intent exists; its original blocked history is retained.
+func NativeRetryCandidate(event orders.NativeConsumptionEvent) bool {
+	if !nativeRetryNoEffect(event) {
+		return false
+	}
+	return event.Work.State == orders.StateRejected || event.Work.State == orders.StateBlocked && event.Work.DispatchCount == 0
 }
 
 func nativeRetryNoEffect(event orders.NativeConsumptionEvent) bool {
