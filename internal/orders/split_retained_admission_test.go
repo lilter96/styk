@@ -29,6 +29,8 @@ func retainedAdmissionFixture(t *testing.T) RetainedSplitAdmissionFacts {
 	target.Fields = *command.CustomerOrder
 	admission := Work{ID: "post-split-create", Scope: binding.Scope, State: StateReconciled, DispatchCount: 1, Command: command, Receipt: Receipt{State: StateAcknowledged, CommandID: command.ID, HTTPStatus: 200, ExternalID: target.Correlation.CustomerOrderID, ObservedAt: target.ObservedAt}}
 	now := time.Unix(300, 0).UTC()
+	target.ObservedAt = now.Add(3 * time.Second)
+	admission.Receipt.ObservedAt = now.Add(2500 * time.Millisecond)
 	return RetainedSplitAdmissionFacts{Split: original.Split, Before: original.Before, Parent: original.Parent, Child: original.Child, Children: original.Split.Receipt.ObservedPostings, OriginalCorrelation: binding, AdmissionSource: original.Parent, Admission: admission, Target: target, SplitReconciledAt: now, NativeCreatedAt: now.Add(time.Second), NativeDispatchedAt: now.Add(2 * time.Second), NativeReconciledAt: now.Add(3 * time.Second), SoleNativeAdmission: true}
 }
 
@@ -50,6 +52,16 @@ func TestRetainedSplitAdmissionRejectsUnsafeHistoryAndFrontiers(t *testing.T) {
 		name  string
 		alter func(*RetainedSplitAdmissionFacts)
 	}{
+		{"stale target before dispatch", func(f *RetainedSplitAdmissionFacts) { f.Target.ObservedAt = f.NativeDispatchedAt.Add(-time.Minute) }},
+		{"stale target before acknowledgment", func(f *RetainedSplitAdmissionFacts) {
+			f.Target.ObservedAt = f.Admission.Receipt.ObservedAt.Add(-time.Millisecond)
+		}},
+		{"known product substitution", func(f *RetainedSplitAdmissionFacts) {
+			f.Before.Lines[0].ProductID = Present("known-original")
+			for i := range f.Split.Receipt.ObservedPostings {
+				f.Split.Receipt.ObservedPostings[i].Lines[0].ProductID = Present("different-product")
+			}
+		}},
 		{"queued", func(f *RetainedSplitAdmissionFacts) { f.Admission.State = StateQueued }},
 		{"unknown", func(f *RetainedSplitAdmissionFacts) { f.Admission.State = StateUnknown }},
 		{"lost acknowledgment", func(f *RetainedSplitAdmissionFacts) { f.Admission.Receipt.State = StateUnknown }},

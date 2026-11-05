@@ -55,6 +55,11 @@ func retainedAdmissionSplit(f RetainedSplitAdmissionFacts) bool {
 	if w.Receipt.State != StateReconciled || !unassembledAcknowledgedAllocation(w) || !slices.Contains(w.Receipt.PostingNumbers, b.PostingNumber) {
 		return false
 	}
+	for _, member := range w.Receipt.ObservedPostings {
+		if !splitTransferProductIdentities(b.Lines, member.Lines) {
+			return false
+		}
+	}
 	current := UnmirroredUnassembledSplitFacts{Split: w, Before: b, Parent: f.Parent, Children: f.Children}
 	allocation := SplitReserveTransferFacts{Split: w, Before: b, Parent: f.Parent, Child: f.Child}
 	return validUnmirroredUnassembledCurrent(current) && splitTransferAllocationVerified(allocation) && SplitObservedForAction(c.Action, b, c.PostingAction.Parameters.Packages, w.Receipt.PostingNumbers, w.Receipt.ObservedPostings)
@@ -75,6 +80,9 @@ func retainedAdmissionNative(f RetainedSplitAdmissionFacts) bool {
 	if receipt.State != StateAcknowledged || receipt.CommandID != c.ID || receipt.HTTPStatus < 200 || receipt.HTTPStatus >= 300 || receipt.ExternalID == "" || receipt.ExternalID != t.Correlation.CustomerOrderID {
 		return false
 	}
+	if t.ObservedAt.Before(f.NativeDispatchedAt.Add(-5*time.Second)) || t.ObservedAt.Before(receipt.ObservedAt) {
+		return false
+	}
 	if !t.Complete || t.Scope != w.Scope || t.ObservedAt.IsZero() || !validID(t.Revision) || t.SourceDeleted.Validate() != nil || t.SourceDeleted.IsKnown() && *t.SourceDeleted.Value != "" || !t.Fields.Applicable.IsKnown() || !*t.Fields.Applicable.Value || !compositionReferencesMatch(c, t) || len(t.Positions) != len(c.CustomerOrder.Positions) {
 		return false
 	}
@@ -82,6 +90,9 @@ func retainedAdmissionNative(f RetainedSplitAdmissionFacts) bool {
 	return err == nil && baseline.RecoveryID == "" && baseline.EvidenceClass != "OPERATOR_ATTESTED" && splitTransferAllParentLinesReserved(f.Parent, baseline)
 }
 
+// Native target clocks are sanity-bounded (5s skew) against dispatch, not used
+// as a provider version or stock watermark. Exact UUID/ACK and immutable DB
+// reconciliation remain mandatory evidence.
 func retainedAdmissionChronology(f RetainedSplitAdmissionFacts) bool {
 	return !f.SplitReconciledAt.IsZero() && !f.NativeCreatedAt.IsZero() && !f.NativeDispatchedAt.IsZero() && !f.NativeReconciledAt.IsZero() && !f.NativeCreatedAt.Before(f.SplitReconciledAt) && !f.NativeDispatchedAt.Before(f.NativeCreatedAt) && !f.NativeReconciledAt.Before(f.NativeDispatchedAt)
 }
