@@ -14,7 +14,7 @@ func insertNativeDocumentIntent(ctx context.Context, tx pgx.Tx, work orders.Work
 	if movement == nil {
 		return nil
 	}
-	if err := validateNativeConsumptionIntent(ctx, tx, work, now); err != nil {
+	if err := guardNativeRetryEvent(ctx, tx, work, now); err != nil {
 		return err
 	}
 	if _, err := readOrderActionSecret(ctx, tx, work.Scope, work.Command.PostingNumber, work.Command.Action, movement.Event.ProtectedInput); err != nil {
@@ -33,7 +33,7 @@ func insertNativeDocumentIntent(ctx context.Context, tx pgx.Tx, work orders.Work
 			return err
 		}
 	}
-	return nil
+	return insertNativeRetryAuthorization(ctx, tx, work)
 }
 
 func insertNativeDocumentTarget(ctx context.Context, tx pgx.Tx, work orders.Work, line orders.NativeMovementLine) error {

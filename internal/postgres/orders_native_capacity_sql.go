@@ -1,6 +1,6 @@
 package postgres
 
-const nativeConsumptionSQL = `SELECT w.work,w.id,w.state,w.dispatch_count,w.command_fingerprint,
+const nativeConsumptionSQL = `SELECT w.work,w.id,w.state,w.dispatch_count,w.command_fingerprint,w.created_at,
  EXISTS(SELECT 1 FROM orders_write_intents d WHERE d.work_id=w.id),
  NOT EXISTS(SELECT 1 FROM orders_write_intents d WHERE d.work_id=w.id AND
  (d.tenant_id<>w.tenant_id OR d.moysklad_account<>w.moysklad_account OR d.ozon_account<>w.ozon_account

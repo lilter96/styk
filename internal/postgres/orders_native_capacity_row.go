@@ -11,6 +11,7 @@ type nativeConsumptionRow struct {
 	work, document, parent, targets []byte
 	id, fingerprint                 string
 	state                           orders.State
+	created                         time.Time
 	dispatchCount                   int
 	writeIntent, writeValid         bool
 	intentValid                     *bool
@@ -31,7 +32,7 @@ type nativeConsumptionTarget struct {
 }
 
 func (r *nativeConsumptionRow) scan(row pgx.Row) error {
-	return row.Scan(&r.work, &r.id, &r.state, &r.dispatchCount, &r.fingerprint, &r.writeIntent, &r.writeValid, &r.intentValid, &r.documentID, &r.confirmed, &r.document, &r.parent, &r.targets)
+	return row.Scan(&r.work, &r.id, &r.state, &r.dispatchCount, &r.fingerprint, &r.created, &r.writeIntent, &r.writeValid, &r.intentValid, &r.documentID, &r.confirmed, &r.document, &r.parent, &r.targets)
 }
 
 func (r nativeConsumptionRow) bytes() int {
@@ -51,6 +52,7 @@ func (r *nativeConsumptionRow) valid() bool {
 		return false
 	}
 	r.event.WriteIntent = orders.Present(r.writeIntent)
+	r.event.CreatedAt = r.created
 	return r.observations()
 }
 
