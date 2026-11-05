@@ -64,6 +64,11 @@ func prepareMirrorUpdate(command *orders.Command, target orders.TargetObservatio
 	if !sameNativeReferences(*wanted, target.Fields) {
 		return orders.Validation{Field: "target", Code: "target_native_references_conflict"}
 	}
+	if len(baselines) == 1 {
+		if validation := ownedCompositionRequired(*command, baselines[0]); validation.Code != "" {
+			return validation
+		}
+	}
 	wanted.OwnedFields = changedScalarFields(*wanted, target.Fields)
 	if !updatePositionsRepresented(*command, target.Positions) {
 		return preparePositionPatch(command, baselines)

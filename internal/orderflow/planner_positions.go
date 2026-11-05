@@ -130,8 +130,8 @@ func preparePositionPatch(command *orders.Command, baselines []orders.PositionBa
 	}
 	patch, err := orders.PlanPositionPatch(*command, baselines[0])
 	if err != nil || patch == nil {
-		if len(command.CustomerOrder.Positions) < len(baselines[0].Bindings) && (command.RetainedSplitWorkID != "" || command.SplitAncestorSettlement != nil && command.SplitAncestorSettlement.Mode == orders.SplitAncestorReduce) {
-			return orders.Validation{Field: "positions", Code: "composition_split_replacement_required"}
+		if validation := ownedCompositionRequired(*command, baselines[0]); validation.Code != "" {
+			return validation
 		}
 		return orders.Validation{Field: "positions", Code: "position_ownership_or_replacement_unverified"}
 	}
@@ -144,4 +144,15 @@ func preparePositionPatch(command *orders.Command, baselines []orders.PositionBa
 	command.CustomerOrder.ShipmentAddressFull = orders.Field[orders.ShipmentAddress]{}
 	command.ProtectedCustomer, command.PII = nil, nil
 	return orders.Validation{}
+}
+
+func ownedCompositionRequired(command orders.Command, baseline orders.PositionBaseline) orders.Validation {
+	if command.CustomerOrder == nil || len(command.CustomerOrder.Positions) >= len(baseline.Bindings) {
+		return orders.Validation{}
+	}
+	code := "composition_manual_confirmation_required"
+	if command.RetainedSplitWorkID != "" || command.SplitAncestorSettlement != nil && command.SplitAncestorSettlement.Mode == orders.SplitAncestorReduce {
+		code = "composition_split_replacement_required"
+	}
+	return orders.Validation{Field: "positions", Code: code}
 }
