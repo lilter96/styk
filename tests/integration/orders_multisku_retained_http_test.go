@@ -134,13 +134,7 @@ func (m multiskuRetainedFixture) splitPosting(t *testing.T) {
 func (m multiskuRetainedFixture) compositionPreview(t *testing.T) orders.Preview {
 	t.Helper()
 	regular := unmirroredUnassembledHTTPReview(t, m.f, nestedRoot)
-	code := "composition_split_replacement_required"
-	if m.p.retainBoth {
-		code = "composition_manual_confirmation_required"
-	}
-	if regular.Decisions[0].Ready || len(regular.Decisions[0].Commands) != 0 || !slices.ContainsFunc(regular.Decisions[0].Validation, func(v orders.Validation) bool { return v.Code == code }) {
-		t.Fatalf("ordinary preview did not require explicit composition consent: ready=%v commands=%d validation=%+v", regular.Decisions[0].Ready, len(regular.Decisions[0].Commands), regular.Decisions[0].Validation)
-	}
+	m.assertOrdinaryReview(t, regular.Decisions[0])
 	repeatedRetainedHeld(t, m.f, multiskuRetainedChild)
 	preview := (compositionHTTPFixture{positionHTTPFixture: m.f, composition: m.p.composition}).previewComposition(t)
 	if !preview.Decisions[0].Ready || len(preview.Decisions[0].Commands) != 1 {
@@ -152,6 +146,36 @@ func (m multiskuRetainedFixture) compositionPreview(t *testing.T) orders.Preview
 	}
 	m.assertReplacementOwnership(t, *replacement)
 	return preview
+}
+
+func (m multiskuRetainedFixture) assertOrdinaryReview(t *testing.T, decision orders.Decision) {
+	t.Helper()
+	if m.p.retainBoth {
+		m.assertScalarAlternative(t, decision)
+		return
+	}
+	if decision.Ready || len(decision.Commands) != 0 || !slices.ContainsFunc(decision.Validation, func(v orders.Validation) bool { return v.Code == "composition_split_replacement_required" }) {
+		t.Fatalf("whole-line transfer did not require explicit composition consent: ready=%v commands=%d validation=%+v", decision.Ready, len(decision.Commands), decision.Validation)
+	}
+}
+
+func (m multiskuRetainedFixture) assertScalarAlternative(t *testing.T, decision orders.Decision) {
+	t.Helper()
+	if !decision.Ready || len(decision.Commands) != 1 {
+		t.Fatalf("same-set owned reduction has no safe scalar preview: ready=%v commands=%d validation=%+v", decision.Ready, len(decision.Commands), decision.Validation)
+	}
+	command := decision.Commands[0]
+	patch := command.PositionPatch
+	if command.Action != orders.ActionMirrorPositionUpdate || patch == nil || patch.Validate(command) != nil || patch.Baseline.Correlation != m.original.Correlation || len(patch.Baseline.Bindings) != 2 || patch.PositionID != m.first.ID && patch.PositionID != m.removed.ID {
+		t.Fatal("ordinary same-set preview did not freeze one exact owned native UUID")
+	}
+	quantity := orders.Decimal("2")
+	if patch.PositionID == m.removed.ID {
+		quantity = "3"
+	}
+	if !patch.Quantity.IsKnown() || *patch.Quantity.Value != quantity || !patch.Reserve.IsKnown() || *patch.Reserve.Value != quantity || m.p.composition.puts.Load() != 0 || m.f.provider.patches.Load() != 0 {
+		t.Fatal("ordinary same-set preview dispatched a mutation or changed an unowned line")
+	}
 }
 
 func (m multiskuRetainedFixture) assertReplacementOwnership(t *testing.T, replacement orders.PositionReplacement) {
