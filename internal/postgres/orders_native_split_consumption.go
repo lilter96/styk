@@ -48,7 +48,10 @@ func nativeSplitConsumptionPath(ctx context.Context, q ordersQuerier, current *o
 			cache[number] = node
 		}
 		if !node.complete {
-			return true, true, nil
+			// An unobserved provider ancestor alone is not a native movement.
+			// Keep native admission fenced, but do not add a new prohibition
+			// on a provider split with no known physical consumption.
+			return blocked || node.native, true, nil
 		}
 		blocked = blocked || node.consumed
 		ancestor = ancestor || depth > 0 && node.consumed

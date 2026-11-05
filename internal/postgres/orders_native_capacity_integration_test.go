@@ -66,7 +66,7 @@ func TestNativeConsumptionPostgresKeepsKnownAncestryScoped(t *testing.T) {
 	if err := enrichNativeSplitConsumption(f.ctx, f.db.Pool, &current, f.now); err != nil {
 		t.Fatal(err)
 	}
-	if !current.NativeSplitBlocked[child.PostingNumber] || !current.NativeAncestorConsumed[child.PostingNumber] || current.NativeSplitBlocked[independent.PostingNumber] || current.NativeAncestorConsumed[independent.PostingNumber] {
+	if current.NativeInventoryActionBlocked(orders.ActionPostingSplit, child.PostingNumber) || !current.NativeInventoryActionBlocked(orders.ActionMirrorCreate, child.PostingNumber) || !current.NativeInventoryActionBlocked(orders.ActionDemandCreate, child.PostingNumber) || current.NativeSplitBlocked[independent.PostingNumber] || current.NativeAncestorConsumed[independent.PostingNumber] {
 		t.Fatal("ancestry omission reopened child or blocked an unrelated posting")
 	}
 }
