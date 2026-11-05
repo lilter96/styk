@@ -70,6 +70,9 @@ func NativeParentReadback(command Command, target TargetObservation) bool {
 	if !movement.Applicable.IsKnown() {
 		return false
 	}
+	if movement.ParentEffect == NativeParentUnpostedDocument {
+		return NativeUnpostedParentEffect(command, target)
+	}
 	if !*movement.Applicable.Value {
 		return NativePositionsEqual(command.TargetPositions, target.Positions)
 	}

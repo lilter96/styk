@@ -13,6 +13,9 @@ func NativeParentEffectObserved(command orders.Command, target orders.TargetObse
 	if command.Action != orders.ActionDemandCreate || !*movement.Applicable.Value {
 		return true
 	}
+	if movement.ParentEffect == orders.NativeParentUnpostedDocument {
+		return orders.NativeParentReadback(command, target) && orders.NativeUnpostedParentEffect(command, target)
+	}
 	for _, line := range movement.Lines {
 		before, beforeFound := nativeParentCounter(command.TargetPositions, line.OrderPositionID)
 		after, afterFound := nativeParentCounter(target.Positions, line.OrderPositionID)

@@ -45,11 +45,12 @@ type NativeConsumedPosition struct {
 }
 
 type NativeConsumedEvent struct {
-	WorkID       string               `json:"work_id"`
-	DocumentID   string               `json:"document_id"`
-	Kind         string               `json:"kind"`
-	DemandWorkID string               `json:"demand_work_id,omitempty"`
-	Lines        []NativeConsumedLine `json:"lines"`
+	CommandFingerprint string               `json:"command_fingerprint"`
+	WorkID             string               `json:"work_id"`
+	DocumentID         string               `json:"document_id"`
+	Kind               string               `json:"kind"`
+	DemandWorkID       string               `json:"demand_work_id,omitempty"`
+	Lines              []NativeConsumedLine `json:"lines"`
 }
 
 type NativeConsumedLine struct {

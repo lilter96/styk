@@ -33,7 +33,7 @@ func (movement NativeMovement) validateHeader(command Command) error {
 	if *movement.Applicable.Value && (!movement.RateValue.IsKnown() || !nativeEventKindMatches(command.Action, movement.Event.Kind)) {
 		return ErrBlocked
 	}
-	return nil
+	return movement.validateParentEffect(command)
 }
 
 func (movement NativeMovement) Validate(command Command) error {
@@ -162,6 +162,9 @@ func (position NativeDocumentPosition) Validate() error {
 
 func (movement NativeMovement) AllowedBy(policy *NativeDocumentPolicy, action Action, now time.Time) bool {
 	if policy == nil || !movement.Applicable.IsKnown() || !policy.Allows(action, *movement.Applicable.Value, now) || movement.Event.OccurredAt.After(now.Add(time.Minute)) {
+		return false
+	}
+	if movement.ParentEffect == NativeParentUnpostedDocument && !policy.AllowUnpostedParent {
 		return false
 	}
 	if *movement.Applicable.Value && now.Sub(movement.Event.OccurredAt) > time.Duration(policy.EventMaxAgeSeconds)*time.Second {

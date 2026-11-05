@@ -9,7 +9,7 @@ const NativeDemandReadback = "NATIVE_DEMAND_READBACK"
 // this is neither a new mirror nor a promotion of operator-attested ownership.
 func NativePositionBaseline(work Work, target TargetObservation, document NativeDocumentObservation, confirmed time.Time) (PositionBaseline, error) {
 	movement := work.Command.NativeMovement
-	if work.Command.Validate() != nil || work.State != StateReconciled || work.Scope != work.Command.Scope || work.Command.Action != ActionDemandCreate || movement == nil || !movement.Applicable.IsKnown() || !*movement.Applicable.Value || confirmed.IsZero() || target.ObservedAt.After(confirmed) || document.ObservedAt.After(confirmed) {
+	if work.Command.Validate() != nil || work.State != StateReconciled || work.Scope != work.Command.Scope || movement == nil || !nativeBaselineAction(work.Command) || !movement.Applicable.IsKnown() || !*movement.Applicable.Value || confirmed.IsZero() || target.ObservedAt.After(confirmed) || document.ObservedAt.After(confirmed) {
 		return PositionBaseline{}, ErrBlocked
 	}
 	original := movement.SourceBaseline
@@ -18,6 +18,12 @@ func NativePositionBaseline(work Work, target TargetObservation, document Native
 	}
 	if !NativeDocumentMatches(work.Command, document) || !NativeParentReadback(work.Command, target) || target.ProviderUpdatedAt.Validate() != nil || !target.ProviderUpdatedAt.IsKnown() {
 		return PositionBaseline{}, ErrStale
+	}
+	if work.Command.Action == ActionSalesReturnCreate {
+		if !nativeReturnOwnershipUnchanged(original, target) {
+			return PositionBaseline{}, ErrStale
+		}
+		return original, nil // A return does not create new customerorder ownership.
 	}
 	result := PositionBaseline{Scope: work.Scope, WorkID: work.ID, CommandID: work.Command.ID, Correlation: target.Correlation, EvidenceClass: NativeDemandReadback, ObservedAt: confirmed, Bindings: make([]PositionBinding, 0, len(original.Bindings))}
 	selected := make(map[string]bool, len(movement.Lines))
@@ -36,6 +42,20 @@ func NativePositionBaseline(work Work, target TargetObservation, document Native
 		result.Bindings = append(result.Bindings, binding)
 	}
 	return result, result.Validate()
+}
+
+func nativeBaselineAction(command Command) bool {
+	return command.Action == ActionDemandCreate || command.Action == ActionSalesReturnCreate && command.NativeMovement.ParentEffect == NativeParentUnpostedDocument
+}
+
+func nativeReturnOwnershipUnchanged(baseline PositionBaseline, target TargetObservation) bool {
+	for _, binding := range baseline.Bindings {
+		current, found := nativePositionByID(target.Positions, binding.Native.ID)
+		if !found || !OwnedPositionFrontierMatches(binding.Native, current) {
+			return false
+		}
+	}
+	return true
 }
 
 func nativePositionByID(positions []TargetPosition, id string) (TargetPosition, bool) {
