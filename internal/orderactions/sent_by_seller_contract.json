@@ -1,0 +1,67 @@
+{
+  "evidence_kind": "OFFICIAL_DEPRECATION_NOTICE",
+  "reviewed_on": "2026-11-05",
+  "endpoint": "/v2/fbs/posting/sent-by-seller",
+  "dispatch_supported": false,
+  "announced_on": "2026-01-20",
+  "deprecated": true,
+  "removed_from_documentation": true,
+  "disabled_on": null,
+  "replacement_endpoint": null,
+  "source_authentication": {
+    "official_site_reference": "https://dev.ozon.ru/community/269-Testirovanie-integratsii-s-Seller-API/",
+    "official_site_reference_lines": [
+      47,
+      51
+    ],
+    "channel": "https://t.me/OzonSellerAPI",
+    "channel_links_english": "https://t.me/OzonEnSellerAPI"
+  },
+  "sources": [
+    {
+      "url": "https://t.me/OzonSellerAPI/601",
+      "rendered_context_url": "https://t.me/s/OzonSellerAPI?before=604",
+      "rendered_context_lines": [
+        245,
+        249
+      ],
+      "selected_excerpt": "2026-01-20\n/v2/fbs/posting/sent-by-seller\nМетод устарел, удалили его из документации.\n",
+      "selected_excerpt_sha256": "5c2c01007ff4bb5cc51f98968257a70479b9cd9a9c62a9726f307f90f703f630"
+    },
+    {
+      "url": "https://t.me/OzonEnSellerAPI/285",
+      "rendered_context_url": "https://t.me/s/OzonEnSellerAPI?before=293",
+      "rendered_context_lines": [
+        178,
+        182
+      ],
+      "selected_excerpt": "2026-01-20\n/v2/fbs/posting/sent-by-seller\nThe method is deprecated, we removed it from the documentation.\n",
+      "selected_excerpt_sha256": "3a42cd2b5b1a7f155e8a5f361164a3841b74ce292280902922e5bd7e3b60ce48"
+    }
+  ],
+  "current_documentation_check": {
+    "url": "https://docs.ozon.ru/api/seller/zh/swagger.json",
+    "rendered_line_count": 52781,
+    "exact_endpoint_found": false,
+    "full_schema_sha256": null,
+    "checked_strings": [
+      "/v2/fbs/posting/sent-by-seller",
+      "SentBySeller",
+      "sent_by_seller"
+    ],
+    "limitations": [
+      "The web reader reported 52,781 lines and searched its indexed representation for exact names; only selected sections were inspected. Complete raw JSON bytes were not obtained or hashed.",
+      "Absence corroborates the explicit deprecation notice; absence alone is not used as proof of provider behavior.",
+      "RU and EN Swagger retrieval was unavailable; no permission denial or account-wide restriction is inferred."
+    ]
+  },
+  "limitations": [
+    "The notice establishes deprecation and removal from documentation, not an HTTP disable date.",
+    "No request/response grammar, status predecessor or available_actions token is invented for the deprecated operation.",
+    "No Seller API endpoint was called or probed.",
+    "The historical sent_by_seller enum may remain as read-side data and historical audit evidence; it does not authorize a write.",
+    "Existing delivering/tracking/last-mile/delivered operations require their own current contracts and applicable capabilities; they are not an automatic alias for this method.",
+    "The 2024 roles table still mentioning this endpoint is a historical permissions reference, not a current operation contract."
+  ],
+  "hash_basis": "SHA256 of each UTF-8 normalized selected notice excerpt including ISO date and endpoint; not raw HTTP bytes or the complete Swagger."
+}
