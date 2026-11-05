@@ -12,13 +12,14 @@ var ErrNativeDocumentDeleted = errors.New("native document was deleted; manual r
 // Native documents record accounting movements, not marketplace delivery
 // commands. Their creation must never imply a payment or a courier booking.
 type NativeDocumentPolicy struct {
-	Enabled            bool      `json:"enabled"`
-	AllowPosted        bool      `json:"allow_posted"`
-	Actions            []Action  `json:"actions"`
-	MaximumQuantity    Decimal   `json:"maximum_quantity"`
-	EventMaxAgeSeconds int64     `json:"event_max_age_seconds"`
-	AttestedAt         time.Time `json:"attested_at"`
-	ValidUntil         time.Time `json:"valid_until"`
+	Enabled             bool      `json:"enabled"`
+	AllowPosted         bool      `json:"allow_posted"`
+	AllowUnpostedParent bool      `json:"allow_unposted_parent"`
+	Actions             []Action  `json:"actions"`
+	MaximumQuantity     Decimal   `json:"maximum_quantity"`
+	EventMaxAgeSeconds  int64     `json:"event_max_age_seconds"`
+	AttestedAt          time.Time `json:"attested_at"`
+	ValidUntil          time.Time `json:"valid_until"`
 }
 
 type NativeDocumentCorrelation struct {
@@ -64,22 +65,25 @@ type NativeMovementLine struct {
 }
 
 type NativeMovement struct {
-	Products       []NativeProductRequirements `json:"products"`
-	Correlation    NativeDocumentCorrelation   `json:"correlation"`
-	SourceBaseline PositionBaseline            `json:"source_baseline"`
-	DemandWorkID   string                      `json:"demand_work_id,omitempty"`
-	DemandBasis    *NativeDocumentObservation  `json:"demand_basis,omitempty"`
-	OrganizationID string                      `json:"organization_id"`
-	AgentID        string                      `json:"agent_id"`
-	StoreID        string                      `json:"store_id"`
-	CurrencyID     string                      `json:"currency_id"`
-	RateValue      Field[Decimal]              `json:"rate_value"`
-	Applicable     Field[bool]                 `json:"applicable"`
-	VATEnabled     Field[bool]                 `json:"vat_enabled"`
-	VATIncluded    Field[bool]                 `json:"vat_included"`
-	Moment         time.Time                   `json:"moment"`
-	Lines          []NativeMovementLine        `json:"lines"`
-	Event          NativeMovementEvent         `json:"event"`
+	ParentEffect     NativeParentEffect          `json:"parent_effect,omitempty"`
+	ParentApplicable Field[bool]                 `json:"parent_applicable,omitzero"`
+	Consumption      *NativeConsumptionSeal      `json:"consumption,omitempty"`
+	Products         []NativeProductRequirements `json:"products"`
+	Correlation      NativeDocumentCorrelation   `json:"correlation"`
+	SourceBaseline   PositionBaseline            `json:"source_baseline"`
+	DemandWorkID     string                      `json:"demand_work_id,omitempty"`
+	DemandBasis      *NativeDocumentObservation  `json:"demand_basis,omitempty"`
+	OrganizationID   string                      `json:"organization_id"`
+	AgentID          string                      `json:"agent_id"`
+	StoreID          string                      `json:"store_id"`
+	CurrencyID       string                      `json:"currency_id"`
+	RateValue        Field[Decimal]              `json:"rate_value"`
+	Applicable       Field[bool]                 `json:"applicable"`
+	VATEnabled       Field[bool]                 `json:"vat_enabled"`
+	VATIncluded      Field[bool]                 `json:"vat_included"`
+	Moment           time.Time                   `json:"moment"`
+	Lines            []NativeMovementLine        `json:"lines"`
+	Event            NativeMovementEvent         `json:"event"`
 }
 
 type NativeDocumentPosition struct {

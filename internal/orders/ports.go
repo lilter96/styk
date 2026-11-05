@@ -26,6 +26,7 @@ type ReviewContext struct {
 	SplitReserveBlocked     map[string]bool                           `json:"-"`
 	ExemplarProofs          map[string]ExemplarEvidence               `json:"-"`
 	NativeDocuments         map[string]NativeDocumentBinding          `json:"native_documents,omitempty"`
+	NativeConsumption       map[string]NativeConsumptionFacts         `json:"-"`
 	PositionBaselines       map[string]PositionBaseline               `json:"position_baselines,omitempty"`
 	Config                  Config                                    `json:"config"`
 	Credentials             CredentialRevisions                       `json:"credentials"`
