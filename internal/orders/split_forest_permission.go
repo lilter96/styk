@@ -2,6 +2,13 @@ package orders
 
 func forestCurrentPermission(f SplitForestFacts) (SplitAncestorSettlementPermission, error) {
 	selected := forestHead(f, f.Lineage.SelectedPosting)
+	if native, found := forestPrevious(f, selected.PostingNumber, f.CheckedAt, ""); found {
+		step, exists := forestNodeGeneration(f, selected.PostingNumber, f.CheckedAt)
+		if !exists {
+			return SplitAncestorSettlementPermission{}, ErrBlocked
+		}
+		return forestOwnedPermission(f, selected, selected.PostingNumber, true, native, step)
+	}
 	owner := selected.PostingNumber
 	_, node := forestLastSplit(f, owner, f.CheckedAt)
 	if !node {
@@ -17,10 +24,11 @@ func forestCurrentPermission(f SplitForestFacts) (SplitAncestorSettlementPermiss
 		return SplitAncestorSettlementPermission{}, ErrBlocked
 	}
 	if !found {
-		if node {
-			return forestNodeAdmission(f, selected, step)
+		generation, exists := forestNodeGeneration(f, selected.PostingNumber, f.CheckedAt)
+		if !exists {
+			return SplitAncestorSettlementPermission{}, ErrBlocked
 		}
-		return SplitAncestorSettlementPermission{}, ErrBlocked
+		return forestNodeAdmission(f, selected, generation)
 	}
 	return forestOwnedPermission(f, selected, owner, node, native, step)
 }
@@ -52,12 +60,37 @@ func forestCurrentAncestors(f SplitForestFacts, owner string, p *SplitAncestorSe
 		return ErrBlocked
 	}
 	p.Ancestors = make([]SplitAncestorNative, 0, len(chain))
+	missing := false
 	for _, number := range chain {
 		native, found := forestPrevious(f, number, f.CheckedAt, "")
 		if !found {
-			return ErrBlocked
+			if !forestCurrentNativeFree(f, number) {
+				return ErrBlocked
+			}
+			missing = true
+			continue
 		}
 		p.Ancestors = append(p.Ancestors, SplitAncestorNative{Posting: minimalSupersededPosting(forestHead(f, number)), WorkID: native.Work.ID, Target: native.Target})
 	}
+	if missing {
+		p.SourceAncestors = forestCurrentSourcePath(f, f.Lineage.SelectedPosting)
+		if !forestCurrentNativeAncestorsSettled(f, owner, p.Ancestors) {
+			return ErrBlocked
+		}
+	}
 	return nil
+}
+
+func forestCurrentNativeAncestorsSettled(f SplitForestFacts, owner string, ancestors []SplitAncestorNative) bool {
+	for _, ancestor := range ancestors {
+		if ancestor.Posting.PostingNumber == owner {
+			continue // This owner's partial frontier may authorize its own reduction.
+		}
+		native, found := forestPrevious(f, ancestor.Posting.PostingNumber, f.CheckedAt, "")
+		baseline, err := ProjectionPositionBaseline(native.Work, native.Target)
+		if !found || err != nil || !forestInventoryAuthority(f, native, baseline) || !splitTransferAllParentLinesReserved(ancestor.Posting, baseline) {
+			return false
+		}
+	}
+	return true
 }

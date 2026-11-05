@@ -1,7 +1,7 @@
 package orders
 
 func forestNodeAdmission(f SplitForestFacts, source Posting, step SplitLineageStep) (SplitAncestorSettlementPermission, error) {
-	if source.PostingNumber == f.Lineage.RootPosting || !forestNodeHistoryEmpty(f, source.PostingNumber) || !forestNodeUnmirrored(f, source.PostingNumber, f.CheckedAt, "") {
+	if source.PostingNumber == f.Lineage.RootPosting || !forestCurrentNativeFree(f, source.PostingNumber) || !forestNodeUnmirrored(f, source.PostingNumber, f.CheckedAt, "") {
 		return SplitAncestorSettlementPermission{}, ErrBlocked
 	}
 	chain := forestChain(f, source.PostingNumber)
@@ -13,8 +13,15 @@ func forestNodeAdmission(f SplitForestFacts, source Posting, step SplitLineageSt
 	for _, number := range chain[:len(chain)-1] {
 		native, found := forestPrevious(f, number, f.CheckedAt, "")
 		posting := forestHead(f, number)
+		if !found {
+			if !forestCurrentNativeFree(f, number) {
+				return p, ErrBlocked
+			}
+			p.SourceAncestors = forestCurrentSourcePath(f, source.PostingNumber)
+			continue
+		}
 		baseline, err := ProjectionPositionBaseline(native.Work, native.Target)
-		if !found || err != nil || !forestInventoryAuthority(f, native, baseline) || !splitTransferAllParentLinesReserved(posting, baseline) {
+		if err != nil || !forestInventoryAuthority(f, native, baseline) || !splitTransferAllParentLinesReserved(posting, baseline) {
 			return p, ErrBlocked
 		}
 		p.Ancestors = append(p.Ancestors, SplitAncestorNative{Posting: minimalSupersededPosting(posting), WorkID: native.Work.ID, Target: native.Target})
@@ -24,20 +31,6 @@ func forestNodeAdmission(f SplitForestFacts, source Posting, step SplitLineageSt
 		return p, ErrBlocked
 	}
 	return freezeAncestorSettlement(p)
-}
-
-func forestNodeHistoryEmpty(f SplitForestFacts, number string) bool {
-	found := false
-	for _, history := range f.NativeHistory {
-		if history.PostingNumber != number {
-			continue
-		}
-		if found || history.Scope != f.Lineage.Scope || history.BindingIDs == nil || history.MirrorWorkIDs == nil || len(history.BindingIDs) != 0 || len(history.MirrorWorkIDs) != 0 {
-			return false
-		}
-		found = true
-	}
-	return found
 }
 
 func (p SplitAncestorSettlementPermission) validateNodeAdmission() error {
@@ -58,10 +51,17 @@ func (p SplitAncestorSettlementPermission) validateNodeAdmission() error {
 		seen[a.Posting.PostingNumber], nativeIDs[a.Target.Correlation.CustomerOrderID] = true, true
 	}
 	last := p.Ancestors[len(p.Ancestors)-1]
-	if p.NodeOriginWorkID != p.Baseline.WorkID || p.Baseline.Correlation != last.Target.Correlation || !splitMetadataAuthorityTarget(p.Baseline, last.Target) || !ancestorParentConsistent(p.Node, last.Posting.PostingNumber) {
+	if p.NodeOriginWorkID != p.Baseline.WorkID || p.Baseline.Correlation != last.Target.Correlation || !splitMetadataAuthorityTarget(p.Baseline, last.Target) || !p.nodeParentConsistent(last.Posting.PostingNumber) {
 		return ErrBlocked
 	}
 	return nil
+}
+
+func (p SplitAncestorSettlementPermission) nodeParentConsistent(nativeParent string) bool {
+	if len(p.SourceAncestors) > 0 {
+		return ancestorParentConsistent(p.Node, p.SourceAncestors[len(p.SourceAncestors)-1].PostingNumber)
+	}
+	return ancestorParentConsistent(p.Node, nativeParent)
 }
 
 func forestNodeSourceReduced(before, after Posting) bool {

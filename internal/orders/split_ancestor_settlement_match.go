@@ -11,9 +11,10 @@ func (a SplitAncestorNative) TargetMatches(t TargetObservation) bool {
 }
 
 func (p SplitAncestorSettlementPermission) AncestorNumbers() []string {
-	result := make([]string, len(p.Ancestors))
-	for i, a := range p.Ancestors {
-		result[i] = a.Posting.PostingNumber
+	sources := p.AncestorSources()
+	result := make([]string, len(sources))
+	for i, source := range sources {
+		result[i] = source.PostingNumber
 	}
 	return result
 }

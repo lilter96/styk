@@ -10,7 +10,7 @@ const (
 	SplitAncestorReduce = "retained_reduction"
 	SplitAncestorAdmit  = "child_admission"
 	// The node has no native document yet. Baseline and NodeOriginWorkID refer
-	// to its actual nearest parent authority, never a fabricated node baseline.
+	// to its actual nearest native ancestor authority, never a fabricated node baseline.
 	SplitAncestorNodeAdmit = "node_admission"
 )
 
@@ -37,6 +37,10 @@ type SplitAncestorSettlementPermission struct {
 	Node                Posting               `json:"node"`
 	Baseline            PositionBaseline      `json:"baseline"`
 	Ancestors           []SplitAncestorNative `json:"ancestors"`
+	// SourceAncestors is the complete ordered root-to-immediate-source-parent
+	// path. It excludes Source and carries no invented native ownership. Empty
+	// preserves the legacy all-native path represented by Ancestors.
+	SourceAncestors []Posting `json:"source_ancestors,omitempty"`
 }
 
 type SplitAncestorSettlementFacts struct {
@@ -179,6 +183,9 @@ func ancestorSettlementReduced(f SplitAncestorSettlementFacts, before SplitAnces
 }
 
 func (p SplitAncestorSettlementPermission) Validate() error {
+	if !p.sourceAncestorPathValid() {
+		return ErrBlocked
+	}
 	if p.Mode == SplitAncestorNodeAdmit {
 		return p.validateNodeAdmission()
 	}
@@ -208,11 +215,16 @@ func (p SplitAncestorSettlementPermission) Allows(posting Posting) bool {
 }
 
 func (p SplitAncestorSettlementPermission) Equal(other SplitAncestorSettlementPermission) bool {
-	if p.Scope != other.Scope || p.Mode != other.Mode || p.SplitWorkID != other.SplitWorkID || p.RootSplitWorkID != other.RootSplitWorkID || p.NodeOriginWorkID != other.NodeOriginWorkID || p.NodeReductionWorkID != other.NodeReductionWorkID || !p.Baseline.Equal(other.Baseline) || len(p.Ancestors) != len(other.Ancestors) {
+	if p.Scope != other.Scope || p.Mode != other.Mode || p.SplitWorkID != other.SplitWorkID || p.RootSplitWorkID != other.RootSplitWorkID || p.NodeOriginWorkID != other.NodeOriginWorkID || p.NodeReductionWorkID != other.NodeReductionWorkID || !p.Baseline.Equal(other.Baseline) || len(p.Ancestors) != len(other.Ancestors) || len(p.SourceAncestors) != len(other.SourceAncestors) {
 		return false
 	}
 	for _, pair := range [][2]Posting{{p.Before, other.Before}, {p.Source, other.Source}, {p.Node, other.Node}} {
 		if !splitTransferPostingEqual(pair[0], pair[1]) {
+			return false
+		}
+	}
+	for i, source := range p.SourceAncestors {
+		if !splitTransferPostingEqual(source, other.SourceAncestors[i]) {
 			return false
 		}
 	}

@@ -24,7 +24,12 @@ func forestNodeUnmirrored(f SplitForestFacts, number string, cut time.Time, self
 			found = true
 		}
 	}
-	return found
+	if found {
+		return true
+	}
+	birth, exists := forestBirth(f, number)
+	attempt, timed := forestAttempt(f, birth.Work.ID)
+	return exists && timed && !attempt.ReconciledAt.After(cut)
 }
 
 func forestNodeCreation(f SplitForestFacts, e SplitForestNative, p SplitAncestorSettlementPermission) bool {
@@ -32,23 +37,37 @@ func forestNodeCreation(f SplitForestFacts, e SplitForestNative, p SplitAncestor
 	if !p.Allows(e.Source) || !p.AllowsCommand(e.Work.Command) || p.RootSplitWorkID != forestRoot(f).Work.ID || !forestNodeUnmirrored(f, e.Source.PostingNumber, cut, e.Work.ID) {
 		return false
 	}
-	step, exists := forestLastSplit(f, e.Source.PostingNumber, cut)
+	step, exists := forestNodeGeneration(f, e.Source.PostingNumber, cut)
 	if !exists || step.Work.ID != p.SplitWorkID || !splitTransferPostingEqual(minimalSupersededPosting(step.Before), p.Before) || !splitTransferSameAllocation(forestPrefix(f, e.Source.PostingNumber, cut), e.Source) {
 		return false
 	}
 	chain := forestChain(f, e.Source.PostingNumber)
-	if len(chain) < 2 || len(p.Ancestors) != len(chain)-1 {
+	if len(chain) < 2 || !forestSourcePathAt(f, p, cut) {
 		return false
 	}
+	return forestNodeCreationFrontier(f, e, p, chain[:len(chain)-1])
+}
+
+func forestNodeCreationFrontier(f SplitForestFacts, e SplitForestNative, p SplitAncestorSettlementPermission, chain []string) bool {
 	var parent PositionBaseline
-	for i, number := range chain[:len(chain)-1] {
-		baseline, valid := forestNodeAncestorAt(f, e, p.Ancestors[i], number)
+	next := 0
+	for _, number := range chain {
+		if _, found := forestPrevious(f, number, e.Attempt.CreatedAt, e.Work.ID); !found {
+			if len(p.SourceAncestors) == 0 || !forestHistoricalNativeFree(f, number, e.Attempt.CreatedAt) {
+				return false
+			}
+			continue
+		}
+		if next >= len(p.Ancestors) {
+			return false
+		}
+		baseline, valid := forestNodeAncestorAt(f, e, p.Ancestors[next], number)
 		if !valid {
 			return false
 		}
-		parent = baseline
+		parent, next = baseline, next+1
 	}
-	return p.Baseline.Equal(parent) && p.NodeOriginWorkID == parent.WorkID
+	return next == len(p.Ancestors) && p.Baseline.Equal(parent) && p.NodeOriginWorkID == parent.WorkID
 }
 
 func forestNodeAncestorAt(f SplitForestFacts, e SplitForestNative, a SplitAncestorNative, number string) (PositionBaseline, bool) {

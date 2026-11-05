@@ -22,8 +22,9 @@ type SplitForestFacts struct {
 	Lineage  SplitLineageFacts
 	Attempts []NestedSplitAttempt
 	Native   []SplitForestNative
-	// Required only for first native node admission. Empty arrays are a scoped
-	// database absence witness, not an inferred absence from a partial history.
+	// Required for every native-free intermediate and first native admission.
+	// Empty arrays are a scoped database absence witness, not an inferred absence
+	// from a partial history. Historical replay also explains later bindings.
 	NativeHistory []NestedSplitNativeHistory
 	CheckedAt     time.Time
 	Complete      bool

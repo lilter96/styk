@@ -19,8 +19,8 @@ func forestGrant(f SplitForestFacts, e SplitForestNative, p SplitAncestorSettlem
 		return false
 	}
 	baseline, err := ProjectionPositionBaseline(previous.Work, previous.Target)
-	step, exists := forestLastSplit(f, owner, e.Attempt.CreatedAt)
-	if err != nil || !baseline.Equal(p.Baseline) || !exists || step.Work.ID != p.SplitWorkID || !forestBeforeBound(f, p.Before, owner, e.Attempt.CreatedAt) {
+	step, exists := forestNodeGeneration(f, owner, e.Attempt.CreatedAt)
+	if err != nil || !baseline.Equal(p.Baseline) || !exists || step.Work.ID != p.SplitWorkID || !forestGenerationBeforeBound(f, p.Before, owner, e.Attempt.CreatedAt) {
 		return false
 	}
 	if !splitTransferSameAllocation(forestPrefix(f, owner, e.Attempt.CreatedAt), p.Node) || p.Mode == SplitAncestorAdmit && p.NodeReductionWorkID != baseline.WorkID {
@@ -34,17 +34,36 @@ func forestGrant(f SplitForestFacts, e SplitForestNative, p SplitAncestorSettlem
 
 func forestGrantAncestors(f SplitForestFacts, e SplitForestNative, p SplitAncestorSettlementPermission, owner string) bool {
 	chain := forestChain(f, owner)
-	if len(chain) == 0 || len(chain) != len(p.Ancestors) {
+	if len(chain) == 0 || !forestSourcePathAt(f, p, e.Attempt.CreatedAt) {
 		return false
 	}
-	for i, number := range chain {
-		a := p.Ancestors[i]
+	next := 0
+	for _, number := range chain {
 		native, found := forestPrevious(f, number, e.Attempt.CreatedAt, e.Work.ID)
-		if !found || a.Posting.PostingNumber != number || a.WorkID != native.Work.ID || !a.TargetMatches(native.Target) || !a.Target.ObservedAt.Equal(native.Target.ObservedAt) || !splitTransferSameAllocation(forestPrefix(f, number, e.Attempt.CreatedAt), a.Posting) {
+		if !found {
+			if len(p.SourceAncestors) == 0 || !forestHistoricalNativeFree(f, number, e.Attempt.CreatedAt) {
+				return false
+			}
+			continue
+		}
+		if next >= len(p.Ancestors) || !forestGrantAncestorMatches(f, e, p.Ancestors[next], native, number) {
 			return false
 		}
+		if len(p.SourceAncestors) > 0 && number != owner && !forestNativeAncestorSettled(f, p.Ancestors[next], native) {
+			return false
+		}
+		next++
 	}
-	return true
+	return next == len(p.Ancestors)
+}
+
+func forestNativeAncestorSettled(f SplitForestFacts, a SplitAncestorNative, native SplitForestNative) bool {
+	baseline, err := ProjectionPositionBaseline(native.Work, native.Target)
+	return err == nil && forestInventoryAuthority(f, native, baseline) && splitTransferAllParentLinesReserved(a.Posting, baseline)
+}
+
+func forestGrantAncestorMatches(f SplitForestFacts, e SplitForestNative, a SplitAncestorNative, native SplitForestNative, number string) bool {
+	return a.Posting.PostingNumber == number && a.WorkID == native.Work.ID && a.TargetMatches(native.Target) && a.Target.ObservedAt.Equal(native.Target.ObservedAt) && splitTransferSameAllocation(forestPrefix(f, number, e.Attempt.CreatedAt), a.Posting)
 }
 
 func forestChain(f SplitForestFacts, number string) []string {
