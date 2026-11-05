@@ -53,7 +53,8 @@ func (r *Runner) readUnassembledCandidates(ctx context.Context, work orders.Work
 			}
 		}
 		reads = append(reads, read)
-		if ctx.Err() != nil {
+		_, stop := refreshReadFailure(err)
+		if stop || ctx.Err() != nil {
 			break
 		}
 	}

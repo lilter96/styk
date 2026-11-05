@@ -1061,3 +1061,10 @@ order, checks that no foreign observation is persisted, restarts the worker and
 confirms recovery with exactly one original POST. Six relevant HTTP/PG cases
 passed; full Go lint (0), unit tests, race and build passed. This fault was injected
 only into the local provider; it is not claimed as a live Ozon failure.
+
+Readback pages also stop on method authorization failures, HTTP 429, HTTP 5xx,
+budget exhaustion or interruption using the existing read-failure classifier.
+Already read cells remain durable; a missing individual posting (404) does not
+stop unrelated point reads. Deterministic 401/403/429/500/503 recovery cases verify
+one read in the restricted phase and eventual recovery without a second write.
+Full Go lint remained 0; tests, race and build passed after this correction.
