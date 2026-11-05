@@ -257,3 +257,64 @@ func TestExpiredInheritedPositionAttestationCannotSettleStockObligation(t *testi
 		t.Fatalf("expired inherited ownership settled inventory %+v", guard)
 	}
 }
+
+func TestOrderInventoryCancellationQuantityNeedsVerifiedSemantics(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		cancelled orders.Field[orders.Decimal]
+		reserve   string
+		blocked   bool
+	}{
+		{"nonzero cannot reduce obligation", orders.Present(orders.Decimal("3")), "4", true},
+		{"null remains unknown", orders.Field[orders.Decimal]{Presence: orders.PresenceNull}, "7", true},
+		{"empty remains unknown", orders.Field[orders.Decimal]{Presence: orders.PresenceEmpty}, "7", true},
+		{"missing cannot justify partial reserve", orders.Field[orders.Decimal]{}, "4", true},
+		{"zero cannot justify partial reserve", orders.Present(orders.Decimal("0")), "4", true},
+		{"missing uses full observed quantity", orders.Field[orders.Decimal]{}, "7", false},
+		{"zero uses full observed quantity", orders.Present(orders.Decimal("0.00")), "7", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			input := cancellationQuantityFixture(t, tc.reserve, tc.cancelled)
+			guard, decision := Assess(input), inventoryDecision(input)
+			if guard.Blocked != tc.blocked || tc.blocked && (decision.Status != domain.StockBlocked || decision.Quantity != nil) {
+				t.Fatalf("unverified cancellation changed attribution: guard=%+v decision=%+v", guard, decision)
+			}
+			if !tc.blocked && (guard.Obligations[0].State != BaselineMatched || guard.Obligations[0].Quantity != "7" || decision.Quantity == nil || *decision.Quantity != "3") {
+				t.Fatalf("full posting quantity was not reserved exactly once: guard=%+v decision=%+v", guard, decision)
+			}
+		})
+	}
+}
+
+func cancellationQuantityFixture(t *testing.T, reserve string, cancelled orders.Field[orders.Decimal]) Input {
+	t.Helper()
+	input := inventoryFixture()
+	input.Baseline.Reserve = ptr(reserve)
+	input.Observations[0] = inventoryObservation(input.Now, "posting", "7")
+	o := &input.Observations[0]
+	o.Posting.Lines[0].CancelledQuantity = cancelled
+	revision, err := orders.PostingFingerprint(o.Posting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o.Posting.Evidence.Revision, o.Work.Command.ExpectedSourceRevision = revision, revision
+	setReserve(o, reserve)
+	binding, err := orders.CorrelationFor(o.Posting.Scope, o.Posting.PostingNumber)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding.CustomerOrderID = o.Binding.CustomerOrderID
+	o.Binding, o.Work.Command.Correlation, o.Target.Correlation = binding, binding, binding
+	o.NativeSyncID = ptr(binding.SyncID)
+	o.Work.ID, o.Work.Command.ID = "native-create", "native-create-command"
+	source := ownedSamePoolSource(input, *o)
+	source.Quantity, source.Reserve = "7", orders.Present(orders.Decimal(reserve))
+	o.Work.Command.CustomerOrder = &orders.CustomerOrderWrite{StoreID: input.Pool.WarehouseID, Positions: []orders.PositionWrite{source}}
+	if _, err := orders.ProjectionPositionBaseline(*o.Work, *o.Target); err != nil {
+		t.Fatal(err)
+	}
+	return input
+}

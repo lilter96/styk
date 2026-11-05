@@ -176,12 +176,12 @@ func obligationUnits(observation Observation) (int64, bool) {
 		if !ok || found[line.Identity.Key()] {
 			return 0, false
 		}
-		if line.CancelledQuantity.IsKnown() && line.CancelledQuantity.Value != nil {
-			cancelled, valid := whole(string(*line.CancelledQuantity.Value))
-			if !valid || cancelled > quantity {
-				return 0, false
-			}
-			quantity -= cancelled
+		// Ozon's documented posting quantity does not establish that an
+		// additional cancelled_quantity is a disjoint deduction. Keep the same
+		// fail-closed semantics as the reservation projection policy.
+		cancelled := line.CancelledQuantity
+		if cancelled.Validate() != nil || cancelled.IsSpecified() && (!cancelled.IsKnown() || !orders.ExactDecimalEqual(*cancelled.Value, "0")) {
+			return 0, false
 		}
 		if total > math.MaxInt64-quantity {
 			return 0, false
