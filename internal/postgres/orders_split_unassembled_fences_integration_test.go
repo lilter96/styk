@@ -24,6 +24,13 @@ func TestUnassembledUnknownSplitFencesPotentialChildrenWithoutProviderParent(t *
 				t.Fatal(err)
 			}
 			admitSplitReadbackSource(t, f, *independent.Posting)
+			// A pending attempt need not have a usable immutable preview proof.
+			// PostgreSQL may evaluate a lateral expression before state filters;
+			// JSON null must yield no permission, not abort the blocking lookup.
+			var decisionsType string
+			if err := f.db.Pool.QueryRow(f.ctx, `SELECT jsonb_typeof(preview->'decisions') FROM orders_previews WHERE id='split-read-preview'`).Scan(&decisionsType); err != nil || decisionsType != "null" {
+				t.Fatal("missing-proof regression precondition", err)
+			}
 			result := orders.ReviewContext{Config: f.config}
 			dependencies, err := readOrderSplitReserveBlocks(f.ctx, f.db.Pool, &result, []string{"new-child", "independent"})
 			if err != nil || !result.SplitReserveBlocked["new-child"] || dependencies["new-child"] != f.work.ID {

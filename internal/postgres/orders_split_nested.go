@@ -18,7 +18,7 @@ const nestedSplitWorkSQL = `SELECT w.id,w.work,
  AND w.work#>>'{command,commercial_order_id}'=seed.work#>>'{command,commercial_order_id}'
  JOIN orders_previews preview ON preview.id=w.work->>'preview_id' AND preview.tenant_id=w.tenant_id
  AND preview.moysklad_account=w.moysklad_account AND preview.ozon_account=w.ozon_account
- CROSS JOIN LATERAL jsonb_array_elements(preview.preview->'decisions') decision
+ CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(preview.preview->'decisions')='array' THEN preview.preview->'decisions' ELSE '[]'::jsonb END) decision
  WHERE seed.tenant_id=$1 AND seed.moysklad_account=$2 AND seed.ozon_account=$3 AND seed.id=$4
  AND seed.action IN ('posting_split','posting_split_unassembled') AND seed.dispatch_count=1
  AND w.action IN ('posting_split','posting_split_unassembled') AND w.dispatch_count=1

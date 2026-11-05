@@ -28,7 +28,7 @@ JOIN LATERAL (
     AND parent_write.action IN ('mirror_create','mirror_update','mirror_position_update','mirror_composition_update')
     AND parent_write.dispatch_count=1 AND parent_write.dispatched_at<=split.dispatched_at)
   AND EXISTS (SELECT 1 FROM orders_previews original,
-   LATERAL jsonb_array_elements(original.preview->'decisions') decision
+   LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(original.preview->'decisions')='array' THEN original.preview->'decisions' ELSE '[]'::jsonb END) decision
    WHERE original.id=split.work->>'preview_id' AND original.tenant_id=split.tenant_id
     AND original.moysklad_account=split.moysklad_account AND original.ozon_account=split.ozon_account
     AND decision#>>'{posting,posting_number}'=split.posting_number
@@ -132,7 +132,7 @@ JOIN orders_work split ON split.id=selected.split_id AND split.tenant_id=$1 AND 
  AND split.action='posting_split_unassembled' AND split.state='RECONCILED' AND split.dispatch_count=1 AND split.posting_number<>selected.number
 JOIN orders_previews preview ON preview.id=split.work->>'preview_id' AND preview.tenant_id=split.tenant_id
  AND preview.moysklad_account=split.moysklad_account AND preview.ozon_account=split.ozon_account
-CROSS JOIN LATERAL jsonb_array_elements(preview.preview->'decisions') decision
+CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(preview.preview->'decisions')='array' THEN preview.preview->'decisions' ELSE '[]'::jsonb END) decision
 JOIN orders_posting_heads parent ON parent.tenant_id=split.tenant_id AND parent.moysklad_account=split.moysklad_account
  AND parent.ozon_account=split.ozon_account AND parent.posting_number=split.posting_number AND NOT parent.quarantined
 JOIN orders_posting_observations parent_source ON parent_source.id=parent.observation_id AND parent_source.tenant_id=parent.tenant_id
