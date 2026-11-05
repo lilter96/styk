@@ -87,7 +87,7 @@ test("current posting state stays independent of paginated history and reconcile
   await details.focus();
   await page.keyboard.press("Enter");
   await expect(unknown).toContainText(
-    "Для складского документа доступна только проверка",
+    "Для этого действия доступна только проверка",
   );
   await expect(
     unknown.getByRole("button", { name: "Записать разрешение нового решения" }),
