@@ -6,6 +6,7 @@ import (
 	"errors"
 	"github.com/lilter96/styk/internal/orders"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -20,12 +21,18 @@ func TestCompositionAdapterPreservesNativeValuesAndOneShot(t *testing.T) {
 		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/positions") {
 			row := simulator.position(0)
 			row["quantity"] = json.Number("2")
-			simulator.replyPage(w, []any{row}, 1, 1, 0)
+			foreign := compositionForeignFixture(simulator)
+			offset, err := strconv.Atoi(r.URL.Query().Get("offset"))
+			if err != nil || offset < 0 || offset > 1 {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			simulator.replyPage(w, []any{[]any{row, foreign}[offset]}, 2, 1, offset)
 			return
 		}
 		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/customerorder/"+orderTestID(9)) {
 			row := simulator.document()
-			row["positions"].(map[string]any)["meta"].(map[string]any)["size"] = 1
+			row["positions"].(map[string]any)["meta"].(map[string]any)["size"] = 2
 			simulator.reply(w, row)
 			return
 		}
@@ -66,8 +73,28 @@ func TestCompositionAdapterPreservesNativeValuesAndOneShot(t *testing.T) {
 	if old["id"] != orderTestID(10) || old["discount"] != json.Number("0") || old["vatEnabled"] != false || added["id"] != nil || added["vatEnabled"] != false {
 		t.Fatalf("position identity/tax preservation failed: %v", rows)
 	}
+	assertCompositionForeignPayload(t, rows)
 	if _, err := client.WriteOrder(t.Context(), command); !errors.Is(err, ErrOrderIntent) || writes.Load() != 1 {
 		t.Fatal("composition intent replayed")
+	}
+}
+
+func compositionForeignFixture(s *orderSimulator) map[string]any {
+	row := s.position(1)
+	row["assortment"] = s.reference("entity/product", "product", 77)
+	row["quantity"], row["reserve"], row["price"] = json.Number("3"), json.Number("1"), json.Number("1234")
+	row["discount"], row["vat"], row["vatEnabled"] = json.Number("5"), json.Number("20"), true
+	return row
+}
+
+func assertCompositionForeignPayload(t *testing.T, rows []any) {
+	t.Helper()
+	if len(rows) != 3 {
+		t.Fatal("foreign position was omitted from full replacement")
+	}
+	foreign := rows[2].(map[string]any)
+	if foreign["id"] != orderTestID(11) || foreign["quantity"] != json.Number("3") || foreign["reserve"] != json.Number("1") || foreign["price"] != json.Number("1234") || foreign["discount"] != json.Number("5") || foreign["vat"] != json.Number("20") || foreign["vatEnabled"] != true || foreign["shipped"] != nil {
+		t.Fatal("foreign writable values changed or computed fields were sent")
 	}
 }
 

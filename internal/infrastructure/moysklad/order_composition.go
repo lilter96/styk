@@ -3,6 +3,7 @@ package moysklad
 import (
 	"context"
 	"encoding/json"
+
 	"github.com/lilter96/styk/internal/orders"
 )
 
@@ -11,7 +12,7 @@ import (
 // writable line value, never roundtrip raw provider JSON or rely on omitted
 // nested properties merging. Pack/unknown extensions block this narrow path.
 func (c *OrderClient) compositionPayload(command orders.Command) (map[string]any, error) {
-	if command.PositionReplacement == nil {
+	if command.PositionReplacement == nil || command.PositionReplacement.Validate(command) != nil {
 		return nil, orders.ErrBlocked
 	}
 	rows, err := c.orderPositions(command.CustomerOrder.Positions)
@@ -22,19 +23,16 @@ func (c *OrderClient) compositionPayload(command orders.Command) (map[string]any
 		row := rows[i]
 		row["discount"] = json.Number("0")
 		row["vatEnabled"] = *command.PositionReplacement.VATEnabled.Value
-		for _, binding := range command.PositionReplacement.Baseline.Bindings {
-			if binding.Source.Identity.Key() != wanted.Identity.Key() {
-				continue
-			}
-			native := binding.Native
-			for _, fresh := range command.TargetPositions {
-				if fresh.ID == native.ID {
-					native = fresh
-					break
-				}
-			}
-			row["id"], row["discount"], row["vatEnabled"] = native.ID, json.Number(*native.Discount.Value), *native.VATEnabled.Value
+		if err = compositionRetainedValues(command, wanted.Identity, row); err != nil {
+			return nil, err
 		}
+	}
+	for _, id := range command.PositionReplacement.Preserved {
+		row, preserveErr := c.compositionPreservedPosition(command, id)
+		if preserveErr != nil {
+			return nil, preserveErr
+		}
+		rows = append(rows, row)
 	}
 	return c.validateOrderPayload(command, map[string]any{"positions": rows})
 }
