@@ -2,6 +2,21 @@ package orders
 
 import "time"
 
+// An immutable source prefix cannot authorize a native write while the same
+// posting is being split. Other identities may progress independently.
+func forestNativeSplitClocks(f SplitForestFacts, event SplitForestNative) bool {
+	for _, split := range f.Lineage.Splits {
+		if split.Before.PostingNumber != event.Source.PostingNumber {
+			continue
+		}
+		attempt, found := forestAttempt(f, split.Work.ID)
+		if !found || attempt.CreatedAt.Before(event.Attempt.ReconciledAt) && event.Attempt.CreatedAt.Before(attempt.ReconciledAt) {
+			return false
+		}
+	}
+	return true
+}
+
 func forestAttempt(f SplitForestFacts, id string) (NestedSplitAttempt, bool) {
 	for _, attempt := range f.Attempts {
 		if attempt.WorkID == id {

@@ -56,7 +56,7 @@ func forestFactsValid(f SplitForestFacts) bool {
 	origins, ids, postingIDs := make(map[string]bool), make(map[string]string), make(map[string]string)
 	for _, event := range f.Native {
 		number, id := event.Source.PostingNumber, event.Target.Correlation.CustomerOrderID
-		if seen[event.Work.ID] || !forestNativeShape(f, event) || ids[id] != "" && ids[id] != number || postingIDs[number] != "" && postingIDs[number] != id {
+		if seen[event.Work.ID] || !forestNativeShape(f, event) || !forestNativeSplitClocks(f, event) || ids[id] != "" && ids[id] != number || postingIDs[number] != "" && postingIDs[number] != id {
 			return false
 		}
 		if event.Work.Command.Action == ActionMirrorCreate {
