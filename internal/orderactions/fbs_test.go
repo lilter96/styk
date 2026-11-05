@@ -143,17 +143,29 @@ func TestFBSGraphKeepsCurrentLabelRoutesAndBlocksSchemas(t *testing.T) {
 	}
 }
 
-func TestFBSLabelPlaceholderIsNotVerifiedContract(t *testing.T) {
+func TestFBSReviewedLabelContractsRejectMissingInput(t *testing.T) {
 	t.Parallel()
 	manifest, err := ordercontract.ContractManifest()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, endpoint := range []string{FBSLabelCreateEndpoint, FBSLabelGetEndpoint} {
-		report := manifest.Validate(endpoint, "request", []byte(`{}`))
-		if report.SchemaVerified {
-			t.Fatalf("placeholder represented as official schema: %s", endpoint)
-		}
+	cases := []struct{ endpoint, field, payload string }{
+		{FBSLabelCreateEndpoint, "$.posting_numbers", `{"posting_numbers":["SYNTHETIC-LABEL-1"]}`},
+		{FBSLabelGetEndpoint, "$.task_id", `{"task_id":123}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.endpoint, func(t *testing.T) {
+			missing := manifest.Validate(tc.endpoint, "request", []byte(`{}`))
+			if !missing.SchemaVerified || missing.Valid || !slices.ContainsFunc(missing.Issues, func(issue ordercontract.Issue) bool {
+				return issue.Path == tc.field && issue.Code == "missing_required"
+			}) {
+				t.Fatalf("reviewed required input not enforced: %s %+v", tc.endpoint, missing)
+			}
+			valid := manifest.Validate(tc.endpoint, "request", []byte(tc.payload))
+			if !valid.SchemaVerified || !valid.Valid {
+				t.Fatalf("documented input rejected: %s %+v", tc.endpoint, valid)
+			}
+		})
 	}
 }
 
