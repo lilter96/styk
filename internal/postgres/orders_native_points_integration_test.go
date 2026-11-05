@@ -309,7 +309,29 @@ func seedNativePointReconciliation(t *testing.T, f orderInventoryFixture, read o
 
 func TestNativeOrderPointsPostgresMigrationRollbackPreservesHistory(t *testing.T) {
 	f, binding := nativePointStoreFixture(t)
-	raw, err := os.ReadFile("../../migrations/00060_orders_native_points.sql")
+	parts := nativePointMigrationSections(t, "00060_orders_native_points.sql")
+	later := nativePointMigrationSections(t, "00063_native_document_points.sql")
+	// Roll dependents back first; never weaken a real foreign key for a test.
+	executeNativePointMigration(t, f, later[1])
+	executeNativePointMigration(t, f, parts[1])
+	executeNativePointMigration(t, f, parts[0])
+	executeNativePointMigration(t, f, later[0])
+	read := nativePointReadFixture(t, binding, time.Now().UTC().Add(-time.Second))
+	if err := commitNativePointFixture(t, f, nativePointPage(t, f, read, "point-history")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.Pool.Exec(f.ctx, parts[1]); err == nil || !strings.Contains(err.Error(), "native order point history prevents rollback") {
+		t.Fatal("rollback did not preserve native read history", err)
+	}
+	var count int
+	if err := f.db.Pool.QueryRow(f.ctx, `SELECT count(*) FROM orders_native_point_reads`).Scan(&count); err != nil || count != 1 {
+		t.Fatal("failed rollback damaged history", err)
+	}
+}
+
+func nativePointMigrationSections(t *testing.T, name string) []string {
+	t.Helper()
+	raw, err := os.ReadFile("../../migrations/" + name)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,22 +339,13 @@ func TestNativeOrderPointsPostgresMigrationRollbackPreservesHistory(t *testing.T
 	if len(parts) != 2 {
 		t.Fatal("migration missing rollback")
 	}
-	if _, err = f.db.Pool.Exec(f.ctx, parts[1]); err != nil {
-		t.Fatal("empty rollback failed", err)
-	}
-	if _, err = f.db.Pool.Exec(f.ctx, parts[0]); err != nil {
-		t.Fatal("upgrade after rollback failed", err)
-	}
-	read := nativePointReadFixture(t, binding, time.Now().UTC().Add(-time.Second))
-	if err = commitNativePointFixture(t, f, nativePointPage(t, f, read, "point-history")); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = f.db.Pool.Exec(f.ctx, parts[1]); err == nil {
-		t.Fatal("rollback discarded native read history")
-	}
-	var count int
-	if err = f.db.Pool.QueryRow(f.ctx, `SELECT count(*) FROM orders_native_point_reads`).Scan(&count); err != nil || count != 1 {
-		t.Fatal("failed rollback damaged history", err)
+	return parts
+}
+
+func executeNativePointMigration(t *testing.T, f orderInventoryFixture, statement string) {
+	t.Helper()
+	if _, err := f.db.Pool.Exec(f.ctx, statement); err != nil {
+		t.Fatal("scoped native migration failed", err)
 	}
 }
 
