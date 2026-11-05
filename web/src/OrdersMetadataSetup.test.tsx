@@ -161,6 +161,11 @@ function mount(currentScope = scope, available = true) {
       />
     </QueryClientProvider>,
   );
+  const settings = screen
+    .getByText("Настройки передачи в МойСклад")
+    .closest("details")!;
+  settings.open = true;
+  fireEvent(settings, new Event("toggle"));
   return { ...rendered, onSaved };
 }
 const creationPosts = (fetcher: ReturnType<typeof mockAPI>["fetcher"]) =>

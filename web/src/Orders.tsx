@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, post } from "./api";
 import { OrdersConfig } from "./OrdersConfig";
+import { useOrdersMetadata } from "./useOrdersMetadata";
 import { OrdersPostings } from "./OrdersPostings";
 import { OrdersPreview } from "./OrdersPreview";
 import { OrdersOperations } from "./OrdersOperations";
@@ -16,7 +17,6 @@ import {
   type OrderScope,
   type OrderOperation,
   type OrdersPreviewData,
-  type OrdersMetadata,
   type OrderActionProposal,
   type OrderActionOptions,
 } from "./OrdersTypes";
@@ -90,6 +90,17 @@ function OrdersAccount({
     [],
   );
   const [preview, setPreview] = useState<OrdersPreviewData | null>(null);
+  const previewMetadata = useOrdersMetadata(
+    scope,
+    !!preview?.decisions.some((decision) =>
+      (decision.commands ?? []).some(
+        (command) =>
+          !!command.customer_order &&
+          !command.position_patch &&
+          !command.position_replacement,
+      ),
+    ),
+  );
   const [previewActions, setPreviewActions] = useState([
     "mirror_create",
     "mirror_update",
@@ -408,10 +419,7 @@ function OrdersAccount({
                   queryKey: ["orders-action-options", scope],
                 })
                 .flatMap(([, options]) => (options ? [options] : []))}
-              metadata={client.getQueryData<OrdersMetadata>([
-                "orders-metadata",
-                scope,
-              ])}
+              metadata={previewMetadata.data}
               blocked={
                 !canPublish ||
                 dirty ||

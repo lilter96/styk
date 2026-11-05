@@ -185,6 +185,11 @@ it("previews an explicit harmless draft without sending a mutation", async () =>
   );
   expect(f.onPreview.mock.calls[0][0]).not.toHaveProperty("event_occurred_at");
   expect(
+    f.fetch.mock.calls.some(([path]) =>
+      new URL(path, "http://localhost").pathname.endsWith("/metadata"),
+    ),
+  ).toBe(false);
+  expect(
     f.fetch.mock.calls.every(
       (call) =>
         call.length === 1 || !call[1]?.method || call[1]?.method === "GET",

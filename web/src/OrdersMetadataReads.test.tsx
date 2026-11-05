@@ -1,8 +1,16 @@
 import { StrictMode } from "react";
 import { afterEach, expect, it, vi } from "vitest";
-import { act, cleanup, render, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { OrdersConfig } from "./OrdersConfig";
+import { useOrdersMetadata } from "./useOrdersMetadata";
 import {
   orderScopeBody,
   type OrdersConfigData,
@@ -32,7 +40,7 @@ const config: OrdersConfigData = {
 };
 const metadata = {
   scope: orderScopeBody(scope),
-  organizations: [],
+  organizations: [{ id: "org", name: "Своя организация" }],
   agents: [],
   stores: [],
   states: [],
@@ -50,7 +58,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function fixture() {
+function fixture(revision = 1) {
   const attempts: {
     signal?: AbortSignal | null;
     resolve: (r: Response) => void;
@@ -81,7 +89,7 @@ function fixture() {
     <QueryClientProvider client={client}>
       <OrdersConfig
         scope={scope}
-        config={config}
+        config={{ ...config, revision }}
         onSaved={() => {}}
         onDirty={() => {}}
       />
@@ -90,9 +98,51 @@ function fixture() {
   return { attempts, client, content };
 }
 
-it("performs one metadata request in normal rendering and reuses the fresh scoped result after remount", async () => {
+function openSettings() {
+  const details = screen
+    .getByText("Настройки передачи в МойСклад")
+    .closest("details")!;
+  details.open = true;
+  fireEvent(details, new Event("toggle"));
+}
+function MetadataProbe({
+  currentScope = scope,
+  enabled = true,
+}: {
+  currentScope?: OrderScope;
+  enabled?: boolean;
+}) {
+  const query = useOrdersMetadata(currentScope, enabled);
+  return (
+    <p>
+      {query.data?.organizations[0]?.name ??
+        (query.isError ? "Ошибка справочников" : "Не загружено")}
+    </p>
+  );
+}
+
+it("does not read provider metadata for closed existing settings, including StrictMode and remount", async () => {
   const f = fixture();
-  const mounted = render(f.content);
+  const mounted = render(<StrictMode>{f.content}</StrictMode>);
+  await act(async () => {});
+  expect(f.attempts).toHaveLength(0);
+  expect(
+    (
+      screen
+        .getByText("Настройки передачи в МойСклад")
+        .closest("details") as HTMLDetailsElement
+    ).open,
+  ).toBe(false);
+  mounted.unmount();
+  render(f.content);
+  await act(async () => {});
+  expect(f.attempts).toHaveLength(0);
+});
+
+it("reads on explicit opening once and reuses the fresh scoped result after remount", async () => {
+  const f = fixture();
+  const mounted = render(<StrictMode>{f.content}</StrictMode>);
+  openSettings();
   await waitFor(() => expect(f.attempts).toHaveLength(1));
   await act(async () => {
     f.attempts[0].resolve(json(metadata));
@@ -100,28 +150,26 @@ it("performs one metadata request in normal rendering and reuses the fresh scope
   await waitFor(() =>
     expect(f.client.getQueryData(["orders-metadata", scope])).toEqual(metadata),
   );
-  mounted.rerender(
-    <QueryClientProvider client={f.client}>
-      <OrdersConfig
-        scope={{ ...scope }}
-        config={{ ...config }}
-        onSaved={() => {}}
-        onDirty={() => {}}
-      />
-    </QueryClientProvider>,
-  );
   mounted.unmount();
   render(f.content);
+  openSettings();
   await act(async () => {});
   expect(f.attempts).toHaveLength(1);
 });
 
-it("development StrictMode aborts the first metadata subscription and creates one replacement, without retrying successful reads", async () => {
-  const f = fixture();
+it("keeps first setup open and preserves cancellable StrictMode subscription behavior", async () => {
+  const f = fixture(0);
   render(<StrictMode>{f.content}</StrictMode>);
   await waitFor(() => expect(f.attempts).toHaveLength(2));
   expect(f.attempts[0].signal?.aborted).toBe(true);
   expect(f.attempts[1].signal?.aborted).toBe(false);
+  expect(
+    (
+      screen
+        .getByText("Настройки передачи в МойСклад")
+        .closest("details") as HTMLDetailsElement
+    ).open,
+  ).toBe(true);
   await act(async () => {
     f.attempts[1].resolve(json(metadata));
   });
@@ -134,7 +182,74 @@ it("development StrictMode aborts the first metadata subscription and creates on
 it("cancels an in-flight metadata read on actual navigation away", async () => {
   const f = fixture();
   const mounted = render(f.content);
+  openSettings();
   await waitFor(() => expect(f.attempts).toHaveLength(1));
   mounted.unmount();
   expect(f.attempts[0].signal?.aborted).toBe(true);
+});
+
+it("shares one scoped read between an on-demand preview and opened settings", async () => {
+  const f = fixture();
+  render(
+    <QueryClientProvider client={f.client}>
+      <OrdersConfig
+        scope={scope}
+        config={config}
+        onSaved={() => {}}
+        onDirty={() => {}}
+      />
+      <MetadataProbe />
+    </QueryClientProvider>,
+  );
+  await waitFor(() => expect(f.attempts).toHaveLength(1));
+  openSettings();
+  expect(f.attempts).toHaveLength(1);
+  await act(async () => {
+    f.attempts[0].resolve(json(metadata));
+  });
+  await screen.findAllByText("Своя организация");
+  expect(f.attempts).toHaveLength(1);
+});
+
+it("does not expose another account's cached references and rejects mismatched source scope without retries", async () => {
+  const f = fixture();
+  f.client.setQueryData(["orders-metadata", scope], metadata);
+  const next = { ...scope, ozon: "other" };
+  const mounted = render(
+    <QueryClientProvider client={f.client}>
+      <MetadataProbe currentScope={next} enabled={false} />
+    </QueryClientProvider>,
+  );
+  expect(screen.queryByText("Своя организация")).toBeNull();
+  expect(f.attempts).toHaveLength(0);
+  mounted.rerender(
+    <QueryClientProvider client={f.client}>
+      <MetadataProbe currentScope={next} />
+    </QueryClientProvider>,
+  );
+  await waitFor(() => expect(f.attempts).toHaveLength(1));
+  await act(async () => {
+    f.attempts[0].resolve(json(metadata));
+  });
+  await screen.findByText("Ошибка справочников");
+  expect(f.client.getQueryData(["orders-metadata", next])).toBeUndefined();
+  expect(f.attempts).toHaveLength(1);
+});
+
+it("preserves API authorization errors without retries or exposing cached metadata", async () => {
+  const f = fixture();
+  render(
+    <QueryClientProvider client={f.client}>
+      <MetadataProbe />
+    </QueryClientProvider>,
+  );
+  await waitFor(() => expect(f.attempts).toHaveLength(1));
+  await act(async () => {
+    f.attempts[0].resolve(
+      new Response(JSON.stringify({ error: "UNAUTHORIZED" }), { status: 401 }),
+    );
+  });
+  await screen.findByText("Ошибка справочников");
+  expect(f.client.getQueryData(["orders-metadata", scope])).toBeUndefined();
+  expect(f.attempts).toHaveLength(1);
 });

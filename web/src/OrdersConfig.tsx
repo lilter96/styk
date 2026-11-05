@@ -2,11 +2,10 @@ import { OrdersAddressMapping } from "./OrdersAddressMapping";
 import { OrdersReservationMapping } from "./OrdersReservationMapping";
 import { OrdersNativePolicy, nativePolicyValid } from "./OrdersNativePolicy";
 import { useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { api, post } from "./api";
+import { useOrdersMetadata } from "./useOrdersMetadata";
+import { post } from "./api";
 import { OrdersMetadataSetup } from "./OrdersMetadataSetup";
 import {
-  ordersURL,
   orderScopeBody,
   orderRequestError,
   sameOrderScope,
@@ -14,7 +13,6 @@ import {
   postingStatusLabels,
   type OrderScope,
   type OrdersConfigData,
-  type OrdersMetadata,
   type OrderReference,
   type OrderMapping,
 } from "./OrdersTypes";
@@ -118,21 +116,8 @@ export function OrdersConfig({
   const [setupBusy, setSetupBusy] = useState(false);
   const [error, setError] = useState("");
   const lock = useRef(false);
-  const metadata = useQuery({
-    queryKey: ["orders-metadata", scope],
-    queryFn: async ({ signal }) => {
-      const value = await api<OrdersMetadata>(
-        ordersURL("metadata", scope),
-        signal,
-      );
-      if (!sameOrderScope(value.scope, scope))
-        throw new Error("metadata scope mismatch");
-      return value;
-    },
-    retry: false,
-    staleTime: 300000,
-    refetchOnWindowFocus: false,
-  });
+  const [open, setOpen] = useState(!config.revision);
+  const metadata = useOrdersMetadata(scope, open);
   function change(next: OrdersConfigData) {
     setDraft(next);
     setDirty(true);
@@ -298,7 +283,11 @@ export function OrdersConfig({
     }
   }
   return (
-    <details className="orders-section orders-settings" open={!config.revision}>
+    <details
+      className="orders-section orders-settings"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
       <summary>
         <strong>Настройки передачи в МойСклад</strong>
         <span>{config.enabled ? "Включена" : "Выключена"}</span>

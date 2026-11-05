@@ -301,6 +301,7 @@ it("clears selected orders, preview and unsaved settings when either account cha
     screen.getByRole("button", { name: "Проверить выбранные отправления" }),
   );
   await screen.findByRole("heading", { name: "Проверка перед передачей" });
+  await openOrderSettings();
   fireEvent.change(screen.getByLabelText("Интервал проверки, секунд"), {
     target: { value: "120" },
   });
@@ -372,6 +373,7 @@ it.each([true, false])(
         : undefined,
     );
     mount();
+    await openOrderSettings();
     await screen.findByRole("option", { name: "Тестовая организация" });
     fireEvent.click(
       screen.getByLabelText("Разрешить передачу заказов в МойСклад"),
@@ -490,6 +492,7 @@ it("requires a bounded action and field grant plus explicit consent for automati
       : undefined,
   );
   mount();
+  await openOrderSettings();
   await screen.findByRole("option", { name: "Тестовая организация" });
   fireEvent.click(
     screen.getByLabelText("Автоматически передавать выбранные поля"),
@@ -573,3 +576,10 @@ it("blocks a previously unknown posting from the paginated history and shows its
     "customerorder/edit?id=moy-order-synthetic",
   );
 });
+
+async function openOrderSettings() {
+  const summary = await screen.findByText("Настройки передачи в МойСклад");
+  const details = summary.closest("details")!;
+  details.open = true;
+  fireEvent(details, new Event("toggle"));
+}
