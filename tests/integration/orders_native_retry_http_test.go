@@ -31,6 +31,9 @@ func TestOrdersNativeHTTPKnownRejectionRetriesSamePhysicalEventOnce(t *testing.T
 	assertNativeRetryHTTPScope(t, f, request)
 	stale := nativeRetryReadyPreview(t, f, request, reference)
 	nativeRetryReviseConfig(t, &f)
+	if _, err := f.db.OrderActionSecret(f.ctx, failed.Scope, failed.Command.PostingNumber, failed.Command.Action, failed.Command.NativeMovement.Event.ProtectedInput); err == nil {
+		t.Fatal("configuration change unlocked ordinary historical action secrets")
+	}
 	if status, _ := f.merchant.request(t, http.MethodPost, "/api/orders/approve", nativeRetryApprovalBody(t, f, stale), true); status != http.StatusConflict {
 		t.Fatalf("stale retry preview approval HTTP %d", status)
 	}

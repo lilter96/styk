@@ -19,16 +19,25 @@ func (s *Service) nativeRetryProposal(ctx context.Context, review orders.ReviewC
 	if !found {
 		return proposal, nativeRetryIssue("native_retry_prior_rejection_unavailable")
 	}
-	reader, ok := s.options.ActionProtector.(orders.ActionInputReader)
-	if !ok {
-		return proposal, nativeRetryIssue("native_retry_protected_event_unavailable")
-	}
 	movement := prior.Command.NativeMovement
-	input, err := reader.ReadOrderActionInput(ctx, prior.Scope, prior.Command.PostingNumber, prior.Command.Action, movement.Event.ProtectedInput)
+	input, err := s.readNativeRetryEvent(ctx, prior)
 	if err != nil || input.EventReference == "" || input.NativeEventKind != movement.Event.Kind || input.EventConfirmed != movement.Event.Confirmed || !input.NativeEventOccurredAt.Equal(movement.Event.OccurredAt) {
 		return proposal, nativeRetryIssue("native_retry_protected_event_unavailable")
 	}
 	return restoreNativeRetryEvent(proposal, prior.Command, input)
+}
+
+func (s *Service) readNativeRetryEvent(ctx context.Context, prior orders.Work) (orders.ActionParameters, error) {
+	command := prior.Command
+	ref := command.NativeMovement.Event.ProtectedInput
+	if reader, ok := s.options.ActionProtector.(orders.NativeRetryInputReader); ok {
+		return reader.ReadNativeRetryInput(ctx, orders.NativeRetrySecretRequest{Scope: prior.Scope, WorkID: prior.ID, CommandFingerprint: prior.CommandFingerprint, PostingNumber: command.PostingNumber, Action: command.Action, ProtectedInput: ref})
+	}
+	reader, ok := s.options.ActionProtector.(orders.ActionInputReader)
+	if !ok {
+		return orders.ActionParameters{}, orders.ErrBlocked
+	}
+	return reader.ReadOrderActionInput(ctx, prior.Scope, command.PostingNumber, command.Action, ref)
 }
 
 func nativeRetryPrior(review orders.ReviewContext, proposal orders.NativeMovementProposal) (orders.Work, bool) {
