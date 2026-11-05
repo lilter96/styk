@@ -25,7 +25,11 @@ func unassembledChildValid(before, child Posting) bool {
 	if child.Validate() != nil || child.Evidence.Origin != OriginOzon || child.Scope != before.Scope || child.CommercialOrderID != before.CommercialOrderID || !reflect.DeepEqual(before.WarehouseID, child.WarehouseID) || !reflect.DeepEqual(before.DeliveryMethodID, child.DeliveryMethodID) || !reflect.DeepEqual(before.Scheme, child.Scheme) {
 		return false
 	}
-	if child.ParentPostingNumber.IsKnown() && *child.ParentPostingNumber.Value != before.PostingNumber {
+	if child.PostingNumber == before.PostingNumber {
+		if !reflect.DeepEqual(child.ParentPostingNumber, before.ParentPostingNumber) {
+			return false
+		}
+	} else if child.ParentPostingNumber.IsKnown() && *child.ParentPostingNumber.Value != before.PostingNumber {
 		return false
 	}
 	if !child.Status.IsKnown() || child.Substatus.IsKnown() && *child.Substatus.Value == "ship_failed" {
