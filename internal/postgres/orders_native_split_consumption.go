@@ -129,14 +129,15 @@ func readNativeSplitParents(ctx context.Context, q ordersQuerier, scope orders.S
 func (node *nativeSplitNode) readParent(scope orders.Scope, number, kind, parent string, raw []byte, head *bool) bool {
 	if kind == "head" {
 		var flags struct {
+			Present     bool
 			Quarantined bool
 			Native      bool
 		}
-		if *head || ordersDecode(raw, &flags) != nil || flags.Quarantined {
+		if *head || ordersDecode(raw, &flags) != nil {
 			return false
 		}
 		*head, node.native = true, flags.Native
-		return true
+		return flags.Present && !flags.Quarantined
 	}
 	switch kind {
 	case "provider":
@@ -191,10 +192,10 @@ func nativeSplitChildrenValid(scope orders.Scope, children []string) bool {
 	return true
 }
 
-const nativeSplitParentsSQL = `SELECT 'head',h.posting_number,jsonb_build_object('Quarantined',h.quarantined,'Native',
- EXISTS(SELECT 1 FROM orders_work w WHERE w.tenant_id=h.tenant_id AND w.moysklad_account=h.moysklad_account
- AND w.ozon_account=h.ozon_account AND w.posting_number=h.posting_number AND w.action IN('demand_create','salesreturn_create')))
- FROM orders_posting_heads h WHERE h.tenant_id=$1 AND h.moysklad_account=$2 AND h.ozon_account=$3 AND h.posting_number=$4
+const nativeSplitParentsSQL = `SELECT 'head',$4::text,jsonb_build_object('Present',h.posting_number IS NOT NULL,'Quarantined',COALESCE(h.quarantined,false),'Native',
+ EXISTS(SELECT 1 FROM orders_work w WHERE w.tenant_id=$1 AND w.moysklad_account=$2
+ AND w.ozon_account=$3 AND w.posting_number=$4 AND w.action IN('demand_create','salesreturn_create')))
+ FROM (SELECT 1) seed LEFT JOIN orders_posting_heads h ON h.tenant_id=$1 AND h.moysklad_account=$2 AND h.ozon_account=$3 AND h.posting_number=$4
  UNION ALL
  SELECT DISTINCT 'provider','',o.posting->'parent_posting_number' FROM orders_posting_observations o
  WHERE o.tenant_id=$1 AND o.moysklad_account=$2 AND o.ozon_account=$3 AND o.posting_number=$4
