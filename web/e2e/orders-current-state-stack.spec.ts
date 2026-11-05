@@ -140,7 +140,7 @@ test("current posting state stays independent of paginated history and reconcile
     .fill(
       new Date(planned.getTime() - planned.getTimezoneOffset() * 60000)
         .toISOString()
-        .slice(0, -1),
+        .slice(0, 16),
     );
   await documents
     .getByLabel("Идентификатор планирования")
