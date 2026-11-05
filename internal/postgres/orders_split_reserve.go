@@ -155,6 +155,9 @@ func finishUnmirroredSplitReserveRead(ctx context.Context, q ordersQuerier, resu
 	if err := enrichUnmirroredUnassembledReserves(ctx, q, result, dependencies); err != nil {
 		return nil, err
 	}
+	if err := enrichNestedSplitSettlements(ctx, q, result, dependencies); err != nil {
+		return nil, err
+	}
 	return dependencies, nil
 }
 
