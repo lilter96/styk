@@ -1532,3 +1532,93 @@ credentials, historical operations and OFF settings were preserved. First native
 admission of a child after its own split remains blocked pending its own complete
 ancestor/native-free-node proof. Active fulfillment remains NOT_OBSERVED_LIVE;
 the full production-readiness goal is not complete.
+
+### First child after its own split and native document contract — 2026-11-05
+
+Clean `5f34675` supports a child's first native admission after that child's own
+retained split. The complete history must prove every real ancestor's settled
+UUID frontier and explicit absence of earlier native work for this child. Its
+first order reserves the actual remaining quantity, never the superseded child
+allocation. Historical replay uses the sealed source's reserve semantics.
+ACK alone does not admit descendants; UNKNOWN still fences only related targets.
+
+The full integration run caught an existing scalar-metadata regression; the
+unchanged HTTP test was preserved and the planner corrected. A name-only update
+may preserve a merchant-recreated position without adopting its UUID as owned.
+An undocumented nonzero/null cancellation quantity now blocks attribution
+instead of silently subtracting units from an already reported posting quantity.
+
+Revision-scoped checks for `5f34675`: strict normal/integration lint **0**, normal
+Go tests/full race/build/vet PASS; PostgreSQL race **190 pass events / no skips**;
+affected HTTP/process **57 pass events / no skips**. The complete integration
+package passed **826 test events / 459 top-level cases**, with **64 explicit skips**:
+51 dedicated-stock database guards (all exact cases passed separately in the
+current stock stage), six other optional browsers, one optional shadow browser,
+four subprocess entrypoints, two explicit live opt-ins. These remain skips in
+the full run. Dedicated stock: **116 pass events / two documented skips**.
+The actual merchant browser passed on 3 API + 2 scheduler + 4 worker processes;
+desktop/mobile were inspected. Frontend 299 tests/typecheck/lint/build are inherited
+from the identical entire web tree, not rerun. Private consolidated evidence:
+`.local/orders-v11-final/acceptance-5f346755df0d.json`.
+
+A separately journalled real MoySklad contract probe retained customerorder
+`95000b31-d8fb-11f1-0a80-1d6b00a51290`, demand
+`0c7d6804-d8fd-11f1-0a80-002d00a7c7f5` and linked salesreturn
+`e43d895e-d8fd-11f1-0a80-1bb000a6b401`. Each contains one synthetic test unit,
+zero price/sum, observed BYN and provider-observed tax values. The order remains
+unposted; demand and return are applied. Numeric physical stock **10 → 9 → 10**
+and reserve **3 → 3 → 3** were independently observed and timestamped. No payment,
+refund, carrier dispatch or Ozon request occurred. **30 reads / 3 writes, all 33
+HTTP 200**, no retry or UNKNOWN. Original stopped intents and diagnostics remain
+immutable; the successful continuation reused the exact created order.
+
+Two real facts corrected diagnostic assumptions: a system currency has no
+`accountId` under its official contract; an unposted customerorder's `shipped`
+remained explicit zero after its linked applied demand reduced physical stock.
+Parent counters and reciprocal links after return were not reread. Missing
+backlink arrays remain NOT_PROVIDED, never proof of external absence; a narrow
+concurrent-test-draft risk was recorded. Production effect attribution remains
+conservative: this unposted-parent profile does not satisfy the existing exact
+shipped-delta proof, and return attribution remains a separate gap. This probe
+used normal provider transport/shared limits, **not normal-application live E2E**.
+Private aggregate ledger `.local/native-lifecycle-contract/aggregate-result-ledger.json`,
+SHA256 `61e9f2a4c4216014457d78465c302af29d71e8df174943925c32e38139231d73`.
+
+Native fixtures are retained, original A8/B1 draft and application history are
+unchanged. Key/encrypted credentials are preserved; schema 62, automation/grants
+and general publication OFF. Active Ozon fulfillment remains NOT_OBSERVED_LIVE.
+
+### Metadata history preserves inventory authority — 2026-11-05
+
+Clean `8793969` additionally replays metadata ACKs without making them inventory
+creators or reductions. The last actual metadata target and the real earlier
+inventory authority retain separate WorkIDs. Exact scoped database witnesses
+validate the actual reconciled authority and both immutable source previews before
+excluding only the current unsent metadata command. UNKNOWN/dispatched work stays
+visible. Primary metadata preflight uses its explicitly reviewed target revision;
+other ancestors and the complete historical UUID/quantity/reserve frontier remain
+strict. New reconciliations preserve actual non-PII critical headers rather than
+replacing observed defaults with desired missing values; old rows are not repaired
+or rewritten by this change.
+
+The normal HTTP/outbox/worker journey now passes parent metadata, first child
+admission, child metadata, grandchild admission, another owned reduction and
+restart/no-op, conserving owned8 plus foreign2 reserve. Initial `81a7c92` and
+`6798849` failures exposed historical-header and projected-rate mismatches; their
+logs are retained, and the business assertions were not weakened. Current gates:
+strict lint **0**, Go tests/full race/build/vet and integration lint PASS,
+PostgreSQL race **190 events / zero skips**, affected HTTP **58 pass events**
+(separate focused1 plus rest57; the rest selection excludes that focused case),
+stock **116 pass events / two documented skips**. A fresh actual merchant browser
+passed on nine OS processes; desktop/mobile screenshots were inspected. The
+unchanged frontend's 299-test evidence is inherited. The full 826-event suite above
+belongs to `5f34675`; it was not rerun or relabelled as a full-suite `8793969` pass.
+
+Both dev APIs and two workers run clean `8793969`, schema62, health/readiness200.
+Deployment made no provider request; provider attempt count remains1052 and
+historical application counts5/5/35/38 remain unchanged. Credentials/key are
+preserved; all temporary configs/grants and general publication are OFF. Missing
+intermediate native ancestry, legacy projected headers without adequate actual
+facts, unposted-parent demand effect attribution and native return attribution
+remain separate implementation boundaries. Active Ozon fulfillment remains
+NOT_OBSERVED_LIVE; full production readiness is not established.

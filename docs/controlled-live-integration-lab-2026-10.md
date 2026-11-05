@@ -667,3 +667,23 @@ fresh race/lint/PG/process gates and the dispatch defect found and corrected.
 No provider request or external mutation occurred in this phase; credentials,
 key/history and OFF settings remain intact, schema 62. Child-first admission
 after the child's own split remains a separate implementation gap.
+
+
+The next continuation runs clean **`8793969`** on both dev APIs/two workers,
+schema62. First child admission after its own split and metadata-transparent
+inventory history now pass the normal HTTP/outbox/worker path. Strict lint **0**,
+PG race **190 pass events**, affected HTTP **58 pass events**, stock **116 pass /
+2 documented skips**; fresh nine-process merchant browser desktop/mobile were
+inspected. The full **826 pass / 64 classified skips** gate is separately scoped
+to prior `5f34675`, not represented as a current full-suite rerun.
+
+A real MoySklad contract check created one unposted synthetic customerorder,
+one applied demand and its applied salesreturn: **30 reads / 3 writes, all33
+HTTP200**, independently observed physical **10 → 9 → 10**, reserve **3** unchanged.
+No Ozon/payment/refund/courier request, retry or UNKNOWN; fixtures remain retained.
+An unposted parent's shipped counter stayed0 despite the applied demand; current
+production attribution conservatively blocks this profile. This is normal
+transport/shared-limiter contract evidence, not live cross-system order E2E.
+The [order report](orders-live-evidence.md) records IDs, journal hash, exact test
+scope and remaining boundaries. Key, encrypted credentials/history are preserved;
+temporary automation/grants and general stock/catalog publication remain OFF.
