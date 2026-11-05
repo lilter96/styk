@@ -1,6 +1,9 @@
 package orders
 
-import "slices"
+import (
+	"slices"
+	"strings"
+)
 
 func replacementPreserved(positions []TargetPosition, baseline PositionBaseline) ([]string, error) {
 	owned := make(map[string]bool, len(baseline.Bindings))
@@ -26,7 +29,16 @@ func replacementPreserved(positions []TargetPosition, baseline PositionBaseline)
 }
 
 func safePreservedPosition(p TargetPosition) bool {
-	return validNativePosition(p) && p.CompositionSafe.IsKnown() && *p.CompositionSafe.Value && p.Shipped.IsKnown() && decimalZero(*p.Shipped.Value) && p.Reserve.IsKnown() && nonnegativeNotGreater(*p.Reserve.Value, p.Quantity) && p.Price.IsKnown() && p.Discount.IsKnown() && nonnegativeNotGreater(*p.Discount.Value, "100") && p.VAT.IsKnown() && p.VATEnabled.IsKnown()
+	return validNativePosition(p) && p.CompositionSafe.IsKnown() && *p.CompositionSafe.Value && p.Shipped.IsKnown() && decimalZero(*p.Shipped.Value) && p.Reserve.IsKnown() && nonnegativeNotGreater(*p.Reserve.Value, p.Quantity) && p.Price.IsKnown() && preservedDiscount(p.Discount) && p.VAT.IsKnown() && p.VATEnabled.IsKnown()
+}
+
+// MoySklad represents a markup as a negative discount. Preserve an observed
+// value exactly; never recalculate it or substitute a zero discount.
+func preservedDiscount(value Field[Decimal]) bool {
+	if value.Validate() != nil || !value.IsKnown() || value.Value.Validate() != nil {
+		return false
+	}
+	return strings.HasPrefix(string(*value.Value), "-") || nonnegativeNotGreater(*value.Value, "100")
 }
 
 func replacementPreservedObserved(command Command, target TargetObservation) bool {

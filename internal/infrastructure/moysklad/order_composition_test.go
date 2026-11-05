@@ -83,7 +83,7 @@ func compositionForeignFixture(s *orderSimulator) map[string]any {
 	row := s.position(1)
 	row["assortment"] = s.reference("entity/product", "product", 77)
 	row["quantity"], row["reserve"], row["price"] = json.Number("3"), json.Number("1"), json.Number("1234")
-	row["discount"], row["vat"], row["vatEnabled"] = json.Number("5"), json.Number("20"), true
+	row["discount"], row["vat"], row["vatEnabled"] = json.Number("-5"), json.Number("20"), true
 	return row
 }
 
@@ -93,7 +93,7 @@ func assertCompositionForeignPayload(t *testing.T, rows []any) {
 		t.Fatal("foreign position was omitted from full replacement")
 	}
 	foreign := rows[2].(map[string]any)
-	if foreign["id"] != orderTestID(11) || foreign["quantity"] != json.Number("3") || foreign["reserve"] != json.Number("1") || foreign["price"] != json.Number("1234") || foreign["discount"] != json.Number("5") || foreign["vat"] != json.Number("20") || foreign["vatEnabled"] != true || foreign["shipped"] != nil {
+	if foreign["id"] != orderTestID(11) || foreign["quantity"] != json.Number("3") || foreign["reserve"] != json.Number("1") || foreign["price"] != json.Number("1234") || foreign["discount"] != json.Number("-5") || foreign["vat"] != json.Number("20") || foreign["vatEnabled"] != true || foreign["shipped"] != nil {
 		t.Fatal("foreign writable values changed or computed fields were sent")
 	}
 }
