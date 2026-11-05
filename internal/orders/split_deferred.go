@@ -17,6 +17,12 @@ type SplitDeferredSettlementFacts struct {
 	Current    Posting
 }
 
+// DeferredChildReservable uses the ordinary reserve eligibility rules. Deferred
+// proof must not take over cancellation or superseded-parent workflows.
+func DeferredChildReservable(posting Posting) bool {
+	return splitTransferChildReservable(posting)
+}
+
 func newDeferredSettlement(f SplitAncestorSettlementFacts) (SplitAncestorSettlementPermission, error) {
 	if !deferredStructure(f) || !deferredClocks(f) {
 		return SplitAncestorSettlementPermission{}, ErrBlocked
