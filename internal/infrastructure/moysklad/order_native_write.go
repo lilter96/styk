@@ -123,14 +123,26 @@ func sameNativeBasis(before, after orders.NativeDocumentObservation) bool {
 	// Observation times are traversal facts and cannot manufacture a revision.
 	before.Returns = slices.Clone(before.Returns)
 	after.Returns = slices.Clone(after.Returns)
+	if before.SourceDeleted.IsMissing() {
+		before.SourceDeleted = orders.Field[string]{}
+	}
+	if after.SourceDeleted.IsMissing() {
+		after.SourceDeleted = orders.Field[string]{}
+	}
 	before.ObservedAt, after.ObservedAt = time.Time{}, time.Time{}
 	before.ReturnsStartedAt, after.ReturnsStartedAt = time.Time{}, time.Time{}
 	before.ReturnsFinishedAt, after.ReturnsFinishedAt = time.Time{}, time.Time{}
 	for i := range before.Returns {
 		before.Returns[i].ObservedAt = time.Time{}
+		if before.Returns[i].SourceDeleted.IsMissing() {
+			before.Returns[i].SourceDeleted = orders.Field[string]{}
+		}
 	}
 	for i := range after.Returns {
 		after.Returns[i].ObservedAt = time.Time{}
+		if after.Returns[i].SourceDeleted.IsMissing() {
+			after.Returns[i].SourceDeleted = orders.Field[string]{}
+		}
 	}
 	left, err := json.Marshal(before)
 	if err != nil {

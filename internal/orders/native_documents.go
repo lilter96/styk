@@ -3,8 +3,11 @@ package orders
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"time"
 )
+
+var ErrNativeDocumentDeleted = errors.New("native document was deleted; manual review required")
 
 // Native documents record accounting movements, not marketplace delivery
 // commands. Their creation must never imply a payment or a courier booking.
@@ -91,16 +94,18 @@ type NativeDocumentPosition struct {
 }
 
 type NativeReturnEvidence struct {
-	ID         string                   `json:"id"`
-	DemandID   string                   `json:"demand_id"`
-	Applicable Field[bool]              `json:"applicable"`
-	Positions  []NativeDocumentPosition `json:"positions"`
-	Revision   string                   `json:"revision"`
-	ObservedAt time.Time                `json:"observed_at"`
+	SourceDeleted Field[string]            `json:"source_deleted,omitzero"`
+	ID            string                   `json:"id"`
+	DemandID      string                   `json:"demand_id"`
+	Applicable    Field[bool]              `json:"applicable"`
+	Positions     []NativeDocumentPosition `json:"positions"`
+	Revision      string                   `json:"revision"`
+	ObservedAt    time.Time                `json:"observed_at"`
 }
 
 // ReturnsComplete means a bounded complete traversal, never an atomic snapshot.
 type NativeDocumentObservation struct {
+	SourceDeleted     Field[string]             `json:"source_deleted,omitzero"`
 	Scope             Scope                     `json:"scope"`
 	Correlation       NativeDocumentCorrelation `json:"correlation"`
 	OrganizationID    string                    `json:"organization_id"`

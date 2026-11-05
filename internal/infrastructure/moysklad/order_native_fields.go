@@ -82,6 +82,9 @@ func (c *OrderClient) nativeDocumentLinks(document nativeDocumentDTO, observatio
 
 func decodeNativeDocumentScalars(document nativeDocumentDTO, raw map[string]json.RawMessage, observation *orders.NativeDocumentObservation) error {
 	var err error
+	if observation.SourceDeleted, err = orderReadDeleted(raw); err != nil {
+		return err
+	}
 	if observation.Applicable, err = orderReadField[bool](raw, "applicable"); err != nil {
 		return err
 	}

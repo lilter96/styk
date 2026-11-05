@@ -1,0 +1,29 @@
+{
+  "sources": [
+    {
+      "entity": "demand",
+      "url": "https://raw.githubusercontent.com/moysklad/api-remap-1.2-doc/master/md/documents/_demand.md",
+      "retrieved_at": "2026-11-05",
+      "raw_document_sha256": "5aa6004968fc13788b58e948b0a96380f51590b7299864f846940eb05a01849d",
+      "field": "deleted",
+      "type": "DateTime",
+      "read_only": true,
+      "reviewed_excerpt": "| **deleted**             | DateTime                        | `=` `!=` `<` `>` `<=` `>=`                                                                                                                        | Момент последнего удаления Отгрузки<br>`+Только для чтения`                                                                                                                                   |",
+      "scope": "Deletion observation only; no physical return, reversal, or reserve release semantics inferred."
+    },
+    {
+      "entity": "salesreturn",
+      "url": "https://raw.githubusercontent.com/moysklad/api-remap-1.2-doc/master/md/documents/_sales_return.md",
+      "retrieved_at": "2026-11-05",
+      "raw_document_sha256": "655da2bf576f92c7d0166030436d54584b7f6def262518c4a2dc62a18e0190a0",
+      "field": "deleted",
+      "type": "DateTime",
+      "read_only": true,
+      "reviewed_excerpt": "| **deleted**             | DateTime                                                  | `=` `!=` `<` `>` `<=` `>=`                                                                                                                        | Момент последнего удаления Возврата Покупателя<br>`+Только для чтения`                                                                        |",
+      "scope": "Deletion observation only; no physical return, reversal, or reserve release semantics inferred."
+    }
+  ],
+  "synthetic_response_field": {
+    "deleted": "2026-11-05 12:00:00.000"
+  }
+}

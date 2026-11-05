@@ -64,7 +64,7 @@ func (c *OrderClient) collectNativeReturn(ctx context.Context, raw json.RawMessa
 	if !observation.DemandID.IsKnown() || *observation.DemandID.Value != demand || observation.OrganizationID != result.OrganizationID || observation.AgentID != result.AgentID || observation.CurrencyID != result.CurrencyID {
 		return orders.ErrStale
 	}
-	evidence := orders.NativeReturnEvidence{ID: document.ID, DemandID: demand, Applicable: observation.Applicable, Positions: observation.Positions, Revision: observation.Revision, ObservedAt: observation.ObservedAt}
+	evidence := orders.NativeReturnEvidence{SourceDeleted: observation.SourceDeleted, ID: document.ID, DemandID: demand, Applicable: observation.Applicable, Positions: observation.Positions, Revision: observation.Revision, ObservedAt: observation.ObservedAt}
 	if err = evidence.Validate(demand, result.Sum.Value.Currency); err != nil {
 		return err
 	}

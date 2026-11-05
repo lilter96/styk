@@ -4,7 +4,7 @@ package orders
 // never establishes a posted movement, a shipment, a refund or a stock return.
 func NativeDocumentMatches(command Command, actual NativeDocumentObservation) bool {
 	wanted := command.NativeMovement
-	if wanted == nil || actual.Validate() != nil || actual.Scope != command.Scope || actual.Correlation.Kind != wanted.Correlation.Kind || actual.Correlation.SyncID != wanted.Correlation.SyncID || actual.Correlation.Marker != wanted.Correlation.Marker {
+	if wanted == nil || actual.Validate() != nil || !nativeDocumentPresent(actual.SourceDeleted) || actual.Scope != command.Scope || actual.Correlation.Kind != wanted.Correlation.Kind || actual.Correlation.SyncID != wanted.Correlation.SyncID || actual.Correlation.Marker != wanted.Correlation.Marker {
 		return false
 	}
 	if wanted.Correlation.DocumentID != "" && wanted.Correlation.DocumentID != actual.Correlation.DocumentID {
@@ -61,7 +61,7 @@ func nativeDocumentLineEqual(wanted NativeMovementLine, actual NativeDocumentPos
 // posted-document reserve/shipped effects on explicitly selected owned lines.
 func NativeParentReadback(command Command, target TargetObservation) bool {
 	movement := command.NativeMovement
-	if movement == nil || !target.Complete || target.Scope != command.Scope || !baselineCorrelationMatches(command.Correlation, target.Correlation) || target.Correlation.CustomerOrderID != command.Correlation.CustomerOrderID || target.ObservedAt.IsZero() || len(target.Positions) != len(command.TargetPositions) {
+	if movement == nil || !nativeDocumentPresent(target.SourceDeleted) || !target.Complete || target.Scope != command.Scope || !baselineCorrelationMatches(command.Correlation, target.Correlation) || target.Correlation.CustomerOrderID != command.Correlation.CustomerOrderID || target.ObservedAt.IsZero() || len(target.Positions) != len(command.TargetPositions) {
 		return false
 	}
 	if target.Fields.OrganizationID != movement.OrganizationID || target.Fields.AgentID != movement.AgentID || target.Fields.StoreID != movement.StoreID || target.Fields.CurrencyID != movement.CurrencyID {
@@ -135,4 +135,10 @@ func nativeParentPositionIndex(positions []TargetPosition) (map[string]TargetPos
 		result[position.ID] = position
 	}
 	return result, true
+}
+
+// Deletion is a provider observation, never permission to release reserve or
+// infer physical restocking. Historical responses may omit this optional field.
+func nativeDocumentPresent(deleted Field[string]) bool {
+	return deleted.Validate() == nil && (!deleted.IsKnown() || *deleted.Value == "")
 }

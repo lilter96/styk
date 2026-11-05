@@ -78,20 +78,35 @@ func (r *Runner) readbackNative(ctx context.Context, work orders.Work) error {
 }
 
 func (r *Runner) reconcileNative(ctx context.Context, work orders.Work, client orders.Provider, actual orders.NativeDocumentObservation) error {
+	if actual.SourceDeleted.IsKnown() && actual.SourceDeleted.Value != nil && *actual.SourceDeleted.Value != "" {
+		return r.deferNativeReadback(ctx, work, "NATIVE_DOCUMENT_DELETED_REQUIRES_REVIEW")
+	}
 	if !orders.NativeDocumentMatches(work.Command, actual) || ordermoney.NativeDocumentTotal(work.Command, actual).Code != "" {
-		return r.deferReadback(ctx, work, "NATIVE_DOCUMENT_FACTS_NOT_CONFIRMED")
+		return r.deferNativeReadback(ctx, work, "NATIVE_DOCUMENT_FACTS_NOT_CONFIRMED")
 	}
 	reader, ok := client.(orders.TargetReader)
 	if !ok {
-		return r.deferReadback(ctx, work, "NATIVE_PARENT_READBACK_UNAVAILABLE")
+		return r.deferNativeReadback(ctx, work, "NATIVE_PARENT_READBACK_UNAVAILABLE")
 	}
 	target, err := reader.ReadCustomerOrder(ctx, work.Command.Correlation)
+	if err == nil && target.SourceDeleted.IsKnown() && target.SourceDeleted.Value != nil && *target.SourceDeleted.Value != "" {
+		return r.deferNativeReadback(ctx, work, "NATIVE_PARENT_DELETED_REQUIRES_REVIEW")
+	}
 	if err != nil || !orders.NativeParentReadback(work.Command, target) || !ordermoney.NativeParentEffectObserved(work.Command, target) {
-		return r.deferReadback(ctx, work, "NATIVE_PARENT_FACTS_NOT_CONFIRMED")
+		return r.deferNativeReadback(ctx, work, "NATIVE_PARENT_FACTS_NOT_CONFIRMED")
 	}
 	code := "NATIVE_DOCUMENT_FACTS_CONFIRMED"
 	if orders.NativeDocumentMomentNormalized(work.Command, actual) {
 		code = "NATIVE_DOCUMENT_MOMENT_MINUTE_CONFIRMED"
 	}
 	return r.complete(ctx, work, orders.Completion{State: orders.StateReconciled, Code: code, ObservedTarget: &target, ObservedNativeDocument: &actual})
+}
+
+// Finding a correlated document before dispatch is not a new external effect.
+// Block a conflicting unsent intent; preserve already-dispatched uncertainty.
+func (r *Runner) deferNativeReadback(ctx context.Context, work orders.Work, code string) error {
+	if !work.State.ReadOnly() {
+		return r.stop(ctx, work, code)
+	}
+	return r.deferReadback(ctx, work, code)
 }

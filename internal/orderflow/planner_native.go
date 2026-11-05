@@ -2,6 +2,7 @@ package orderflow
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"time"
 
@@ -64,6 +65,9 @@ func (s *Service) planNativeMovement(ctx context.Context, review orders.ReviewCo
 		return nativePlanBlocked(decision, "credentials", "native_credentials_unavailable"), nil
 	}
 	basis, err := s.nativeDemandBasis(ctx, &review, posting, proposal, client)
+	if errors.Is(err, orders.ErrNativeDocumentDeleted) {
+		return nativePlanBlocked(decision, "demand_basis", "native_document_deleted_requires_review"), nil
+	}
 	if err != nil {
 		return nativePlanBlocked(decision, "demand_basis", "complete_reconciled_demand_basis_required"), nil
 	}
@@ -109,6 +113,9 @@ func (s *Service) nativeDemandBasis(ctx context.Context, review *orders.ReviewCo
 		return nil, orders.ErrBlocked
 	}
 	current, err := reader.ReadNativeDocument(ctx, orders.NativeDocumentRequest{Scope: posting.Scope, Correlation: binding.Observation.Correlation, IncludeReturns: true})
+	if current.SourceDeleted.IsKnown() && current.SourceDeleted.Value != nil && *current.SourceDeleted.Value != "" {
+		return nil, orders.ErrNativeDocumentDeleted
+	}
 	if err != nil {
 		return nil, err
 	}

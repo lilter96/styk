@@ -93,7 +93,7 @@ func (movement NativeMovement) validateBasis(action Action) error {
 		return nil
 	}
 	basis := movement.DemandBasis
-	if !validID(movement.DemandWorkID) || basis == nil || basis.Validate() != nil || basis.Scope != movement.SourceBaseline.Scope || basis.Correlation.Kind != "demand" || !basis.ReturnsComplete || !basis.Applicable.IsKnown() || !*basis.Applicable.Value {
+	if !validID(movement.DemandWorkID) || basis == nil || basis.Validate() != nil || !nativeDocumentPresent(basis.SourceDeleted) || basis.Scope != movement.SourceBaseline.Scope || basis.Correlation.Kind != "demand" || !basis.ReturnsComplete || !basis.Applicable.IsKnown() || !*basis.Applicable.Value {
 		return ErrBlocked
 	}
 	if !basis.CustomerOrderID.IsKnown() || *basis.CustomerOrderID.Value != movement.SourceBaseline.Correlation.CustomerOrderID || basis.OrganizationID != movement.OrganizationID || basis.AgentID != movement.AgentID || basis.CurrencyID != movement.CurrencyID {
@@ -106,7 +106,7 @@ func (movement NativeMovement) validateBasis(action Action) error {
 }
 
 func (observation NativeDocumentObservation) Validate() error {
-	if observation.Scope.Validate() != nil || observation.Correlation.Validate() != nil || observation.Correlation.DocumentID == "" || !observation.Complete || !validID(observation.Revision) || observation.ObservedAt.IsZero() {
+	if observation.SourceDeleted.Validate() != nil || observation.Scope.Validate() != nil || observation.Correlation.Validate() != nil || observation.Correlation.DocumentID == "" || !observation.Complete || !validID(observation.Revision) || observation.ObservedAt.IsZero() {
 		return ErrInvalid
 	}
 	for _, id := range []string{observation.OrganizationID, observation.AgentID, observation.StoreID, observation.CurrencyID} {
@@ -176,7 +176,10 @@ func (movement NativeMovement) AllowedBy(policy *NativeDocumentPolicy, action Ac
 }
 
 func (evidence NativeReturnEvidence) Validate(demandID, currency string) error {
-	if !validUUID(evidence.ID) || evidence.DemandID != demandID || !knownNativeBoolean(evidence.Applicable) || !validID(evidence.Revision) || evidence.ObservedAt.IsZero() || len(evidence.Positions) == 0 || len(evidence.Positions) > 1000 {
+	if evidence.SourceDeleted.IsKnown() && evidence.SourceDeleted.Value != nil && *evidence.SourceDeleted.Value != "" {
+		return ErrNativeDocumentDeleted
+	}
+	if !nativeDocumentPresent(evidence.SourceDeleted) || !validUUID(evidence.ID) || evidence.DemandID != demandID || !knownNativeBoolean(evidence.Applicable) || !validID(evidence.Revision) || evidence.ObservedAt.IsZero() || len(evidence.Positions) == 0 || len(evidence.Positions) > 1000 {
 		return ErrInvalid
 	}
 	seen := make(map[string]bool, len(evidence.Positions))
