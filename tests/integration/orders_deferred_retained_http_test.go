@@ -207,6 +207,9 @@ func deferredRetainedNativeFirstFixture(t *testing.T) (positionHTTPFixture, *rep
 	f, _, _ := unmirroredSplitFixture(t)
 	p := &repeatedRetainedHTTPProvider{base: f.provider}
 	f.provider.base.server.Config.Handler = http.HandlerFunc(p.serve)
+	if source := f.preview(t).Decisions[0].Posting; len(source.Lines) != 1 || source.Lines[0].Quantity != "8" {
+		t.Fatal("native-first fixture did not import the actual unsplit source eight")
+	}
 	nestedSettlementSplit(t, f, nestedRoot, "4")
 	f.provider.base.mu.Lock()
 	before := len(f.provider.base.native)
