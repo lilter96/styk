@@ -6,7 +6,13 @@ import {
   type OrderCommand,
 } from "./OrdersTypes";
 
-export function OrdersNativeSummary({ command }: { command: OrderCommand }) {
+export function OrdersNativeSummary({
+  command,
+  historical = false,
+}: {
+  command: OrderCommand;
+  historical?: boolean;
+}) {
   const document = command.native_movement;
   if (!document)
     return (
@@ -18,11 +24,13 @@ export function OrdersNativeSummary({ command }: { command: OrderCommand }) {
   return (
     <div className="orders-detail-body">
       <p className={posted === true ? "orders-warning" : "orders-note"}>
-        {posted === true
-          ? "Будет создан проведённый документ: это меняет складской учёт. Фактическое событие подтверждено оператором, а не определено по статусу Ozon."
-          : posted === false
-            ? "Будет создан непроведённый документ. Он не подтверждает физическую отгрузку или возврат товара."
-            : "Проведение документа не определено."}
+        {historical
+          ? "Это согласованные параметры поручения. Его фактический результат указан в статусе операции; наличие параметров не подтверждает исполнение."
+          : posted === true
+            ? "Будет создан проведённый документ: это меняет складской учёт. Фактическое событие подтверждено оператором, а не определено по статусу Ozon."
+            : posted === false
+              ? "Будет создан непроведённый документ. Он не подтверждает физическую отгрузку или возврат товара."
+              : "Проведение документа не определено."}
       </p>
       <p>Дата документа: {orderDate(document.moment)}.</p>
       <p>

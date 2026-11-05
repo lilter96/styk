@@ -442,6 +442,12 @@ export const orderActionLabel = (action: string) =>
     posting_exemplar_set: "Передать сведения экземпляров в Ozon",
   })[action] || action;
 const issueLabels: Record<string, string> = {
+  NATIVE_DOCUMENT_DELETED_REQUIRES_REVIEW:
+    "Складской документ удалён в МойСклад. STYK не подтвердит его исполнение и не создаст замену автоматически. Проверьте документ и фактическое движение товара.",
+  NATIVE_PARENT_DELETED_REQUIRES_REVIEW:
+    "Связанный заказ удалён в МойСклад. Сверка складского действия остановлена; автоматическое повторное создание не выполняется.",
+  native_document_deleted_requires_review:
+    "Отгрузка-основание или связанный возврат удалены в МойСклад. Сначала проверьте документы и фактическое движение товара: удаление само по себе не подтверждает возврат остатка.",
   superseded_split_reserve_proof_required:
     "Исходное отправление заменено после разделения. Для снятия только его резерва нужны подтверждённый результат разделения, все дочерние отправления и свежие позиции заказа МойСклад.",
   SPLIT_REPLACEMENT_SOURCE_OR_RESERVE_CHANGED:
@@ -621,6 +627,15 @@ const issueLabels: Record<string, string> = {
 export const orderIssueLabel = (code: string) =>
   issueLabels[code] ||
   "Условия передачи не подтверждены. Проверьте настройки и связи перед новой проверкой.";
+export function orderOperationProblem(code: string | undefined) {
+  return code &&
+    [
+      "NATIVE_DOCUMENT_DELETED_REQUIRES_REVIEW",
+      "NATIVE_PARENT_DELETED_REQUIRES_REVIEW",
+    ].includes(code)
+    ? orderIssueLabel(code)
+    : undefined;
+}
 export function orderRequestError(error: unknown) {
   if (error instanceof ApiError) {
     if (error.status === 401) return error.message;

@@ -13,6 +13,7 @@ import {
 import {
   MoyOrderLink,
   orderActionLabel,
+  orderOperationProblem,
   orderDate,
   orderRequestError,
   ordersURL,
@@ -162,8 +163,12 @@ export function OrdersOperations({
               )}
               {work.command.native_movement && (
                 <details>
-                  <summary>Подтверждённый складской документ</summary>
-                  <OrdersNativeSummary command={work.command} />
+                  <summary>
+                    {work.state === "RECONCILED"
+                      ? "Складской документ подтверждён сверкой"
+                      : "Складской документ и параметры операции"}
+                  </summary>
+                  <OrdersNativeSummary command={work.command} historical />
                   {nativeDocumentURL(
                     work.command,
                     work.native_document?.id ?? work.receipt?.external_id,
@@ -249,6 +254,11 @@ export function OrdersOperations({
                 <p className="orders-warning">
                   Условия передачи изменились. Проверьте настройки и связи,
                   затем создайте новый предпросмотр.
+                </p>
+              )}
+              {orderOperationProblem(work.code || work.receipt?.code) && (
+                <p className="orders-warning" role="status">
+                  {orderOperationProblem(work.code || work.receipt?.code)}
                 </p>
               )}
               {(work.code || work.receipt?.code) && (
