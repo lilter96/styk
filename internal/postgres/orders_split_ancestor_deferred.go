@@ -82,11 +82,11 @@ func loadDeferredOwnedSettlement(ctx context.Context, q ordersQuerier, nested or
 	if !assignDeferredOwnedRows(&f, rows) {
 		return f, errDeferredOwnedUnsafe
 	}
-	if !deferredOriginPredatesSpine(f, rows[0].attempt) {
-		return orders.SplitAncestorSettlementFacts{}, orders.ErrBlocked
-	}
 	if err = q.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&f.CheckedAt); err != nil {
 		return f, ordersRowsError("read deferred settlement clock", err)
+	}
+	if !orders.DeferredOriginChronologySupported(f) {
+		return orders.SplitAncestorSettlementFacts{}, orders.ErrBlocked
 	}
 	f.HistoryUnambiguous = true
 	if _, err = orders.NewSplitAncestorSettlement(f); err != nil {
@@ -105,16 +105,6 @@ func assignDeferredOwnedHeads(f *orders.SplitAncestorSettlementFacts, selected, 
 			f.CurrentNode = head
 		}
 	}
-}
-
-func deferredOriginPredatesSpine(f orders.SplitAncestorSettlementFacts, origin orders.NestedSplitAttempt) bool {
-	first := f.Deferred.Spine[0].Work.ID
-	for _, attempt := range f.Attempts {
-		if attempt.WorkID == first {
-			return !origin.ReconciledAt.After(attempt.CreatedAt)
-		}
-	}
-	return false
 }
 
 func deferredOwnedMappingsCurrent(f *orders.SplitDeferredSettlementFacts, current *orders.ReviewContext) bool {
