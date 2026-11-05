@@ -83,7 +83,10 @@ func enrichOrderSplitReserveBlocks(ctx context.Context, q ordersQuerier, result 
 	if err = enrichOrderSplitTransfers(ctx, q, result, dependencies); err != nil {
 		return err
 	}
-	return enrichOwnedAncestorSettlements(ctx, q, result, numbers)
+	if err = enrichOwnedAncestorSettlements(ctx, q, result, numbers); err != nil {
+		return err
+	}
+	return enrichRetainedRootAdmissions(ctx, q, result, numbers)
 }
 
 func readOrderSplitReserveBlocks(ctx context.Context, q ordersQuerier, result *orders.ReviewContext, numbers []string) (map[string]string, error) {
