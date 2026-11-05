@@ -52,6 +52,11 @@ func newNativeMovementHTTPFixture(t *testing.T) nativeMovementHTTPFixture {
 
 func newNativeMovementHTTPFixtureWithTax(t *testing.T, includedTax bool) nativeMovementHTTPFixture {
 	t.Helper()
+	return newNativeMovementHTTPFixtureWithParent(t, includedTax, false)
+}
+
+func newNativeMovementHTTPFixtureWithParent(t *testing.T, includedTax, unposted bool) nativeMovementHTTPFixture {
+	t.Helper()
 	f := newPositionHTTPFixture(t)
 	p := &nativeMovementHTTPProvider{position: f.provider, documents: map[string]*nativeMovementHTTPDocument{}, includedTax: includedTax}
 	f.provider.base.server.Config.Handler = http.HandlerFunc(p.serve)
@@ -71,6 +76,12 @@ func newNativeMovementHTTPFixtureWithTax(t *testing.T, includedTax bool) nativeM
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
+	if !unposted {
+		// This fixture exercises the applied-parent counter profile. The
+		// independently observed unposted/zero-counter profile is separate.
+		f.config.FieldMappings = slices.DeleteFunc(f.config.FieldMappings, func(m orders.FieldMapping) bool { return m.Target == "applicable" })
+		f.config.FieldMappings = append(f.config.FieldMappings, orders.FieldMapping{Source: "constant.true", Target: "applicable"})
+	}
 	if includedTax {
 		// Tax is observed in the destination, not inferred from an Ozon fraction.
 		f.config.FieldMappings = slices.DeleteFunc(f.config.FieldMappings, func(m orders.FieldMapping) bool { return m.Target == "positions.vat" })

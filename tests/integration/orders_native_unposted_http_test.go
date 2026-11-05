@@ -28,7 +28,7 @@ type unpostedNativeHTTPFixture struct {
 
 func newUnpostedNativeHTTPFixture(t *testing.T) unpostedNativeHTTPFixture {
 	t.Helper()
-	f := newNativeMovementHTTPFixture(t)
+	f := newNativeMovementHTTPFixtureWithParent(t, false, true)
 	f.config.NativeDocuments.AllowUnpostedParent = true
 	var err error
 	f.config, err = f.db.SaveOrderConfig(f.ctx, orders.SaveConfigRequest{Config: f.config, ExpectedRevision: f.config.Revision, Actor: f.session.AuditID, IdempotencyKey: "native-unposted-explicit-opt-in"}, time.Now().UTC())
