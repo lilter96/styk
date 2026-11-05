@@ -135,18 +135,19 @@ func (node *nativeSplitNode) readParent(scope orders.Scope, number, kind, parent
 		*head, node.native = true, flags.Native
 		return true
 	}
-	if kind == "provider" {
+	switch kind {
+	case "provider":
 		var valid bool
 		parent, valid = nativeProviderParent(raw)
 		if !valid || parent == "" {
 			return valid
 		}
-	} else if kind == "split" {
+	case "split":
 		var children []string
 		if ordersDecode(raw, &children) != nil || !nativeSplitChildrenValid(scope, children) {
 			return false
 		}
-	} else {
+	default:
 		return false
 	}
 	if parent == number || node.parent != "" && node.parent != parent {
