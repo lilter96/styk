@@ -311,11 +311,19 @@ func (p *unpostedNativeHTTPProvider) independentSource(w http.ResponseWriter, r 
 		return true
 	}
 	if request.PostingNumber == "position-http-posting" && p.sourceCancelled.Load() {
-		row := p.native.position.base.posting(request.PostingNumber, "FBS")
+		capture := httptest.NewRecorder()
+		p.native.serve(capture, r)
+		var response map[string]any
+		decoder := json.NewDecoder(capture.Body)
+		decoder.UseNumber()
+		if capture.Code != http.StatusOK || decoder.Decode(&response) != nil {
+			p.native.position.base.t.Error("cancelled source fixture read failed")
+			w.WriteHeader(http.StatusInternalServerError)
+			return true
+		}
+		row := response["result"].(map[string]any)
 		row["status"], row["substatus"] = "cancelled", "posting_canceled"
-		row["updated_at"] = time.Date(2026, 10, 29, 8, 0, 0, 0, time.UTC).Add(time.Duration(p.native.position.revision.Load()) * time.Minute).Format(time.RFC3339)
-		row["products"].([]any)[0].(map[string]any)["vat"] = "0"
-		p.native.position.base.reply(w, map[string]any{"result": row})
+		p.native.position.base.reply(w, response)
 		return true
 	}
 	if request.PostingNumber != "native-unposted-independent" {
