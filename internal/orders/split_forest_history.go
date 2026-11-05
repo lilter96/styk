@@ -70,8 +70,15 @@ func forestRootCreation(f SplitForestFacts, e SplitForestNative) bool {
 	if !e.Attempt.ReconciledAt.After(a.CreatedAt) {
 		return splitTransferPostingEqual(e.Source, first.Before) && e.Target.Correlation == first.Work.Command.Correlation
 	}
-	for _, child := range first.Work.Receipt.ObservedPostings {
-		if child.PostingNumber != first.Before.PostingNumber && forestFirstAdmission(f, e, first, child) {
+	// The complete-history clock check already rejects an origin overlapping
+	// any split of this owner. Select its actual latest earlier generation,
+	// never pretend a late native order contained the original allocation.
+	step, found := forestLastSplit(f, e.Source.PostingNumber, e.Attempt.CreatedAt)
+	if !found {
+		return false
+	}
+	for _, child := range step.Work.Receipt.ObservedPostings {
+		if child.PostingNumber != step.Before.PostingNumber && forestFirstAdmission(f, e, step, child) {
 			return true
 		}
 	}
