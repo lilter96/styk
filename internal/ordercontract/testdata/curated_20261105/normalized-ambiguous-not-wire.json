@@ -1,0 +1,11 @@
+{
+  "order": "STYK-NORMALIZED-SYNTHETIC-1",
+  "date": "2026-11-05",
+  "status": "delivering",
+  "scheme": "FBS/rFBS",
+  "sku": "9007199254740993, 9007199254740995",
+  "offer": "SYNTHETIC-OFFER-A, SYNTHETIC-OFFER-B",
+  "amount": null,
+  "reason": null,
+  "initiator": null
+}

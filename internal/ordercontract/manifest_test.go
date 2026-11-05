@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -46,8 +47,8 @@ func checkContractFixture(t *testing.T, manifest Manifest, contract Contract) {
 
 func checkedFixturePaths(t *testing.T, manifest Manifest, contract Contract, name string) map[string]bool {
 	t.Helper()
-	if filepath.Base(name) != name {
-		t.Fatal("fixture must be in testdata")
+	if !fs.ValidPath(name) {
+		t.Fatal("fixture must be a safe testdata relative path")
 	}
 	data, err := os.ReadFile(filepath.Join("testdata", name))
 	if err != nil {

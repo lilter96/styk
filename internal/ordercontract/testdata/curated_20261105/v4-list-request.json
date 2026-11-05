@@ -1,0 +1,15 @@
+{
+  "cursor": "",
+  "filter": {
+    "since": "2026-11-05T00:00:00Z",
+    "to": "2026-11-06T00:00:00Z"
+  },
+  "limit": 100,
+  "sort_dir": "ASC",
+  "with": {
+    "analytics_data": false,
+    "barcodes": false,
+    "financial_data": false,
+    "legal_info": false
+  }
+}

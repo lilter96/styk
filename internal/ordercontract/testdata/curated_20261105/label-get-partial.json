@@ -1,0 +1,14 @@
+{
+  "file_url": "https://cdn.example.test/curated-label.pdf",
+  "status": {
+    "code": "completed",
+    "postings_count": 2,
+    "printed_postings_count": 1,
+    "unprinted_postings": [
+      {
+        "posting_number": "STYK-CURATED-0001-2",
+        "message": "Synthetic unavailable label"
+      }
+    ]
+  }
+}

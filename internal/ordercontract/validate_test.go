@@ -60,14 +60,14 @@ func TestNestedSchemaDriftDoesNotExposeKeyOrValue(t *testing.T) {
 	}
 }
 
-func TestUnverifiedCurrentLabelShapeCannotBecomeVerified(t *testing.T) {
+func TestReviewedCurrentLabelShapesStillRejectUnknownFields(t *testing.T) {
 	t.Parallel()
 	manifest := testManifest(t)
 	for _, endpoint := range []string{"/v3/posting/fbs/package-label/create", "/v2/posting/fbs/package-label/get"} {
 		for _, direction := range []string{"request", "response"} {
 			report := manifest.Validate(endpoint, direction, []byte(`{"unverified_field":1}`))
-			if report.Valid || report.SchemaVerified || !hasCode(report, "unknown_key") {
-				t.Fatalf("unverified label schema accepted: %+v", report)
+			if report.Valid || !report.SchemaVerified || !hasCode(report, "unknown_key") {
+				t.Fatalf("reviewed label schema admitted unknown fields or lost verification: %+v", report)
 			}
 		}
 	}

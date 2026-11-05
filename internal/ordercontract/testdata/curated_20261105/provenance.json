@@ -1,0 +1,393 @@
+{
+  "version": 1,
+  "retrieved_at": "2026-11-05T01:26:14.397936Z",
+  "sources": [
+    {
+      "id": "label-schema-20261105",
+      "url": "https://docs.ozon.ru/api/seller/zh/swagger.json",
+      "transport": "official_document_web_reader",
+      "line_ranges": [
+        "13145-13320",
+        "38299-38423"
+      ],
+      "raw_document_sha256": null,
+      "excerpt_sha256": "8f98e818000ff91dc0b2f5bf03fd1a026042f739325ddb2891489c8b818e4ed5",
+      "hash_basis": "UTF-8 sorted compact JSON of excerpt only; never remote raw document bytes",
+      "status": "ENDPOINT_SPECIFIC_SELECTED_200_AND_REQUEST_REFS_REVIEWED",
+      "excerpt": {
+        "components": {
+          "schemas": {
+            "posting.v3.PostingFbsPackageLabelCreateRequest": {
+              "type": "object",
+              "properties": {
+                "posting_numbers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1,
+                  "maxItems": 1000
+                }
+              },
+              "required": [
+                "posting_numbers"
+              ]
+            },
+            "posting.v3.PostingFbsPackageLabelCreateResponse.Tasks": {
+              "type": "object",
+              "properties": {
+                "task_id": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "task_type": {
+                  "type": "string"
+                }
+              }
+            },
+            "posting.v3.PostingFbsPackageLabelCreateResponse": {
+              "type": "object",
+              "properties": {
+                "tasks": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/posting.v3.PostingFbsPackageLabelCreateResponse.Tasks"
+                  }
+                }
+              }
+            },
+            "posting.v2.PostingFbsPackageLabelGetRequest": {
+              "type": "object",
+              "properties": {
+                "task_id": {
+                  "type": "integer",
+                  "format": "int64"
+                }
+              },
+              "required": [
+                "task_id"
+              ]
+            },
+            "posting.v2.PostingFbsPackageLabelGetResponse.Error": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            },
+            "posting.v2.PostingFbsPackageLabelGetResponse.Status.UnprintedPostings": {
+              "type": "object",
+              "properties": {
+                "message": {
+                  "type": "string"
+                },
+                "posting_number": {
+                  "type": "string"
+                }
+              }
+            },
+            "posting.v2.PostingFbsPackageLabelGetResponse.Status": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "postings_count": {
+                  "type": "integer",
+                  "format": "int32"
+                },
+                "printed_postings_count": {
+                  "type": "integer",
+                  "format": "int32"
+                },
+                "unprinted_postings": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/posting.v2.PostingFbsPackageLabelGetResponse.Status.UnprintedPostings"
+                  }
+                }
+              }
+            },
+            "posting.v2.PostingFbsPackageLabelGetResponse": {
+              "type": "object",
+              "properties": {
+                "error": {
+                  "$ref": "#/components/schemas/posting.v2.PostingFbsPackageLabelGetResponse.Error"
+                },
+                "file_url": {
+                  "type": "string"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/posting.v2.PostingFbsPackageLabelGetResponse.Status"
+                }
+              }
+            }
+          }
+        },
+        "paths": {
+          "/v3/posting/fbs/package-label/create": {
+            "request_schema": "posting.v3.PostingFbsPackageLabelCreateRequest",
+            "response_schema": "posting.v3.PostingFbsPackageLabelCreateResponse"
+          },
+          "/v2/posting/fbs/package-label/get": {
+            "request_schema": "posting.v2.PostingFbsPackageLabelGetRequest",
+            "response_schema": "posting.v2.PostingFbsPackageLabelGetResponse"
+          }
+        }
+      },
+      "notes": [
+        "Document still contains obsolete introductory endpoint references; no global current-schema assertion.",
+        "Status and task-type values described in prose are not formal closed schema enums.",
+        "Non-200 rpcStatus schemas are outside this label excerpt."
+      ]
+    },
+    {
+      "id": "label-migration-800",
+      "url": "https://dev.ozon.ru/news/800-Podderzhka-novoi-etiketki-scanit-i-migratsiia-metodov-v-Seller-API/",
+      "published_at": "2026-09-18",
+      "status": "CURRENT_ENDPOINT_VERSION_NOTICE",
+      "facts": {
+        "deprecated_from": "2026-11-02",
+        "current_create": "/v3/posting/fbs/package-label/create",
+        "current_get": "/v2/posting/fbs/package-label/get",
+        "scanit_added_to": [
+          "/v3/posting/fbs/get",
+          "/v4/posting/fbs/list",
+          "/v4/posting/fbs/unfulfilled/list"
+        ]
+      }
+    },
+    {
+      "id": "posting-examples-20261105",
+      "url": "https://docs.ozon.ru/api/seller/zh/swagger.json",
+      "line_ranges": [
+        "8094-8180",
+        "10136-10500",
+        "12558-12644",
+        "13746-13790",
+        "35213-35313",
+        "37345-37352",
+        "37847-37864"
+      ],
+      "raw_document_sha256": null,
+      "status": "OFFICIAL_SELECTED_EXAMPLES_REVIEWED",
+      "notes": [
+        "Examples use both error:string and error:array while the referenced move-status schema specifies string; preserve the conflict.",
+        "Selected projection and synthetic identity replacement do not turn examples into captured live responses.",
+        "A shipping HTTP 200 is not packing confirmation; ship_failed requires separate handling.",
+        "Weight array container is present in the v3 detail example; string int64 item typing is reviewed from shared v4 requirement schema, not asserted as a complete v3 definition."
+      ]
+    },
+    {
+      "id": "v4-posting-notice-734",
+      "url": "https://dev.ozon.ru/news/734-Otkliuchenie-starykh-metodov-Seller-API-dlia-raboty-s-postingami/",
+      "published_at": "2026-06-01",
+      "status": "CURRENT_ENDPOINT_VERSION_NOTICE",
+      "facts": {
+        "current": [
+          "/v4/posting/fbs/list",
+          "/v4/posting/fbs/unfulfilled/list"
+        ],
+        "old_disabled_from": "2026-08-01"
+      }
+    },
+    {
+      "id": "hybrid-pvz-notice-638",
+      "url": "https://dev.ozon.ru/news/638-Novyi-protsess-dostavki-zakazov-v-punkty-vydachi-PVZ/",
+      "published_at": "2025-10-20",
+      "updated_at": "2025-10-30",
+      "status": "OFFICIAL_PROFILE_FACTS",
+      "facts": {
+        "integration": "hybrid",
+        "seller_nonintegrated_provider_id": null,
+        "is_express_values": [
+          null,
+          false
+        ],
+        "seller_outgoing_transition": "delivering",
+        "later_transitions": "provider_managed",
+        "label": "required according to applicable available actions"
+      }
+    },
+    {
+      "id": "express-449",
+      "url": "https://dev.ozon.ru/start/449-RFBS-Express-Rabota-so-skladami-i-metodami-dostavki-cherez-Seller-API/",
+      "published_at": "2025-11-06",
+      "status": "OFFICIAL_PROFILE_DISCOVERY",
+      "facts": {
+        "profiles": [
+          "aggregator",
+          "non_integrated"
+        ],
+        "warehouse_identity_not_delivery_method_identity": true
+      }
+    },
+    {
+      "id": "sandbox-562",
+      "url": "https://dev.ozon.ru/start/562-Sandbox-v-Seller-API-novye-vozmozhnosti-dlia-integratsii/",
+      "published_at": "2026-10-19",
+      "status": "DISTINCT_OZON_DELIVERY_SANDBOX",
+      "facts": {
+        "authentication": "OAuth2 client_credentials and separate sandbox secret",
+        "product": "Ozon Delivery",
+        "not_existing_seller_api_key": true
+      }
+    },
+    {
+      "id": "sandbox-fbs-answer-2453",
+      "url": "https://dev.ozon.ru/community/2453-Testovaia-sredu/",
+      "status": "OFFICIAL_SUPPORT_SCOPE_LIMITATION",
+      "facts": {
+        "full_seller_fbs_packing_marking_labels_shipping_supported": false,
+        "local_contract_fixtures_do_not_claim_live_provider_acceptance": true
+      }
+    },
+    {
+      "id": "third-party-fbo-capture-064d62d",
+      "url": "https://github.com/pavelsur07/app-service-analytics/blob/064d62d540c1c56aada376e51df45659297300a9/docs/adr/0042-ozon-fbo-postings-v3.md",
+      "status": "THIRD_PARTY_CAPTURE_CLAIMED_LIVE_NOT_PROVIDER_AUTHENTICATED",
+      "capture_date_claim": "2026-10-21",
+      "files": [
+        {
+          "url": "https://raw.githubusercontent.com/pavelsur07/app-service-analytics/064d62d540c1c56aada376e51df45659297300a9/api/tests/Fixtures/Marketplace/ozon/posting-fbo-list-v3-2026-10-19-page-001.json",
+          "sha256": "6bef1c6f2d81a9be8467e31d50a66f611560875906491e83f76521612de1dd36",
+          "postings": 100,
+          "has_next": true,
+          "bytes": 172135
+        },
+        {
+          "url": "https://raw.githubusercontent.com/pavelsur07/app-service-analytics/064d62d540c1c56aada376e51df45659297300a9/api/tests/Fixtures/Marketplace/ozon/posting-fbo-list-v3-2026-10-19-page-002.json",
+          "sha256": "3819a22d887086ab687023e45630439daedb7ec48d4081689c5acf2603969317",
+          "postings": 5,
+          "has_next": false,
+          "bytes": 8350
+        },
+        {
+          "url": "https://raw.githubusercontent.com/pavelsur07/app-service-analytics/064d62d540c1c56aada376e51df45659297300a9/api/tests/Fixtures/Marketplace/ozon/posting-fbo-list-v3-2026-10-20-page-001.json",
+          "sha256": "82f6831a304d3ede4902f126a8b069fd2a5733bdfac58873e404016b58c1dfcf",
+          "postings": 100,
+          "has_next": true,
+          "bytes": 168594
+        }
+      ],
+      "total_postings": 205,
+      "status_counts": {
+        "delivering": 164,
+        "delivered": 15,
+        "cancelled": 13,
+        "awaiting_deliver": 11,
+        "awaiting_packaging": 2
+      },
+      "license_status": "NOT_ESTABLISHED; root LICENSE returned404; raw payloads not redistributed",
+      "notes": [
+        "The supplied October20 first page has_next=true;205 rows do not establish complete day/window coverage.",
+        "Bare JSON lacks authenticated provider response metadata; ADR claim is not independent proof of provenance.",
+        "Only synthetic field-shape derivatives may enter Git.",
+        "FBO remains excluded from seller-fulfilled ingestion, stock/action workflows."
+      ]
+    },
+    {
+      "id": "v4-selected-refs-20261105",
+      "url": "https://docs.ozon.ru/api/seller/zh/swagger.json",
+      "status": "OFFICIAL_SELECTED_CURRENT_PATHS_AND_REFS_REVIEWED",
+      "raw_document_sha256": null,
+      "line_ranges": [
+        "11463-11478",
+        "12154-12234",
+        "35593-35731",
+        "36714-36859",
+        "37591-37609"
+      ],
+      "facts": {
+        "current_v4_top_level_response": [
+          "cursor",
+          "has_next",
+          "postings"
+        ],
+        "limit_minimum": 1,
+        "limit_maximum": 100,
+        "sort_dir_formal_enum": [
+          "ASC",
+          "DESC"
+        ],
+        "official_v4_list_example_sort_dir": "asc",
+        "global_full_schema_downloaded": false
+      }
+    },
+    {
+      "id": "third-party-normalized-problems-0c73845",
+      "url": "https://github.com/oliverjone01-dev/t1/tree/0c738453bc5708d879b4341d4d3d3ead80dfec54",
+      "status": "THIRD_PARTY_NORMALIZED_CLAIMED_LIVE_NOT_RAW_HTTP",
+      "raw_provider_response_sha256": null,
+      "retrieved_file_hashes": {
+        "postings.ndjson": {
+          "sha256": "97c56e1716fca15d238a1a32e39404c4aaf4e70dfdd8c4144b4e5fdce8d29518",
+          "bytes": 761981
+        },
+        "status.json": {
+          "sha256": "fdc10f8b84add30d3aa42565d1504248320188b255f370d85789b8cbb67d7239",
+          "bytes": 7211
+        },
+        "collect.ts": {
+          "sha256": "0a51ff7b66e2b9410ed5926bb4043f5b3870df03f5d0ee7eee00a9fda70685a9",
+          "bytes": 11885
+        },
+        "probe.md": {
+          "sha256": "a33d1270a42cb5ac450134c32fd9229962d436e82ebc3983b9d2726b30b90aa2",
+          "bytes": 3141
+        },
+        "model.ts": {
+          "sha256": "b870a949a6385d30f4a48dedb0cbd9651dcd4fb7a30292d56055dda2d176a595",
+          "bytes": 15846
+        }
+      },
+      "full_file_rows": 4119,
+      "window": {
+        "from": "2026-10-01",
+        "through": "2026-11-05",
+        "rows": 519,
+        "distinct_normalized_order_keys": 519,
+        "claimed_scheme_counts": {
+          "FBS": 220,
+          "rFBS": 290,
+          "FBS/rFBS": 9
+        },
+        "status_counts": {
+          "delivered": 300,
+          "cancelled": 66,
+          "delivering": 95,
+          "awaiting_deliver": 35,
+          "awaiting_packaging": 23
+        }
+      },
+      "collector_loaded_at_claim": "2026-11-04T23:13:11.969Z",
+      "transforms": {
+        "order": "String(raw.posting_number), not commercial order ID",
+        "row_granularity": "one raw posting; product SKUs and offers joined into strings; original positions and quantities cannot be reconstructed",
+        "amount": "sum(Number(product.price)*Number(quantity)), rounded with JavaScript Math.round(total*100)/100; units/currency not independently authenticated by normalized rows",
+        "currency": "object amount defaults missing currency to RUB; scalar price ignores adjacent product currency_code",
+        "scheme": "delivery_schema plus sentinel tpl_provider_id=-1 and provider-name string heuristics; not authoritative fulfillment capability evidence",
+        "date": "in_process_at shifted by fixed UTC+3, sliced to YYYY-MM-DD; original timestamp lost",
+        "missing_null_empty": "money missing/null/empty collapsed to null; empty cancellation reason becomes null",
+        "status": "String(raw.status); no branch default to delivered in inspected normalizer"
+      },
+      "limitations": [
+        "Nine ambiguous rows remain UNKNOWN scheme; FBS/rFBS labels are collector claims, not independent provider facts.",
+        "No foreign IDs, buyer data, tokens or raw datasets are copied into committed fixtures.",
+        "No external TypeScript, npm script or collection code was executed.",
+        "Redistribution license not established; only independently generated shape derivatives are committed."
+      ]
+    }
+  ],
+  "limitations": [
+    "No new live provider request or real buyer order was created.",
+    "No FBO or Ozon Delivery workflow is enabled by these fixtures.",
+    "Fixture error codes, identities, labels and business events are synthetic; never use them as real legal, shipping or marking declarations.",
+    "Only the label request/200 response refs were completely reviewed here; the other endpoint contracts remain partial.",
+    "The official v3DeliveryMethod schema35049-35081 names tpl_provider_id, while PVZ notice638 uses unqualified provider_id. Its exact posting JSON path is unresolved; never alias the two identities or invent a null provider ID."
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "error": {
+    "code": "SYNTHETIC_GENERATION_ERROR",
+    "message": "Synthetic diagnostic; not a documented error code"
+  },
+  "status": {
+    "code": "error",
+    "postings_count": 1,
+    "printed_postings_count": 0,
+    "unprinted_postings": [
+      {
+        "posting_number": "STYK-CURATED-0001-1",
+        "message": "Synthetic unavailable label"
+      }
+    ]
+  },
+  "file_url": ""
+}

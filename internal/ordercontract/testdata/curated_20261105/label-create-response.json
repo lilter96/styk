@@ -1,0 +1,12 @@
+{
+  "tasks": [
+    {
+      "task_id": 9007199254740995,
+      "task_type": "big_label"
+    },
+    {
+      "task_id": 9007199254740996,
+      "task_type": "small_label"
+    }
+  ]
+}

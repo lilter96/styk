@@ -1,0 +1,9 @@
+{
+  "result": [
+    {
+      "posting_number": "STYK-CURATED-0001-1",
+      "result": false,
+      "error": "synthetic.customer@example.invalid"
+    }
+  ]
+}

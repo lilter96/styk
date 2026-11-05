@@ -1,0 +1,21 @@
+{
+  "packages": [
+    {
+      "products": [
+        {
+          "product_id": 9007199254740993,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "products": [
+        {
+          "product_id": 9007199254740993,
+          "quantity": 1
+        }
+      ]
+    }
+  ],
+  "posting_number": "STYK-CURATED-0001-1"
+}

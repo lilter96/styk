@@ -1,0 +1,58 @@
+{
+  "result": {
+    "posting_number": "STYK-CURATED-0001-1",
+    "order_id": 9007199254741001,
+    "order_number": "STYK-CURATED-0001",
+    "status": "awaiting_packaging",
+    "substatus": "posting_created",
+    "delivery_method": {
+      "id": 9007199254741011,
+      "warehouse_id": 9007199254741013,
+      "tpl_provider_id": 24,
+      "tpl_provider": "Synthetic Ozon delivery",
+      "name": "Synthetic delivery method",
+      "warehouse": "Synthetic warehouse"
+    },
+    "tracking_number": "",
+    "tpl_integration_type": "ozon",
+    "in_process_at": "2026-11-05T00:00:00Z",
+    "shipment_date": "2026-11-06T09:00:00Z",
+    "delivering_date": null,
+    "customer": null,
+    "addressee": null,
+    "products": [
+      {
+        "price": "1530.0000",
+        "offer_id": "STYK-CURATED-OFFER",
+        "name": "Synthetic product",
+        "sku": 9007199254740993,
+        "quantity": 1,
+        "currency_code": "RUB"
+      }
+    ],
+    "analytics_data": null,
+    "financial_data": null,
+    "is_express": false,
+    "requirements": {
+      "products_requiring_gtd": [],
+      "products_requiring_country": [],
+      "products_requiring_mandatory_mark": [],
+      "products_requiring_rnpt": [],
+      "products_requiring_jw_uin": [],
+      "products_requiring_change_country": [],
+      "products_requiring_imei": [],
+      "products_requiring_weight": []
+    },
+    "parent_posting_number": "",
+    "related_postings": null,
+    "available_actions": [
+      "cancel",
+      "has_barcode_for_printing",
+      "product_cancel",
+      "ship",
+      "ship_async"
+    ],
+    "multi_box_qty": 1,
+    "is_multibox": false
+  }
+}

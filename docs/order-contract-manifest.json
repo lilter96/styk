@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "checked_at": "2026-11-04",
+  "checked_at": "2026-11-05",
   "sources": [
     {
       "id": "ozon_news734",
@@ -181,6 +181,33 @@
       "sha256": "89b8ee6dad4388179460f6e375b1d854a896d63c0c149fd74955f550da20d1cd",
       "hash_basis": "reviewed_subset_summary_utf8",
       "evidence": "Reviewed official zh Seller Swagger via document reader on 2026-11-04: postingv3FbsPostingWithParamsExamplars.related_postings is an optional boolean; v3FbsPostingDetail.related_postings references an object and the official GET example shows null; v3FbsPostingDetailRelatedPostings.related_posting_numbers describes related assembly posting numbers with string items but omits explicit array type, required and nullable. Runtime validation accepts only a bounded string array when supplied, without pretending the missing formal type was declared. Assembly-related references are read-only structured evidence, not children, exhaustive membership or proof of parent supersession. No unverified list-request flag is enabled. Raw download failed once with proxy CONNECT aborted; this source hash covers this reviewed summary, not unavailable remote bytes. Canonical selected excerpt SHA256=0f7d8498945d7d62143ad63ff6abb6d9cdb9e4874bfa10132762786bc0378520."
+    },
+    {
+      "id": "curated_labels_20261105",
+      "url": "https://docs.ozon.ru/api/seller/zh/swagger.json",
+      "checked_at": "2026-11-05",
+      "status": "official_selected_structural_refs_and_examples_reviewed",
+      "sha256": "517a58fde9fa8e607e15bb6da3598ed75b6e3f65c3ec05cd7820a1b63cdca268",
+      "hash_basis": "stated reviewed evidence; remote raw document hash unavailable",
+      "evidence": "Selected complete request and HTTP200 label refs at official zh swagger lines38299-38423, normalized excerpt SHA256 8f98e818000ff91dc0b2f5bf03fd1a026042f739325ddb2891489c8b818e4ed5; current v3create/v2get versions corroborated by official notice800 after2026-11-02. Full remote schema bytes were not retrieved."
+    },
+    {
+      "id": "curated_get_examples_20261105",
+      "url": "https://docs.ozon.ru/api/seller/zh/swagger.json",
+      "checked_at": "2026-11-05",
+      "status": "official_selected_structural_refs_and_examples_reviewed",
+      "sha256": "3960353837a129c3412afcbea8f968a483dac417ca01fe9096c469fa0d78510b",
+      "hash_basis": "stated reviewed evidence; remote raw document hash unavailable",
+      "evidence": "Official v3get example lines12558-12630 explicitly returns null customer, addressee, analytics_data, financial_data. Root tpl_integration_type string is documented at38036. Official PVZ notice638 documents is_express null or false; unqualified provider_id path remains unresolved and is not added or aliased. Selected v3 product name/price/currency string definitions at37847-37864 and requirements change_country/jw_uin/imei string-SKU arrays at35252-35313 reviewed. Weight container occurs in v3 example12625; string-SKU items corroborated by v4 shared requirement37345-37352, an explicitly graded inference rather than complete v3 schema."
+    },
+    {
+      "id": "curated_move_examples_20261105",
+      "url": "https://docs.ozon.ru/api/seller/zh/swagger.json",
+      "checked_at": "2026-11-05",
+      "status": "official_selected_structural_refs_and_examples_reviewed",
+      "sha256": "2d17b8f4d6824feacf1a330cfd527a155dba0ed6bf409d756b4317e213a2d0e5",
+      "hash_basis": "stated reviewed evidence; remote raw document hash unavailable",
+      "evidence": "Official tracking response example10279-10287 uses error empty string; delivering/last-mile/delivered examples10172-10180,10383-10391,10487-10495 use error empty array. Shared referenced schema33986-34002 specifies string. Both documented shapes retained; no full-schema or provider rejection code assertion."
     }
   ],
   "contracts": [
@@ -589,9 +616,10 @@
         "ozon_sdk",
         "ozon_news800",
         "ozon_exemplar_native_preservation_20261104",
-        "ozon_assembly_related_review_20261104"
+        "ozon_assembly_related_review_20261104",
+        "curated_get_examples_20261105"
       ],
-      "sha256": "abfed6ac18f62c42f05028cd3e972c4fbee58f534a22dd2eda2a8592992cd25d",
+      "sha256": "c3506c064ec47379b04882a0291731555ac030ea32eaac68c832950e4d022310",
       "fixture": "ozon-get-response.json",
       "fields": [
         {
@@ -636,11 +664,12 @@
             "object"
           ],
           "presence": "optional",
-          "nullable": false,
+          "nullable": true,
           "sources": [
-            "ozon_sdk"
+            "ozon_sdk",
+            "curated_get_examples_20261105"
           ],
-          "verification": "secondary_snapshot_unverified",
+          "verification": "official_example_or_profile_notice_nullability_reviewed",
           "semantics": "Exact source field $.result.addressee; retain presence independently of zero and empty values",
           "destination": "customerorder.agent (reviewed counterparty reference; never auto-create)",
           "classification": "native",
@@ -690,11 +719,12 @@
             "object"
           ],
           "presence": "optional",
-          "nullable": false,
+          "nullable": true,
           "sources": [
-            "ozon_sdk"
+            "ozon_sdk",
+            "curated_get_examples_20261105"
           ],
-          "verification": "secondary_snapshot_unverified",
+          "verification": "official_example_or_profile_notice_nullability_reviewed",
           "semantics": "Exact source field $.result.analytics_data; retain presence independently of zero and empty values",
           "destination": "STYK allowlisted structured observation; never concatenate into description",
           "classification": "structured",
@@ -1122,11 +1152,12 @@
             "object"
           ],
           "presence": "optional",
-          "nullable": false,
+          "nullable": true,
           "sources": [
-            "ozon_sdk"
+            "ozon_sdk",
+            "curated_get_examples_20261105"
           ],
-          "verification": "secondary_snapshot_unverified",
+          "verification": "official_example_or_profile_notice_nullability_reviewed",
           "semantics": "Exact source field $.result.customer; retain presence independently of zero and empty values",
           "destination": "customerorder.agent (reviewed counterparty reference; never auto-create)",
           "classification": "native",
@@ -1572,11 +1603,12 @@
             "object"
           ],
           "presence": "optional",
-          "nullable": false,
+          "nullable": true,
           "sources": [
-            "ozon_sdk"
+            "ozon_sdk",
+            "curated_get_examples_20261105"
           ],
-          "verification": "secondary_snapshot_unverified",
+          "verification": "official_example_or_profile_notice_nullability_reviewed",
           "semantics": "Exact source field $.result.financial_data; retain presence independently of zero and empty values",
           "destination": "STYK allowlisted structured observation; never concatenate into description",
           "classification": "structured",
@@ -2436,11 +2468,12 @@
             "boolean"
           ],
           "presence": "optional",
-          "nullable": false,
+          "nullable": true,
           "sources": [
-            "ozon_sdk"
+            "ozon_sdk",
+            "curated_get_examples_20261105"
           ],
-          "verification": "secondary_snapshot_unverified",
+          "verification": "official_example_or_profile_notice_nullability_reviewed",
           "semantics": "Exact source field $.result.is_express; retain presence independently of zero and empty values",
           "destination": "STYK allowlisted structured observation; never concatenate into description",
           "classification": "structured",
@@ -3257,6 +3290,222 @@
           "read_only": true,
           "privacy": "operational_identifier",
           "fixture": "ozon-get-related-response.json"
+        },
+        {
+          "path": "$.result.tpl_integration_type",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "curated_get_examples_20261105"
+          ],
+          "verification": "official_selected_structural_refs_reviewed",
+          "semantics": "Documented root carrier integration string; not inferred from endpoint or warehouse name",
+          "destination": "STYK typed task evidence; signed URLs and provider free text remain transient",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "curated_20261105/fbs-get-official-null-example.json"
+        },
+        {
+          "path": "$.result.products[].name",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "curated_get_examples_20261105"
+          ],
+          "verification": "official_v3_selected_field_definition",
+          "semantics": "Documented product field or SKU requirement; missing/null are not zero and do not authorize a factual declaration",
+          "destination": "STYK typed order observation; writes require reviewed mappings and actual required inputs",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "curated_20261105/fbs-get-official-null-example.json"
+        },
+        {
+          "path": "$.result.products[].price",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "curated_get_examples_20261105"
+          ],
+          "verification": "official_v3_selected_field_definition",
+          "semantics": "Documented product field or SKU requirement; missing/null are not zero and do not authorize a factual declaration",
+          "destination": "STYK typed order observation; writes require reviewed mappings and actual required inputs",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "curated_20261105/fbs-get-official-null-example.json"
+        },
+        {
+          "path": "$.result.products[].currency_code",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "curated_get_examples_20261105"
+          ],
+          "verification": "official_v3_selected_field_definition",
+          "semantics": "Documented product field or SKU requirement; missing/null are not zero and do not authorize a factual declaration",
+          "destination": "STYK typed order observation; writes require reviewed mappings and actual required inputs",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "curated_20261105/fbs-get-official-null-example.json"
+        },
+        {
+          "path": "$.result.requirements.products_requiring_change_country",
+          "types": [
+            "array"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "curated_get_examples_20261105"
+          ],
+          "verification": "official_v3_requirement_definition",
+          "semantics": "Documented product field or SKU requirement; missing/null are not zero and do not authorize a factual declaration",
+          "destination": "STYK typed order observation; writes require reviewed mappings and actual required inputs",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "curated_20261105/fbs-get-required-inputs.json"
+        },
+        {
+          "path": "$.result.requirements.products_requiring_change_country[]",
+          "types": [
+            "string"
+          ],
+          "presence": "required",
+          "nullable": false,
+          "sources": [
+            "curated_get_examples_20261105"
+          ],
+          "verification": "official_v3_requirement_definition",
+          "semantics": "Documented product field or SKU requirement; missing/null are not zero and do not authorize a factual declaration",
+          "destination": "STYK typed order observation; writes require reviewed mappings and actual required inputs",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "curated_20261105/fbs-get-required-inputs.json"
+        },
+        {
+          "path": "$.result.requirements.products_requiring_jw_uin",
+          "types": [
+            "array"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "curated_get_examples_20261105"
+          ],
+          "verification": "official_v3_requirement_definition",
+          "semantics": "Documented product field or SKU requirement; missing/null are not zero and do not authorize a factual declaration",
+          "destination": "STYK typed order observation; writes require reviewed mappings and actual required inputs",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "curated_20261105/fbs-get-required-inputs.json"
+        },
+        {
+          "path": "$.result.requirements.products_requiring_jw_uin[]",
+          "types": [
+            "string"
+          ],
+          "presence": "required",
+          "nullable": false,
+          "sources": [
+            "curated_get_examples_20261105"
+          ],
+          "verification": "official_v3_requirement_definition",
+          "semantics": "Documented product field or SKU requirement; missing/null are not zero and do not authorize a factual declaration",
+          "destination": "STYK typed order observation; writes require reviewed mappings and actual required inputs",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "curated_20261105/fbs-get-required-inputs.json"
+        },
+        {
+          "path": "$.result.requirements.products_requiring_imei",
+          "types": [
+            "array"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "curated_get_examples_20261105"
+          ],
+          "verification": "official_v3_requirement_definition",
+          "semantics": "Documented product field or SKU requirement; missing/null are not zero and do not authorize a factual declaration",
+          "destination": "STYK typed order observation; writes require reviewed mappings and actual required inputs",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "curated_20261105/fbs-get-required-inputs.json"
+        },
+        {
+          "path": "$.result.requirements.products_requiring_imei[]",
+          "types": [
+            "string"
+          ],
+          "presence": "required",
+          "nullable": false,
+          "sources": [
+            "curated_get_examples_20261105"
+          ],
+          "verification": "official_v3_requirement_definition",
+          "semantics": "Documented product field or SKU requirement; missing/null are not zero and do not authorize a factual declaration",
+          "destination": "STYK typed order observation; writes require reviewed mappings and actual required inputs",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "curated_20261105/fbs-get-required-inputs.json"
+        },
+        {
+          "path": "$.result.requirements.products_requiring_weight",
+          "types": [
+            "array"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "curated_get_examples_20261105"
+          ],
+          "verification": "official_v3_example_container_and_shared_v4_sku_item_type",
+          "semantics": "Documented product field or SKU requirement; missing/null are not zero and do not authorize a factual declaration",
+          "destination": "STYK typed order observation; writes require reviewed mappings and actual required inputs",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "curated_20261105/fbs-get-required-inputs.json"
+        },
+        {
+          "path": "$.result.requirements.products_requiring_weight[]",
+          "types": [
+            "string"
+          ],
+          "presence": "required",
+          "nullable": false,
+          "sources": [
+            "curated_get_examples_20261105"
+          ],
+          "verification": "official_v3_example_container_and_shared_v4_sku_item_type",
+          "semantics": "Documented product field or SKU requirement; missing/null are not zero and do not authorize a factual declaration",
+          "destination": "STYK typed order observation; writes require reviewed mappings and actual required inputs",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "curated_20261105/fbs-get-required-inputs.json"
         }
       ]
     },
@@ -7398,14 +7647,13 @@
       "method": "POST",
       "version": "v3",
       "direction": "request",
-      "schema_status": "unverified",
-      "coverage": "no_verified_field_schema",
+      "schema_status": "official_verified",
+      "coverage": "Complete selected request or HTTP200 response refs for this endpoint; no error schema, profile eligibility or live acceptance proof",
       "sources": [
-        "ozon_schema",
-        "ozon_news800"
+        "curated_labels_20261105"
       ],
-      "sha256": "31254222a2eddc844a42779cc1d06d7167697e39d7caa0fa693f82d1cbd3ba48",
-      "fixture": "v3-posting-fbs-package-label-create-request.json",
+      "sha256": "1bd2d10f4f6ba92f5556782f41afc8ed2ee578b66c471232ac31b278fcc3c5ff",
+      "fixture": "curated_20261105/label-create-request.json",
       "fields": [
         {
           "path": "$",
@@ -7415,16 +7663,51 @@
           "presence": "required",
           "nullable": false,
           "sources": [
-            "ozon_schema",
-            "ozon_news800"
+            "curated_labels_20261105"
           ],
-          "verification": "unverified",
-          "semantics": "JSON structural container",
-          "destination": "STYK allowlisted structured observation; never concatenate into description",
+          "verification": "official_selected_structural_refs_reviewed",
+          "semantics": "Reviewed label JSON structural field; absent values are not replaced by defaults",
+          "destination": "STYK typed task evidence; signed URLs and provider free text remain transient",
           "classification": "structured",
           "read_only": false,
           "privacy": "operational",
-          "fixture": "v3-posting-fbs-package-label-create-request.json"
+          "fixture": "curated_20261105/label-create-request.json"
+        },
+        {
+          "path": "$.posting_numbers",
+          "types": [
+            "array"
+          ],
+          "presence": "required",
+          "nullable": false,
+          "sources": [
+            "curated_labels_20261105"
+          ],
+          "verification": "official_selected_structural_refs_reviewed",
+          "semantics": "Required posting identities array; official minItems1 maxItems1000; STYK dispatch remains exact-target",
+          "destination": "STYK typed task evidence; signed URLs and provider free text remain transient",
+          "classification": "structured",
+          "read_only": false,
+          "privacy": "operational",
+          "fixture": "curated_20261105/label-create-request.json"
+        },
+        {
+          "path": "$.posting_numbers[]",
+          "types": [
+            "string"
+          ],
+          "presence": "required",
+          "nullable": false,
+          "sources": [
+            "curated_labels_20261105"
+          ],
+          "verification": "official_selected_structural_refs_reviewed",
+          "semantics": "Reviewed label JSON structural field; absent values are not replaced by defaults",
+          "destination": "STYK typed task evidence; signed URLs and provider free text remain transient",
+          "classification": "structured",
+          "read_only": false,
+          "privacy": "operational",
+          "fixture": "curated_20261105/label-create-request.json"
         }
       ]
     },
@@ -7433,14 +7716,13 @@
       "method": "POST",
       "version": "v3",
       "direction": "response",
-      "schema_status": "unverified",
-      "coverage": "no_verified_field_schema",
+      "schema_status": "official_verified",
+      "coverage": "Complete selected request or HTTP200 response refs for this endpoint; no error schema, profile eligibility or live acceptance proof",
       "sources": [
-        "ozon_schema",
-        "ozon_news800"
+        "curated_labels_20261105"
       ],
-      "sha256": "76696931b959e90ec73727d61bc7dbd5eb1b50640a3a338cd3c3c919080749f6",
-      "fixture": "v3-posting-fbs-package-label-create-response.json",
+      "sha256": "6b001d4079d6e1e5f02433a2040317044b06bf415447c05aa097e9676b8f9240",
+      "fixture": "curated_20261105/label-create-response.json",
       "fields": [
         {
           "path": "$",
@@ -7450,16 +7732,87 @@
           "presence": "required",
           "nullable": false,
           "sources": [
-            "ozon_schema",
-            "ozon_news800"
+            "curated_labels_20261105"
           ],
-          "verification": "unverified",
-          "semantics": "JSON structural container",
-          "destination": "STYK allowlisted structured observation; never concatenate into description",
+          "verification": "official_selected_structural_refs_reviewed",
+          "semantics": "Reviewed label JSON structural field; absent values are not replaced by defaults",
+          "destination": "STYK typed task evidence; signed URLs and provider free text remain transient",
           "classification": "structured",
-          "read_only": false,
+          "read_only": true,
           "privacy": "operational",
-          "fixture": "v3-posting-fbs-package-label-create-response.json"
+          "fixture": "curated_20261105/label-create-response.json"
+        },
+        {
+          "path": "$.tasks",
+          "types": [
+            "array"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "curated_labels_20261105"
+          ],
+          "verification": "official_selected_structural_refs_reviewed",
+          "semantics": "Reviewed label JSON structural field; absent values are not replaced by defaults",
+          "destination": "STYK typed task evidence; signed URLs and provider free text remain transient",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "curated_20261105/label-create-response.json"
+        },
+        {
+          "path": "$.tasks[]",
+          "types": [
+            "object"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "curated_labels_20261105"
+          ],
+          "verification": "official_selected_structural_refs_reviewed",
+          "semantics": "Reviewed label JSON structural field; absent values are not replaced by defaults",
+          "destination": "STYK typed task evidence; signed URLs and provider free text remain transient",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "curated_20261105/label-create-response.json"
+        },
+        {
+          "path": "$.tasks[].task_id",
+          "types": [
+            "integer"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "curated_labels_20261105"
+          ],
+          "verification": "official_selected_structural_refs_reviewed",
+          "semantics": "Reviewed label JSON structural field; absent values are not replaced by defaults",
+          "destination": "STYK typed task evidence; signed URLs and provider free text remain transient",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "curated_20261105/label-create-response.json"
+        },
+        {
+          "path": "$.tasks[].task_type",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "curated_labels_20261105"
+          ],
+          "verification": "official_selected_structural_refs_reviewed",
+          "semantics": "Reviewed label JSON structural field; absent values are not replaced by defaults",
+          "destination": "STYK typed task evidence; signed URLs and provider free text remain transient",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "curated_20261105/label-create-response.json"
         }
       ]
     },
@@ -7468,14 +7821,13 @@
       "method": "POST",
       "version": "v2",
       "direction": "request",
-      "schema_status": "unverified",
-      "coverage": "no_verified_field_schema",
+      "schema_status": "official_verified",
+      "coverage": "Complete selected request or HTTP200 response refs for this endpoint; no error schema, profile eligibility or live acceptance proof",
       "sources": [
-        "ozon_schema",
-        "ozon_news800"
+        "curated_labels_20261105"
       ],
-      "sha256": "b10b9a5c6bf52e94fd40e2486c8e5ada32cac4f6dd7351851765fd809d16ba73",
-      "fixture": "v2-posting-fbs-package-label-get-request.json",
+      "sha256": "9a406da009240d450a89db0987482333e9f5adbc79d6559ac19ca6dd7c53cf94",
+      "fixture": "curated_20261105/label-get-request.json",
       "fields": [
         {
           "path": "$",
@@ -7485,16 +7837,33 @@
           "presence": "required",
           "nullable": false,
           "sources": [
-            "ozon_schema",
-            "ozon_news800"
+            "curated_labels_20261105"
           ],
-          "verification": "unverified",
-          "semantics": "JSON structural container",
-          "destination": "STYK allowlisted structured observation; never concatenate into description",
+          "verification": "official_selected_structural_refs_reviewed",
+          "semantics": "Reviewed label JSON structural field; absent values are not replaced by defaults",
+          "destination": "STYK typed task evidence; signed URLs and provider free text remain transient",
           "classification": "structured",
           "read_only": false,
           "privacy": "operational",
-          "fixture": "v2-posting-fbs-package-label-get-request.json"
+          "fixture": "curated_20261105/label-get-request.json"
+        },
+        {
+          "path": "$.task_id",
+          "types": [
+            "integer"
+          ],
+          "presence": "required",
+          "nullable": false,
+          "sources": [
+            "curated_labels_20261105"
+          ],
+          "verification": "official_selected_structural_refs_reviewed",
+          "semantics": "Required numeric int64 task identity, kept distinct from all posting/product identities",
+          "destination": "STYK typed task evidence; signed URLs and provider free text remain transient",
+          "classification": "structured",
+          "read_only": false,
+          "privacy": "operational",
+          "fixture": "curated_20261105/label-get-request.json"
         }
       ]
     },
@@ -7503,14 +7872,13 @@
       "method": "POST",
       "version": "v2",
       "direction": "response",
-      "schema_status": "unverified",
-      "coverage": "no_verified_field_schema",
+      "schema_status": "official_verified",
+      "coverage": "Complete selected request or HTTP200 response refs for this endpoint; no error schema, profile eligibility or live acceptance proof",
       "sources": [
-        "ozon_schema",
-        "ozon_news800"
+        "curated_labels_20261105"
       ],
-      "sha256": "938bc4557d5581d3388c8a87aed8b9477051496a6e9fca49879eefc0ce26ca63",
-      "fixture": "v2-posting-fbs-package-label-get-response.json",
+      "sha256": "340f2055e2affeb7c50a97e3d49cf69a2a3e542fac3d3b18e7fe4cfed737c864",
+      "fixture": "curated_20261105/label-get-error.json",
       "fields": [
         {
           "path": "$",
@@ -7520,16 +7888,231 @@
           "presence": "required",
           "nullable": false,
           "sources": [
-            "ozon_schema",
-            "ozon_news800"
+            "curated_labels_20261105"
           ],
-          "verification": "unverified",
-          "semantics": "JSON structural container",
-          "destination": "STYK allowlisted structured observation; never concatenate into description",
+          "verification": "official_selected_structural_refs_reviewed",
+          "semantics": "Reviewed label JSON structural field; absent values are not replaced by defaults",
+          "destination": "STYK typed task evidence; signed URLs and provider free text remain transient",
           "classification": "structured",
-          "read_only": false,
+          "read_only": true,
           "privacy": "operational",
-          "fixture": "v2-posting-fbs-package-label-get-response.json"
+          "fixture": "curated_20261105/label-get-error.json"
+        },
+        {
+          "path": "$.error",
+          "types": [
+            "object"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "curated_labels_20261105"
+          ],
+          "verification": "official_selected_structural_refs_reviewed",
+          "semantics": "Reviewed label JSON structural field; absent values are not replaced by defaults",
+          "destination": "STYK typed task evidence; signed URLs and provider free text remain transient",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "curated_20261105/label-get-error.json"
+        },
+        {
+          "path": "$.error.code",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "curated_labels_20261105"
+          ],
+          "verification": "official_selected_structural_refs_reviewed",
+          "semantics": "Reviewed label JSON structural field; absent values are not replaced by defaults",
+          "destination": "STYK typed task evidence; signed URLs and provider free text remain transient",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "curated_20261105/label-get-error.json"
+        },
+        {
+          "path": "$.error.message",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "curated_labels_20261105"
+          ],
+          "verification": "official_selected_structural_refs_reviewed",
+          "semantics": "Reviewed label JSON structural field; absent values are not replaced by defaults",
+          "destination": "STYK typed task evidence; signed URLs and provider free text remain transient",
+          "classification": "excluded",
+          "read_only": true,
+          "privacy": "sensitive_provider_free_text",
+          "fixture": "curated_20261105/label-get-error.json"
+        },
+        {
+          "path": "$.file_url",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "curated_labels_20261105"
+          ],
+          "verification": "official_selected_structural_refs_reviewed",
+          "semantics": "Reviewed label JSON structural field; absent values are not replaced by defaults",
+          "destination": "STYK typed task evidence; signed URLs and provider free text remain transient",
+          "classification": "excluded",
+          "read_only": true,
+          "privacy": "sensitive_signed_url",
+          "fixture": "curated_20261105/label-get-error.json"
+        },
+        {
+          "path": "$.status",
+          "types": [
+            "object"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "curated_labels_20261105"
+          ],
+          "verification": "official_selected_structural_refs_reviewed",
+          "semantics": "Reviewed label JSON structural field; absent values are not replaced by defaults",
+          "destination": "STYK typed task evidence; signed URLs and provider free text remain transient",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "curated_20261105/label-get-error.json"
+        },
+        {
+          "path": "$.status.code",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "curated_labels_20261105"
+          ],
+          "verification": "official_selected_structural_refs_reviewed",
+          "semantics": "Task state string; documented prose values are not a closed OpenAPI enum",
+          "destination": "STYK typed task evidence; signed URLs and provider free text remain transient",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "curated_20261105/label-get-error.json"
+        },
+        {
+          "path": "$.status.postings_count",
+          "types": [
+            "integer"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "curated_labels_20261105"
+          ],
+          "verification": "official_selected_structural_refs_reviewed",
+          "semantics": "Reviewed label JSON structural field; absent values are not replaced by defaults",
+          "destination": "STYK typed task evidence; signed URLs and provider free text remain transient",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "curated_20261105/label-get-error.json"
+        },
+        {
+          "path": "$.status.printed_postings_count",
+          "types": [
+            "integer"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "curated_labels_20261105"
+          ],
+          "verification": "official_selected_structural_refs_reviewed",
+          "semantics": "Reviewed label JSON structural field; absent values are not replaced by defaults",
+          "destination": "STYK typed task evidence; signed URLs and provider free text remain transient",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "curated_20261105/label-get-error.json"
+        },
+        {
+          "path": "$.status.unprinted_postings",
+          "types": [
+            "array"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "curated_labels_20261105"
+          ],
+          "verification": "official_selected_structural_refs_reviewed",
+          "semantics": "Reviewed label JSON structural field; absent values are not replaced by defaults",
+          "destination": "STYK typed task evidence; signed URLs and provider free text remain transient",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "curated_20261105/label-get-error.json"
+        },
+        {
+          "path": "$.status.unprinted_postings[]",
+          "types": [
+            "object"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "curated_labels_20261105"
+          ],
+          "verification": "official_selected_structural_refs_reviewed",
+          "semantics": "Reviewed label JSON structural field; absent values are not replaced by defaults",
+          "destination": "STYK typed task evidence; signed URLs and provider free text remain transient",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "curated_20261105/label-get-error.json"
+        },
+        {
+          "path": "$.status.unprinted_postings[].message",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "curated_labels_20261105"
+          ],
+          "verification": "official_selected_structural_refs_reviewed",
+          "semantics": "Reviewed label JSON structural field; absent values are not replaced by defaults",
+          "destination": "STYK typed task evidence; signed URLs and provider free text remain transient",
+          "classification": "excluded",
+          "read_only": true,
+          "privacy": "sensitive_provider_free_text",
+          "fixture": "curated_20261105/label-get-error.json"
+        },
+        {
+          "path": "$.status.unprinted_postings[].posting_number",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "curated_labels_20261105"
+          ],
+          "verification": "official_selected_structural_refs_reviewed",
+          "semantics": "Reviewed label JSON structural field; absent values are not replaced by defaults",
+          "destination": "STYK typed task evidence; signed URLs and provider free text remain transient",
+          "classification": "structured",
+          "read_only": true,
+          "privacy": "operational",
+          "fixture": "curated_20261105/label-get-error.json"
         }
       ]
     },
@@ -7648,9 +8231,10 @@
       "coverage": "reviewed_subset",
       "sources": [
         "ozon_schema",
-        "ozon_sdk"
+        "ozon_sdk",
+        "curated_move_examples_20261105"
       ],
-      "sha256": "7316442b5651550860a377f7ed40719e11218b4d2a4479d1e71e534bdeea6180",
+      "sha256": "b795843bf1aaa65698cb44439a03d5c4886e4a1ee8874451c6519019005d697c",
       "fixture": "ozon-rfbs-tracking-number-set-response.json",
       "fields": [
         {
@@ -7710,19 +8294,21 @@
         {
           "path": "$.result[].error",
           "types": [
+            "string",
             "array"
           ],
           "presence": "optional",
           "nullable": false,
           "sources": [
-            "ozon_sdk"
+            "ozon_sdk",
+            "curated_move_examples_20261105"
           ],
-          "verification": "secondary_snapshot_unverified",
+          "verification": "official_schema_example_conflict_both_documented_shapes",
           "semantics": "Exact source field $.result[].error; retain presence independently of zero and empty values",
-          "destination": "STYK allowlisted structured observation; never concatenate into description",
+          "destination": "Ephemeral validation only; never concatenate provider error text into a durable diagnostic",
           "classification": "structured",
           "read_only": false,
-          "privacy": "operational",
+          "privacy": "sensitive_provider_free_text",
           "fixture": "ozon-rfbs-tracking-number-set-response.json"
         },
         {
@@ -7860,9 +8446,10 @@
       "coverage": "reviewed_subset",
       "sources": [
         "ozon_schema",
-        "ozon_sdk"
+        "ozon_sdk",
+        "curated_move_examples_20261105"
       ],
-      "sha256": "8834eeb12c4f9b5403378824eacfaf91fbada72f3f2b34e95ca718d2567c33ad",
+      "sha256": "e635678ee2fbfc4d060ceeea4e2649746667bc4d78869489a1cbf25e488d6c83",
       "fixture": "ozon-rfbs-delivering-response.json",
       "fields": [
         {
@@ -7922,19 +8509,21 @@
         {
           "path": "$.result[].error",
           "types": [
+            "string",
             "array"
           ],
           "presence": "optional",
           "nullable": false,
           "sources": [
-            "ozon_sdk"
+            "ozon_sdk",
+            "curated_move_examples_20261105"
           ],
-          "verification": "secondary_snapshot_unverified",
+          "verification": "official_schema_example_conflict_both_documented_shapes",
           "semantics": "Exact source field $.result[].error; retain presence independently of zero and empty values",
-          "destination": "STYK allowlisted structured observation; never concatenate into description",
+          "destination": "Ephemeral validation only; never concatenate provider error text into a durable diagnostic",
           "classification": "structured",
           "read_only": false,
-          "privacy": "operational",
+          "privacy": "sensitive_provider_free_text",
           "fixture": "ozon-rfbs-delivering-response.json"
         },
         {
@@ -8072,9 +8661,10 @@
       "coverage": "reviewed_subset",
       "sources": [
         "ozon_schema",
-        "ozon_sdk"
+        "ozon_sdk",
+        "curated_move_examples_20261105"
       ],
-      "sha256": "46a27f04194897d7b4156fcd3a9640428f1ae170bcbc1bd935dc804251728f95",
+      "sha256": "c2de72aeebca67d8571de2327062bcd0d980aff50e201adf8aed0f5cbce99e89",
       "fixture": "ozon-rfbs-last-mile-response.json",
       "fields": [
         {
@@ -8134,19 +8724,21 @@
         {
           "path": "$.result[].error",
           "types": [
+            "string",
             "array"
           ],
           "presence": "optional",
           "nullable": false,
           "sources": [
-            "ozon_sdk"
+            "ozon_sdk",
+            "curated_move_examples_20261105"
           ],
-          "verification": "secondary_snapshot_unverified",
+          "verification": "official_schema_example_conflict_both_documented_shapes",
           "semantics": "Exact source field $.result[].error; retain presence independently of zero and empty values",
-          "destination": "STYK allowlisted structured observation; never concatenate into description",
+          "destination": "Ephemeral validation only; never concatenate provider error text into a durable diagnostic",
           "classification": "structured",
           "read_only": false,
-          "privacy": "operational",
+          "privacy": "sensitive_provider_free_text",
           "fixture": "ozon-rfbs-last-mile-response.json"
         },
         {
@@ -8284,9 +8876,10 @@
       "coverage": "reviewed_subset",
       "sources": [
         "ozon_schema",
-        "ozon_sdk"
+        "ozon_sdk",
+        "curated_move_examples_20261105"
       ],
-      "sha256": "c1aaced9db0ecc8480091cf5d7ff921eead6c1a6229385bcabfbadf905fd57cb",
+      "sha256": "7235a9962d15fbc30f0dd9be6eeb2701b6fdc1f1cf3b43dc56e4b8527aea73ad",
       "fixture": "ozon-rfbs-delivered-response.json",
       "fields": [
         {
@@ -8346,19 +8939,21 @@
         {
           "path": "$.result[].error",
           "types": [
+            "string",
             "array"
           ],
           "presence": "optional",
           "nullable": false,
           "sources": [
-            "ozon_sdk"
+            "ozon_sdk",
+            "curated_move_examples_20261105"
           ],
-          "verification": "secondary_snapshot_unverified",
+          "verification": "official_schema_example_conflict_both_documented_shapes",
           "semantics": "Exact source field $.result[].error; retain presence independently of zero and empty values",
-          "destination": "STYK allowlisted structured observation; never concatenate into description",
+          "destination": "Ephemeral validation only; never concatenate provider error text into a durable diagnostic",
           "classification": "structured",
           "read_only": false,
-          "privacy": "operational",
+          "privacy": "sensitive_provider_free_text",
           "fixture": "ozon-rfbs-delivered-response.json"
         },
         {

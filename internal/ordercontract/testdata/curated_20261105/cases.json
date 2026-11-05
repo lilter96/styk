@@ -1,0 +1,583 @@
+{
+  "version": 1,
+  "generated_at": "2026-11-05T01:26:14.397936Z",
+  "live_provider_requests": 0,
+  "cases": [
+    {
+      "id": "label-create-request",
+      "endpoint": "/v3/posting/fbs/package-label/create",
+      "direction": "request",
+      "fixture": "label-create-request.json",
+      "sha256": "0d19d9fd285e01b49de0978baaf8250f3196486b90e57d398f678e8d7d1c290d",
+      "evidence_kind": "OFFICIAL_SCHEMA_GENERATED",
+      "sources": [
+        "label-schema-20261105",
+        "label-migration-800"
+      ],
+      "coverage": "Reviewed complete request structural refs; one controlled target.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "label-create-response",
+      "endpoint": "/v3/posting/fbs/package-label/create",
+      "direction": "response",
+      "fixture": "label-create-response.json",
+      "sha256": "c9b5d41029da577b352330f59fcd275f64bc7af2550bfb26dd1c6f90bc2e9f4d",
+      "evidence_kind": "OFFICIAL_SCHEMA_GENERATED",
+      "sources": [
+        "label-schema-20261105",
+        "label-migration-800"
+      ],
+      "coverage": "Asynchronous acceptance only; numeric int64 identities exceed JavaScript safe integer.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "label-get-request",
+      "endpoint": "/v2/posting/fbs/package-label/get",
+      "direction": "request",
+      "fixture": "label-get-request.json",
+      "sha256": "1519a24ac4dd5b6530d1a88de5f688f62322c7eda4f93c5a4b8bd7921efab4e4",
+      "evidence_kind": "OFFICIAL_SCHEMA_GENERATED",
+      "sources": [
+        "label-schema-20261105",
+        "label-migration-800"
+      ],
+      "coverage": "Exact selected task; not a posting or product ID.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "label-get-pending",
+      "endpoint": "/v2/posting/fbs/package-label/get",
+      "direction": "response",
+      "fixture": "label-get-pending.json",
+      "sha256": "06c27dbc9b13760f0100f86c0be5ab1d6991f1f4f7d93dd193e9da304db047a3",
+      "evidence_kind": "OFFICIAL_SCHEMA_GENERATED",
+      "sources": [
+        "label-schema-20261105",
+        "label-migration-800"
+      ],
+      "coverage": "Documented task status; missing file_url differs from explicit empty string. No PDF fetch is authorized by this fixture.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "label-get-in_progress",
+      "endpoint": "/v2/posting/fbs/package-label/get",
+      "direction": "response",
+      "fixture": "label-get-in_progress.json",
+      "sha256": "20a735aa83bace71cef045231c235241ad05a07810a394cb6cd5bd04fb77ab7d",
+      "evidence_kind": "OFFICIAL_SCHEMA_GENERATED",
+      "sources": [
+        "label-schema-20261105",
+        "label-migration-800"
+      ],
+      "coverage": "Documented task status; missing file_url differs from explicit empty string. No PDF fetch is authorized by this fixture.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "label-get-completed",
+      "endpoint": "/v2/posting/fbs/package-label/get",
+      "direction": "response",
+      "fixture": "label-get-completed.json",
+      "sha256": "34dbb9899d7bce53ade024818222e263011222a0ea7f3ff21dd57335206982c5",
+      "evidence_kind": "OFFICIAL_SCHEMA_GENERATED",
+      "sources": [
+        "label-schema-20261105",
+        "label-migration-800"
+      ],
+      "coverage": "Documented task status; missing file_url differs from explicit empty string. No PDF fetch is authorized by this fixture.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "label-get-partial",
+      "endpoint": "/v2/posting/fbs/package-label/get",
+      "direction": "response",
+      "fixture": "label-get-partial.json",
+      "sha256": "942658ba74c60999d262391ef58d3f4afaf5b557a76be250c4200ef8a977c93b",
+      "evidence_kind": "OFFICIAL_SCHEMA_GENERATED",
+      "sources": [
+        "label-schema-20261105",
+        "label-migration-800"
+      ],
+      "coverage": "Completed task with incomplete per-posting coverage must not become a complete target label proof.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "label-get-error",
+      "endpoint": "/v2/posting/fbs/package-label/get",
+      "direction": "response",
+      "fixture": "label-get-error.json",
+      "sha256": "8c87c777ee1f0fa4067003e8dc7be0b9200cde907072a76fef197eb3e03af6ba",
+      "evidence_kind": "OFFICIAL_SCHEMA_GENERATED",
+      "sources": [
+        "label-schema-20261105",
+        "label-migration-800"
+      ],
+      "coverage": "Shape-derived error; arbitrary example code is not a provider error-code claim.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "fbs-get-official-null-example",
+      "endpoint": "/v3/posting/fbs/get",
+      "direction": "response",
+      "fixture": "fbs-get-official-null-example.json",
+      "sha256": "373aa09292d6904a8a5c214f6f75b7dea02260ef28769d3e6df14260b9ba6068",
+      "evidence_kind": "OFFICIAL_EXAMPLE_SANITIZED",
+      "sources": [
+        "posting-examples-20261105"
+      ],
+      "coverage": "Selected official example; customer/analytics/financial nulls remain unknown rather than zero. All identities replaced.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "fbs-get-after-pack",
+      "endpoint": "/v3/posting/fbs/get",
+      "direction": "response",
+      "fixture": "fbs-get-after-pack.json",
+      "sha256": "b4cedb5805e3a7ed33e947f838972f0a05188998d4542acff991d13a80652788",
+      "evidence_kind": "OFFICIAL_SCHEMA_GENERATED",
+      "sources": [
+        "posting-examples-20261105"
+      ],
+      "coverage": "Synthetic scenario follows documented packing/readback rules; not an observed provider transition.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "fbs-get-pack-failed",
+      "endpoint": "/v3/posting/fbs/get",
+      "direction": "response",
+      "fixture": "fbs-get-pack-failed.json",
+      "sha256": "fae4bb7fc2f6b181f5ff6e40ef28085e03b4e776385ec728422ed38ecd1cef84",
+      "evidence_kind": "OFFICIAL_SCHEMA_GENERATED",
+      "sources": [
+        "posting-examples-20261105"
+      ],
+      "coverage": "Synthetic scenario follows documented packing/readback rules; not an observed provider transition.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "rfbs-standard-get",
+      "endpoint": "/v3/posting/fbs/get",
+      "direction": "response",
+      "fixture": "rfbs-standard-get.json",
+      "sha256": "c894a49753274511296fe9ab9deeccbcfe8e26d6095294a9f78dcdd9b55852ab",
+      "evidence_kind": "OFFICIAL_SCHEMA_GENERATED",
+      "sources": [
+        "posting-examples-20261105",
+        "hybrid-pvz-notice-638",
+        "express-449"
+      ],
+      "coverage": "Synthetic profile inputs; warehouse/method discovery and explicit capability approval remain separate; no action inferred from URL.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "rfbs-express-seller-get",
+      "endpoint": "/v3/posting/fbs/get",
+      "direction": "response",
+      "fixture": "rfbs-express-seller-get.json",
+      "sha256": "a3181fdbd7c15435df3c1031330d40043a8fd01f5963ec645f0e288358438550",
+      "evidence_kind": "OFFICIAL_SCHEMA_GENERATED",
+      "sources": [
+        "posting-examples-20261105",
+        "hybrid-pvz-notice-638",
+        "express-449"
+      ],
+      "coverage": "Synthetic profile inputs; warehouse/method discovery and explicit capability approval remain separate; no action inferred from URL.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "rfbs-express-aggregator-get",
+      "endpoint": "/v3/posting/fbs/get",
+      "direction": "response",
+      "fixture": "rfbs-express-aggregator-get.json",
+      "sha256": "a38045e079d66f113b35a545fe0faf51143c6da5b76eca1914ebcb8ba4dce3d8",
+      "evidence_kind": "OFFICIAL_SCHEMA_GENERATED",
+      "sources": [
+        "posting-examples-20261105",
+        "hybrid-pvz-notice-638",
+        "express-449"
+      ],
+      "coverage": "Synthetic profile inputs; warehouse/method discovery and explicit capability approval remain separate; no action inferred from URL.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "rfbs-hybrid-pvz-get",
+      "endpoint": "/v3/posting/fbs/get",
+      "direction": "response",
+      "fixture": "rfbs-hybrid-pvz-get.json",
+      "sha256": "7591b2b1a4ef796c85274238b1f340eee4a5f5aa8f7ad33d6909171e57d989aa",
+      "evidence_kind": "OFFICIAL_SCHEMA_GENERATED",
+      "sources": [
+        "posting-examples-20261105",
+        "hybrid-pvz-notice-638",
+        "express-449"
+      ],
+      "coverage": "Synthetic profile inputs; warehouse/method discovery and explicit capability approval remain separate; no action inferred from URL.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "ship-one-package",
+      "endpoint": "/v4/posting/fbs/ship",
+      "direction": "request",
+      "fixture": "ship-one-package.json",
+      "sha256": "c95c36c68911dbfdc236c8f0077078bf0a8e07c2d72892b233ecdc25fba6ba64",
+      "evidence_kind": "OFFICIAL_EXAMPLE_SANITIZED",
+      "sources": [
+        "posting-examples-20261105"
+      ],
+      "coverage": "Official example structure with synthetic SKU/posting; product_id is SKU in this method.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "ship-split-two-packages",
+      "endpoint": "/v4/posting/fbs/ship",
+      "direction": "request",
+      "fixture": "ship-split-two-packages.json",
+      "sha256": "2b3749b1f663b7272801ac49933b9e6c6750c3b90c39dddb979c101b3865f9c1",
+      "evidence_kind": "OFFICIAL_EXAMPLE_SANITIZED",
+      "sources": [
+        "posting-examples-20261105"
+      ],
+      "coverage": "Official example structure with synthetic SKU/posting; product_id is SKU in this method.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "ship-split-ack",
+      "endpoint": "/v4/posting/fbs/ship",
+      "direction": "response",
+      "fixture": "ship-split-ack.json",
+      "sha256": "d5bd0da4b52a1a59c65c8dbe4bb648e5de99b00084273b7a534f75a7e9939934",
+      "evidence_kind": "OFFICIAL_EXAMPLE_SANITIZED",
+      "sources": [
+        "posting-examples-20261105"
+      ],
+      "coverage": "ACK identities alone do not confirm allocation, assembly or native reserve transfer.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "rfbs-delivering-request",
+      "endpoint": "/v2/fbs/posting/delivering",
+      "direction": "request",
+      "fixture": "rfbs-delivering-request.json",
+      "sha256": "fb2ec2f345a092a1c9c47005944e9fc17c0e216d7bb36d072041032545e25250",
+      "evidence_kind": "OFFICIAL_EXAMPLE_SANITIZED",
+      "sources": [
+        "posting-examples-20261105"
+      ],
+      "coverage": "Official request structure; requires actual business event, verified delivery profile, fresh action availability.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "rfbs-delivering-ack",
+      "endpoint": "/v2/fbs/posting/delivering",
+      "direction": "response",
+      "fixture": "rfbs-delivering-ack.json",
+      "sha256": "823e02db91eb7261425625bca414f9a5a64adf830f0c40a2e1ca4ab0a57ece41",
+      "evidence_kind": "OFFICIAL_EXAMPLE_SANITIZED",
+      "sources": [
+        "posting-examples-20261105"
+      ],
+      "coverage": "Official example error:[] conflicts with shared error:string schema; exact target/result acknowledgement still needs state readback.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "rfbs-last-mile-request",
+      "endpoint": "/v2/fbs/posting/last-mile",
+      "direction": "request",
+      "fixture": "rfbs-last-mile-request.json",
+      "sha256": "fb2ec2f345a092a1c9c47005944e9fc17c0e216d7bb36d072041032545e25250",
+      "evidence_kind": "OFFICIAL_EXAMPLE_SANITIZED",
+      "sources": [
+        "posting-examples-20261105"
+      ],
+      "coverage": "Official request structure; requires actual business event, verified delivery profile, fresh action availability.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "rfbs-last-mile-ack",
+      "endpoint": "/v2/fbs/posting/last-mile",
+      "direction": "response",
+      "fixture": "rfbs-last-mile-ack.json",
+      "sha256": "823e02db91eb7261425625bca414f9a5a64adf830f0c40a2e1ca4ab0a57ece41",
+      "evidence_kind": "OFFICIAL_EXAMPLE_SANITIZED",
+      "sources": [
+        "posting-examples-20261105"
+      ],
+      "coverage": "Official example error:[] conflicts with shared error:string schema; exact target/result acknowledgement still needs state readback.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "rfbs-delivered-request",
+      "endpoint": "/v2/fbs/posting/delivered",
+      "direction": "request",
+      "fixture": "rfbs-delivered-request.json",
+      "sha256": "fb2ec2f345a092a1c9c47005944e9fc17c0e216d7bb36d072041032545e25250",
+      "evidence_kind": "OFFICIAL_EXAMPLE_SANITIZED",
+      "sources": [
+        "posting-examples-20261105"
+      ],
+      "coverage": "Official request structure; requires actual business event, verified delivery profile, fresh action availability.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "rfbs-delivered-ack",
+      "endpoint": "/v2/fbs/posting/delivered",
+      "direction": "response",
+      "fixture": "rfbs-delivered-ack.json",
+      "sha256": "823e02db91eb7261425625bca414f9a5a64adf830f0c40a2e1ca4ab0a57ece41",
+      "evidence_kind": "OFFICIAL_EXAMPLE_SANITIZED",
+      "sources": [
+        "posting-examples-20261105"
+      ],
+      "coverage": "Official example error:[] conflicts with shared error:string schema; exact target/result acknowledgement still needs state readback.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "rfbs-tracking-request",
+      "endpoint": "/v2/fbs/posting/tracking-number/set",
+      "direction": "request",
+      "fixture": "rfbs-tracking-request.json",
+      "sha256": "e81f07dc49f7c44e38da3f27059a5d26e312dfc6b24d050de2b18229f8c36838",
+      "evidence_kind": "OFFICIAL_EXAMPLE_SANITIZED",
+      "sources": [
+        "posting-examples-20261105"
+      ],
+      "coverage": "Documentation-derived request; synthetic tracking is never proof of real carrier registration.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "rfbs-tracking-ack",
+      "endpoint": "/v2/fbs/posting/tracking-number/set",
+      "direction": "response",
+      "fixture": "rfbs-tracking-ack.json",
+      "sha256": "c977e81993bcaa0fe1b9b8a685df255c6b2c194350332a4dc510326d4564b4ac",
+      "evidence_kind": "OFFICIAL_EXAMPLE_SANITIZED",
+      "sources": [
+        "posting-examples-20261105"
+      ],
+      "coverage": "Official documented empty-string error form.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "move-missing-result",
+      "endpoint": "/v2/fbs/posting/delivering",
+      "direction": "response",
+      "fixture": "move-missing-result.json",
+      "sha256": "227d5fa2fe6d4b29a9d5d19a4afd63eee2ef9fcd4a925103db7c71b684714812",
+      "evidence_kind": "SCENARIO_SYNTHETIC",
+      "sources": [
+        "posting-examples-20261105"
+      ],
+      "coverage": "Adversarial local-only response: missing boolean or contradictory error cannot release uncertainty; provider text may contain PII.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "move-contradictory-result",
+      "endpoint": "/v2/fbs/posting/delivering",
+      "direction": "response",
+      "fixture": "move-contradictory-result.json",
+      "sha256": "68fa4014fe63664ff9e0c3e42076e5e08b76bdd97c08ed9ee074a4bf1f4ab724",
+      "evidence_kind": "SCENARIO_SYNTHETIC",
+      "sources": [
+        "posting-examples-20261105"
+      ],
+      "coverage": "Adversarial local-only response: missing boolean or contradictory error cannot release uncertainty; provider text may contain PII.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "move-explicit-reject",
+      "endpoint": "/v2/fbs/posting/delivering",
+      "direction": "response",
+      "fixture": "move-explicit-reject.json",
+      "sha256": "b8538a208d2a2eb75f8137a765612b4a9e494cd3631d7b54226216aebf059b6b",
+      "evidence_kind": "SCENARIO_SYNTHETIC",
+      "sources": [
+        "posting-examples-20261105"
+      ],
+      "coverage": "Adversarial local-only response: missing boolean or contradictory error cannot release uncertainty; provider text may contain PII.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "v4-list-request",
+      "endpoint": "/v4/posting/fbs/list",
+      "direction": "request",
+      "fixture": "v4-list-request.json",
+      "sha256": "eaec43b9035074cb166e6b5258d888e6704916c4d75736ff1439b2f0cca26d1b",
+      "evidence_kind": "OFFICIAL_SCHEMA_GENERATED",
+      "sources": [
+        "v4-posting-notice-734"
+      ],
+      "coverage": "Selected v4 request refs 36714-36859; documented enum ASC, official example also shows accepted asc alias.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "v4-list-empty-page",
+      "endpoint": "/v4/posting/fbs/list",
+      "direction": "response",
+      "fixture": "v4-list-empty-page.json",
+      "sha256": "7fe1b7b1066102ac23f11fed3329c23792031627b7d56df4824bf77adb68a795",
+      "evidence_kind": "OFFICIAL_SCHEMA_GENERATED",
+      "sources": [
+        "v4-posting-notice-734"
+      ],
+      "coverage": "Official current response structure at37591-37609; an empty completed page is not proof that no active order exists outside the traversal.",
+      "prerequisites": [
+        "Synthetic local provider only; no network mutation authorization."
+      ],
+      "expect_manifest_valid": true
+    },
+    {
+      "id": "fbo-excluded-shape",
+      "endpoint": "/v3/posting/fbo/list",
+      "direction": "response",
+      "fixture": "fbo-excluded-shape.json",
+      "sha256": "dee4ff8da9b646067cf6d7437ce2d9c8fb527c432f546c5f35f6e93167680411",
+      "evidence_kind": "THIRD_PARTY_SHAPE_DERIVED_SYNTHETIC",
+      "sources": [
+        "third-party-fbo-capture-064d62d"
+      ],
+      "coverage": "Shape-only synthetic counterexample; never accepted as FBS or treated as provider-authenticated data. Exact money lexemes stay decimal JSON text.",
+      "prerequisites": [
+        "Excluded: FBO outside seller-fulfilled order workflow."
+      ],
+      "expect_manifest_valid": false
+    },
+    {
+      "id": "normalized-ambiguous-not-wire",
+      "endpoint": "THIRD_PARTY_NORMALIZED_RECORD",
+      "direction": "response",
+      "fixture": "normalized-ambiguous-not-wire.json",
+      "sha256": "a194b830ce39dff4dd8efd2fcb1007444f1268eb9dbc102e90076fe3d4f8267e",
+      "evidence_kind": "THIRD_PARTY_SHAPE_DERIVED_SYNTHETIC",
+      "sources": [
+        "third-party-normalized-problems-0c73845"
+      ],
+      "coverage": "Normalized display row, not an Ozon wire response; scheme and money remain unknown for operational decisions.",
+      "prerequisites": [
+        "Synthetic local fixture only; never dispatched with real credentials."
+      ],
+      "expect_manifest_valid": false
+    },
+    {
+      "id": "move-null-error-element",
+      "endpoint": "/v2/fbs/posting/delivering",
+      "direction": "response",
+      "fixture": "move-null-error-element.json",
+      "sha256": "3b0ab55b8d164f3664291e4875f5db966e86678e304fbd85283c76b2f3ac0d9e",
+      "evidence_kind": "SCENARIO_SYNTHETIC",
+      "sources": [
+        "posting-examples-20261105"
+      ],
+      "coverage": "Malformed error element cannot silently become an empty string or success.",
+      "prerequisites": [
+        "Synthetic local fixture only; never dispatched with real credentials."
+      ],
+      "expect_manifest_valid": false
+    },
+    {
+      "id": "fbs-get-required-inputs",
+      "endpoint": "/v3/posting/fbs/get",
+      "direction": "response",
+      "fixture": "fbs-get-required-inputs.json",
+      "sha256": "e5e097907f705164309c80f49373cd2066504f960b9cc63d4e0f3c8a35ad5bf4",
+      "evidence_kind": "SCENARIO_SYNTHETIC",
+      "sources": [
+        "posting-examples-20261105"
+      ],
+      "coverage": "Artificial requirements field coverage only, not a compliance declaration for an actual item. Weight container is in v3 example; its SKU-string item typing is corroborated by shared v4 requirement schema.",
+      "prerequisites": [
+        "Block execution until genuine required product declarations are available."
+      ],
+      "expect_manifest_valid": true
+    }
+  ]
+}

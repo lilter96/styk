@@ -1,0 +1,42 @@
+{
+  "cursor": "SYNTHETIC-NEXT-PAGE",
+  "has_next": true,
+  "postings": [
+    {
+      "posting_number": "STYK-FBO-SYNTHETIC-1",
+      "order_id": 9007199254741001,
+      "status": "delivering",
+      "products": [
+        {
+          "sku": 9007199254740993,
+          "offer_id": "STYK-FBO-SYNTHETIC-OFFER",
+          "quantity": 1,
+          "price": {
+            "amount": "123.45",
+            "currency": "RUB"
+          }
+        }
+      ],
+      "analytics_data": {
+        "warehouse_id": 9007199254741013,
+        "client_delivery_date_begin": null
+      },
+      "financial_data": {
+        "products": [
+          {
+            "product_id": 9007199254740993,
+            "price": 123.45,
+            "payout": 100,
+            "commission": {
+              "amount": 23.45,
+              "percent": 19,
+              "currency": "RUB"
+            }
+          }
+        ]
+      },
+      "cancellation": null,
+      "legal_info": null
+    }
+  ]
+}
