@@ -43,7 +43,7 @@ func ExecutionContractHash() string {
 func ExecutionActions() []orders.Action {
 	return []orders.Action{orders.ActionCountrySet, orders.ActionExemplarPrepare, orders.ActionExemplarSet, orders.ActionPostingPack, orders.ActionPostingSplit, orders.ActionPostingSplitUnassembled, orders.ActionPostingCancel,
 		orders.ActionPostingPartialCancel, orders.ActionPostingTracking, orders.ActionPostingShip,
-		orders.ActionPostingLastMile, orders.ActionPostingDeliver, orders.ActionPostingSentBySeller, orders.ActionPostingLabelCreate}
+		orders.ActionPostingLastMile, orders.ActionPostingDeliver, orders.ActionPostingLabelCreate}
 }
 
 // RequiredParameters returns the reviewed inputs a fulfillment action needs
@@ -133,6 +133,10 @@ func executionEdge(action orders.Action) orders.ActionOption {
 		p.Endpoint, p.ExpectedStatus, p.ParametersRequired = "/v2/fbs/posting/last-mile", "driver_pickup", []string{"event_confirmed", "event_reference"}
 	case orders.ActionPostingDeliver:
 		p.Endpoint, p.ExpectedStatus, p.ParametersRequired = "/v2/fbs/posting/delivered", "delivered", []string{"event_confirmed", "event_reference"}
+	case orders.ActionPostingSentBySeller:
+		// Official notice 2026-01-20 retires this method. Historical actions
+		// remain readable; the notice establishes no replacement or disable date.
+		p.Blockers = append(p.Blockers, actionBlock("action", "provider_method_deprecated"))
 	default:
 		p.Blockers = append(p.Blockers, actionBlock("action", "operation_contract_not_verified"))
 	}

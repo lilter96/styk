@@ -25,6 +25,9 @@ func TestActionOptionsDoNotAdvertiseUnimplementedDispatch(t *testing.T) {
 		t.Fatal("missing action options")
 	}
 	for _, option := range options.Actions {
+		if option.Action == orders.ActionPostingSentBySeller {
+			t.Fatal("deprecated provider method remains selectable")
+		}
 		if option.Action == orders.ActionCountrySet {
 			if option.Allowed || len(option.Blockers) == 0 {
 				t.Fatal("plain goods advertised a manufacturer country mutation")
@@ -32,7 +35,7 @@ func TestActionOptionsDoNotAdvertiseUnimplementedDispatch(t *testing.T) {
 			continue
 		}
 		// Cancel actions require provider reason listing; tracking/ship/last-mile/deliver require rFBS.
-		if option.Action == orders.ActionPostingCancel || option.Action == orders.ActionPostingPartialCancel || option.Action == orders.ActionPostingTracking || option.Action == orders.ActionPostingShip || option.Action == orders.ActionPostingLastMile || option.Action == orders.ActionPostingDeliver || option.Action == orders.ActionPostingLabelCreate || option.Action == orders.ActionPostingSentBySeller {
+		if option.Action == orders.ActionPostingCancel || option.Action == orders.ActionPostingPartialCancel || option.Action == orders.ActionPostingTracking || option.Action == orders.ActionPostingShip || option.Action == orders.ActionPostingLastMile || option.Action == orders.ActionPostingDeliver || option.Action == orders.ActionPostingLabelCreate {
 			continue
 		}
 		if !option.Allowed || len(option.Blockers) > 0 {
