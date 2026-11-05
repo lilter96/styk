@@ -207,45 +207,11 @@ func (c *OrdersClient) partialCancelReceipt(command orders.Command, data []byte,
 }
 
 func (c *OrdersClient) trackingReceipt(command orders.Command, data []byte, status int) (orders.Receipt, error) {
-	var response struct {
-		Result []struct {
-			PostingNumber string `json:"posting_number"`
-			Result        bool   `json:"result"`
-			Error         string `json:"error"`
-		} `json:"result"`
-	}
-	if json.Unmarshal(data, &response) != nil || len(response.Result) != 1 || response.Result[0].PostingNumber != command.PostingNumber {
-		return orderReceipt(command, orders.StateUnknown, status, "tracking_confirmation_unverified"), orders.ErrStale
-	}
-	if !response.Result[0].Result {
-		code := "tracking_rejected"
-		if response.Result[0].Error != "" {
-			code = "tracking_rejected:" + ordersSafeString(response.Result[0].Error)
-		}
-		return orderReceipt(command, orders.StateRejected, status, code), nil
-	}
-	return orderReceipt(command, orders.StateAcknowledged, status, "provider_acknowledged_tracking"), nil
+	return moveStatusReceipt(command, data, status, "tracking", "provider_acknowledged_tracking")
 }
 
 func (c *OrdersClient) statusTransitionReceipt(command orders.Command, data []byte, status int) (orders.Receipt, error) {
-	var response struct {
-		Result []struct {
-			PostingNumber string `json:"posting_number"`
-			Result        bool   `json:"result"`
-			Error         string `json:"error"`
-		} `json:"result"`
-	}
-	if json.Unmarshal(data, &response) != nil || len(response.Result) != 1 || response.Result[0].PostingNumber != command.PostingNumber {
-		return orderReceipt(command, orders.StateUnknown, status, "status_transition_unverified"), orders.ErrStale
-	}
-	if !response.Result[0].Result {
-		code := "status_transition_rejected"
-		if response.Result[0].Error != "" {
-			code = "status_transition_rejected:" + ordersSafeString(response.Result[0].Error)
-		}
-		return orderReceipt(command, orders.StateRejected, status, code), nil
-	}
-	return orderReceipt(command, orders.StateAcknowledged, status, "provider_acknowledged"), nil
+	return moveStatusReceipt(command, data, status, "status_transition", "provider_acknowledged")
 }
 
 // BindOrderIntent begins the durable dispatch intent for a fulfillment command.
@@ -442,11 +408,4 @@ func formatInt64(value int64) string {
 
 func orderReceipt(command orders.Command, state orders.State, status int, code string) orders.Receipt {
 	return orders.Receipt{CommandID: command.ID, State: state, HTTPStatus: status, Code: strings.ToUpper(code), ObservedAt: time.Now().UTC()}
-}
-
-func ordersSafeString(value string) string {
-	if len(value) > 64 {
-		return value[:64]
-	}
-	return value
 }

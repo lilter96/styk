@@ -108,7 +108,7 @@ func (c *OrdersClient) orderPageRequest(path string, window orders.OrderWindow, 
 		Limit   int               `json:"limit"`
 		SortDir string            `json:"sort_dir"`
 		With    OrderReadOptions  `json:"with"`
-	}{cursor, filter, window.Limit, "asc", c.options}
+	}{cursor, filter, window.Limit, "ASC", c.options}
 }
 
 func (c *OrdersClient) readOrderPageDetails(ctx context.Context, data []byte, cursor string, limit int) (orders.OrderSourcePage, error) {
