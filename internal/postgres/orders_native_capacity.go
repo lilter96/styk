@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/lilter96/styk/internal/ordermoney"
 	"github.com/lilter96/styk/internal/orders"
 )
 
@@ -60,19 +59,6 @@ func readNativeConsumption(ctx context.Context, q ordersQuerier, correlation ord
 		facts.Events = append(facts.Events, row.event)
 	}
 	return facts, ordersRowsError("finish bounded native demand consumption", rows.Err())
-}
-
-// The approval transaction holds the same review-scope lock used at dispatch.
-// Recheck after acquiring it and before reserving another native event.
-func validateNativeConsumptionIntent(ctx context.Context, q ordersQuerier, work orders.Work, now time.Time) error {
-	facts, err := readNativeConsumption(ctx, q, work.Command.Correlation, work.ID, work.CommandFingerprint, now)
-	if err != nil {
-		return err
-	}
-	if ordermoney.NativeConsumptionAllows(work.Command, facts).Code != "" {
-		return orders.ErrBlocked
-	}
-	return nil
 }
 
 func nativeConsumptionBinding(ctx context.Context, q ordersQuerier, correlation orders.Correlation) (bool, error) {

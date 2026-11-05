@@ -33,6 +33,9 @@ func (r *Runner) dispatchNative(ctx context.Context, work orders.Work) error {
 	}
 	actual, err := reader.ReadNativeDocument(ctx, orders.NativeDocumentRequest{Scope: work.Scope, Correlation: command.NativeMovement.Correlation})
 	if err == nil {
+		if command.NativeMovement.Retry != nil {
+			return r.stop(ctx, work, "NATIVE_RETRY_EXISTING_DOCUMENT_REQUIRES_REVIEW")
+		}
 		return r.reconcileNative(ctx, work, client, actual)
 	}
 	if !errors.Is(err, orders.ErrNotFound) {

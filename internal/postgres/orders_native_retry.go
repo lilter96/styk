@@ -19,11 +19,36 @@ func guardNativeRetryEvent(ctx context.Context, tx pgx.Tx, work orders.Work, cre
 	if err := lockNativeCanonicalEvent(ctx, tx, work); err != nil {
 		return err
 	}
+	return validateNativeApprovalAfterEventLock(ctx, tx, work)
+}
+
+func validateNativeApprovalAfterEventLock(ctx context.Context, tx pgx.Tx, work orders.Work) error {
+	preview, err := readOrderPreview(ctx, tx, work.Scope, work.PreviewID)
+	if err != nil {
+		return err
+	}
+	if _, err = orderPreviewOwner(ctx, tx, preview); err != nil {
+		return err
+	}
+	current, err := readOrderWorkContext(ctx, tx, work)
+	if err != nil {
+		return err
+	}
 	checked, err := ordersClock(ctx, tx)
 	if err != nil {
 		return err
 	}
-	return validateNativeConsumptionIntent(ctx, tx, work, checked)
+	if !preview.ExpiresAt.After(checked) {
+		return orders.ErrStale
+	}
+	valid, err := validateOrderUnsentWork(work, current, checked)
+	if err != nil {
+		return err
+	}
+	if !valid {
+		return orders.ErrBlocked
+	}
+	return nil
 }
 
 func insertNativeCanonicalEvent(ctx context.Context, tx pgx.Tx, work orders.Work, created time.Time) error {

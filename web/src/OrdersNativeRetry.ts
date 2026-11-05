@@ -20,7 +20,8 @@ export function nativeRetryCandidate(
     !sameOrderScope(work.scope, scope) ||
     !sameOrderScope(work.command.scope, scope) ||
     work.command.posting_number !== posting ||
-    work.state !== "REJECTED" ||
+    (work.state !== "REJECTED" &&
+      !(work.state === "BLOCKED" && work.dispatch_count === 0)) ||
     !movement ||
     !["demand_create", "salesreturn_create"].includes(work.command.action) ||
     (applied !== true && applied !== false) ||

@@ -82,6 +82,11 @@ func orderDispatchCurrent(ctx context.Context, tx pgx.Tx, work orders.Work, guar
 	if !guard.Begin && work.State.ReadOnly() {
 		return orderReadbackCurrent(ctx, tx, work)
 	}
+	if work.Command.NativeMovement != nil {
+		if err = lockNativeCanonicalEvent(ctx, tx, work); err != nil {
+			return false, err
+		}
+	}
 	current, err := readOrderWorkContext(ctx, tx, work)
 	if err != nil {
 		return false, err

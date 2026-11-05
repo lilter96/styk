@@ -457,6 +457,8 @@ export const orderActionLabel = (action: string) =>
     posting_exemplar_set: "Передать сведения экземпляров в Ozon",
   })[action] || action;
 const issueLabels: Record<string, string> = {
+  NATIVE_RETRY_EXISTING_DOCUMENT_REQUIRES_REVIEW:
+    "В МойСклад уже найден документ с идентификатором этого события. Новая запись не отправлена. Проверьте документ и исходную операцию; повторный документ автоматически не создаётся.",
   native_retry_prior_rejection_unavailable:
     "Отклонённая попытка не найдена для этого отправления или её результат изменился. Обновите историю; неизвестный результат требует сверки.",
   native_retry_latest_rejection_required:
