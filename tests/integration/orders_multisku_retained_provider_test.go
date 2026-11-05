@@ -106,8 +106,8 @@ func (p *multiskuRetainedHTTPProvider) posting(w http.ResponseWriter, r *http.Re
 }
 
 func multiskuPostingProducts(number string, split bool) []any {
-	first := map[string]any{"sku": "2001", "product_id": "1001", "offer_id": "process-offer", "quantity": 2, "price": "12.34", "currency_code": "RUB", "vat": "0"}
-	second := map[string]any{"sku": "2002", "product_id": "1002", "offer_id": "process-second", "quantity": 3, "price": "4.56", "currency_code": "RUB", "vat": "0"}
+	first := map[string]any{"sku": json.Number("2001"), "product_id": "1001", "offer_id": "process-offer", "quantity": 2, "price": "12.34", "currency_code": "RUB", "vat": "0"}
+	second := map[string]any{"sku": json.Number("2002"), "product_id": "1002", "offer_id": "process-second", "quantity": 3, "price": "4.56", "currency_code": "RUB", "vat": "0"}
 	if number == repeatedRetainedIndependent {
 		first["quantity"] = 1
 		return []any{first}
