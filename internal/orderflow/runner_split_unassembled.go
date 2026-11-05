@@ -3,6 +3,7 @@ package orderflow
 import (
 	"context"
 	"slices"
+	"time"
 
 	"github.com/lilter96/styk/internal/orders"
 )
@@ -43,7 +44,7 @@ func (r *Runner) readUnassembledCandidates(ctx context.Context, work orders.Work
 		}
 		posting, err := client.ReadOrderPosting(ctx, work.Scope, number)
 		read := orders.SplitReadback{PostingNumber: number, Code: "SOURCE_UNAVAILABLE", CheckedAt: r.now()}
-		if err == nil {
+		if err == nil && validUnassembledPoint(work, number, posting, read.CheckedAt) {
 			posting.PII = nil
 			read.Code, read.Posting = "OBSERVED", &posting
 			read.CheckedAt = posting.Evidence.CheckedAt
@@ -57,6 +58,20 @@ func (r *Runner) readUnassembledCandidates(ctx context.Context, work orders.Work
 		}
 	}
 	return reads
+}
+
+// A decoded point must still belong to the immutable intent. Rejecting only
+// during whole-allocation resolution discards other successful point reads and
+// can starve every later page. Never retain the body of a rejected point.
+func validUnassembledPoint(work orders.Work, number string, posting orders.Posting, now time.Time) bool {
+	if posting.Validate() != nil || posting.Scope != work.Scope || posting.PostingNumber != number || posting.CommercialOrderID != work.Command.CommercialOrderID || posting.Evidence.Origin != orders.OriginOzon {
+		return false
+	}
+	checked := posting.Evidence.CheckedAt
+	if checked.IsZero() {
+		checked = posting.Evidence.ObservedAt
+	}
+	return !checked.IsZero() && !checked.Before(work.Receipt.ObservedAt) && !checked.After(now) && !posting.Evidence.ObservedAt.After(now)
 }
 
 func mergeUnassembledReads(cached, fresh []orders.SplitReadback) []orders.SplitReadback {

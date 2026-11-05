@@ -1045,3 +1045,19 @@ reserve release. No new UNKNOWN write was introduced. Order configuration 36,
 stock configuration 39, native actions and automation grants ended OFF; pending
 work and active calls were zero. The exact-test eligibility gate is distinct from
 those disabled settings; unrestricted production publication remains disabled.
+
+### Split point-admission recovery follow-up
+
+A decoded detail with a different commercial order could previously discard an
+entire pending readback page at allocation validation. This was fail-closed but
+starved later candidates. The runner now validates each point against the frozen
+intent before admitting its body. Invalid identity/origin/clock evidence becomes
+a body-free unsuccessful read; valid cells and the durable cursor are retained.
+A corrected later detail can reconcile without another external split write.
+
+Nine deterministic cases reproduce identity and clock failures. An actual
+HTTP→API→PostgreSQL→worker regression uses an adapter-valid wrong commercial
+order, checks that no foreign observation is persisted, restarts the worker and
+confirms recovery with exactly one original POST. Six relevant HTTP/PG cases
+passed; full Go lint (0), unit tests, race and build passed. This fault was injected
+only into the local provider; it is not claimed as a live Ozon failure.
