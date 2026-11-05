@@ -84,7 +84,7 @@ func (c *OrderClient) scopeAllowed(scope orders.Scope) bool {
 
 func (c *OrderClient) boundedContext(ctx context.Context) (context.Context, func()) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	httpClient, closeHTTP := orderHTTP(c.client.http)
+	httpClient, closeHTTP := c.client.OrderHTTPClient()
 	limits := domain.ImportLimits{Requests: 128, Attempts: 256, Pages: 128, ResponseBytes: orderResponseLimit}
 	return context.WithValue(ctx, budgetKey{}, &budget{http: httpClient, limits: limits}), func() {
 		cancel()

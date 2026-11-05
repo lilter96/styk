@@ -19,6 +19,13 @@ func orderHTTP(source *http.Client) (*http.Client, func()) {
 	return &client, sourceClose
 }
 
+// OrderHTTPClient applies the exact transport used by normal order operations.
+// It does not add authentication or authorize arbitrary requests. Callers must
+// enforce their account, endpoint, durable-intent and response-size boundaries.
+func (c *Client) OrderHTTPClient() (*http.Client, func()) {
+	return orderHTTP(c.http)
+}
+
 func orderHTTPTransport(source http.RoundTripper) (http.RoundTripper, func()) {
 	if source == nil {
 		source = http.DefaultTransport
