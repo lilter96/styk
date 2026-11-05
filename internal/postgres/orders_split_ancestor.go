@@ -48,7 +48,7 @@ func readOwnedAncestorSettlement(ctx context.Context, q ordersQuerier, scope ord
 	if err != nil {
 		return result, ordersError("read owned split seed", err)
 	}
-	nested, err := readNestedSplitSettlement(ctx, q, scope, seed)
+	nested, err := readNestedSplitLineage(ctx, q, scope, seed)
 	if err != nil {
 		return result, err
 	}

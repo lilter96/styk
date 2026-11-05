@@ -72,6 +72,22 @@ func applyNestedSplitSettlement(result *orders.ReviewContext, dependencies map[s
 }
 
 func readNestedSplitSettlement(ctx context.Context, q ordersQuerier, scope orders.Scope, seed string) (orders.NestedSplitSettlementFacts, error) {
+	result, err := readNestedSplitLineage(ctx, q, scope, seed)
+	if err != nil {
+		return result, err
+	}
+	_, parents := nestedSplitNumbers(result.Lineage.Splits)
+	result.NativeHistory, err = readNestedSplitNativeHistory(ctx, q, scope, parents)
+	if err != nil {
+		return result, err
+	}
+	err = q.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&result.CheckedAt)
+	return result, ordersRowsError("read nested settlement clock", err)
+}
+
+// This reads immutable structure and current heads only. Callers stamp the
+// database check time after their own complete native evidence traversal.
+func readNestedSplitLineage(ctx context.Context, q ordersQuerier, scope orders.Scope, seed string) (orders.NestedSplitSettlementFacts, error) {
 	var result orders.NestedSplitSettlementFacts
 	candidates, err := readNestedSplitCandidates(ctx, q, scope, seed)
 	if err != nil {
@@ -91,17 +107,12 @@ func readNestedSplitSettlement(ctx context.Context, q ordersQuerier, scope order
 		result.Lineage.Splits = append(result.Lineage.Splits, candidate.step)
 		result.Attempts = append(result.Attempts, candidate.attempt)
 	}
-	numbers, parents := nestedSplitNumbers(result.Lineage.Splits)
+	numbers, _ := nestedSplitNumbers(result.Lineage.Splits)
 	result.Lineage.CurrentHeads, err = readNestedSplitHeads(ctx, q, scope, numbers)
 	if err != nil {
 		return result, err
 	}
-	result.NativeHistory, err = readNestedSplitNativeHistory(ctx, q, scope, parents)
-	if err != nil {
-		return result, err
-	}
-	err = q.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&result.CheckedAt)
-	return result, ordersRowsError("read nested settlement clock", err)
+	return result, nil
 }
 
 func readNestedSplitCandidates(ctx context.Context, q ordersQuerier, scope orders.Scope, seed string) ([]nestedWorkCandidate, error) {
@@ -222,10 +233,13 @@ func readNestedSplitHeads(ctx context.Context, q ordersQuerier, scope orders.Sco
 	return result, ordersRowsError("finish nested split heads", rows.Err())
 }
 
+// The native-free policy needs an actual existence witness, not an exhaustive
+// mirror audit export. Any state counts; LIMIT1 cannot turn existing history
+// into an absence claim, and avoids aggregating an unbounded posting history.
 func readNestedSplitNativeHistory(ctx context.Context, q ordersQuerier, scope orders.Scope, numbers []string) ([]orders.NestedSplitNativeHistory, error) {
 	rows, err := q.Query(ctx, `SELECT parent.number,
  ARRAY(SELECT binding.customer_order_id FROM orders_projection_bindings binding WHERE binding.tenant_id=$1 AND binding.moysklad_account=$2 AND binding.ozon_account=$3 AND binding.posting_number=parent.number AND binding.customer_order_id IS NOT NULL),
- ARRAY(SELECT w.id FROM orders_work w WHERE w.tenant_id=$1 AND w.moysklad_account=$2 AND w.ozon_account=$3 AND w.posting_number=parent.number AND w.action IN ('mirror_create','mirror_update','mirror_position_update','mirror_composition_update') ORDER BY w.id)
+ ARRAY(SELECT w.id FROM orders_work w WHERE w.tenant_id=$1 AND w.moysklad_account=$2 AND w.ozon_account=$3 AND w.posting_number=parent.number AND w.action IN ('mirror_create','mirror_update','mirror_position_update','mirror_composition_update') LIMIT 1)
  FROM unnest($4::text[]) parent(number) ORDER BY parent.number`, append(ordersScopeArgs(scope), numbers)...)
 	if err != nil {
 		return nil, ordersError("read nested split native history", err)

@@ -12,6 +12,7 @@ type NestedSplitNativeHistory struct {
 	Scope         Scope
 	PostingNumber string
 	BindingIDs    []string
+	// MirrorWorkIDs is a bounded actual existence witness, not an exhaustive audit list.
 	MirrorWorkIDs []string
 }
 

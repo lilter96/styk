@@ -59,6 +59,9 @@ func loadOwnedAncestorPath(ctx context.Context, q ordersQuerier, nested orders.N
 	for _, row := range rows {
 		f.NativeAttempts = append(f.NativeAttempts, row.attempt)
 	}
+	if err = q.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&f.CheckedAt); err != nil {
+		return f, ordersRowsError("read owned ancestor settlement clock", err)
+	}
 	assignOwnedAncestorHeads(&f, number)
 	if len(path) == 2 {
 		if !assignOwnedAncestorRows(&f, rows, path[0]) {
