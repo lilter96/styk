@@ -107,6 +107,7 @@ const decision = (number = "SYNTHETIC-1", ready = true): OrderDecision => ({
     ? [
         {
           id: `command-${number}`,
+          scope: orderScopeBody(scope),
           action: "mirror_create",
           posting_number: number,
           correlation: {},
@@ -543,6 +544,7 @@ it("blocks a previously unknown posting from the paginated history and shows its
               targets: [
                 {
                   id: "work-unknown",
+                  scope: orderScopeBody(scope),
                   state: "UNKNOWN",
                   automatic: false,
                   command: decision().commands[0],

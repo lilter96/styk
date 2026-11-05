@@ -173,6 +173,7 @@ function form() {
   return onPreview;
 }
 const command = (action = "posting_tracking"): OrderCommand => ({
+  scope: orderScopeBody(scope),
   id: "command-synthetic",
   action,
   posting_number: posting.posting_number,
@@ -492,6 +493,7 @@ it("exposes label downloads only after reconciliation and rejects external artif
               state: "RECONCILED",
               targets: ["ACKNOWLEDGED", "RECONCILED"].map((state, index) => ({
                 id: `work-${index}`,
+                scope: orderScopeBody(scope),
                 state,
                 command: command("posting_label_create"),
                 automatic: false,
@@ -543,9 +545,11 @@ it("requires a reconciled label and separate printed confirmation for hybrid han
         number = posting.posting_number,
       ) => ({
         id,
+        scope: orderScopeBody(scope),
         state,
         automatic: false,
         command: {
+          scope: orderScopeBody(scope),
           id,
           action: "posting_label_create",
           posting_number: number,

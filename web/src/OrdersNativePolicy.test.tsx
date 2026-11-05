@@ -97,6 +97,11 @@ it("enabling document preparation does not enable posting or fabricate a physica
 });
 it("explains draft semantics and links only exact supported native document identities", () => {
   const command = {
+    scope: {
+      tenant: "native-policy",
+      moysklad_account: "moy",
+      ozon_account: "ozon",
+    },
     id: "native-command",
     posting_number: "SYNTHETIC-1",
     correlation: {},

@@ -245,6 +245,7 @@ export type OrderCompositionReplacement = {
   }[];
 };
 export type OrderCommand = {
+  scope: NativeScope;
   position_replacement?: OrderCompositionReplacement;
   native_movement?: OrderNativeMovement;
   id: string;
@@ -280,6 +281,7 @@ export type OrderSplitResponsePosting = {
   products: OrderField<{ sku: string; quantity: string }[]>;
 };
 export type OrderWork = {
+  scope: NativeScope;
   native_document?: { id: string; kind: string; observed_at: string };
   id: string;
   state: string;

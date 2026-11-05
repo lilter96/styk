@@ -21,7 +21,9 @@ function useHistoryPage(scope: OrderScope, cursor: string, enabled = true) {
           (operation) =>
             !sameOrderScope(operation.scope, scope) ||
             (operation.targets ?? []).some(
-              (work) => !sameOrderScope(work.command.scope, scope),
+              (work) =>
+                !sameOrderScope(work.scope, scope) ||
+                !sameOrderScope(work.command.scope, scope),
             ),
         )
       )

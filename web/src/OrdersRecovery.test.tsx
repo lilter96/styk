@@ -18,6 +18,7 @@ const work = {
   automatic: false,
   scope: orderScopeBody(scope),
   command: {
+    scope: orderScopeBody(scope),
     id: "command",
     action: "mirror_update",
     posting_number: "POSTING",

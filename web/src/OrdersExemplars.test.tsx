@@ -12,7 +12,7 @@ import { OrdersExemplars, validExemplarSummary } from "./OrdersExemplars";
 import { exemplarInput, OrdersExemplarEditor } from "./OrdersExemplarEditor";
 import { OrdersActionSummary } from "./OrdersActionSummary";
 import type { ExemplarPublic } from "./OrdersExemplarTypes";
-import type { OrderCommand } from "./OrdersTypes";
+import { orderScopeBody, type OrderCommand } from "./OrdersTypes";
 
 const scope = { tenant: "synthetic", moy: "moy", ozon: "ozon" };
 const data = (): ExemplarPublic => ({
@@ -141,6 +141,7 @@ it("expires five-minute packing proof without polling or waiting for 24-hour sec
 });
 it("never displays private codes from a command in preview summary", () => {
   const command = {
+    scope: orderScopeBody(scope),
     action: "posting_exemplar_set",
     posting_action: {
       parameters: {
