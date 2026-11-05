@@ -76,7 +76,7 @@ func TestOrderFlowFullE2E(t *testing.T) {
 	storeFlowCredential(t, ctx, db, vault, credentials.Scope{Tenant: scope.Tenant, Provider: "moysklad", Account: scope.MoyskladAccount}, token)
 
 	// ---- resolve real MoySklad metadata for native reference IDs ----
-	gate, err := providercall.New(db, providercall.Options{SyntheticInterval: 20 * time.Millisecond})
+	gate, err := providercall.New(db, providercall.Options{SyntheticInterval: 20 * time.Millisecond, MethodForbiddenCooldown: 500 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}

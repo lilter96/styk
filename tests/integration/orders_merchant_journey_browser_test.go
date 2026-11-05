@@ -149,6 +149,10 @@ func merchantJourneyProxy(t *testing.T, s *nativeProcessStack, key string) *http
 			original.ServeHTTP(w, r)
 			return
 		}
+		if r.Method == http.MethodGet && r.Header.Get("X-Orders-Test-Control") == key {
+			merchantNativePermission(w, r, s)
+			return
+		}
 		if r.Method != http.MethodPost || r.Header.Get("X-Orders-Test-Control") != key {
 			w.WriteHeader(http.StatusForbidden)
 			return
@@ -163,6 +167,20 @@ func merchantJourneyProxy(t *testing.T, s *nativeProcessStack, key string) *http
 		w.WriteHeader(http.StatusNoContent)
 	})
 	return proxy
+}
+
+func merchantNativePermission(w http.ResponseWriter, r *http.Request, s *nativeProcessStack) {
+	var denied bool
+	err := s.db.Pool.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM provider_call_methods WHERE provider='moysklad' AND account_id=$1 AND cooldown_until>clock_timestamp())`, s.a.scope.MoyskladAccount).Scan(&denied)
+	if err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+	if denied {
+		w.WriteHeader(http.StatusTooManyRequests)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // The shared small-stack provider intentionally returns all keys. This browser

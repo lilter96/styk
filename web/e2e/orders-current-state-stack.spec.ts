@@ -171,6 +171,17 @@ test("current posting state stays independent of paginated history and reconcile
   await expect(posting).toContainText("Последняя операция: Отклонено", {
     timeout: 25000,
   });
+  await expect
+    .poll(
+      async () =>
+        (
+          await page.request.get(`${origin}/__test/orders/merchant-reconcile`, {
+            headers: { "X-Orders-Test-Control": control },
+          })
+        ).status(),
+      { timeout: 5000, intervals: [250] },
+    )
+    .toBe(204);
   if ((await documents.getAttribute("open")) === null)
     await documents.locator("summary").click();
   await documents.getByLabel("Подготовить повтор после отказа API").check();

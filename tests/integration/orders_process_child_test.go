@@ -125,7 +125,9 @@ func ordersProcessFactory(t *testing.T, db *postgres.Store, base string) orderpr
 	if err != nil || vault == nil {
 		t.Fatal("synthetic orders vault unavailable")
 	}
-	gate, err := providercall.New(db, providercall.Options{SyntheticInterval: 20 * time.Millisecond, MaxInflight: 2})
+	// Synthetic providers keep the same shared denial gate with a bounded clock;
+	// production retains the default one-minute permission cooldown.
+	gate, err := providercall.New(db, providercall.Options{SyntheticInterval: 20 * time.Millisecond, MaxInflight: 2, MethodForbiddenCooldown: 500 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}

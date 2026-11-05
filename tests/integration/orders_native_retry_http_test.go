@@ -37,6 +37,7 @@ func TestOrdersNativeHTTPKnownRejectionRetriesSamePhysicalEventOnce(t *testing.T
 	first := nativeRetryReadyPreview(t, f, request, reference)
 	second := nativeRetryReadyPreview(t, f, request, reference)
 	nativeRetryConcurrentApprove(t, f, first, second)
+	nativeRetryAwaitPermission(t, f)
 	f.run(t, orders.StateAcknowledged)
 	f.run(t, orders.StateReconciled)
 	completed := f.latestWork(t)
@@ -50,6 +51,15 @@ func TestOrdersNativeHTTPKnownRejectionRetriesSamePhysicalEventOnce(t *testing.T
 	assertOrdersRowCount(t, f.ordersStoreFixture, `SELECT count(*) FROM orders_native_document_retries`, 1)
 	assertOrdersRowCount(t, f.ordersStoreFixture, `SELECT count(*) FROM orders_native_document_intents`, 2)
 	assertOrdersRowCount(t, f.ordersStoreFixture, `SELECT count(*) FROM orders_native_document_results`, 1)
+}
+
+func nativeRetryAwaitPermission(t *testing.T, f nativeMovementHTTPFixture) {
+	t.Helper()
+	ordersProcessEventually(t, 5*time.Second, "synthetic native permission cooldown", func() bool {
+		var denied bool
+		err := f.db.Pool.QueryRow(f.ctx, `SELECT EXISTS(SELECT 1 FROM provider_call_methods WHERE provider='moysklad' AND account_id=$1 AND cooldown_until>clock_timestamp())`, f.config.Scope.MoyskladAccount).Scan(&denied)
+		return err == nil && !denied
+	})
 }
 
 func TestOrdersNativeHTTPUnsentBlockedAttemptCanRetrySamePhysicalEvent(t *testing.T) {
