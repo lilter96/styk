@@ -14,11 +14,11 @@ func forestNodeAdmission(f SplitForestFacts, source Posting, step SplitLineageSt
 		native, found := forestPrevious(f, number, f.CheckedAt, "")
 		posting := forestHead(f, number)
 		baseline, err := ProjectionPositionBaseline(native.Work, native.Target)
-		if !found || err != nil || !splitTransferAllParentLinesReserved(posting, baseline) {
+		if !found || err != nil || !forestInventoryAuthority(f, native, baseline) || !splitTransferAllParentLinesReserved(posting, baseline) {
 			return p, ErrBlocked
 		}
 		p.Ancestors = append(p.Ancestors, SplitAncestorNative{Posting: minimalSupersededPosting(posting), WorkID: native.Work.ID, Target: native.Target})
-		p.Baseline, p.NodeOriginWorkID = baseline, native.Work.ID
+		p.Baseline, p.NodeOriginWorkID = baseline, baseline.WorkID
 	}
 	if p.Validate() != nil {
 		return p, ErrBlocked
@@ -58,7 +58,7 @@ func (p SplitAncestorSettlementPermission) validateNodeAdmission() error {
 		seen[a.Posting.PostingNumber], nativeIDs[a.Target.Correlation.CustomerOrderID] = true, true
 	}
 	last := p.Ancestors[len(p.Ancestors)-1]
-	if p.NodeOriginWorkID != last.WorkID || p.Baseline.WorkID != last.WorkID || p.Baseline.Correlation != last.Target.Correlation || !ancestorParentConsistent(p.Node, last.Posting.PostingNumber) {
+	if p.NodeOriginWorkID != p.Baseline.WorkID || p.Baseline.Correlation != last.Target.Correlation || !splitMetadataAuthorityTarget(p.Baseline, last.Target) || !ancestorParentConsistent(p.Node, last.Posting.PostingNumber) {
 		return ErrBlocked
 	}
 	return nil

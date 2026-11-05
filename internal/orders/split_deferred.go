@@ -9,7 +9,8 @@ type SplitDeferredNative struct {
 }
 
 // SplitDeferredSettlementFacts covers a complete same-root retained spine.
-// Reductions includes every native change, not merely its latest successful row.
+// Reductions includes every native event, including transparent metadata ACKs,
+// not merely the latest successful inventory change.
 type SplitDeferredSettlementFacts struct {
 	Spine      []SplitLineageStep
 	Origin     SplitDeferredNative
@@ -30,7 +31,7 @@ func newDeferredSettlement(f SplitAncestorSettlementFacts) (SplitAncestorSettlem
 	d := f.Deferred
 	frontier := d.Origin
 	for _, reduction := range d.Reductions {
-		if !deferredReduction(f, frontier, reduction) {
+		if !deferredNativeEvent(f, frontier, reduction) {
 			return SplitAncestorSettlementPermission{}, ErrBlocked
 		}
 		frontier = reduction
@@ -45,7 +46,7 @@ func newDeferredSettlement(f SplitAncestorSettlementFacts) (SplitAncestorSettlem
 		if !splitTransferAllParentLinesReserved(d.Current, p.Baseline) || !splitTransferChildReservable(f.Selected) || !ancestorParentConsistent(f.Selected, d.Current.PostingNumber) {
 			return p, ErrBlocked
 		}
-		p.Mode, p.Source, p.NodeReductionWorkID = SplitAncestorAdmit, minimalSupersededPosting(f.Selected), frontier.Work.ID
+		p.Mode, p.Source, p.NodeReductionWorkID = SplitAncestorAdmit, minimalSupersededPosting(f.Selected), p.Baseline.WorkID
 	}
 	if p.Validate() != nil {
 		return p, ErrBlocked
@@ -62,7 +63,7 @@ func deferredPermission(f SplitAncestorSettlementFacts, prior SplitDeferredNativ
 	return SplitAncestorSettlementPermission{
 		Scope: f.Lineage.Scope, Mode: SplitAncestorReduce,
 		RootSplitWorkID: d.Spine[0].Work.ID, SplitWorkID: split.Work.ID,
-		NodeOriginWorkID: prior.Work.ID, Before: minimalSupersededPosting(d.Spine[0].Before),
+		NodeOriginWorkID: baseline.WorkID, Before: minimalSupersededPosting(d.Spine[0].Before),
 		Source: minimalSupersededPosting(node), Node: minimalSupersededPosting(node), Baseline: baseline,
 		Ancestors: []SplitAncestorNative{{Posting: minimalSupersededPosting(node), WorkID: prior.Work.ID, Target: prior.Target}},
 	}, nil

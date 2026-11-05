@@ -27,10 +27,10 @@ func forestCurrentPermission(f SplitForestFacts) (SplitAncestorSettlementPermiss
 
 func forestOwnedPermission(f SplitForestFacts, selected Posting, owner string, node bool, native SplitForestNative, step SplitLineageStep) (SplitAncestorSettlementPermission, error) {
 	baseline, err := ProjectionPositionBaseline(native.Work, native.Target)
-	if err != nil {
+	if err != nil || !forestInventoryAuthority(f, native, baseline) {
 		return SplitAncestorSettlementPermission{}, ErrBlocked
 	}
-	p := SplitAncestorSettlementPermission{Scope: f.Lineage.Scope, Mode: SplitAncestorReduce, RootSplitWorkID: forestRoot(f).Work.ID, SplitWorkID: step.Work.ID, NodeOriginWorkID: native.Work.ID, Before: minimalSupersededPosting(step.Before), Source: minimalSupersededPosting(forestHead(f, owner)), Node: minimalSupersededPosting(forestHead(f, owner)), Baseline: baseline}
+	p := SplitAncestorSettlementPermission{Scope: f.Lineage.Scope, Mode: SplitAncestorReduce, RootSplitWorkID: forestRoot(f).Work.ID, SplitWorkID: step.Work.ID, NodeOriginWorkID: baseline.WorkID, Before: minimalSupersededPosting(step.Before), Source: minimalSupersededPosting(forestHead(f, owner)), Node: minimalSupersededPosting(forestHead(f, owner)), Baseline: baseline}
 	if err = forestCurrentAncestors(f, owner, &p); err != nil {
 		return p, err
 	}
@@ -38,7 +38,7 @@ func forestOwnedPermission(f SplitForestFacts, selected Posting, owner string, n
 		if !splitTransferAllParentLinesReserved(p.Node, baseline) || !splitTransferChildReservable(selected) || !ancestorParentConsistent(selected, owner) {
 			return p, ErrBlocked
 		}
-		p.Mode, p.Source, p.NodeReductionWorkID = SplitAncestorAdmit, minimalSupersededPosting(selected), native.Work.ID
+		p.Mode, p.Source, p.NodeReductionWorkID = SplitAncestorAdmit, minimalSupersededPosting(selected), baseline.WorkID
 	}
 	if p.Validate() != nil {
 		return p, ErrBlocked

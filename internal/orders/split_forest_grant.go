@@ -23,7 +23,7 @@ func forestGrant(f SplitForestFacts, e SplitForestNative, p SplitAncestorSettlem
 	if err != nil || !baseline.Equal(p.Baseline) || !exists || step.Work.ID != p.SplitWorkID || !forestBeforeBound(f, p.Before, owner, e.Attempt.CreatedAt) {
 		return false
 	}
-	if !splitTransferSameAllocation(forestPrefix(f, owner, e.Attempt.CreatedAt), p.Node) || p.Mode == SplitAncestorAdmit && p.NodeReductionWorkID != previous.Work.ID {
+	if !splitTransferSameAllocation(forestPrefix(f, owner, e.Attempt.CreatedAt), p.Node) || p.Mode == SplitAncestorAdmit && p.NodeReductionWorkID != baseline.WorkID {
 		return false
 	}
 	if p.Mode == SplitAncestorAdmit && !splitTransferAllParentLinesReserved(p.Node, baseline) {

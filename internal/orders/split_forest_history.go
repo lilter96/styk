@@ -5,6 +5,9 @@ func forestNativeValid(f SplitForestFacts, e SplitForestNative) bool {
 	if e.Work.Command.Action == ActionMirrorCreate {
 		return !found && forestCreation(f, e)
 	}
+	if e.Work.Command.Action == ActionMirrorUpdate {
+		return found && forestScalarMetadata(f, previous, e)
+	}
 	prior, invalid := OwnedSplitReductionBaseline(e.Work.Command)
 	if !found || invalid != nil || !OwnedSplitReductionObserved(e.Work.Command, e.Target) {
 		return false

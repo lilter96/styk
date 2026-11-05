@@ -17,13 +17,20 @@ func deferredClocks(f SplitAncestorSettlementFacts) bool {
 	previous := origin
 	for _, reduction := range f.Deferred.Reductions {
 		timing, present := native[reduction.Work.ID]
-		step, found := deferredReductionStep(f, reduction.Work)
-		if !present || !found || used[timing.WorkID] || timing.CreatedAt.Before(previous.ReconciledAt) || timing.CreatedAt.Before(splits[step.Work.ID].ReconciledAt) {
+		if !present || used[timing.WorkID] || timing.CreatedAt.Before(previous.ReconciledAt) || !deferredNativeEventClocks(f, reduction.Work, timing, splits) {
 			return false
 		}
 		previous, used[timing.WorkID] = timing, true
 	}
 	return len(used) == len(native)
+}
+
+func deferredNativeEventClocks(f SplitAncestorSettlementFacts, work Work, timing NestedSplitAttempt, splits map[string]NestedSplitAttempt) bool {
+	if work.Command.Action == ActionMirrorUpdate {
+		return deferredMetadataClocks(f, timing, splits)
+	}
+	step, found := deferredReductionStep(f, work)
+	return found && !timing.CreatedAt.Before(splits[step.Work.ID].ReconciledAt)
 }
 
 const (
