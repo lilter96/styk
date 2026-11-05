@@ -44,6 +44,10 @@ func (s *Service) planNativeMovement(ctx context.Context, review orders.ReviewCo
 	if automatic || review.Config.NativeDocuments == nil || !proposal.Applicable.IsKnown() || !review.Config.NativeDocuments.Allows(proposal.Action, *proposal.Applicable.Value, now) {
 		return nativePlanBlocked(decision, "native_documents", "native_document_policy_required"), nil
 	}
+	proposal, retryIssue := s.nativeRetryProposal(ctx, review, proposal)
+	if retryIssue.Code != "" {
+		return nativePlanBlocked(decision, retryIssue.Field, retryIssue.Code), nil
+	}
 	warehouse, validation := postingWarehouse(posting, review)
 	if validation.Code != "" {
 		decision.Validation = append(decision.Validation, validation)
@@ -164,12 +168,8 @@ func (s *Service) freezeNativeDecision(ctx context.Context, review orders.Review
 		return decision, err
 	}
 	command := orders.Command{ID: id, Scope: review.Config.Scope, Action: proposal.Action, CommercialOrderID: decision.Posting.CommercialOrderID, PostingNumber: proposal.PostingNumber, Correlation: parent.Correlation, ConfigRevision: review.Config.Revision, Credentials: review.Credentials, ExpectedSourceRevision: decision.Posting.Evidence.Revision, ExpectedTargetRevision: parent.Revision, TargetPositions: slices.Clone(parent.Positions), TargetPositionsComplete: parent.Complete, SourceOrigin: orders.OriginOzon, Warehouse: warehouse, NativeMovement: &movement, IdempotencyKey: id, CreatedAt: now}
-	if facts, found := review.NativeConsumption[command.PostingNumber]; found || movement.ParentEffect == orders.NativeParentUnpostedDocument {
-		seal, invalid := ordermoney.PlanNativeConsumption(command, facts)
-		if invalid.Code != "" {
-			return nativePlanBlocked(decision, invalid.Field, invalid.Code), nil
-		}
-		movement.Consumption = &seal
+	if invalid := sealNativeConsumption(command, review, proposal); invalid.Code != "" {
+		return nativePlanBlocked(decision, invalid.Field, invalid.Code), nil
 	}
 	if command.Validate() != nil || !movement.AllowedBy(review.Config.NativeDocuments, command.Action, now) {
 		return nativePlanBlocked(decision, "native_document", "native_values_or_policy_unverified"), nil
