@@ -22,6 +22,7 @@ test("composition replacement has explicit preview and separate destructive appr
         native_position_id: "native-old",
       },
     ],
+    preserved: ["foreign-same-sku", "foreign-other-product"],
   };
   let previews = 0;
   await page.route("**/api/orders/preview", (route) => {
@@ -76,6 +77,11 @@ test("composition replacement has explicit preview and separate destructive appr
     page.getByRole("heading", { name: "Проверка замены состава заказа" }),
   ).toBeVisible();
   await expect(page.getByText("Удалить: 9007199254740993")).toBeVisible();
+  await expect(
+    page.locator(".orders-facts > div").filter({
+      has: page.getByText("Чужие строки без изменений", { exact: true }),
+    }),
+  ).toHaveText("Чужие строки без изменений2");
   expect(previews).toBe(1);
   expect(approvals).toHaveLength(0);
   await page.setViewportSize({ width: 1440, height: 1000 });
