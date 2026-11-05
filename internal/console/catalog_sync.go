@@ -4,17 +4,16 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"os"
 	"strconv"
 
 	"github.com/lilter96/styk/internal/catalog"
+	"github.com/lilter96/styk/internal/catalogaccess"
 	"github.com/lilter96/styk/internal/catalogprovider"
 	"github.com/lilter96/styk/internal/catalogsync"
 	"github.com/lilter96/styk/internal/credentials"
 	"github.com/lilter96/styk/internal/infrastructure/moysklad"
 	"github.com/lilter96/styk/internal/postgres"
 	"github.com/lilter96/styk/internal/providercall"
-	"github.com/lilter96/styk/internal/testpublication"
 	"time"
 )
 
@@ -56,8 +55,7 @@ func catalogFactory(c *connections) catalogprovider.Factory {
 }
 
 func catalogLiveAllowed(scope catalog.Scope) bool {
-	expected := testpublication.Scope()
-	return os.Getenv("STYK_TEST_ACCOUNT_CATALOG") == "true" && scope.Tenant == expected.Tenant && scope.MoyskladAccount == expected.MoyskladAccount && scope.OzonAccount == expected.OzonAccount
+	return catalogaccess.Allows(scope)
 }
 func (a *catalogAPI) allowed(scope catalog.Scope) bool {
 	return a.simulated || catalogLiveAllowed(scope)

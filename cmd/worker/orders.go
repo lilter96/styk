@@ -17,7 +17,7 @@ import (
 	"github.com/lilter96/styk/internal/orders"
 	"github.com/lilter96/styk/internal/postgres"
 	"github.com/lilter96/styk/internal/providercall"
-	"github.com/lilter96/styk/internal/testpublication"
+	"github.com/lilter96/styk/internal/publication"
 )
 
 type orderCollector struct {
@@ -36,7 +36,15 @@ func (c orderCollector) Collect(ctx context.Context, scope orders.Scope) error {
 	if !ok {
 		return orders.ErrBlocked
 	}
-	collector, err := orderflow.NewIngestor(c.db, source, orderflow.IngestionOptions{WorkerID: c.workerID, NativeResolver: c.factory, Protector: c.protector})
+	options := orderflow.IngestionOptions{WorkerID: c.workerID, Protector: c.protector}
+	config, err := c.db.OrderConfig(ctx, scope)
+	if err != nil {
+		return err
+	}
+	if config.Enabled {
+		options.NativeResolver = c.factory
+	}
+	collector, err := orderflow.NewIngestor(c.db, source, options)
 	if err != nil {
 		return err
 	}
@@ -56,7 +64,7 @@ func (w *ordersWork) RunNext(ctx context.Context) (bool, error) {
 			return false, err
 		}
 	}
-	if w.mode != "schedule" {
+	if w.mode != "schedule" && publication.OrdersEnabled() {
 		worked, err := w.runner.RunNext(ctx)
 		if worked || err != nil {
 			return worked, err
@@ -69,14 +77,10 @@ func (w *ordersWork) RunNext(ctx context.Context) (bool, error) {
 	return false, w.runner.Tick(ctx)
 }
 func orderAllowed(scope orders.Scope) bool {
-	expected := testpublication.Scope()
-	return os.Getenv("STYK_TEST_ACCOUNT_ORDERS") == "true" && scope.Tenant == expected.Tenant && scope.MoyskladAccount == expected.MoyskladAccount && scope.OzonAccount == expected.OzonAccount
+	return publication.Orders(scope)
 }
 func newOrdersWork(db *postgres.Store, resolver *credentials.Resolver) (application.PublicationRunner, error) {
 	retention := &ordersRetentionWork{store: db, now: time.Now, mode: os.Getenv("STYK_WORKER_MODE")}
-	if os.Getenv("STYK_TEST_ACCOUNT_ORDERS") != "true" {
-		return retention, nil
-	}
 	var token [16]byte
 	if _, err := rand.Read(token[:]); err != nil {
 		return nil, errors.New("order worker identity unavailable")

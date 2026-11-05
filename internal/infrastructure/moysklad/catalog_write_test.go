@@ -38,6 +38,31 @@ func TestCatalogCreateReadAndMarkerReuse(t *testing.T) {
 	}
 }
 
+func TestCatalogCreatePreservesArchivedSourceWithoutWideningUpdates(t *testing.T) {
+	t.Parallel()
+	s := newCatalogSimulator(t)
+	c, cmd := s.writer(t), catalogCreateCommand("product")
+	cmd.Values[catalog.FieldLifecycle] = catalog.Text(string(catalog.LifecycleArchived))
+	catalogBind(t, c, cmd, catalogAuthorize)
+	receipt, err := c.WriteCatalog(context.Background(), cmd)
+	if err != nil || receipt.State != catalog.ReceiptApplied {
+		t.Fatalf("archived product creation failed: %v", err)
+	}
+	product := catalogReadOne(t, c, "product", receipt.ExternalID)
+	if product.Lifecycle != catalog.LifecycleArchived || !catalog.EqualValue(product.Fields[catalog.FieldLifecycle], cmd.Values[catalog.FieldLifecycle]) {
+		t.Fatal("archived source was created as an active product")
+	}
+	update := catalogUpdateCommand(product)
+	update.Values[catalog.FieldLifecycle] = catalog.Text(string(catalog.LifecycleActive))
+	if _, err := c.catalogPayload(update); !errors.Is(err, ErrCatalogInvalid) {
+		t.Fatal("ordinary update unexpectedly gained lifecycle writes")
+	}
+	problems, err := c.ValidateCatalog(context.Background(), update)
+	if err != nil || len(problems) == 0 {
+		t.Fatal("update preview allowed a lifecycle write")
+	}
+}
+
 func TestCatalogVariantCreatePreservesActualParent(t *testing.T) {
 	t.Parallel()
 	s := newCatalogSimulator(t)

@@ -30,6 +30,10 @@ func controlledFixture(t *testing.T) (*postgres.Store, domain.StockSyncReview) {
 }
 
 func controlledFixtureWithMapping(t *testing.T, mapping bool) (*postgres.Store, domain.StockSyncReview) {
+	return controlledFixtureForScope(t, mapping, testpublication.Scope(), "7")
+}
+
+func controlledFixtureForScope(t *testing.T, mapping bool, scope domain.StockSyncScope, quantity string) (*postgres.Store, domain.StockSyncReview) {
 	t.Helper()
 	u, err := url.Parse(os.Getenv("TEST_DATABASE_URL"))
 	if err != nil || (u.Hostname() != "127.0.0.1" && u.Hostname() != "localhost") || !strings.Contains(u.Path, "_test") {
@@ -58,14 +62,13 @@ func controlledFixtureWithMapping(t *testing.T, mapping bool) (*postgres.Store, 
 		t.Fatal(err)
 	}
 	t.Cleanup(db.Pool.Close)
-	scope := testpublication.Scope()
 	for _, c := range []struct{ p, a string }{{"moysklad", scope.MoyskladAccount}, {"ozon", scope.OzonAccount}} {
 		if err = db.RegisterStockConnection(ctx, scope.Tenant, c.p, c.a, "synthetic owner registration", true); err != nil {
 			t.Fatal(err)
 		}
 	}
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	stock, zero, incoming := "7", "0", "0"
+	stock, zero, incoming := quantity, "0", "0"
 	fbs, archived := false, false
 	source := domain.InventoryImport{Account: scope.MoyskladAccount, StartedAt: now.Add(-time.Second), FinishedAt: now, Entities: []domain.ExternalEntity{{Kind: "product", ID: testpublication.SourceProduct, Article: "synthetic"}, {Kind: "store", ID: testpublication.SourceWarehouse}}, WarehouseStock: []domain.WarehouseStockObservation{{Kind: "product", ExternalID: testpublication.SourceProduct, WarehouseID: testpublication.SourceWarehouse, Stock: &stock, Reserve: &zero, InTransit: &incoming}}}
 	market := domain.OzonImport{Account: scope.OzonAccount, StartedAt: now.Add(-time.Second), FinishedAt: now, Products: []domain.OzonProduct{{ProductID: testpublication.OzonProduct, OfferID: testpublication.OzonOffer, SKU: testpublication.OzonSKU, Archived: &archived}}, Warehouses: []domain.OzonWarehouse{{ID: testpublication.OzonWarehouse, Status: "created", IsRFBS: &fbs}}, Stocks: []domain.OzonStock{{ProductID: testpublication.OzonProduct, OfferID: testpublication.OzonOffer, SKU: testpublication.OzonSKU, WarehouseID: testpublication.OzonWarehouse, Present: 0, Reserved: 0, FreeStock: 0}}}
@@ -103,7 +106,7 @@ func controlledFixtureWithMapping(t *testing.T, mapping bool) (*postgres.Store, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !review.Ready || len(review.Targets) != 1 || review.Targets[0].Quantity == nil || *review.Targets[0].Quantity != "7" {
+	if !review.Ready || len(review.Targets) != 1 || review.Targets[0].Quantity == nil || *review.Targets[0].Quantity != quantity {
 		t.Fatalf("fixture review not ready: %+v %+v", review.Checks, review.Targets)
 	}
 	return db, review

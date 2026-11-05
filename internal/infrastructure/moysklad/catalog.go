@@ -10,15 +10,14 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/lilter96/styk/internal/catalog"
+	"github.com/lilter96/styk/internal/catalogaccess"
 	"github.com/lilter96/styk/internal/domain"
-	"github.com/lilter96/styk/internal/testpublication"
 )
 
 const catalogResponseLimit = 4 << 20
@@ -71,15 +70,19 @@ func NewCatalogClient(c *Client) (*CatalogClient, error) {
 	return &CatalogClient{client: c}, nil
 }
 
-// NewControlledTestCatalogClient admits the fixed owner-authorized account pair
-// on the official host, or an explicit loopback simulator. The catalog switch
-// is independent from the production stock publication hold.
+// NewControlledTestCatalogClient is retained for existing integrations.
 func NewControlledTestCatalogClient(c *Client, scope catalog.Scope) (*CatalogClient, error) {
+	return NewWritableCatalogClient(c, scope)
+}
+
+// NewWritableCatalogClient binds one account scope under the catalog switch.
+// Tenant ownership and one-use durable intent checks remain mandatory.
+func NewWritableCatalogClient(c *Client, scope catalog.Scope) (*CatalogClient, error) {
 	x, err := NewCatalogClient(c)
 	if err != nil {
 		return nil, err
 	}
-	if !validCatalogScope(scope) || (!catalogLoopback(c.base) && !catalogTestEnabled(scope)) {
+	if !validCatalogScope(scope) || (!catalogLoopback(c.base) && !catalogaccess.Allows(scope)) {
 		return nil, ErrCatalogWritesDisabled
 	}
 	x.scope = &scope
@@ -90,12 +93,8 @@ func validCatalogScope(s catalog.Scope) bool {
 	return s.Validate() == nil && orderUUID.MatchString(s.MoyskladAccount)
 }
 
-func catalogTestEnabled(s catalog.Scope) bool {
-	return os.Getenv("STYK_TEST_ACCOUNT_CATALOG") == "true" && s == (catalog.Scope{Tenant: testpublication.Tenant, MoyskladAccount: testpublication.MoyskladAccount, OzonAccount: testpublication.OzonAccount})
-}
-
 func (c *CatalogClient) scopeAllowed(s catalog.Scope) bool {
-	return c.scope != nil && *c.scope == s && (catalogLoopback(c.client.base) || catalogTestEnabled(s))
+	return c.scope != nil && *c.scope == s && (catalogLoopback(c.client.base) || catalogaccess.Allows(s))
 }
 
 func catalogAccount(scope catalog.Scope, account catalog.Account) error {

@@ -357,9 +357,7 @@ it("does not retry or reapprove an unknown outcome and exposes read-only history
   ).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Закрыть" }));
   fireEvent.click(screen.getByRole("tab", { name: "История передач" }));
-  fireEvent.click(
-    screen.getByRole("button", { name: "Обновить статусы заказов" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Обновить статусы" }));
   await waitFor(() =>
     expect(
       fetcher.mock.calls.filter(([path]) => path.includes("/approve")),
@@ -560,7 +558,7 @@ it("blocks a previously unknown posting from the paginated history and shows its
                   command: decision().commands[0],
                   receipt: {
                     state: "UNKNOWN",
-                    external_id: "moy-order-synthetic",
+                    external_id: "11111111-1111-4111-8111-111111111111",
                   },
                 },
               ],
@@ -571,6 +569,9 @@ it("blocks a previously unknown posting from the paginated history and shows its
   );
   mount();
   fireEvent.click(await screen.findByRole("tab", { name: "История передач" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Разобраться: SYNTHETIC-1/ }),
+  );
   await screen.findByText(/Запрос мог выполниться/);
   await waitFor(() =>
     expect(
@@ -582,11 +583,11 @@ it("blocks a previously unknown posting from the paginated history and shows its
     ).toBe(true),
   );
   const links = screen.getAllByRole("link", {
-    name: "Заказ МойСклад moy-order-synthetic",
+    name: "Открыть заказ МойСклад",
   });
   expect(links.length).toBeGreaterThan(0);
   expect(links[0].getAttribute("href")).toContain(
-    "customerorder/edit?id=moy-order-synthetic",
+    "customerorder/edit?id=11111111-1111-4111-8111-111111111111",
   );
 });
 
@@ -834,4 +835,21 @@ it("loads only the requested posting history and keeps other targets out of its 
         "SYNTHETIC-1",
     ),
   ).toBe(true);
+});
+
+it.each([
+  ["source only", false, true, true],
+  ["source revoked with target enabled", true, false, false],
+])("source check respects independent polling consent: %s", async (_name, enabled, readEnabled, expected) => {
+  const fetcher = mockAPI((url) => {
+    if (url.pathname.endsWith("/config")) return json(configuration({ enabled, read_enabled: readEnabled, read_configured: true }));
+    if (url.pathname.endsWith("/check")) return json({ scheduled: true });
+  });
+  mount();
+  const button = await screen.findByRole("button", { name: "Проверить источник сейчас" });
+  await screen.findByText("SYNTHETIC-1");
+  expect((button as HTMLButtonElement).disabled).toBe(!expected);
+  fireEvent.click(button);
+  if (expected) await screen.findByText(/Проверка источника запланирована/);
+  expect(fetcher.mock.calls.some(([url, init]) => url.includes("/api/orders/check") && init?.method === "POST")).toBe(expected);
 });

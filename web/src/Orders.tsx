@@ -192,6 +192,7 @@ function OrdersAccount({
     ]);
   }, []);
   const lock = useRef(false);
+  const canReadSource = config.data?.read_configured ? config.data.read_enabled === true : !!(config.data?.enabled || config.data?.read_enabled);
   const canPublish =
     config.data?.enabled &&
     config.data.test_enabled &&
@@ -349,7 +350,7 @@ function OrdersAccount({
     }
   }
   async function check() {
-    if (lock.current || !config.data?.enabled || dirty) return;
+    if (lock.current || !canReadSource || dirty) return;
     lock.current = true;
     setBusy("check");
     setError("");
@@ -430,7 +431,7 @@ function OrdersAccount({
         </button>
         <button
           type="button"
-          disabled={busy !== null || dirty || !config.data?.enabled}
+          disabled={busy !== null || dirty || !canReadSource}
           onClick={() => void check()}
           aria-label="Проверить источник сейчас"
         >
@@ -468,8 +469,9 @@ function OrdersAccount({
           )}
           {!config.data.enabled && (
             <p className="orders-warning">
-              Передача выключена. Выберите реквизиты МойСклад, поля и сохраните
-              настройки, чтобы запрашивать новые данные Ozon.
+              {config.data.read_enabled
+                ? "Отправления автоматически загружаются из Ozon. Передача документов в МойСклад выключена."
+                : "Загрузка отправлений выключена. Включите её в настройках или обновите аккаунт Ozon в разделе «Интеграции»."}
             </p>
           )}
           <div

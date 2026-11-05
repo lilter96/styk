@@ -11,6 +11,7 @@ import (
 	"github.com/lilter96/styk/internal/config"
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/postgres"
+	"github.com/lilter96/styk/internal/publication"
 	"github.com/lilter96/styk/internal/stocksync"
 	"github.com/lilter96/styk/internal/testpublication"
 )
@@ -53,9 +54,11 @@ func (a *stockSyncAPI) eligibility(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state := "AWAITING_PRODUCTION_ACTIVATION"
-	if scope == testpublication.Scope() {
+	if publication.StockGeneral() {
+		state = "AVAILABLE"
+	} else if scope == testpublication.Scope() {
 		state = "CONTROLLED_TEST_DISABLED"
-		if testpublication.Enabled(scope) {
+		if publication.Stock(scope) {
 			state = "CONTROLLED_TEST_AVAILABLE"
 		}
 	}
@@ -256,7 +259,7 @@ func (a *stockSyncAPI) shadow(w http.ResponseWriter, r *http.Request) {
 		}
 		targets = append(targets, t)
 	}
-	writeJSON(w, map[string]any{"scope": scope, "checks": view.Checks, "state": view.State, "targets": targets, "publication_available": testpublication.Enabled(scope), "test_account_mode": testpublication.Enabled(scope)})
+	writeJSON(w, map[string]any{"scope": scope, "checks": view.Checks, "state": view.State, "targets": targets, "publication_available": publication.Stock(scope), "test_account_mode": !publication.StockGeneral() && testpublication.Enabled(scope)})
 }
 func syncScope(r *http.Request) domain.StockSyncScope {
 	q := r.URL.Query()
@@ -336,7 +339,7 @@ func (a *stockSyncAPI) mutate(w http.ResponseWriter, r *http.Request, action str
 		return
 	}
 	if action == "enable" {
-		if _, ok := config.StockPublicationTestEndpoint(); !ok && !testpublication.Enabled(req.StockSyncScope) {
+		if _, ok := config.StockPublicationTestEndpoint(); !ok && !publication.Stock(req.StockSyncScope) {
 			writeError(w, http.StatusServiceUnavailable, "STOCK_PUBLICATION_DISABLED")
 			return
 		}
@@ -395,7 +398,7 @@ func writeStockSyncView(w http.ResponseWriter, view domain.StockSyncView) {
 		writeError(w, http.StatusServiceUnavailable, "STOCK_SYNC_UNAVAILABLE")
 		return
 	}
-	data["publication_available"] = testpublication.Enabled(view.StockSyncScope)
-	data["test_account_mode"] = testpublication.Enabled(view.StockSyncScope)
+	data["publication_available"] = publication.Stock(view.StockSyncScope)
+	data["test_account_mode"] = !publication.StockGeneral() && testpublication.Enabled(view.StockSyncScope)
 	writeJSON(w, data)
 }

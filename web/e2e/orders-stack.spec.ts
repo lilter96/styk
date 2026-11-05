@@ -80,14 +80,14 @@ test("orders review reaches real API replicas and durable worker readback", asyn
         async () => {
           await a
             .getByRole("button", {
-              name: "Обновить статусы заказов",
+              name: "Обновить статусы",
               exact: true,
             })
             .click();
           return a
-            .locator(".orders-work")
+            .locator(".history-row")
             .filter({ hasText: "browser-create" })
-            .getByText("Подтверждено сверкой", { exact: true })
+            .getByText("Готово", { exact: true })
             .count();
         },
         { timeout: 25_000 },
@@ -96,8 +96,8 @@ test("orders review reaches real API replicas and durable worker readback", asyn
     await a.reload();
     await a.getByRole("tab", { name: "История передач", exact: true }).click();
     await expect(
-      a.locator(".orders-work").filter({ hasText: "browser-create" }),
-    ).toContainText("Подтверждено сверкой");
+      a.locator(".history-row").filter({ hasText: "browser-create" }),
+    ).toContainText("Готово");
     await a.getByRole("tab", { name: "Отправления", exact: true }).click();
     await a.getByLabel("Найти отправление или заказ").fill("browser-create");
     await a

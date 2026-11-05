@@ -3,7 +3,6 @@ package console
 import (
 	"errors"
 	"net/http"
-	"os"
 	"strconv"
 	"time"
 
@@ -15,7 +14,7 @@ import (
 	"github.com/lilter96/styk/internal/orders"
 	"github.com/lilter96/styk/internal/postgres"
 	"github.com/lilter96/styk/internal/providercall"
-	"github.com/lilter96/styk/internal/testpublication"
+	"github.com/lilter96/styk/internal/publication"
 )
 
 type ordersAPI struct {
@@ -73,8 +72,7 @@ func registerOrdersRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c *co
 	return nil
 }
 func orderLiveAllowed(scope orders.Scope) bool {
-	expected := testpublication.Scope()
-	return os.Getenv("STYK_TEST_ACCOUNT_ORDERS") == "true" && scope.Tenant == expected.Tenant && scope.OzonAccount == expected.OzonAccount && scope.MoyskladAccount == expected.MoyskladAccount
+	return publication.Orders(scope)
 }
 func (a *ordersAPI) allowed(scope orders.Scope) bool { return a.simulated || orderLiveAllowed(scope) }
 func orderScope(r *http.Request) orders.Scope {

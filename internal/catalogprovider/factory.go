@@ -77,7 +77,7 @@ func (f Factory) moysklad(scope catalog.Scope, account, secret string) (catalogs
 	if err != nil {
 		return nil, err
 	}
-	client, err := moysklad.NewControlledTestCatalogClient(base, scope)
+	client, err := moysklad.NewWritableCatalogClient(base, scope)
 	if errors.Is(err, moysklad.ErrCatalogWritesDisabled) {
 		client, err = moysklad.NewCatalogClient(base)
 	}
@@ -96,7 +96,7 @@ func (f Factory) ozon(scope catalog.Scope, account, secret string) (catalogsync.
 	if err != nil {
 		return nil, err
 	}
-	client, err := ozon.NewControlledTestCatalogClientFromClient(base, scope)
+	client, err := ozon.NewWritableCatalogClientFromClient(base, scope)
 	if errors.Is(err, ozon.ErrCatalogWritesDisabled) {
 		client, err = ozon.NewCatalogReaderFromClient(base, scope)
 	}

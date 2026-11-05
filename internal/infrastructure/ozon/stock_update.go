@@ -12,7 +12,7 @@ import (
 	"strconv"
 
 	"github.com/lilter96/styk/internal/providercall"
-	"github.com/lilter96/styk/internal/testpublication"
+	"github.com/lilter96/styk/internal/publication"
 )
 
 const stockUpdatePath = "/v2/products/stocks"
@@ -64,7 +64,7 @@ func (c *Client) BindControlledTestIntent(item StockUpdate, authorize func(conte
 		// boundary; the worker still performs its database checks.
 		return nil
 	}
-	if c.controlledTestScope == nil || !testpublication.Enabled(*c.controlledTestScope) || c.controlledIntent != nil || authorize == nil || item.ProductID == "" || item.WarehouseID == "" || !testpublication.AutomaticQuantityAllowed(strconv.FormatInt(item.Quantity, 10)) {
+	if c.controlledTestScope == nil || !publication.Stock(*c.controlledTestScope) || c.controlledIntent != nil || authorize == nil || item.ProductID == "" || item.WarehouseID == "" || !publication.Quantity(*c.controlledTestScope, strconv.FormatInt(item.Quantity, 10)) {
 		return ErrStockWritesDisabled
 	}
 	c.controlledIntent = &item
@@ -79,12 +79,12 @@ func (c *Client) consumeStockIntent(items []StockUpdate) (func(context.Context) 
 		}
 		return nil, ErrStockWritesDisabled
 	}
-	if !testpublication.Enabled(*c.controlledTestScope) || len(items) != 1 {
+	if !publication.Stock(*c.controlledTestScope) || len(items) != 1 {
 		return nil, ErrStockWritesDisabled
 	}
 	c.intentMu.Lock()
 	defer c.intentMu.Unlock()
-	if c.controlledIntent == nil || c.controlledIntentUsed || *c.controlledIntent != items[0] || c.controlledAuthorize == nil || !testpublication.AutomaticQuantityAllowed(strconv.FormatInt(items[0].Quantity, 10)) {
+	if c.controlledIntent == nil || c.controlledIntentUsed || *c.controlledIntent != items[0] || c.controlledAuthorize == nil || !publication.Quantity(*c.controlledTestScope, strconv.FormatInt(items[0].Quantity, 10)) {
 		return nil, ErrStockWritesDisabled
 	}
 	c.controlledIntentUsed = true
@@ -95,11 +95,11 @@ func (c *Client) authorizeStockIntent(ctx context.Context, authorize func(contex
 	if authorize == nil {
 		return nil
 	}
-	if !testpublication.Enabled(*c.controlledTestScope) {
+	if !publication.Stock(*c.controlledTestScope) {
 		return ErrStockWritesDisabled
 	}
 	allowed, err := authorize(ctx)
-	if err != nil || !allowed || !testpublication.Enabled(*c.controlledTestScope) {
+	if err != nil || !allowed || !publication.Stock(*c.controlledTestScope) {
 		return ErrStockWritesDisabled
 	}
 	return ctx.Err()

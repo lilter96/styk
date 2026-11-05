@@ -40,7 +40,7 @@ func validateCatalogConfig(req catalogsync.SaveConfigRequest) error {
 	if req.ExpectedRevision < 0 || req.Actor == "" || req.IdempotencyKey == "" || len(req.IdempotencyKey) > 128 {
 		return catalogsync.ErrInvalid
 	}
-	if (req.Config.Enabled || req.Config.TestEnabled) && !catalogTestScope(req.Config.Scope) {
+	if (req.Config.Enabled || req.Config.TestEnabled) && !catalogScopeValid(req.Config.Scope) {
 		return catalogsync.ErrBlocked
 	}
 	return nil

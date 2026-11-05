@@ -45,29 +45,38 @@ type ImportCounts struct {
 	HTTPStatus            int `json:"http_status,omitempty"`
 	RateLimitResponses    int `json:"rate_limit_responses,omitempty"`
 }
+type OrderSourceRefresh struct {
+	State           string     `json:"state"`
+	Code            string     `json:"code"`
+	PostingsCount   int64      `json:"postings_count"`
+	MoyskladAccount string     `json:"moysklad_account"`
+	RequestedAt     time.Time  `json:"requested_at"`
+	FinishedAt      *time.Time `json:"finished_at,omitempty"`
+}
 type ImportOperation struct {
-	ID               string       `json:"id"`
-	Tenant           string       `json:"tenant"`
-	Provider         string       `json:"provider"`
-	Account          string       `json:"account"`
-	Type             string       `json:"operation_type"`
-	State            string       `json:"state"`
-	Phase            string       `json:"phase"`
-	Outcome          *string      `json:"outcome"`
-	LimitingResource *string      `json:"limiting_resource"`
-	CreatedAt        time.Time    `json:"created_at"`
-	StartedAt        *time.Time   `json:"started_at"`
-	AttemptStartedAt *time.Time   `json:"attempt_started_at"`
-	ProgressAt       *time.Time   `json:"progress_at"`
-	LeaseExpiresAt   *time.Time   `json:"lease_expires_at"`
-	FinishedAt       *time.Time   `json:"finished_at"`
-	Attempt          int          `json:"attempt"`
-	MaxAttempts      int          `json:"max_attempts"`
-	Limits           ImportLimits `json:"limits"`
-	Counts           ImportCounts `json:"counts"`
-	BatchID          *int64       `json:"batch_id"`
-	BatchCreated     *bool        `json:"batch_created"`
-	ElapsedMS        int64        `json:"elapsed_ms"`
+	OrdersRefresh    *OrderSourceRefresh `json:"orders_refresh,omitempty"`
+	ID               string              `json:"id"`
+	Tenant           string              `json:"tenant"`
+	Provider         string              `json:"provider"`
+	Account          string              `json:"account"`
+	Type             string              `json:"operation_type"`
+	State            string              `json:"state"`
+	Phase            string              `json:"phase"`
+	Outcome          *string             `json:"outcome"`
+	LimitingResource *string             `json:"limiting_resource"`
+	CreatedAt        time.Time           `json:"created_at"`
+	StartedAt        *time.Time          `json:"started_at"`
+	AttemptStartedAt *time.Time          `json:"attempt_started_at"`
+	ProgressAt       *time.Time          `json:"progress_at"`
+	LeaseExpiresAt   *time.Time          `json:"lease_expires_at"`
+	FinishedAt       *time.Time          `json:"finished_at"`
+	Attempt          int                 `json:"attempt"`
+	MaxAttempts      int                 `json:"max_attempts"`
+	Limits           ImportLimits        `json:"limits"`
+	Counts           ImportCounts        `json:"counts"`
+	BatchID          *int64              `json:"batch_id"`
+	BatchCreated     *bool               `json:"batch_created"`
+	ElapsedMS        int64               `json:"elapsed_ms"`
 }
 
 func DefaultMoyskladImportLimits() ImportLimits {

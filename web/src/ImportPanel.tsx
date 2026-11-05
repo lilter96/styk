@@ -61,12 +61,14 @@ const active = (state: string) =>
   ["QUEUED", "RUNNING", "OUTCOME_UNKNOWN"].includes(state);
 const scopeQuery = (scope: ImportScope) =>
   params({ tenant: scope.tenant, ...importAccount(scope) });
+const ordersPending = (op: ImportOperation) => !!op.orders_refresh && ["QUEUED", "READING"].includes(op.orders_refresh.state);
+const importing = (op: ImportOperation) => active(op.state) || ordersPending(op);
 const poll = (query: { state: { data?: ImportOperation; error: unknown } }) =>
-  !query.state.error && query.state.data && active(query.state.data.state)
+  !query.state.error && query.state.data && importing(query.state.data)
     ? 2000
     : false;
 const pollHistory = (query: { state: { data?: History; error: unknown } }) =>
-  !query.state.error && query.state.data?.items.some((op) => active(op.state))
+  !query.state.error && query.state.data?.items.some(importing)
     ? 2000
     : false;
 function cardTimestamp(value: string) {
@@ -230,6 +232,12 @@ function TechnicalDetails({
     </details>
   );
 }
+function OrderSourceResult({ op }: { op: ImportOperation }) {
+ const refresh = op.orders_refresh;
+ if (!refresh) return null;
+ const text = refresh.state === "SUCCEEDED" ? `Заказы загружены. Сохранено отправлений: ${refresh.postings_count}.` : refresh.state === "FAILED" ? "Не удалось загрузить заказы. Проверьте права ключа Ozon и повторите обновление." : refresh.state === "PARTIAL" ? `Заказы загружены частично. Сохранено отправлений: ${refresh.postings_count}. Повторите обновление.` : refresh.state === "CANCELLED" ? "Загрузка заказов отключена в настройках заказов." : "Загружаем заказы из Ozon…";
+ return <p className={refresh.state === "FAILED" || refresh.state === "PARTIAL" ? "integration-feedback" : "import-orders-status"} role="status">{text}</p>;
+}
 function Confirm({
   title,
   children,
@@ -392,6 +400,11 @@ export function ImportPanel({
   }, [latest.error, history.error, detail.error, currentDetail.error]);
   useEffect(() => {
     for (const op of [currentDetail.data, detail.data]) {
+      if (op?.orders_refresh && !ordersPending(op) && !invalidated.current.has(op.id + ":orders")) {
+        invalidated.current.add(op.id + ":orders");
+        void client.invalidateQueries({ queryKey: ["orders-postings"] });
+        void client.invalidateQueries({ queryKey: ["orders-config"] });
+      }
       if (
         op?.state !== "SUCCEEDED" ||
         op.batch_id === null ||
@@ -415,7 +428,7 @@ export function ImportPanel({
   // cached active detail response. Both describe the same scoped operation.
   const current =
     currentDetail.data && listed && currentDetail.data.id === listed.id
-      ? listed && !active(listed.state) && active(currentDetail.data.state)
+      ? listed && !importing(listed) && importing(currentDetail.data)
         ? listed
         : currentDetail.dataUpdatedAt >= latest.dataUpdatedAt
           ? currentDetail.data
@@ -439,7 +452,7 @@ export function ImportPanel({
     !!latest.error ||
     !latest.data ||
     !!submittedStillActive ||
-    !!(current && active(current.state));
+    !!(current && importing(current));
   const observedState = submittedStillActive ? submitted.state : current?.state;
   useEffect(() => {
     onStateChange?.(scope, observedState);
@@ -523,6 +536,7 @@ export function ImportPanel({
           </div>
         )}
         <p>{descriptions[item.state]}</p>
+        <OrderSourceResult op={item} />
         {item.state === "FAILED" && (
           <p role="alert">
             {failures[item.outcome || ""] ||
@@ -816,6 +830,7 @@ export function ImportPanel({
           </>
         )}
       </div>
+      {current && <OrderSourceResult op={current} />}
       {!compact && <div
         className={`provider-footnote ${compact ? "integration-import-footnote" : ""}`}
       >
@@ -887,9 +902,10 @@ export function ImportPanel({
         >
           <p>
             Загрузим товары{scope.provider === "moysklad" ? ", варианты" : ""},
-            склады и остатки
+            склады, остатки{scope.provider === "ozon" && scope.ordersMoyskladAccount ? " и заказы" : ""}
             {accountLabel ? `: ${accountLabel}` : " выбранного аккаунта"}.
             Данные в сервисе не изменятся.
+            {scope.provider === "ozon" && scope.ordersMoyskladAccount && " Автоматическая загрузка отправлений будет включена с интервалом из настроек заказов (по умолчанию 5 минут). Передача документов в МойСклад настраивается отдельно."}
           </p>
           <p>
             Загрузка не создаёт соответствия и не включает публикацию остатков.

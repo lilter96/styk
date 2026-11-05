@@ -8,13 +8,14 @@ import (
 	"github.com/lilter96/styk/internal/application"
 	"github.com/lilter96/styk/internal/config"
 	"github.com/lilter96/styk/internal/credentials"
+	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/infrastructure/moysklad"
 	"github.com/lilter96/styk/internal/infrastructure/ozon"
 	"github.com/lilter96/styk/internal/ozonjob"
 	"github.com/lilter96/styk/internal/postgres"
 	"github.com/lilter96/styk/internal/providercall"
+	"github.com/lilter96/styk/internal/publication"
 	"github.com/lilter96/styk/internal/stocksync"
-	"github.com/lilter96/styk/internal/testpublication"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -198,7 +199,7 @@ func run() error {
 	// The existing simulator and the single authorized real-account experiment
 	// are mutually exclusive. Neither switch enables arbitrary real targets.
 	testEndpoint, publicationEnabled := config.StockPublicationTestEndpoint()
-	controlled := testpublication.Enabled(testpublication.Scope())
+	controlled := publication.StockEnabled()
 	if controlled && publicationEnabled {
 		return errors.New("controlled live test and publication simulator cannot run together")
 	}
@@ -210,16 +211,15 @@ func run() error {
 		if _, err := rand.Read(instance[:]); err != nil {
 			return err
 		}
-		publications = stocksync.Runner{Enabled: true, ControlledTest: true, WorkerID: hex.EncodeToString(instance[:]), Store: db, ResolveOzon: func(ctx context.Context, tenant, account string) (*ozon.Client, error) {
-			scope := testpublication.Scope()
-			if tenant != scope.Tenant || account != scope.OzonAccount || !testpublication.Enabled(scope) {
+		publications = stocksync.Runner{Enabled: true, ControlledTest: true, WorkerID: hex.EncodeToString(instance[:]), Store: db, ResolveScopedOzon: func(ctx context.Context, scope domain.StockSyncScope) (*ozon.Client, error) {
+			if !publication.Stock(scope) {
 				return nil, errors.New("controlled test publication scope mismatch")
 			}
-			key, revision, err := resolver.ResolveWithRevision(ctx, credentials.Scope{Tenant: tenant, Provider: "ozon", Account: account})
+			key, revision, err := resolver.ResolveWithRevision(ctx, credentials.Scope{Tenant: scope.Tenant, Provider: "ozon", Account: scope.OzonAccount})
 			if err != nil {
 				return nil, err
 			}
-			client, err := ozon.NewControlledTestStockClient(scope, key)
+			client, err := ozon.NewStockWriter(scope, key)
 			if err != nil {
 				return nil, err
 			}
@@ -227,7 +227,7 @@ func run() error {
 			if err != nil {
 				return nil, err
 			}
-			return client, client.Coordinate(gate, providercall.Scope{Tenant: tenant, Provider: "ozon", Account: account, CredentialRevision: revision})
+			return client, client.Coordinate(gate, providercall.Scope{Tenant: scope.Tenant, Provider: "ozon", Account: scope.OzonAccount, CredentialRevision: revision})
 		}}
 	}
 	var automatic application.PublicationRunner

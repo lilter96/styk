@@ -3,9 +3,11 @@ import { orderActionLabel, type OrderCommand } from "./OrdersTypes";
 export function OrdersActionSummary({
   command,
   reasonLabel,
+  historical = false,
 }: {
   command: OrderCommand;
   reasonLabel?: string;
+  historical?: boolean;
 }) {
   const parameters = command.posting_action?.parameters;
   if (!parameters)
@@ -17,8 +19,11 @@ export function OrdersActionSummary({
   return (
     <div className="orders-detail-body">
       <p>
-        Будет отправлен запрос: {orderActionLabel(command.action)}. Фактический
-        результат будет проверен отдельно.
+        {historical ? "Параметры поручения" : "Будет отправлен запрос"}:{" "}
+        {orderActionLabel(command.action)}.
+        {historical
+          ? " Фактический результат указан в статусе операции."
+          : " Фактический результат будет проверен отдельно."}
       </p>
       {command.action === "posting_split_unassembled" && (
         <p className="orders-note">

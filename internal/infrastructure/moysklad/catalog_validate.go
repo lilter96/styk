@@ -36,7 +36,7 @@ func (c *CatalogClient) validateCatalogSelectedFields(cmd catalog.Command, body 
 	errors := make([]catalog.FieldError, 0)
 	for _, field := range fields {
 		value := cmd.Values[field]
-		if catalog.ValidateValue(value) != nil || c.catalogPayloadField(body, cmd.Target.EntityType, field, value) != nil {
+		if (field == catalog.FieldLifecycle && cmd.Action != catalog.ActionCreate) || catalog.ValidateValue(value) != nil || c.catalogPayloadField(body, cmd.Target.EntityType, field, value) != nil {
 			errors = append(errors, catalogValidationError(field, "INVALID_CATALOG_VALUE"))
 		}
 	}

@@ -2,9 +2,6 @@ package postgres
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,9 +10,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/lilter96/styk/internal/credentials"
 	"github.com/lilter96/styk/internal/domain"
+	"github.com/lilter96/styk/internal/orders"
 )
 
 var (
@@ -40,42 +37,21 @@ func (s *Store) SubmitOzonImport(ctx context.Context, tenant, account, key, sess
 }
 
 func (s *Store) SubmitCatalogImport(ctx context.Context, tenant, provider, account, key, session string, limits domain.ImportLimits) (domain.ImportOperation, bool, error) {
-	return s.submitCatalogImport(ctx, tenant, provider, account, key, session, auditPrincipal(session), limits)
+	return s.submitCatalogImport(ctx, tenant, provider, account, key, session, auditPrincipal(session), limits, nil)
 }
 
 // SubmitScheduledCatalogImport is called only by the scheduler after loading an
 // enabled, audited policy. Its principal identifies the policy rather than a
 // fictitious new operator action.
 func (s *Store) SubmitScheduledCatalogImport(ctx context.Context, tenant, provider, account, key, policy string, limits domain.ImportLimits) (domain.ImportOperation, bool, error) {
-	return s.submitCatalogImport(ctx, tenant, provider, account, key, policy, "AUTOMATIC_POLICY", limits)
+	return s.submitCatalogImport(ctx, tenant, provider, account, key, policy, "AUTOMATIC_POLICY", limits, nil)
 }
 
-func (s *Store) submitCatalogImport(ctx context.Context, tenant, provider, account, key, session, principal string, limits domain.ImportLimits) (domain.ImportOperation, bool, error) {
-	operationType, taskType := domain.OzonCatalogImport, domain.OzonCatalogTask
-	if provider == "moysklad" {
-		operationType, taskType = domain.MoyskladCatalogImport, domain.MoyskladCatalogTask
-	}
-	if !validImportScope(tenant, account) || !importKeyPattern.MatchString(key) || session == "" || len(session) > 128 {
-		return domain.ImportOperation{}, false, errors.New("invalid import request")
-	}
-	if !limits.ValidFor(provider) {
-		return domain.ImportOperation{}, false, errors.New("invalid server limits")
-	}
-	payload, err := json.Marshal(struct {
-		Tenant, Account, Type string
-		Limits                domain.ImportLimits
-	}{tenant, account, operationType, limits})
+func (s *Store) submitCatalogImport(ctx context.Context, tenant, provider, account, key, session, principal string, limits domain.ImportLimits, source *orders.Scope) (domain.ImportOperation, bool, error) {
+	request, err := newCatalogImportSubmission(tenant, provider, account, key, session, principal, limits, source)
 	if err != nil {
 		return domain.ImportOperation{}, false, err
 	}
-	sum := sha256.Sum256(payload)
-	fingerprint := hex.EncodeToString(sum[:])
-	rawLimits, _ := json.Marshal(limits)
-	var random [16]byte
-	if _, err = rand.Read(random[:]); err != nil {
-		return domain.ImportOperation{}, false, err
-	}
-	id := hex.EncodeToString(random[:])
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
 	tx, err := s.Pool.Begin(ctx)
@@ -83,54 +59,31 @@ func (s *Store) submitCatalogImport(ctx context.Context, tenant, provider, accou
 		return domain.ImportOperation{}, false, err
 	}
 	defer rollbackTransaction(tx)
-	var registered bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_connections WHERE tenant_id=$1 AND source=$3 AND account_id=$2)`, tenant, account, provider).Scan(&registered); err != nil {
+	replay, err := request.persist(ctx, tx)
+	if err != nil {
 		return domain.ImportOperation{}, false, err
-	}
-	if !registered {
-		return domain.ImportOperation{}, false, ErrImportScope
-	}
-	var inserted string
-	err = tx.QueryRow(ctx, `INSERT INTO ozon_import_operations(id,tenant_id,account_id,operation_type,idempotency_key,request_fingerprint,principal_type,session_audit_id,limits,provider) VALUES($1,$2,$3,$4,$5,$6,$10,$7,$8,$9) ON CONFLICT(tenant_id,idempotency_key) DO NOTHING RETURNING id`, id, tenant, account, operationType, key, fingerprint, session, rawLimits, provider, principal).Scan(&inserted)
-	replay := false
-	if errors.Is(err, pgx.ErrNoRows) {
-		var existingFingerprint, existingAccount string
-		if err = tx.QueryRow(ctx, `SELECT id,request_fingerprint,account_id FROM ozon_import_operations WHERE tenant_id=$1 AND idempotency_key=$2`, tenant, key).Scan(&id, &existingFingerprint, &existingAccount); err != nil {
-			return domain.ImportOperation{}, false, err
-		}
-		if existingFingerprint != fingerprint || existingAccount != account {
-			return domain.ImportOperation{}, false, ErrImportIdempotency
-		}
-		replay = true
-	} else if err != nil {
-		return domain.ImportOperation{}, false, err
-	}
-	if !replay {
-		_, err = tx.Exec(ctx, `INSERT INTO outbox_tasks(operation_key,observation_id,max_attempts,task_type,import_operation_id,import_tenant_id,import_account_id) VALUES($1,NULL,3,$5,$2,$3,$4)`, provider+"-import:"+id, id, tenant, account, taskType)
-		if err != nil {
-			var pg *pgconn.PgError
-			if errors.As(err, &pg) && (pg.ConstraintName == "outbox_one_active_catalog" || pg.ConstraintName == "outbox_one_active_ozon_catalog") {
-				return domain.ImportOperation{}, false, ErrImportConflict
-			}
-			return domain.ImportOperation{}, false, err
-		}
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return domain.ImportOperation{}, false, err
 	}
-	op, err := s.GetCatalogOperation(ctx, tenant, provider, account, id)
+	op, err := s.GetCatalogOperation(ctx, tenant, provider, account, request.id)
 	return op, replay, err
 }
 
-const importColumns = `o.id,o.tenant_id,o.provider,o.account_id,o.operation_type,t.state,o.phase,o.outcome,o.limiting_resource,o.created_at,o.started_at,o.attempt_started_at,o.progress_at,o.finished_at,t.attempts,t.max_attempts,o.limits,o.counters,o.batch_id,o.batch_created,t.lease_until,COALESCE(t.state='running' AND t.lease_until<=clock_timestamp(),false)`
+const importColumns = `o.id,o.tenant_id,o.provider,o.account_id,o.operation_type,t.state,o.phase,o.outcome,o.limiting_resource,o.created_at,o.started_at,o.attempt_started_at,o.progress_at,o.finished_at,t.attempts,t.max_attempts,o.limits,o.counters,o.batch_id,o.batch_created,t.lease_until,COALESCE(t.state='running' AND t.lease_until<=clock_timestamp(),false),(SELECT jsonb_build_object('state',f.state,'code',f.code,'postings_count',f.postings_count,'moysklad_account',f.moysklad_account,'requested_at',f.requested_at,'finished_at',f.finished_at) FROM orders_source_refreshes f WHERE f.import_id=o.id AND f.tenant_id=o.tenant_id AND f.ozon_account=o.account_id)`
 
 func scanImport(row pgx.Row) (domain.ImportOperation, error) {
 	var v domain.ImportOperation
-	var limits, counters []byte
+	var limits, counters, source []byte
 	var leaseExpired bool
-	err := row.Scan(&v.ID, &v.Tenant, &v.Provider, &v.Account, &v.Type, &v.State, &v.Phase, &v.Outcome, &v.LimitingResource, &v.CreatedAt, &v.StartedAt, &v.AttemptStartedAt, &v.ProgressAt, &v.FinishedAt, &v.Attempt, &v.MaxAttempts, &limits, &counters, &v.BatchID, &v.BatchCreated, &v.LeaseExpiresAt, &leaseExpired)
+	err := row.Scan(&v.ID, &v.Tenant, &v.Provider, &v.Account, &v.Type, &v.State, &v.Phase, &v.Outcome, &v.LimitingResource, &v.CreatedAt, &v.StartedAt, &v.AttemptStartedAt, &v.ProgressAt, &v.FinishedAt, &v.Attempt, &v.MaxAttempts, &limits, &counters, &v.BatchID, &v.BatchCreated, &v.LeaseExpiresAt, &leaseExpired, &source)
 	if err != nil {
 		return v, err
+	}
+	if len(source) > 0 {
+		if err = json.Unmarshal(source, &v.OrdersRefresh); err != nil {
+			return v, err
+		}
 	}
 	if err = json.Unmarshal(limits, &v.Limits); err != nil {
 		return v, err
@@ -502,4 +455,16 @@ func (s *Store) CatalogImportExists(ctx context.Context, tenant, provider, accou
 	var exists bool
 	err := s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM ozon_import_operations WHERE tenant_id=$1 AND provider=$2 AND account_id=$3 AND idempotency_key=$4)`, tenant, provider, account, key).Scan(&exists)
 	return exists, err
+}
+
+func orderSourceAccount(scope *orders.Scope) string {
+	if scope == nil {
+		return ""
+	}
+	return scope.MoyskladAccount
+}
+
+// SubmitOzonRefresh atomically queues catalog loading and records source-only order consent.
+func (s *Store) SubmitOzonRefresh(ctx context.Context, scope orders.Scope, key, actor string, limits domain.ImportLimits) (domain.ImportOperation, bool, error) {
+	return s.submitCatalogImport(ctx, scope.Tenant, "ozon", scope.OzonAccount, key, actor, auditPrincipal(actor), limits, &scope)
 }

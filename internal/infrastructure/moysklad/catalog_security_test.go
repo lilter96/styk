@@ -107,3 +107,27 @@ func TestCatalogWriteRequiresFreshAuthenticatedAccount(t *testing.T) {
 		t.Fatalf("mismatched authenticated account reached write: %+v writes=%d events=%v error=%v", r, writes, events, err)
 	}
 }
+
+func TestCatalogGeneralSwitchRetainsReaderAndExactScopeGuards(t *testing.T) {
+	t.Setenv("STYK_CATALOG_PUBLICATION_ENABLED", "true")
+	t.Setenv("STYK_TEST_ACCOUNT_CATALOG", "")
+	scope := catalogTestScope()
+	base := catalogBaseClient(t, BaseURL)
+	writer, err := NewWritableCatalogClient(base, scope)
+	if err != nil || !writer.scopeAllowed(scope) {
+		t.Fatalf("connected non-test account was blocked: %v", err)
+	}
+	foreign := scope
+	foreign.OzonAccount = "another-account"
+	if writer.scopeAllowed(foreign) {
+		t.Fatal("writer escaped its bound account pair")
+	}
+	reader, err := NewCatalogClient(base)
+	if err != nil || reader.scopeAllowed(scope) {
+		t.Fatalf("ordinary reader acquired write authority: %v", err)
+	}
+	t.Setenv("STYK_CATALOG_PUBLICATION_ENABLED", "false")
+	if writer.scopeAllowed(scope) {
+		t.Fatal("an existing writer ignored the disabled deployment switch")
+	}
+}

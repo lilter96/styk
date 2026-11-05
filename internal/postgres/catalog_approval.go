@@ -96,7 +96,7 @@ func replayCatalogApproval(ctx context.Context, tx pgx.Tx, a catalogsync.Approva
 
 func validateCatalogApproval(a catalogsync.Approval, p catalogsync.Preview, current catalogsync.ReviewContext, now time.Time) error {
 	c := current.Config
-	if !c.Enabled || !c.TestEnabled || !catalogTestScope(a.Scope) {
+	if !c.Enabled || !c.TestEnabled || !catalogScopeValid(a.Scope) {
 		return catalogsync.ErrBlocked
 	}
 	if !p.ExpiresAt.After(now) || p.ConfigRevision != c.Revision || p.Credentials != current.Credentials || p.Credentials.Moysklad < 1 || p.Credentials.Ozon < 1 {

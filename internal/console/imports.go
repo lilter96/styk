@@ -12,6 +12,7 @@ import (
 
 	"github.com/lilter96/styk/internal/credentials"
 	"github.com/lilter96/styk/internal/domain"
+	"github.com/lilter96/styk/internal/orders"
 	"github.com/lilter96/styk/internal/postgres"
 )
 
@@ -34,8 +35,12 @@ func newImportAPI(db *postgres.Store) *importAPI {
 }
 func importError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, postgres.ErrImportScope), errors.Is(err, postgres.ErrImportNotFound):
+	case errors.Is(err, orders.ErrNotFound), errors.Is(err, postgres.ErrImportScope), errors.Is(err, postgres.ErrImportNotFound):
 		writeError(w, 404, "IMPORT_NOT_FOUND")
+	case errors.Is(err, orders.ErrBlocked):
+		writeError(w, 403, "ORDER_SOURCE_UNAVAILABLE")
+	case errors.Is(err, orders.ErrInvalid):
+		writeError(w, 400, "INVALID_REQUEST")
 	case errors.Is(err, postgres.ErrImportIdempotency):
 		writeError(w, 409, "IDEMPOTENCY_CONFLICT")
 	case errors.Is(err, postgres.ErrImportConflict):
@@ -48,13 +53,15 @@ func importError(w http.ResponseWriter, err error) {
 }
 func (a *importAPI) create(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Tenant      string               `json:"tenant"`
-		Account     string               `json:"ozon_account"`
-		MoyAccount  string               `json:"moysklad_account"`
-		Type        string               `json:"operation_type"`
-		Key         string               `json:"idempotency_key"`
-		Acknowledge bool                 `json:"acknowledge"`
-		Limits      *domain.ImportLimits `json:"limits,omitempty"`
+		Tenant           string               `json:"tenant"`
+		IncludeOrders    bool                 `json:"include_orders"`
+		OrdersMoyAccount string               `json:"orders_moysklad_account"`
+		Account          string               `json:"ozon_account"`
+		MoyAccount       string               `json:"moysklad_account"`
+		Type             string               `json:"operation_type"`
+		Key              string               `json:"idempotency_key"`
+		Acknowledge      bool                 `json:"acknowledge"`
+		Limits           *domain.ImportLimits `json:"limits,omitempty"`
 	}
 	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 	d.DisallowUnknownFields()
@@ -66,6 +73,14 @@ func (a *importAPI) create(w http.ResponseWriter, r *http.Request) {
 	invalidPair := in.Account != "" && in.MoyAccount != "" || provider == "ozon" && in.MoyAccount != "" || provider == "moysklad" && in.Account != ""
 	if provider == "moysklad" {
 		in.Account = in.MoyAccount
+	}
+	if in.IncludeOrders && (provider != "ozon" || !validConnectionTenant(in.OrdersMoyAccount)) {
+		writeError(w, 400, "ORDER_ACCOUNT_REQUIRED")
+		return
+	}
+	if !in.IncludeOrders && in.OrdersMoyAccount != "" {
+		writeError(w, 400, "INVALID_REQUEST")
+		return
 	}
 	if decodeErr != nil || d.Decode(&struct{}{}) != io.EOF || invalidPair || !validConnectionTenant(in.Tenant) || !validConnectionTenant(in.Account) || (in.Type != domain.OzonCatalogImport && in.Type != domain.MoyskladCatalogImport) || !in.Acknowledge || !importIdempotencyPattern.MatchString(in.Key) {
 		writeError(w, 400, "INVALID_REQUEST")
@@ -110,7 +125,13 @@ func (a *importAPI) create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	op, replay, err := a.db.SubmitCatalogImport(r.Context(), in.Tenant, provider, in.Account, in.Key, session, limits)
+	var op domain.ImportOperation
+	var replay bool
+	if in.IncludeOrders {
+		op, replay, err = a.db.SubmitOzonRefresh(r.Context(), orders.Scope{Tenant: in.Tenant, MoyskladAccount: in.OrdersMoyAccount, OzonAccount: in.Account}, in.Key, session, limits)
+	} else {
+		op, replay, err = a.db.SubmitCatalogImport(r.Context(), in.Tenant, provider, in.Account, in.Key, session, limits)
+	}
 	if err != nil {
 		importError(w, err)
 		return

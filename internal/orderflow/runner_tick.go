@@ -28,19 +28,27 @@ func (r *Runner) Tick(ctx context.Context) error {
 	return errors.Join(errorsByScope...)
 }
 
+type sourceRefreshRecorder interface {
+	RecordOrderSourceRefresh(context.Context, orders.Scope, error) error
+}
+
 func (r *Runner) tickScope(ctx context.Context, config orders.Config) error {
-	if !config.Enabled || !config.TestEnabled || r.options.AllowScope == nil || !r.options.AllowScope(config.Scope) {
+	writeAllowed := config.Enabled && config.TestEnabled && r.options.AllowScope != nil && r.options.AllowScope(config.Scope)
+	if !config.ReadsEnabled() || (!config.ReadEnabled && !writeAllowed) {
 		return nil
 	}
 	grant := config.Automation
-	if grant != nil && !grant.Active(r.now(), config.Scope, config.Revision) {
+	if !config.ReadEnabled && grant != nil && !grant.Active(r.now(), config.Scope, config.Revision) {
 		return nil
 	}
 	collectErr := r.options.Collector.Collect(ctx, config.Scope)
+	if tracker, ok := r.options.Service.store.(sourceRefreshRecorder); ok {
+		collectErr = errors.Join(collectErr, tracker.RecordOrderSourceRefresh(ctx, config.Scope, collectErr))
+	}
 	if collectErr != nil {
 		collectErr = fmt.Errorf("collect due order facts: %w", collectErr)
 	}
-	if grant == nil || ctx.Err() != nil {
+	if !writeAllowed || grant == nil || !grant.Active(r.now(), config.Scope, config.Revision) || ctx.Err() != nil {
 		return collectErr
 	}
 	// A partial read must not hide other already-fresh targets. Every selected

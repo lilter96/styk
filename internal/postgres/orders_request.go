@@ -23,7 +23,7 @@ func (s *Store) RequestOrderCheck(ctx context.Context, scope orders.Scope, actor
 		return err
 	}
 	args := ordersScopeArgs(scope)
-	result, err := tx.Exec(ctx, `UPDATE orders_configs SET next_run_at=clock_timestamp() WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND enabled`, args...)
+	result, err := tx.Exec(ctx, `UPDATE orders_configs SET next_run_at=clock_timestamp() WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND ((enabled AND NOT EXISTS(SELECT 1 FROM orders_source_permissions p WHERE p.tenant_id=orders_configs.tenant_id AND p.moysklad_account=orders_configs.moysklad_account AND p.ozon_account=orders_configs.ozon_account)) OR EXISTS(SELECT 1 FROM orders_source_permissions p WHERE p.tenant_id=orders_configs.tenant_id AND p.moysklad_account=orders_configs.moysklad_account AND p.ozon_account=orders_configs.ozon_account AND p.enabled))`, args...)
 	if err != nil {
 		return ordersError("request order check", err)
 	}

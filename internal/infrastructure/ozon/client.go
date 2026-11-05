@@ -20,7 +20,7 @@ import (
 	"github.com/lilter96/styk/internal/catalog"
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/providercall"
-	"github.com/lilter96/styk/internal/testpublication"
+	"github.com/lilter96/styk/internal/publication"
 )
 
 const BaseURL = "https://api-seller.ozon.ru"
@@ -62,7 +62,12 @@ type Client struct {
 // NewControlledTestStockClient permits the owner-authorized test scope and
 // official Ozon host. Every write requires a bound, database-revalidated intent.
 func NewControlledTestStockClient(scope domain.StockSyncScope, key string) (*Client, error) {
-	if !testpublication.Enabled(scope) {
+	return NewStockWriter(scope, key)
+}
+
+// NewStockWriter binds one connected account scope to single-attempt intents.
+func NewStockWriter(scope domain.StockSyncScope, key string) (*Client, error) {
+	if !publication.Stock(scope) {
 		return nil, ErrStockWritesDisabled
 	}
 	c, err := New(Options{BaseURL: BaseURL, ClientID: scope.OzonAccount, APIKey: key, Timeout: 20 * time.Second, Interval: time.Second, Backoff: time.Second, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 100})

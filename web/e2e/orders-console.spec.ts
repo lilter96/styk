@@ -229,13 +229,18 @@ test("label download appears after reconciliation and expires without another cr
     }),
   );
   await showHistory(page);
-  await page.getByRole("button", { name: "Обновить статусы заказов" }).click();
+  await page
+    .getByRole("button", { name: "Обновить статусы", exact: true })
+    .click();
   await expect(
     page.getByRole("link", { name: "Скачать этикетку" }),
   ).toHaveCount(0);
   state = "RECONCILED";
   await showHistory(page);
-  await page.getByRole("button", { name: "Обновить статусы заказов" }).click();
+  await page
+    .getByRole("button", { name: "Обновить статусы", exact: true })
+    .click();
+  await openHistoryOperation(page);
   await expect(
     page.getByRole("link", { name: "Скачать этикетку" }),
   ).toBeVisible();
@@ -312,7 +317,11 @@ test("split history shows exact child identities and partial readback on desktop
     }),
   );
   await showHistory(page);
-  await page.getByRole("button", { name: "Обновить статусы заказов" }).click();
+  await page
+    .getByRole("button", { name: "Обновить статусы", exact: true })
+    .click();
+  await openHistoryOperation(page);
+  await page.getByText("Технические сведения", { exact: true }).click();
   const summary = page.getByText("Посылки после разделения (2)");
   await summary.focus();
   await summary.press("Enter");
@@ -778,7 +787,10 @@ test("orders desktop/mobile review uses keyboard and only explicitly approves el
   ]);
   await showHistory(page);
   await expect(
-    page.getByText("Принято, ожидает сверки", { exact: true }).first(),
+    page
+      .locator(".history-status")
+      .filter({ hasText: "Ждём подтверждения" })
+      .first(),
   ).toBeVisible();
   expect(await page.locator("body").innerText()).not.toMatch(
     /workspace|рабочее пространство/i,
@@ -804,9 +816,12 @@ test("unknown approval outcome shows read-only status refresh without another wr
     page.getByRole("button", { name: "Передать в МойСклад (1)" }),
   ).toBeDisabled();
   await showHistory(page);
+  await openHistoryOperation(page);
   await expect(page.getByText(/Запрос мог выполниться/)).toBeVisible();
   await showHistory(page);
-  await page.getByRole("button", { name: "Обновить статусы заказов" }).click();
+  await page
+    .getByRole("button", { name: "Обновить статусы", exact: true })
+    .click();
   expect(approvals).toHaveLength(1);
   expect(errors).toEqual([]);
 });
@@ -1291,7 +1306,10 @@ test("audited UNKNOWN recovery unlocks a fresh review but never writes automatic
     return fulfill(route, view());
   });
   await showHistory(page);
-  await page.getByRole("button", { name: "Обновить статусы заказов" }).click();
+  await page
+    .getByRole("button", { name: "Обновить статусы", exact: true })
+    .click();
+  await openHistoryOperation(page);
   await page
     .getByText("Проверить неизвестный результат и варианты восстановления", {
       exact: true,
@@ -1343,6 +1361,7 @@ test("audited UNKNOWN recovery unlocks a fresh review but never writes automatic
   expect(resolves).toBe(1);
   expect(approvals).toHaveLength(0);
   expect(previews).toHaveLength(0);
+  await page.keyboard.press("Escape");
   await page.getByRole("tab", { name: "Отправления", exact: true }).click();
   await page
     .getByRole("checkbox", { name: "Выбрать отправление SYNTHETIC-1" })
@@ -1601,7 +1620,20 @@ test("current orders integrate with the redesigned shell on desktop and mobile",
   expect(errors).toEqual([]);
 });
 
+async function openHistoryOperation(page: Page) {
+  await page
+    .getByRole("table", { name: "История действий с заказами" })
+    .getByRole("button")
+    .first()
+    .click();
+}
+
 async function showHistory(page: Page) {
+  const historyDrawer = page.locator("dialog.history-drawer[open]");
+  if (await historyDrawer.count())
+    await historyDrawer
+      .getByRole("button", { name: "Закрыть", exact: true })
+      .click();
   const preview = page.getByRole("dialog", {
     name: "Предпросмотр изменений",
     exact: true,
@@ -1841,4 +1873,392 @@ test("hover keeps labels readable across orders tabs, table, drawer, settings an
   });
   expect(approvals).toHaveLength(0);
   expect(errors).toEqual([]);
+});
+
+function journalOperation(
+  index: number,
+  state: string,
+  action = "mirror_update",
+) {
+  const number = `00012345-${String(index + 1).padStart(4, "0")}`;
+  return {
+    id: `journal-operation-${index}`,
+    scope,
+    state,
+    created_at: `2026-11-${index < 5 ? "05" : "04"}T${String(15 - (index % 8)).padStart(2, "0")}:01:00Z`,
+    targets: [
+      {
+        id: `journal-work-${index}`,
+        scope,
+        state,
+        automatic: index % 2 === 0,
+        command: {
+          id: `journal-command-${index}`,
+          scope,
+          action,
+          posting_number: number,
+          commercial_order_id: "00012345",
+          correlation: {
+            customer_order_id: "11111111-1111-4111-8111-111111111111",
+          },
+        },
+        receipt: {
+          state,
+          code: state === "UNKNOWN" ? "TRANSPORT_ERROR" : undefined,
+        },
+      },
+    ],
+  };
+}
+function journalMatches(state: string, params: URLSearchParams) {
+  return (
+    (!params.get("status") || params.get("status") === state) &&
+    (params.get("attention") !== "true" ||
+      ["UNKNOWN", "REJECTED", "BLOCKED"].includes(state))
+  );
+}
+
+test("history journal matches the references with safe details, focus and responsive layouts", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.clock.install({ time: new Date("2026-11-05T16:00:00Z") });
+  const { approvals, errors } = await openOrders(page, false, false, true);
+  const operations = [
+    journalOperation(0, "RECONCILED", "mirror_create"),
+    journalOperation(1, "ACKNOWLEDGED", "posting_pack"),
+    journalOperation(2, "UNKNOWN"),
+    journalOperation(3, "REJECTED", "posting_cancel"),
+    journalOperation(4, "RECONCILED", "posting_label_create"),
+    journalOperation(5, "RECONCILED", "demand_create"),
+    journalOperation(6, "POLLING", "mirror_composition_update"),
+  ];
+  const reads: URLSearchParams[] = [];
+  await page.route("**/api/orders/operations?*", (route) => {
+    expect(route.request().method()).toBe("GET");
+    const params = new URL(route.request().url()).searchParams;
+    reads.push(params);
+    return fulfill(route, {
+      operations: operations.filter((item) =>
+        journalMatches(item.state, params),
+      ),
+    });
+  });
+  const uncertain = operations[2].targets[0];
+  await page.route("**/api/orders/recovery?*", (route) =>
+    fulfill(route, {
+      work: uncertain,
+      eligible: false,
+      blockers: [{ code: "RECOVERY_CHECK_REQUIRED" }],
+    }),
+  );
+  await showHistory(page);
+  await page
+    .getByRole("button", { name: "Обновить статусы", exact: true })
+    .click();
+  const table = page.getByRole("table", {
+    name: "История действий с заказами",
+  });
+  await expect(table.locator("tr.history-row")).toHaveCount(7);
+  await expect(table.locator(".history-status.success")).toHaveCount(3);
+  await expect(
+    table.getByText("Ждём подтверждения", { exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  const capture = async (name: string) =>
+    page.screenshot({
+      path: new URL(`../../.local/orders-history/${name}.png`, import.meta.url)
+        .pathname,
+      animations: "disabled",
+    });
+  await capture("01-history-1600");
+  await page
+    .getByRole("button", { name: "Нужна проверка", exact: true })
+    .click();
+  await expect(table.locator("tr.history-row")).toHaveCount(2);
+  expect(reads.some((params) => params.get("attention") === "true")).toBe(true);
+  await capture("02-attention");
+  await page.getByRole("button", { name: "Все", exact: true }).click();
+  await expect(table.locator("tr.history-row")).toHaveCount(7);
+  const success = table.getByRole("button", {
+    name: /Подробнее: 00012345-0001/,
+  });
+  await success.focus();
+  await success.press("Enter");
+  let drawer = page.getByRole("dialog");
+  await expect(
+    drawer.getByRole("heading", { name: "Готово", exact: true }),
+  ).toBeVisible();
+  await expect(
+    drawer.getByRole("link", { name: "Открыть заказ МойСклад" }),
+  ).toHaveAttribute("href", /customerorder\/edit\?id=11111111/);
+  await expect(drawer.getByText("Work ID", { exact: true })).toHaveCount(0);
+  await capture("03-success");
+  await page.keyboard.press("Escape");
+  await expect(success).toBeFocused();
+  const unknown = table.getByRole("button", {
+    name: /Разобраться: 00012345-0003/,
+  });
+  await unknown.focus();
+  await unknown.press("Enter");
+  drawer = page.getByRole("dialog");
+  await expect(drawer.getByText(/Запрос мог выполниться/)).toBeVisible();
+  await expect(drawer.getByText(/может создать дубликат/)).toBeVisible();
+  expect(await drawer.evaluate((node) => node.matches(":modal"))).toBe(true);
+  await capture("04-unknown");
+  await drawer.getByRole("button", { name: "Закрыть", exact: true }).focus();
+  await page.keyboard.press("Tab");
+  await expect(
+    drawer.getByRole("button", { name: "История передач", exact: true }),
+  ).toBeFocused();
+  await drawer.getByText("Технические сведения", { exact: true }).click();
+  await expect(
+    drawer.getByText("journal-work-2", { exact: true }),
+  ).toBeVisible();
+  await drawer
+    .getByText("journal-work-2", { exact: true })
+    .scrollIntoViewIfNeeded();
+  await capture("05-technical");
+  await drawer.getByText("Технические сведения", { exact: true }).click();
+  await drawer
+    .getByText("Проверить неизвестный результат и варианты восстановления", {
+      exact: true,
+    })
+    .click();
+  await expect(
+    drawer.getByText("Запросите свежую сверку источника и заказа МойСклад."),
+  ).toBeVisible();
+  await drawer
+    .getByText("Запросите свежую сверку источника и заказа МойСклад.")
+    .scrollIntoViewIfNeeded();
+  await capture("06-recovery");
+  await page.keyboard.press("Escape");
+  for (const [width, height] of [
+    [1440, 900],
+    [1280, 800],
+    [768, 1024],
+    [390, 844],
+  ]) {
+    await page.setViewportSize({ width, height });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(width);
+    await capture(`history-${width}`);
+    if (width === 390)
+      await page.screenshot({
+        path: new URL(
+          "../../.local/orders-history/history-mobile-full.png",
+          import.meta.url,
+        ).pathname,
+        fullPage: true,
+        animations: "disabled",
+      });
+    await unknown.click();
+    await expect(
+      page
+        .getByRole("dialog")
+        .getByRole("heading", { name: "Нужна проверка", exact: true }),
+    ).toBeVisible();
+    expect(
+      await page
+        .locator(".history-drawer-frame")
+        .evaluate((node) => node.scrollWidth <= node.clientWidth),
+    ).toBe(true);
+    await capture(`drawer-${width}`);
+    await page.keyboard.press("Escape");
+    await expect(unknown).toBeFocused();
+  }
+  expect(approvals).toHaveLength(0);
+  expect(errors).toEqual([]);
+});
+
+test("history search and combined result filters reach older pages and keep mixed targets separate", async ({
+  page,
+}) => {
+  await page.clock.install({ time: new Date("2026-11-05T16:00:00Z") });
+  const { approvals, errors } = await openOrders(page);
+  const historyReads: URLSearchParams[] = [];
+  const operations = Array.from({ length: 32 }, (_, index) =>
+    journalOperation(
+      index,
+      index < 25 ? "RECONCILED" : index % 2 ? "UNKNOWN" : "REJECTED",
+    ),
+  );
+  operations[0].targets.push({
+    ...operations[31].targets[0],
+    id: "mixed-unknown",
+    command: {
+      ...operations[31].targets[0].command,
+      posting_number: "MIXED-OTHER",
+    },
+  });
+  await page.route("**/api/orders/operations?*", (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    historyReads.push(params);
+    const matched = operations
+      .map((operation) => ({
+        ...operation,
+        targets: operation.targets.filter(
+          (work) =>
+            (!params.get("search") ||
+              work.command.posting_number === params.get("search")) &&
+            journalMatches(work.state, params),
+        ),
+      }))
+      .filter((operation) => operation.targets.length);
+    const offset = Number(params.get("cursor") || "0");
+    return fulfill(route, {
+      operations: matched.slice(offset, offset + 25),
+      next_cursor:
+        matched.length > offset + 25 ? String(offset + 25) : undefined,
+    });
+  });
+  await showHistory(page);
+  await page
+    .getByRole("button", { name: "Обновить статусы", exact: true })
+    .click();
+  const table = page.getByRole("table", {
+    name: "История действий с заказами",
+  });
+  await expect(table.locator("tr.history-row")).toHaveCount(26);
+  await page.getByRole("button", { name: "Следующие", exact: true }).click();
+  await expect(
+    table.getByRole("button", { name: /Разобраться: 00012345-0032/ }),
+  ).toBeVisible();
+  await expect(page.getByText("Страница 2", { exact: true })).toBeVisible();
+  await page
+    .getByRole("button", { name: "Нужна проверка", exact: true })
+    .click();
+  await expect(table.locator("tr.history-row")).toHaveCount(8);
+  await expect(table.locator(".history-status.success")).toHaveCount(0);
+  await expect(page.getByText("Страница 1", { exact: true })).toBeVisible();
+  await page.getByLabel("Номер отправления в истории").fill("00012345-0032");
+  await expect(table.locator("tr.history-row")).toHaveCount(1);
+  await page.getByLabel("Результат операции").selectOption("REJECTED");
+  await expect(
+    page.getByText("Операции не найдены", { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Сбросить фильтры истории", exact: true })
+    .click();
+  await expect(table.locator("tr.history-row")).toHaveCount(26);
+  await page.getByLabel("Номер отправления в истории").fill("00012345-0001");
+  await page.getByLabel("Результат операции").selectOption("UNKNOWN");
+  await expect(
+    page.getByText("Операции не найдены", { exact: true }),
+  ).toBeVisible();
+  const latestReads = () =>
+    historyReads.filter(
+      (params) =>
+        !params.get("search") &&
+        !params.get("status") &&
+        params.get("attention") !== "true" &&
+        !params.get("cursor"),
+    ).length;
+  const beforePoll = latestReads();
+  await page.clock.fastForward(10001);
+  await expect.poll(latestReads).toBeGreaterThan(beforePoll);
+  expect(approvals).toHaveLength(0);
+  expect(errors).toEqual([]);
+});
+
+test("history account switching clears filters, cursors, details and cached rows", async ({
+  page,
+}) => {
+  await openOrders(page, false, false, true);
+  await page.route("**/api/registrations?*", (route) =>
+    fulfill(route, {
+      accounts: [
+        {
+          source: "moysklad",
+          account: scope.moysklad_account,
+          name: "Учёт товаров",
+        },
+        { source: "ozon", account: scope.ozon_account, name: "Магазин" },
+        { source: "ozon", account: "second-ozon", name: "Второй магазин" },
+      ],
+      truncated: false,
+    }),
+  );
+  await page.route("**/api/orders/config?*", (route) => {
+    const account = new URL(route.request().url()).searchParams.get(
+      "ozon_account",
+    )!;
+    return fulfill(route, {
+      ...config,
+      scope: { ...scope, ozon_account: account },
+    });
+  });
+  await page.route("**/api/orders/postings?*", (route) =>
+    fulfill(route, { postings: [] }),
+  );
+  await page.route("**/api/orders/operations?*", (route) => {
+    const account = new URL(route.request().url()).searchParams.get(
+      "ozon_account",
+    );
+    const operation = journalOperation(0, "UNKNOWN");
+    const second = account === "second-ozon";
+    const currentScope = {
+      ...scope,
+      ozon_account: second ? "second-ozon" : scope.ozon_account,
+    };
+    return fulfill(route, {
+      operations: [
+        {
+          ...operation,
+          scope: currentScope,
+          targets: operation.targets.map((work) => ({
+            ...work,
+            scope: currentScope,
+            command: {
+              ...work.command,
+              scope: currentScope,
+              posting_number: second ? "SECOND-ACCOUNT" : "FIRST-ACCOUNT",
+            },
+          })),
+        },
+      ],
+      next_cursor: "next",
+    });
+  });
+  await page.reload();
+  await showHistory(page);
+  const table = page.getByRole("table", {
+    name: "История действий с заказами",
+  });
+  await expect(table.getByText("FIRST-ACCOUNT", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Следующие", exact: true }).click();
+  await expect(page.getByText("Страница 2", { exact: true })).toBeVisible();
+  await page
+    .getByRole("button", { name: "Нужна проверка", exact: true })
+    .click();
+  await expect(
+    table.getByRole("button", { name: /Разобраться: FIRST-ACCOUNT/ }),
+  ).toBeVisible();
+  await table
+    .getByRole("button", { name: /Разобраться: FIRST-ACCOUNT/ })
+    .click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page
+    .getByRole("combobox", { name: "Ozon", exact: true })
+    .selectOption("second-ozon");
+  await showHistory(page);
+  await expect(
+    table.getByText("SECOND-ACCOUNT", { exact: true }),
+  ).toBeVisible();
+  await expect(table.getByText("FIRST-ACCOUNT", { exact: true })).toHaveCount(
+    0,
+  );
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByLabel("Номер отправления в истории")).toHaveValue("");
+  await expect(
+    page.getByRole("button", { name: "Все", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page
+      .getByRole("navigation", { name: "Страницы истории" })
+      .getByText("Страница 1", { exact: true }),
+  ).toBeVisible();
 });

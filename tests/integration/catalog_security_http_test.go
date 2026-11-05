@@ -41,6 +41,7 @@ func newCatalogSecurityHTTP(t *testing.T) *catalogSecurityHTTP {
 	h := &catalogSecurityHTTP{workflow: f, operation: f.approve(t)}
 	t.Setenv("STYK_CREDENTIAL_ENCRYPTION_KEY", base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32)))
 	t.Setenv("STYK_TEST_ACCOUNT_CATALOG", "true")
+	t.Setenv("STYK_CATALOG_PUBLICATION_ENABLED", "true")
 	store, err := identity.New(f.db.Pool, f.db.Timeout)
 	if err != nil {
 		t.Fatal(err)

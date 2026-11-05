@@ -603,6 +603,7 @@ export function Integrations({
                   content: (
                     <IntegrationAccountCard
                       tenant={tenant}
+                      ordersMoyskladAccount={selected?.moy}
                       provider={provider as ImportProvider}
                       account={{
                         ...entry,

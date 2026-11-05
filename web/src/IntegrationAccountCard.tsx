@@ -24,6 +24,7 @@ export type ConnectionView = {
 };
 export function IntegrationAccountCard({
   tenant,
+  ordersMoyskladAccount,
   provider,
   account,
   imports,
@@ -32,6 +33,7 @@ export function IntegrationAccountCard({
   onStateChange,
 }: {
   tenant: string;
+  ordersMoyskladAccount?: string;
   provider: ImportProvider;
   account: Account;
   imports: ImportSubmissionState;
@@ -66,7 +68,7 @@ export function IntegrationAccountCard({
     observer.observe(root.current);
     return () => observer.disconnect();
   }, []);
-  const scope = { tenant, provider, account: account.account };
+  const scope = { tenant, provider, account: account.account, ...(provider === "ozon" && ordersMoyskladAccount ? { ordersMoyskladAccount } : {}) };
   const query = useQuery({
     queryKey: ["integrations", tenant, provider, account.account],
     queryFn: ({ signal }) =>

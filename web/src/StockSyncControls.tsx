@@ -657,7 +657,7 @@ export function StockSyncControls({
   }
   // The controlled test policy selects its single approved mapping; unrelated
   // catalog items need not all be mapped to review that one target.
-  if (!eligible && !view?.enabled && !view?.test_account_mode && !scopedPending)
+  if (!eligible && !view?.enabled && !view?.test_account_mode && !view?.publication_available && !scopedPending)
     return null;
   return (
     <>
@@ -673,7 +673,7 @@ export function StockSyncControls({
           </div>
           <p>
             {superseded
-              ? "Неопределённый результат сохранён. Оператор принял риск для тестовой пары; перед новой отправкой проверьте условия и обновите данные."
+              ? "Неопределённый результат сохранён. Оператор принял риск для выбранной пары; перед новой отправкой проверьте условия и обновите данные."
               : readbackRequired
                 ? "Ozon ответил на запрос, но текущий остаток ещё не подтверждён. Уточните результат без повторной отправки."
                 : state === "RECONCILING"
@@ -834,7 +834,7 @@ export function StockSyncControls({
             )}
           {active &&
             !automaticEnabled &&
-            view?.test_account_mode &&
+            view?.publication_available &&
             !blocked &&
             !uncertainOperation &&
             !readbackRequired &&
@@ -896,7 +896,7 @@ export function StockSyncControls({
               Уточнить результат
             </button>
           )}
-          {view?.test_account_mode &&
+          {view?.publication_available &&
             uncertainOperation &&
             view.last_operation?.targets[0]?.readback_at && (
               <button
@@ -970,7 +970,7 @@ export function StockSyncControls({
               {open === "enable"
                 ? view?.test_account_mode
                   ? "Для выбранного тестового товара выполняется одна отправка после подтверждения. Автоматическая повторная синхронизация не включается; положительный остаток может быть доступен покупателям."
-                  : "После включения проверенные остатки из МойСклад будут отправляться в Ozon. Остатки на Ozon изменятся. Данные МойСклад не изменятся."
+                  : "После подтверждения проверенные остатки будут отправлены в Ozon один раз. Для регулярной отправки настройте автоматическую синхронизацию ниже."
                 : "Новые отправки будут остановлены. Уже отправленный запрос может завершиться; его результат останется в истории."}
             </p>
             {previewBusy && (
@@ -1324,15 +1324,15 @@ export function StockSyncControls({
       )}
       {recoveryOpen && recoveryTarget && (
         <IntegrationDialog
-          title="Принять неопределённость тестовой отправки?"
+          title="Принять неопределённость отправки?"
           onClose={() => setRecoveryOpen(false)}
         >
           <div className="provider-settings-body">
             <p>
               Исходная операция останется неизвестной. Старый запрос может
               изменить остаток позже; новая проверка не гарантирует порядок
-              запросов Ozon. Это решение доступно только для выбранной тестовой
-              пары и само не отправляет остаток.
+              запросов Ozon. Решение относится к выбранной
+              паре аккаунтов и само не отправляет остаток.
             </p>
             <p>
               Товар {recoveryTarget.ozon_product_id} · склад{" "}
@@ -1367,7 +1367,7 @@ export function StockSyncControls({
                 onChange={(e) => setRecoveryAck(e.target.checked)}
               />
               Принимаю неопределённость и риск позднего изменения остатка для
-              тестового аккаунта.
+              выбранного аккаунта.
             </label>
             <div className="provider-actions">
               <button
@@ -1405,7 +1405,7 @@ export function StockSyncControls({
             </div>
             <p>
               Проверка остатка должна быть не старше двух минут. После решения
-              подтвердите тестовые допущения, заново загрузите данные и создайте
+              подтвердите допущения, заново загрузите данные и создайте
               новую проверку.
             </p>
           </div>

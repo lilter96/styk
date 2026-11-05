@@ -17,7 +17,6 @@ import (
 	"github.com/lilter96/styk/internal/catalogsync"
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/identity"
-	"github.com/lilter96/styk/internal/testpublication"
 )
 
 var _ catalogsync.ServiceStore = (*Store)(nil)
@@ -95,9 +94,10 @@ func catalogActor(ctx context.Context, tx pgx.Tx, tenant, actor string) error {
 	return requireMerchantActor(ctx, tx, tenant, actor, true)
 }
 
-func catalogTestScope(scope catalog.Scope) bool {
-	allowed := testpublication.Scope()
-	return scope.Tenant == allowed.Tenant && scope.MoyskladAccount == allowed.MoyskladAccount && scope.OzonAccount == allowed.OzonAccount
+// Deployment switches are enforced by the service, worker and provider client.
+// The store validates the exact registered scope, actor, credentials and config.
+func catalogScopeValid(scope catalog.Scope) bool {
+	return scope.Validate() == nil
 }
 
 func catalogScopeArgs(scope catalog.Scope) []any {

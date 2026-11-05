@@ -16,6 +16,7 @@ import (
 	"github.com/lilter96/styk/internal/commitment"
 	"github.com/lilter96/styk/internal/config"
 	"github.com/lilter96/styk/internal/domain"
+	"github.com/lilter96/styk/internal/publication"
 	"github.com/lilter96/styk/internal/testpublication"
 )
 
@@ -175,7 +176,7 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 	if err != nil {
 		return review, err
 	}
-	legacyManualTest := testpublication.Enabled(scope) && len(automaticProducts) == 0
+	legacyManualTest := !publication.StockGeneral() && testpublication.Enabled(scope) && len(automaticProducts) == 0
 	if legacyManualTest {
 		// The real test mode never publishes the other confirmed mappings in
 		// this workspace. Shared-pool checks still inspect all mappings below.
@@ -203,7 +204,7 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 	for _, t := range targets {
 		a, attested := inputs[t.pid+":"+t.wid]
 		_, simulator := config.StockPublicationTestEndpoint()
-		r := domain.StockCalculationRequest{Pool: domain.StockPool{Tenant: scope.Tenant, MoyskladAccount: scope.MoyskladAccount, WarehouseID: t.sourceWarehouse, ItemKind: t.kind, ItemID: t.item}, Target: domain.StockTarget{OzonAccount: scope.OzonAccount, WarehouseID: t.wid, ProductID: t.pid}, Policy: domain.StockCalculationPolicy{Version: 1, Unit: "piece", SafetyStock: a.SafetyStock, MaxObservationAge: 15 * time.Minute, DecisionLifetime: 2 * time.Minute, AcceptOperatorAttested: testpublication.Enabled(scope) || simulator}}
+		r := domain.StockCalculationRequest{Pool: domain.StockPool{Tenant: scope.Tenant, MoyskladAccount: scope.MoyskladAccount, WarehouseID: t.sourceWarehouse, ItemKind: t.kind, ItemID: t.item}, Target: domain.StockTarget{OzonAccount: scope.OzonAccount, WarehouseID: t.wid, ProductID: t.pid}, Policy: domain.StockCalculationPolicy{Version: 1, Unit: "piece", SafetyStock: a.SafetyStock, MaxObservationAge: 15 * time.Minute, DecisionLifetime: 2 * time.Minute, AcceptOperatorAttested: publication.Stock(scope) || simulator}}
 		var automaticTarget *domain.AutomaticStockTarget
 		automaticValid := a.AutomaticPolicyRevision == 0
 		if a.AutomaticPolicyRevision != 0 {
@@ -272,7 +273,7 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 			if automaticTarget != nil {
 				automaticValid = e.ProductMapping != nil && e.WarehouseMapping != nil && e.ProductMapping.ID == automaticTarget.ProductMappingID && e.ProductMapping.Version == automaticTarget.ProductMappingVersion && e.WarehouseMapping.ID == automaticTarget.WarehouseMappingID && e.WarehouseMapping.Version == automaticTarget.WarehouseMappingVersion && t.item == automaticTarget.SourceItemID && t.sourceWarehouse == automaticTarget.SourceWarehouseID
 			}
-			checks = append(checks, domain.StockSyncCheck{Code: "AUTOMATIC_POLICY_CHANGED", Passed: automaticValid, Message: "Выбранные соответствия и тестовые допущения автоматической синхронизации действуют."})
+			checks = append(checks, domain.StockSyncCheck{Code: "AUTOMATIC_POLICY_CHANGED", Passed: automaticValid, Message: "Выбранные соответствия и подтверждённые допущения автоматической синхронизации действуют."})
 		}
 		// A historical mapping does not prove the latest catalog still refers
 		// to the same offer, SKU, source entity, or FBS warehouse.
@@ -295,7 +296,7 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 			if err != nil {
 				return review, err
 			}
-			warehouseIdentity, err = readStockWarehouseSupported(ctx, tx, scope, *e.Marketplace.ImportID, t.wid, automaticTarget != nil && automaticValid, testpublication.Enabled(scope))
+			warehouseIdentity, err = readStockWarehouseSupported(ctx, tx, scope, *e.Marketplace.ImportID, t.wid, automaticTarget != nil && automaticValid, !publication.StockGeneral() && testpublication.Enabled(scope))
 			if err != nil {
 				return review, err
 			}
@@ -326,7 +327,7 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 			marketStarted = t.StartedAt
 		}
 		recoveryFresh := true
-		if testpublication.Enabled(scope) {
+		if publication.Stock(scope) {
 			var recoveredAt time.Time
 			recoveryErr := tx.QueryRow(ctx, `SELECT created_at FROM stock_publication_recoveries WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND product_id=$4 AND warehouse_id=$5 ORDER BY created_at DESC LIMIT 1`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, t.pid, t.wid).Scan(&recoveredAt)
 			if recoveryErr != nil && !errors.Is(recoveryErr, pgx.ErrNoRows) {
@@ -389,7 +390,7 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 			checks = append(checks, domain.StockSyncCheck{Code: "UNCERTAIN_WRITER_SETTLEMENT_REQUIRED", Passed: settled, Message: "После неизвестного результата подтверждено отсутствие незавершённых отправок; проверка ссылается на исходную операцию."})
 		}
 		testAllowed := true
-		if testpublication.Enabled(scope) {
+		if publication.Stock(scope) {
 			approved := false
 			if e.ProductMapping != nil && e.WarehouseMapping != nil {
 				err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM product_mapping_confirmation_audits WHERE mapping_id=$1 AND mapping_version=$2 AND tenant_id=$5 AND ozon_account=$6 AND moysklad_account=$7) AND EXISTS(SELECT 1 FROM warehouse_mapping_confirmation_audits WHERE mapping_id=$3 AND mapping_version=$4 AND tenant_id=$5 AND ozon_account=$6 AND moysklad_account=$7)`, e.ProductMapping.ID, e.ProductMapping.Version, e.WarehouseMapping.ID, e.WarehouseMapping.Version, scope.Tenant, scope.OzonAccount, scope.MoyskladAccount).Scan(&approved)
@@ -401,13 +402,13 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 			if d.Quantity != nil {
 				quantity = *d.Quantity
 			}
-			testAllowed = approved && ((legacyManualTest && testpublication.TargetAllowed(scope, t.pid, t.wid, t.item, t.sourceWarehouse, quantity)) || (automaticTarget != nil && automaticValid && testpublication.AutomaticQuantityAllowed(quantity)))
+			testAllowed = approved && (((legacyManualTest || publication.StockGeneral()) && publication.ManualTarget(scope, t.pid, t.wid, t.item, t.sourceWarehouse, quantity)) || (automaticTarget != nil && automaticValid && publication.Quantity(scope, quantity)))
 			checks = append(checks, domain.StockSyncCheck{Code: "TEST_TARGET_ALLOWED", Passed: testAllowed, Message: "Тестовая пара, подтверждённые соответствия и ограничение количества проверены."})
 		}
 		if automaticTarget != nil && d.Quantity != nil {
 			quantity, parseErr := strconv.ParseInt(*d.Quantity, 10, 64)
 			automaticValid = automaticValid && parseErr == nil && quantity <= automaticTarget.Maximum
-			checks = append(checks, domain.StockSyncCheck{Code: "AUTOMATIC_MAXIMUM_EXCEEDED", Passed: parseErr == nil && quantity <= automaticTarget.Maximum, Message: "Расчёт не превышает настроенный предел тестовой публикации."})
+			checks = append(checks, domain.StockSyncCheck{Code: "AUTOMATIC_MAXIMUM_EXCEEDED", Passed: parseErr == nil && quantity <= automaticTarget.Maximum, Message: "Расчёт не превышает настроенный предел публикации."})
 		}
 		ready := d.Status == domain.StockReady && validIDs && stockComplete && qtyValid && settled && sourceIdentity && productIdentity && warehouseIdentity && orderingValid && (validStockValues || initial) && sourceTraversalFresh && marketTraversalFresh && beforeTraversal && testAllowed && recoveryFresh && automaticValid
 		item := domain.StockSyncTarget{SettlementOperationID: settlementID, SettlementObservedAt: settlementAt, ProductID: t.pid, WarehouseID: t.wid, SourceItemID: t.item, SourceWarehouseID: t.sourceWarehouse, SourceImportID: e.Source.ImportID, SourcePhysical: e.Source.Physical, SourceReserve: e.Source.Reserve, MarketplaceFree: e.Marketplace.FreeStock, MarketplacePresent: e.Marketplace.Present, MarketplaceReserved: e.Marketplace.Reserved, InitialPublication: initial, Status: string(d.Status), Checks: checks, Decision: d}
@@ -584,12 +585,12 @@ func createPublication(ctx context.Context, tx pgx.Tx, review domain.StockSyncRe
 		}
 		op.Targets = append(op.Targets, v)
 	}
-	if testpublication.Enabled(review.StockSyncScope) {
+	if publication.Stock(review.StockSyncScope) {
 		automaticAllowed, authErr := authorizedAutomaticReview(ctx, tx, review, now)
 		if authErr != nil {
 			return op, authErr
 		}
-		manualAllowed := len(op.Targets) == 1 && len(review.Targets) == 1 && testpublication.TargetAllowed(review.StockSyncScope, op.Targets[0].ProductID, op.Targets[0].WarehouseID, review.Targets[0].SourceItemID, review.Targets[0].SourceWarehouseID, op.Targets[0].Quantity)
+		manualAllowed := len(op.Targets) == 1 && len(review.Targets) == 1 && publication.ManualTarget(review.StockSyncScope, op.Targets[0].ProductID, op.Targets[0].WarehouseID, review.Targets[0].SourceItemID, review.Targets[0].SourceWarehouseID, op.Targets[0].Quantity)
 		if len(op.Targets) != 1 || (!automaticAllowed && !manualAllowed) {
 			return op, domain.ErrStockSyncBlocked
 		}

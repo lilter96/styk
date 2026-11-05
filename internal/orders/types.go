@@ -284,6 +284,8 @@ type AutomationGrant struct {
 }
 
 type Config struct {
+	ReadConfigured         bool                   `json:"read_configured,omitempty"`
+	ReadEnabled            bool                   `json:"read_enabled,omitempty"`
 	NativeDocuments        *NativeDocumentPolicy  `json:"native_documents,omitempty"`
 	Scope                  Scope                  `json:"scope"`
 	Revision               int64                  `json:"revision"`
@@ -305,6 +307,13 @@ type Config struct {
 	ReverseStatusMappings  []ReverseStatusMapping `json:"reverse_status_mappings,omitempty"`
 	Automation             *AutomationGrant       `json:"automation,omitempty"`
 	UpdatedAt              time.Time              `json:"updated_at"`
+}
+
+func (c Config) ReadsEnabled() bool {
+	if c.ReadConfigured {
+		return c.ReadEnabled
+	}
+	return c.ReadEnabled || c.Enabled
 }
 
 type Correlation struct {

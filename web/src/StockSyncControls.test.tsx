@@ -490,7 +490,7 @@ it("requires explicit uncertainty acceptance before a test recovery", async () =
     await screen.findByRole("button", { name: "Разрешить новую проверку" }),
   );
   const dialog = await screen.findByRole("dialog", {
-    name: "Принять неопределённость тестовой отправки?",
+    name: "Принять неопределённость отправки?",
   });
   const action = within(dialog).getByRole("button", {
     name: "Записать решение оператора",
@@ -520,7 +520,7 @@ it("can recover an older unknown target even when it is not the latest operation
   const { calls } = setup({ testAccount: true, otherRecoveryScenario: true });
   fireEvent.click(await screen.findByText(/Отправки, требующие проверки/));
   fireEvent.click(screen.getByRole("button", { name: "Рассмотреть восстановление" }));
-  const dialog = screen.getByRole("dialog", { name: "Принять неопределённость тестовой отправки?" });
+  const dialog = screen.getByRole("dialog", { name: "Принять неопределённость отправки?" });
   expect(within(dialog).getByText(/Товар 102/)).toBeTruthy();
   fireEvent.change(within(dialog).getByLabelText("Причина решения"), { target: { value: "Оператор принимает риск тестовой операции" } });
   fireEvent.click(within(dialog).getByLabelText(/прежний worker остановлен/));

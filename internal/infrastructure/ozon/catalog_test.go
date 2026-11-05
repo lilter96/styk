@@ -256,3 +256,30 @@ func TestCatalogScopeAndHostGatesRemainClosed(t *testing.T) {
 		t.Fatalf("ordinary reader became writer: %v", err)
 	}
 }
+
+func TestGeneralCatalogSwitchRetainsReadOnlyAndAccountBinding(t *testing.T) {
+	t.Setenv("STYK_CATALOG_PUBLICATION_ENABLED", "true")
+	t.Setenv("STYK_TEST_ACCOUNT_CATALOG", "")
+	scope := catalogFixtureScope
+	client, err := New(Options{BaseURL: BaseURL, ClientID: scope.OzonAccount, APIKey: "synthetic-key", Timeout: time.Second, Interval: time.Millisecond, Backoff: time.Millisecond, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer, err := NewWritableCatalogClientFromClient(client, scope)
+	if err != nil || !writer.writeEnabled() {
+		t.Fatalf("connected non-test account was blocked: %v", err)
+	}
+	reader, err := NewCatalogReaderFromClient(client, scope)
+	if err != nil || reader.writeEnabled() {
+		t.Fatalf("ordinary reader acquired write authority: %v", err)
+	}
+	foreign := scope
+	foreign.OzonAccount = "900002"
+	if _, err = NewWritableCatalogClientFromClient(client, foreign); !errors.Is(err, catalog.ErrInvalidScope) {
+		t.Fatalf("client credentials escaped the bound account: %v", err)
+	}
+	t.Setenv("STYK_CATALOG_PUBLICATION_ENABLED", "false")
+	if writer.writeEnabled() {
+		t.Fatal("writer ignored the disabled deployment switch")
+	}
+}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/lilter96/styk/internal/domain"
+	"github.com/lilter96/styk/internal/publication"
 	"github.com/lilter96/styk/internal/testpublication"
 )
 
@@ -70,7 +71,7 @@ func (s *Store) RefreshStockSync(ctx context.Context, now time.Time) error {
 func (s *Store) refreshStockScope(ctx context.Context, scope domain.StockSyncScope, now time.Time) error {
 	// Controlled real-account requests require a fresh operator review each
 	// time; a worker must never turn this scope into recurring publication.
-	if scope == testpublication.Scope() {
+	if publication.Stock(scope) {
 		return nil
 	}
 	var automatic bool
@@ -173,12 +174,15 @@ func (s *Store) NextStockPublication(ctx context.Context, now time.Time) (*domai
 	return s.nextStockPublication(ctx, now, nil)
 }
 
-// NextControlledStockPublication claims only the fixed test scope and its
-// single-attempt outbox task. It cannot claim another account's publication.
+// NextControlledStockPublication claims an authorized single-attempt outbox
+// task. Legacy mode additionally restricts selection to its fixture scope.
 func (s *Store) NextControlledStockPublication(ctx context.Context, now time.Time) (*domain.StockPublication, error) {
 	scope := testpublication.Scope()
-	if !testpublication.Enabled(scope) {
+	if !publication.StockEnabled() {
 		return nil, nil
+	}
+	if publication.StockGeneral() {
+		scope = domain.StockSyncScope{}
 	}
 	return s.nextStockPublication(ctx, now, &scope)
 }
@@ -196,8 +200,11 @@ func (s *Store) nextStockPublication(ctx context.Context, now time.Time, control
 	query := `SELECT p.id,p.tenant_id,p.moysklad_account,p.ozon_account FROM stock_publications p JOIN stock_sync_settings s USING(tenant_id,moysklad_account,ozon_account) WHERE s.enabled AND EXISTS(SELECT 1 FROM stock_publication_targets t WHERE t.operation_id=p.id AND t.state='QUEUED') AND NOT EXISTS(SELECT 1 FROM stock_publication_dispatch_clock clock WHERE clock.ozon_account=p.ozon_account AND clock.dispatched_at>$1::timestamptz-interval '1 second') AND NOT EXISTS(SELECT 1 FROM stock_publication_targets queued JOIN stock_publication_targets prior ON prior.ozon_account=queued.ozon_account AND prior.product_id=queued.product_id AND prior.warehouse_id=queued.warehouse_id WHERE queued.operation_id=p.id AND queued.state='QUEUED' AND prior.dispatched_at>$1::timestamptz-interval '30 seconds')`
 	args := []any{now}
 	if controlled != nil {
-		query += ` AND p.tenant_id=$2 AND p.moysklad_account=$3 AND p.ozon_account=$4 AND EXISTS(SELECT 1 FROM outbox_tasks q WHERE q.publication_operation_id=p.id AND q.task_type='stock_publication' AND q.state='pending' AND q.attempts=0)`
-		args = append(args, controlled.Tenant, controlled.MoyskladAccount, controlled.OzonAccount)
+		query += ` AND EXISTS(SELECT 1 FROM outbox_tasks q WHERE q.publication_operation_id=p.id AND q.task_type='stock_publication' AND q.state='pending' AND q.attempts=0)`
+		if controlled.Valid() {
+			query += ` AND p.tenant_id=$2 AND p.moysklad_account=$3 AND p.ozon_account=$4`
+			args = append(args, controlled.Tenant, controlled.MoyskladAccount, controlled.OzonAccount)
+		}
 	} else {
 		query += ` AND NOT EXISTS(SELECT 1 FROM outbox_tasks q WHERE q.publication_operation_id=p.id AND q.task_type='stock_publication')`
 	}
@@ -321,10 +328,25 @@ func (s *Store) StockPublicationStillEnabled(ctx context.Context, scope domain.S
 // RecoverControlledStockPublications never requeues an expired write. The
 // target remains fenced as UNKNOWN (or ACKNOWLEDGED awaiting readback).
 func (s *Store) RecoverControlledStockPublications(ctx context.Context, now time.Time) error {
-	scope := testpublication.Scope()
-	if !testpublication.Enabled(scope) {
+	if !publication.StockEnabled() {
 		return nil
 	}
+	scopes := []domain.StockSyncScope{testpublication.Scope()}
+	if publication.StockGeneral() {
+		var err error
+		scopes, err = s.expiredStockScopes(ctx, now)
+		if err != nil {
+			return err
+		}
+	}
+	for _, scope := range scopes {
+		if err := s.recoverStockScope(ctx, scope, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func (s *Store) recoverStockScope(ctx context.Context, scope domain.StockSyncScope, now time.Time) error {
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
 	tx, err := s.Pool.Begin(ctx)
@@ -620,10 +642,10 @@ func (s *Store) checkDispatchSnapshot(ctx context.Context, tx pgx.Tx, op domain.
 }
 
 func dispatchAuthorized(ctx context.Context, tx pgx.Tx, op domain.StockPublication, review domain.StockSyncReview, now time.Time) (bool, error) {
-	if op.StockSyncScope != testpublication.Scope() {
+	if !publication.Stock(op.StockSyncScope) {
 		return op.OutboxClaimToken == "", nil
 	}
-	if !testpublication.Enabled(op.StockSyncScope) || op.OutboxClaimToken == "" || len(op.Targets) != 1 {
+	if !publication.Stock(op.StockSyncScope) || op.OutboxClaimToken == "" || len(op.Targets) != 1 {
 		return false, nil
 	}
 	automatic, err := automaticDispatchAllowed(ctx, tx, op, review, now)
@@ -631,7 +653,7 @@ func dispatchAuthorized(ctx context.Context, tx pgx.Tx, op domain.StockPublicati
 		return false, err
 	}
 	t := op.Targets[0]
-	manual := len(review.Targets) == 1 && !review.Targets[0].InitialPublication && testpublication.TargetAllowed(op.StockSyncScope, t.ProductID, t.WarehouseID, t.Decision.Request.Pool.ItemID, t.Decision.Request.Pool.WarehouseID, t.Quantity)
+	manual := len(review.Targets) == 1 && !review.Targets[0].InitialPublication && publication.ManualTarget(op.StockSyncScope, t.ProductID, t.WarehouseID, t.Decision.Request.Pool.ItemID, t.Decision.Request.Pool.WarehouseID, t.Quantity)
 	if !automatic && !manual {
 		return false, nil
 	}
@@ -691,7 +713,7 @@ func (s *Store) checkDispatchReview(ctx context.Context, tx pgx.Tx, op domain.St
 	if err != nil || !dispatchReviewUnexpired(review, current, now) {
 		return false, err
 	}
-	if op.StockSyncScope == testpublication.Scope() {
+	if publication.Stock(op.StockSyncScope) {
 		return controlledDispatchClaim(ctx, tx, op, now)
 	}
 	return true, nil

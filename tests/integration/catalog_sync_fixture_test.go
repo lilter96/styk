@@ -69,8 +69,13 @@ func catalogSyncMigrate(t testing.TB, dsn string, args ...string) {
 
 func catalogSyncFixture(t testing.TB) (*postgres.Store, catalogsync.Config) {
 	t.Helper()
-	db := catalogSyncDB(t)
 	scope := catalog.Scope{Tenant: testpublication.Tenant, MoyskladAccount: testpublication.MoyskladAccount, OzonAccount: testpublication.OzonAccount}
+	return catalogSyncFixtureForScope(t, scope)
+}
+
+func catalogSyncFixtureForScope(t testing.TB, scope catalog.Scope) (*postgres.Store, catalogsync.Config) {
+	t.Helper()
+	db := catalogSyncDB(t)
 	catalogSyncConnections(t, db, scope)
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)

@@ -14,16 +14,15 @@ import (
 	"github.com/lilter96/styk/internal/config"
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/identity"
-	"github.com/lilter96/styk/internal/testpublication"
+	"github.com/lilter96/styk/internal/publication"
 )
 
 var automaticProofCodes = []string{commitment.ProofUnit, commitment.ProofBaseline, commitment.ProofSourceOrdering, commitment.ProofUnassigned, commitment.ProofAttribution, commitment.ProofPostingCoverage, commitment.ProofCompeting, commitment.ProofBound, commitment.ProofCustomerOrders}
 
 // Synthetic scopes are usable only with the existing loopback-only simulator.
-// The migrated live database still independently restricts configurations to
-// the owner's fixed account pair; this branch permits isolated-schema tests.
+// Production enrollment uses the same owner approvals for every account.
 func automaticScopeAllowed(scope domain.StockSyncScope) bool {
-	if testpublication.Enabled(scope) {
+	if publication.Stock(scope) {
 		return true
 	}
 	_, simulator := config.StockPublicationTestEndpoint()
@@ -34,7 +33,7 @@ func automaticScopeAllowed(scope domain.StockSyncScope) bool {
 // acceptance. It never invents a new verification time during later cycles.
 func automaticAttestation(p domain.AutomaticStockPolicy, target domain.AutomaticStockTarget) domain.StockSyncAttestation {
 	a := domain.StockSyncAttestation{ProductID: target.ProductID, WarehouseID: target.WarehouseID, Unreflected: target.Unreflected, UnseenBound: target.UnseenBound, SafetyStock: target.SafetyStock, AutomaticPolicyRevision: p.Revision}
-	reference := fmt.Sprintf("standing OPERATOR_ATTESTED test policy revision %d; account and target scoped; no independent proof of order coverage or competing exposure", p.Revision)
+	reference := fmt.Sprintf("standing OPERATOR_ATTESTED policy revision %d; account and target scoped; no independent proof of order coverage or competing exposure", p.Revision)
 	for _, code := range automaticProofCodes {
 		a.Proofs = append(a.Proofs, domain.StockSyncProof{Code: code, Reference: reference, AsOf: p.CreatedAt, ValidUntil: p.ValidUntil})
 	}
@@ -69,11 +68,11 @@ func authorizedAutomaticAttestation(ctx context.Context, tx pgx.Tx, scope domain
 	return nil, nil
 }
 
-// authorizedAutomaticReview binds a real test write to the current immutable
+// authorizedAutomaticReview binds a provider write to the current immutable
 // operator policy, exact reviewed mapping revisions and bounded quantity.
 // It is deliberately separate from the legacy single-target manual exception.
 func authorizedAutomaticReview(ctx context.Context, tx pgx.Tx, review domain.StockSyncReview, now time.Time) (bool, error) {
-	if !testpublication.Enabled(review.StockSyncScope) || len(review.Targets) != 1 || len(review.Attestations) != 1 {
+	if !publication.Stock(review.StockSyncScope) || len(review.Targets) != 1 || len(review.Attestations) != 1 {
 		return false, nil
 	}
 	a, t := review.Attestations[0], review.Targets[0]
@@ -82,7 +81,7 @@ func authorizedAutomaticReview(ctx context.Context, tx pgx.Tx, review domain.Sto
 		return false, err
 	}
 	p, w := t.Decision.Evidence.ProductMapping, t.Decision.Evidence.WarehouseMapping
-	if p == nil || w == nil || approved.ProductID != t.ProductID || approved.WarehouseID != t.WarehouseID || approved.SourceItemID != t.SourceItemID || approved.SourceWarehouseID != t.SourceWarehouseID || p.ID != approved.ProductMappingID || p.Version != approved.ProductMappingVersion || w.ID != approved.WarehouseMappingID || w.Version != approved.WarehouseMappingVersion || !testpublication.AutomaticQuantityAllowed(*t.Quantity) {
+	if p == nil || w == nil || approved.ProductID != t.ProductID || approved.WarehouseID != t.WarehouseID || approved.SourceItemID != t.SourceItemID || approved.SourceWarehouseID != t.SourceWarehouseID || p.ID != approved.ProductMappingID || p.Version != approved.ProductMappingVersion || w.ID != approved.WarehouseMappingID || w.Version != approved.WarehouseMappingVersion || !publication.Quantity(review.StockSyncScope, *t.Quantity) {
 		return false, nil
 	}
 	quantity, err := strconv.ParseInt(*t.Quantity, 10, 64)
@@ -126,7 +125,7 @@ func (s *Store) ConfigureAutomaticStock(ctx context.Context, req domain.Automati
 		seen := map[string]bool{}
 		for _, t := range requestedTargets {
 			key := t.ProductID + ":" + t.WarehouseID
-			if seen[key] || !positiveAPIID(t.ProductID) || !positiveAPIID(t.WarehouseID) || t.Maximum < 0 || t.Maximum > testpublication.MaxAutomaticQuantity || !syncQuantity(&t.SafetyStock) || !syncQuantity(&t.Unreflected) || !syncQuantity(&t.UnseenBound) {
+			if seen[key] || !positiveAPIID(t.ProductID) || !positiveAPIID(t.WarehouseID) || t.Maximum < 0 || t.Maximum > publication.Maximum() || !syncQuantity(&t.SafetyStock) || !syncQuantity(&t.Unreflected) || !syncQuantity(&t.UnseenBound) {
 				return domain.AutomaticStockView{}, domain.ErrStockSyncInvalid
 			}
 			seen[key] = true

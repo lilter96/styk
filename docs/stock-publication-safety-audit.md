@@ -1,5 +1,9 @@
 # STYK stock publication safety audit
 
+## Current account policy (2026-11-06)
+
+The account allowlist and test quantity caps below describe the historical baseline. The connected-account deployment now uses `STYK_STOCK_PUBLICATION_ENABLED=true` with an empty simulator endpoint for all merchant-owned scopes. Migration 67 removes the fixed-pair configuration constraint and generalizes the audited recovery trigger. Owner approval, confirmed mappings, explicit expiring assumptions, per-target maximums, provider integer bounds, single-attempt outbox dispatch, UNKNOWN fences and readback remain required. The same deployment model applies to catalog and order writes through their separate publication switches. Source-only order polling is separately authorized by an explicit integration refresh or Orders settings and never grants document-write permission. See the current [README](../README.md#ozon-account-refresh-and-order-polling) for rollout and rollback behavior.
+
 ## Controlled test-account exception (2026-10-29)
 
 The findings below remain the production safety assessment. An explicitly enabled, owner-authorized test policy permits the normal worker to address only the fixed `cross-e2e` account pair and mappings explicitly enrolled in the current, expiring operator-audited policy, with an integer quantity from 0 through 10 and each target's configured maximum. The exact account pair is compiled into `internal/testpublication/policy.go`; a deployment switch cannot authorize another real account. The legacy manual exception retains its original fixed target and seven-unit limit. Scheduled test synchronization does not release the general production hold.

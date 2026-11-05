@@ -8,6 +8,7 @@ import {
 } from "./CatalogSyncProducts";
 import { CatalogSyncPreview } from "./CatalogSyncPreview";
 import { CatalogSyncOperations } from "./CatalogSyncOperations";
+import { CatalogBulkImport } from "./CatalogBulkImport";
 import {
   catalogURL,
   configBody,
@@ -71,7 +72,7 @@ function CatalogSyncAccount({
   );
   const [preview, setPreview] = useState<CatalogPreview | null>(null);
   const [dirty, setDirty] = useState(false);
-  const [busy, setBusy] = useState<"preview" | "approve" | null>(null);
+  const [busy, setBusy] = useState<"preview" | "approve" | "bulk" | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [uncertain, setUncertain] = useState<string[]>([]);
@@ -267,16 +268,31 @@ function CatalogSyncAccount({
       )}
       {config.data && sameScope(config.data.scope, scope) && (
         <>
-          <CatalogSyncConfig
-            key={config.data.revision}
+          <CatalogBulkImport
             scope={scope}
             config={config.data}
+            disabled={busy !== null || dirty || uncertainSelection}
             onSaved={saved}
-            onDirty={(value) => {
-              setDirty(value);
-              setPreview(null);
+            onBusy={(running) => {
+              setBusy(running ? "bulk" : null);
+              if (running) {
+                setSelected({});
+                setPreview(null);
+              }
             }}
           />
+          <fieldset disabled={busy === "bulk"}>
+            <CatalogSyncConfig
+              key={config.data.revision}
+              scope={scope}
+              config={config.data}
+              onSaved={saved}
+              onDirty={(value) => {
+                setDirty(value);
+                setPreview(null);
+              }}
+            />
+          </fieldset>
           <CatalogSyncProducts
             scope={scope}
             config={config.data}

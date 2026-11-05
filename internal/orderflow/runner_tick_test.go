@@ -114,3 +114,39 @@ func TestRunnerTickDoesNotPersistCookiesAsAutomationActors(t *testing.T) {
 		t.Fatal("worker reused an interactive session or owner ID as an authentication cookie")
 	}
 }
+
+func TestRunnerTickSourceConsentReadsWithoutTargetPermission(t *testing.T) {
+	t.Parallel()
+	review := flowReview(t, "source-only")
+	attachFlowGrant(&review)
+	review.Config.Enabled, review.Config.TestEnabled, review.Config.ReadEnabled = false, false, true
+	review.Config.Automation.ExpiresAt = flowTestNow.Add(-time.Minute)
+	store := &flowStore{review: review, due: []orders.Config{review.Config}}
+	collector := &flowCollector{}
+	runner := flowRunner(t, store, flowResolver{}, flowService(t, store, flowResolver{}))
+	runner.options.AllowScope = func(orders.Scope) bool { return false }
+	runner.options.Collector = collector
+	if err := runner.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(collector.visited) != 1 || store.approval.PreviewID != "" || len(store.previews) != 0 {
+		t.Fatal("source permission failed to isolate reads from writes")
+	}
+}
+
+func TestRunnerTickExplicitSourceRevocationStopsEnabledTargetPolicy(t *testing.T) {
+	t.Parallel()
+	review := flowReview(t, "source-revoked")
+	attachFlowGrant(&review)
+	review.Config.ReadConfigured, review.Config.ReadEnabled = true, false
+	store := &flowStore{review: review, due: []orders.Config{review.Config}}
+	collector := &flowCollector{}
+	runner := flowRunner(t, store, flowResolver{}, flowService(t, store, flowResolver{}))
+	runner.options.Collector = collector
+	if err := runner.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(collector.visited) != 0 || store.approval.PreviewID != "" {
+		t.Fatal("revoked source permission allowed background reads or writes")
+	}
+}

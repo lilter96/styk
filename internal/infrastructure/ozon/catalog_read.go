@@ -182,11 +182,31 @@ func (c *CatalogClient) catalogAttributeBatch(ctx context.Context, ids []string,
 }
 
 func (c *CatalogClient) catalogProduct(ctx context.Context, info, attributes catalogWire, observed time.Time) (catalog.Product, error) {
+	attributes, err := stableCatalogAttributes(attributes)
+	if err != nil {
+		return catalog.Product{}, err
+	}
 	identity := catalog.Identity{Account: catalog.Account{Provider: catalog.ProviderOzon, ID: c.read.id}, EntityType: "product", ID: wireID(info, "id"), OfferID: wireText(info, "offer_id"), SKU: wireID(info, "sku")}
 	description, err := c.catalogDescription(ctx, identity)
 	if err != nil {
 		return catalog.Product{}, err
 	}
+	product := catalog.Product{Identity: identity, Lifecycle: catalogProductLifecycle(info), Fields: catalogProductFields(info, attributes, description), Extensions: map[string]catalog.Value{"vat": wireValue(info, "vat"), "ozon:info": catalogInfoExtras(info), "ozon:attributes": catalogAttributeExtras(attributes)}, ObservedAt: observed}
+	product.Revision, err = catalog.FingerprintValue(catalogRaw(struct {
+		Info, Attributes catalogWire
+		Description      catalog.Value
+	}{info, attributes, description}))
+	if err != nil {
+		return catalog.Product{}, err
+	}
+	for field, value := range product.Fields {
+		value.Provenance = catalog.Provenance{Provider: catalog.ProviderOzon, AccountID: c.read.id, EntityID: identity.ID, Revision: product.Revision, ObservedAt: observed}
+		product.Fields[field] = value
+	}
+	return product, nil
+}
+
+func catalogProductFields(info, attributes catalogWire, description catalog.Value) map[catalog.Field]catalog.Value {
 	fields := map[catalog.Field]catalog.Value{
 		catalog.FieldName: wireValue(info, "name"), catalog.FieldDescription: description,
 		catalog.FieldPrice: wireValue(info, "price"), catalog.FieldCurrency: wireValue(info, "currency_code"),
@@ -196,29 +216,23 @@ func (c *CatalogClient) catalogProduct(ctx context.Context, info, attributes cat
 		catalog.FieldDimensions: catalogComposite(attributes, "height", "depth", "width", "dimension_unit", "weight", "weight_unit"),
 		catalog.FieldUnit:       {State: catalog.StateUnsupported}, catalog.FieldParent: {State: catalog.StateUnknown},
 	}
-	lifecycle := catalog.LifecycleUnknown
-	var archived bool
-	if decodeCatalogJSON(info["is_archived"], &archived) == nil {
-		lifecycle = catalog.LifecycleActive
-		if archived {
-			lifecycle = catalog.LifecycleArchived
-		}
-	}
+	lifecycle := catalogProductLifecycle(info)
 	fields[catalog.FieldLifecycle] = catalog.Value{State: catalog.StateUnknown}
 	if lifecycle != catalog.LifecycleUnknown {
 		fields[catalog.FieldLifecycle] = catalog.Text(string(lifecycle))
 	}
-	extensions := map[string]catalog.Value{"vat": wireValue(info, "vat"), "ozon:info": catalogInfoExtras(info), "ozon:attributes": catalogAttributeExtras(attributes)}
-	product := catalog.Product{Identity: identity, Lifecycle: lifecycle, Fields: fields, Extensions: extensions, ObservedAt: observed}
-	product.Revision = catalogDigest(struct {
-		Info, Attributes catalogWire
-		Description      catalog.Value
-	}{info, attributes, description})
-	for field, value := range product.Fields {
-		value.Provenance = catalog.Provenance{Provider: catalog.ProviderOzon, AccountID: c.read.id, EntityID: identity.ID, Revision: product.Revision, ObservedAt: observed}
-		product.Fields[field] = value
+	return fields
+}
+
+func catalogProductLifecycle(info catalogWire) catalog.Lifecycle {
+	var archived bool
+	if decodeCatalogJSON(info["is_archived"], &archived) != nil {
+		return catalog.LifecycleUnknown
 	}
-	return product, nil
+	if archived {
+		return catalog.LifecycleArchived
+	}
+	return catalog.LifecycleActive
 }
 
 func (c *CatalogClient) catalogDescription(ctx context.Context, identity catalog.Identity) (catalog.Value, error) {

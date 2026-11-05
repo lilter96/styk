@@ -1,33 +1,16 @@
-import { OrdersNativeSummary, nativeDocumentURL } from "./OrdersNativeSummary";
-import { OrdersRecovery } from "./OrdersRecovery";
-import { Icon } from "./UI";
+import { useEffect, useState } from "react";
+import { OrdersPostingHistory } from "./OrdersPostingHistory";
 import { useOrdersHistory } from "./useOrdersHistory";
 import { useLabelExpiryClock } from "./useLabelExpiryClock";
-import { useEffect, useState } from "react";
-import { OrdersPositionPatch } from "./OrdersPositionPatch";
-import { OrdersSplitEvidence } from "./OrdersSplitEvidence";
-import {
-  OrdersActionSummary,
-  safeOrderArtifactURL,
-} from "./OrdersActionSummary";
-import {
-  MoyOrderLink,
-  orderActionLabel,
-  orderOperationProblem,
-  orderDate,
-  orderRequestError,
-  orderStateLabels,
-  type OrderScope,
-  type OrderOperation,
-} from "./OrdersTypes";
+import { OrdersHistoryToolbar } from "./OrdersHistoryToolbar";
+import { OrdersHistoryTable } from "./OrdersHistoryTable";
+import { OrderHistoryDetailDrawer } from "./OrderHistoryDetailDrawer";
+import { historyRows, type HistoryFilters } from "./OrdersHistoryPresentation";
+import { Icon } from "./UI";
+import { orderRequestError, type OrderScope } from "./OrdersTypes";
+import "./OrdersHistory.css";
 
-export function OrdersOperations({
-  scope,
-  onLinks,
-  onOutcomes,
-  onRecoveryAuthorization,
-  postingNumber,
-}: {
+type Props = {
   scope: OrderScope;
   postingNumber?: string;
   onLinks?: (links: Record<string, string>) => void;
@@ -36,19 +19,127 @@ export function OrdersOperations({
     posting: string,
     until: string | undefined,
   ) => void;
-}) {
+};
+const emptyFilters: HistoryFilters = {
+  search: "",
+  status: "",
+  attention: false,
+};
+export function OrdersOperations(props: Props) {
+  if (props.postingNumber) return <OrdersPostingHistory {...props} />;
+  return <OrdersHistory key={JSON.stringify(props.scope)} {...props} />;
+}
+function OrdersHistory(props: Props) {
+  const [filters, setFilters] = useState(emptyFilters);
+  const [search, setSearch] = useState("");
   const [cursors, setCursors] = useState([""]);
-  const cursor = cursors[cursors.length - 1];
-  const { latest, page: history } = useOrdersHistory(
-    scope,
-    cursor,
-    postingNumber,
+  const [opened, setOpened] = useState<string>();
+  const { latest, page } = useOrdersHistory(
+    props.scope,
+    cursors.at(-1)!,
+    search,
+    filters.status,
+    filters.attention,
   );
-  const labelNow = useLabelExpiryClock(history.data);
+  useLatestOutcomes(latest.data, props.onLinks, props.onOutcomes);
+  const now = useLabelExpiryClock(page.data);
+  const applied = { ...filters, search };
+  const rows = historyRows(page.data?.operations ?? [], applied);
+  const selected = rows.find((row) => row.id === opened);
+  const selectedID = selected?.id;
+  useEffect(() => {
+    if (opened && !selectedID && !page.isLoading) setOpened(undefined);
+  }, [opened, selectedID, page.isLoading]);
+  useEffect(() => {
+    if (filters.search.trim() === search) return;
+    const timer = setTimeout(() => {
+      setSearch(filters.search.trim());
+      setCursors([""]);
+      setOpened(undefined);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [filters.search, search]);
+  function changeFilters(next: HistoryFilters) {
+    setFilters(next);
+    setCursors([""]);
+    setOpened(undefined);
+  }
+  return (
+    <section
+      className="orders-section history-section"
+      aria-labelledby="orders-history-heading"
+      aria-busy={page.isFetching}
+    >
+      <div className="history-heading">
+        <div>
+          <h2 id="orders-history-heading">История действий</h2>
+          <p>Что происходило с заказами и требуется ли ваше внимание.</p>
+        </div>
+        <button
+          type="button"
+          className="secondary"
+          disabled={page.isFetching}
+          onClick={() => void page.refetch()}
+          title="Прочитать сохранённые статусы в STYK"
+        >
+          <Icon name="refresh" size="button" />
+          Обновить статусы
+        </button>
+      </div>
+      <OrdersHistoryToolbar filters={filters} onChange={changeFilters} />
+      <HistoryFeedback
+        loading={page.isLoading}
+        fetching={page.isFetching}
+        error={page.isError ? page.error : undefined}
+        empty={!rows.length}
+        filtered={!!(search || filters.status || filters.attention)}
+        reset={() => {
+          changeFilters(emptyFilters);
+          setSearch("");
+        }}
+        retry={() => void page.refetch()}
+      />
+      {!page.isError && !!rows.length && (
+        <OrdersHistoryTable rows={rows} onOpen={setOpened} />
+      )}
+      <HistoryPagination
+        index={cursors.length}
+        busy={page.isFetching}
+        next={page.data?.next_cursor}
+        onPrevious={() => {
+          setOpened(undefined);
+          setCursors((value) => value.slice(0, -1));
+        }}
+        onNext={() => {
+          setOpened(undefined);
+          setCursors((value) => [...value, page.data!.next_cursor!]);
+        }}
+      />
+      {selected && (
+        <OrderHistoryDetailDrawer
+          key={selected.id}
+          row={selected}
+          scope={props.scope}
+          now={now}
+          fetching={page.isFetching}
+          error={page.isError ? page.error : undefined}
+          onRefresh={() => void page.refetch()}
+          onClose={() => setOpened(undefined)}
+          onRecoveryAuthorization={props.onRecoveryAuthorization}
+        />
+      )}
+    </section>
+  );
+}
+function useLatestOutcomes(
+  data: ReturnType<typeof useOrdersHistory>["latest"]["data"],
+  onLinks: Props["onLinks"],
+  onOutcomes: Props["onOutcomes"],
+) {
   useEffect(() => {
     const links: Record<string, string> = {};
     const states: Record<string, string> = {};
-    for (const operation of latest.data?.operations ?? [])
+    for (const operation of data?.operations ?? [])
       for (const work of operation.targets ?? []) {
         const id =
           work.command.correlation?.customer_order_id ||
@@ -60,258 +151,109 @@ export function OrdersOperations({
       }
     onLinks?.(links);
     onOutcomes?.(states);
-  }, [latest.data, onLinks, onOutcomes]);
-  return (
-    <section
-      className="orders-section"
-      aria-labelledby={
-        postingNumber
-          ? "orders-detail-history-heading"
-          : "orders-history-heading"
-      }
-    >
-      <div className="orders-section-heading">
-        <h2
-          id={
-            postingNumber
-              ? "orders-detail-history-heading"
-              : "orders-history-heading"
-          }
-        >
-          {postingNumber ? "История отправления" : "История передачи"}
-        </h2>
+  }, [data, onLinks, onOutcomes]);
+}
+function HistoryFeedback({
+  loading,
+  fetching,
+  error,
+  empty,
+  filtered,
+  reset,
+  retry,
+}: {
+  loading: boolean;
+  fetching: boolean;
+  error: unknown;
+  empty: boolean;
+  filtered: boolean;
+  reset: () => void;
+  retry: () => void;
+}) {
+  if (loading)
+    return (
+      <p className="history-feedback" role="status">
+        Читаем историю…
+      </p>
+    );
+  if (error)
+    return (
+      <div className="history-feedback" role="alert">
+        <p>{orderRequestError(error)}</p>
         <button
           type="button"
           className="secondary"
-          disabled={history.isFetching}
-          onClick={() => void history.refetch()}
+          disabled={fetching}
+          onClick={retry}
         >
-          <Icon name="refresh" size="button" />
-          Обновить статусы заказов
+          Повторить загрузку истории
         </button>
       </div>
-      <p className="orders-note">
-        Принятие запроса ещё не подтверждает изменения в сервисах. Итог —
-        «Подтверждено сверкой» для каждого отправления.
+    );
+  if (!empty)
+    return (
+      <span className="sr-only" role="status">
+        {fetching ? "Обновляем историю…" : "История загружена"}
+      </span>
+    );
+  return (
+    <div className="history-feedback history-empty">
+      <Icon name="history" />
+      <h3>{filtered ? "Операции не найдены" : "Действий пока нет"}</h3>
+      <p>
+        {filtered
+          ? "Введите номер отправления целиком или измените выбранные результаты."
+          : "Здесь появятся действия с заказами и их результаты."}
       </p>
-      {history.isLoading && <p role="status">Читаем историю…</p>}
-      {history.isError && (
-        <p role="alert" className="orders-error">
-          {orderRequestError(history.error)}
-        </p>
+      {filtered && (
+        <button type="button" className="secondary" onClick={reset}>
+          Сбросить фильтры истории
+        </button>
       )}
-      {!history.isLoading &&
-        !history.isError &&
-        !history.data?.operations?.length && (
-          <p className="orders-empty">
-            Передач пока нет. Выберите отправления и проверьте изменения перед
-            подтверждением.
-          </p>
-        )}
-      {(history.data?.operations ?? [])
-        .filter(
-          (operation) =>
-            !postingNumber ||
-            operation.targets?.some(
-              (work) => work.command.posting_number === postingNumber,
-            ),
-        )
-        .map((operation) => (
-          <article className="orders-posting" key={operation.id}>
-            <div className="orders-section-heading">
-              <h3>Передача от {orderDate(operation.created_at)}</h3>
-              <span className="orders-badge">
-                {orderStateLabels[
-                  operationSummaryState(operation, postingNumber)
-                ] ?? operationSummaryState(operation, postingNumber)}
-              </span>
-            </div>
-            {(operation.targets ?? [])
-              .filter(
-                (work) =>
-                  !postingNumber ||
-                  work.command.posting_number === postingNumber,
-              )
-              .map((work) => (
-                <div className="orders-work" key={work.id}>
-                  <div>
-                    <strong>{work.command.posting_number}</strong>
-                    <span
-                      className={`orders-badge ${work.state === "UNKNOWN" || work.state === "BLOCKED" ? "warning" : work.state === "RECONCILED" ? "success" : ""}`}
-                    >
-                      {work.command.action === "posting_country_set" &&
-                      work.state === "RECONCILED"
-                        ? "Требование страны снято"
-                        : (orderStateLabels[work.state] ?? work.state)}
-                    </span>
-                  </div>
-                  <p>
-                    {orderActionLabel(work.command.action)} ·{" "}
-                    {work.automatic
-                      ? "По разрешению автоматизации"
-                      : "Подтверждено вручную"}
-                  </p>
-                  {work.command.position_patch && (
-                    <OrdersPositionPatch value={work.command.position_patch} />
-                  )}
-                  {(work.command.action.startsWith("mirror_") ||
-                    !!work.command.native_movement) && (
-                    <MoyOrderLink
-                      id={
-                        work.command.correlation?.customer_order_id ||
-                        work.receipt?.external_id
-                      }
-                    />
-                  )}
-                  {work.command.native_movement && (
-                    <details>
-                      <summary>
-                        {work.state === "RECONCILED"
-                          ? "Складской документ подтверждён сверкой"
-                          : "Складской документ и параметры операции"}
-                      </summary>
-                      <OrdersNativeSummary command={work.command} historical />
-                      {nativeDocumentURL(
-                        work.command,
-                        work.native_document?.id ?? work.receipt?.external_id,
-                      ) && (
-                        <a
-                          href={nativeDocumentURL(
-                            work.command,
-                            work.native_document?.id ??
-                              work.receipt?.external_id,
-                          )}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          Открыть складской документ МойСклад
-                        </a>
-                      )}
-                    </details>
-                  )}
-                  {work.command.posting_action && (
-                    <details>
-                      <summary>Подтверждённые параметры действия</summary>
-                      <OrdersActionSummary command={work.command} />
-                    </details>
-                  )}
-                  {work.receipt?.country_evidence && (
-                    <p className="orders-note">
-                      SKU {work.receipt.country_evidence.sku}:{" "}
-                      {work.receipt.country_evidence.requirement_resolved
-                        ? "требование указать страну снято"
-                        : "снятие требования не подтверждено"}
-                      . Установленное значение страны отдельным чтением не
-                      подтверждено.
-                    </p>
-                  )}
-                  {(work.receipt?.task_ids ?? []).map((task, index) => (
-                    <p className="orders-note" key={`${task.id}:${index}`}>
-                      Задача обработки Ozon: {task.id}
-                    </p>
-                  ))}
-                  {["posting_split", "posting_split_unassembled"].includes(
-                    work.command.action,
-                  ) && (
-                    <OrdersSplitEvidence
-                      receipt={work.receipt}
-                      state={work.state}
-                    />
-                  )}
-                  {work.state === "RECONCILED" &&
-                    work.receipt?.artifact?.available &&
-                    (!work.receipt.artifact.expires_at ||
-                      Date.parse(work.receipt.artifact.expires_at) >
-                        labelNow) &&
-                    safeOrderArtifactURL(
-                      work.receipt.artifact.download_url,
-                    ) && (
-                      <a
-                        href={safeOrderArtifactURL(
-                          work.receipt.artifact.download_url,
-                        )}
-                      >
-                        Скачать этикетку
-                      </a>
-                    )}
-                  {work.state === "RECONCILED" &&
-                    work.receipt?.artifact?.expires_at && (
-                      <p className="orders-note">
-                        {Date.parse(work.receipt.artifact.expires_at) > labelNow
-                          ? `Этикетка доступна до ${orderDate(work.receipt.artifact.expires_at)}.`
-                          : "Срок хранения этикетки истёк."}
-                      </p>
-                    )}
-                  {work.state === "UNKNOWN" && (
-                    <p className="orders-warning">
-                      Запрос мог выполниться. STYK сверяет результат чтением;
-                      повторная отправка автоматически не выполняется. Обновите
-                      статусы и дождитесь подтверждения.
-                    </p>
-                  )}
-                  {work.state === "UNKNOWN" && (
-                    <OrdersRecovery
-                      scope={scope}
-                      work={work}
-                      onAuthorization={onRecoveryAuthorization}
-                    />
-                  )}
-                  {work.state === "BLOCKED" && (
-                    <p className="orders-warning">
-                      Условия передачи изменились. Проверьте настройки и связи,
-                      затем создайте новый предпросмотр.
-                    </p>
-                  )}
-                  {orderOperationProblem(work.code || work.receipt?.code) && (
-                    <p className="orders-warning" role="status">
-                      {orderOperationProblem(work.code || work.receipt?.code)}
-                    </p>
-                  )}
-                  {(work.code || work.receipt?.code) && (
-                    <details>
-                      <summary>Сведения об операции</summary>
-                      <p>
-                        Код: <code>{work.code || work.receipt.code}</code>
-                      </p>
-                      <p>ID: {work.id}</p>
-                    </details>
-                  )}
-                </div>
-              ))}
-          </article>
-        ))}
-      <div className="orders-actions">
-        <button
-          className="secondary"
-          disabled={history.isFetching || cursors.length === 1}
-          onClick={() => setCursors((value) => value.slice(0, -1))}
-        >
-          Предыдущие операции
-        </button>
-        <span>Страница {cursors.length}</span>
-        <button
-          className="secondary"
-          disabled={history.isFetching || !history.data?.next_cursor}
-          onClick={() =>
-            setCursors((value) => [...value, history.data!.next_cursor!])
-          }
-        >
-          Следующие операции
-        </button>
-      </div>
-    </section>
+    </div>
   );
 }
-
-function operationSummaryState(
-  operation: OrderOperation,
-  postingNumber?: string,
-): string {
-  if (!postingNumber) return operation.state;
-  const targets = (operation.targets ?? []).filter(
-    (work) => work.command.posting_number === postingNumber,
-  );
+function HistoryPagination({
+  index,
+  busy,
+  next,
+  onPrevious,
+  onNext,
+}: {
+  index: number;
+  busy: boolean;
+  next?: string;
+  onPrevious: () => void;
+  onNext: () => void;
+}) {
   return (
-    targets.find((work) => work.state !== "RECONCILED")?.state ?? "RECONCILED"
+    <footer className="history-footer">
+      <p>
+        {index === 1
+          ? "Показаны последние операции"
+          : "Показаны более ранние операции"}
+      </p>
+      <nav aria-label="Страницы истории">
+        <button
+          type="button"
+          className="secondary"
+          disabled={busy || index === 1}
+          onClick={onPrevious}
+        >
+          <Icon name="chevron-left" size="button" />
+          <span className="sr-only">Предыдущие операции</span>
+        </button>
+        <span aria-live="polite">Страница {index}</span>
+        <button
+          type="button"
+          className="secondary"
+          disabled={busy || !next}
+          onClick={onNext}
+        >
+          Следующие
+          <Icon name="chevron-right" size="button" />
+        </button>
+      </nav>
+    </footer>
   );
 }

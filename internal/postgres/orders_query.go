@@ -150,13 +150,41 @@ func (s *Store) OrderHistory(ctx context.Context, scope orders.Scope, page order
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
-	args := append(ordersScopeArgs(scope), cursor.ID, cursor.At, page.Limit+1, page.Search)
-	rows, err := s.Pool.Query(ctx, `SELECT o.id,o.preview_id,o.created_at,COALESCE(jsonb_agg(w.work || CASE WHEN n.work_id IS NOT NULL THEN jsonb_build_object('native_document',jsonb_build_object('id',n.native_document_id,'kind',n.kind,'observed_at',n.observed_at)) ELSE '{}'::jsonb END ORDER BY w.id) FILTER(WHERE w.id IS NOT NULL),'[]'::jsonb) FROM (SELECT * FROM orders_operations candidate WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND ($4='' OR (created_at,id)<($5,$4)) AND ($7='' OR EXISTS(SELECT 1 FROM orders_work matched WHERE matched.operation_id=candidate.id AND matched.tenant_id=$1 AND matched.moysklad_account=$2 AND matched.ozon_account=$3 AND matched.posting_number=$7)) ORDER BY created_at DESC,id DESC LIMIT $6) o LEFT JOIN orders_work w ON w.operation_id=o.id AND w.tenant_id=o.tenant_id AND w.moysklad_account=o.moysklad_account AND w.ozon_account=o.ozon_account LEFT JOIN orders_native_document_results n ON n.work_id=w.id AND n.tenant_id=w.tenant_id AND n.moysklad_account=w.moysklad_account AND n.ozon_account=w.ozon_account GROUP BY o.id,o.preview_id,o.created_at ORDER BY o.created_at DESC,o.id DESC`, args...)
+	args := append(ordersScopeArgs(scope), cursor.ID, cursor.At, page.Limit+1, page.Search, page.Status, page.Attention)
+	rows, err := s.Pool.Query(ctx, orderHistorySQL, args...)
 	if err != nil {
 		return result, ordersError("select order history", err)
 	}
 	return scanOrderHistory(rows, scope, page, cursor)
 }
+
+// Match all filters against the same work, before limiting operations. Hydrate
+// only matching targets so a mixed batch cannot leak unrelated row statuses.
+// Unfiltered history retains empty operations and its existing cursor contract.
+const orderHistorySQL = `
+SELECT o.id,o.preview_id,o.created_at,
+ COALESCE(jsonb_agg(w.work || CASE WHEN n.work_id IS NOT NULL THEN
+ jsonb_build_object('native_document',jsonb_build_object('id',n.native_document_id,'kind',n.kind,'observed_at',n.observed_at))
+ ELSE '{}'::jsonb END ORDER BY w.id) FILTER(WHERE w.id IS NOT NULL),'[]'::jsonb)
+FROM (
+ SELECT * FROM orders_operations candidate
+ WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3
+ AND ($4='' OR (created_at,id)<($5,$4))
+ AND (($7='' AND $8='' AND NOT $9) OR EXISTS(
+  SELECT 1 FROM orders_work matched WHERE matched.operation_id=candidate.id
+  AND matched.tenant_id=$1 AND matched.moysklad_account=$2 AND matched.ozon_account=$3
+  AND ($7='' OR matched.posting_number=$7)
+  AND ($8='' OR matched.state=$8)
+  AND (NOT $9 OR matched.state IN ('UNKNOWN','REJECTED','BLOCKED'))
+ )) ORDER BY created_at DESC,id DESC LIMIT $6
+) o
+LEFT JOIN orders_work w ON w.operation_id=o.id AND w.tenant_id=o.tenant_id
+ AND w.moysklad_account=o.moysklad_account AND w.ozon_account=o.ozon_account
+ AND ($7='' OR w.posting_number=$7) AND ($8='' OR w.state=$8)
+ AND (NOT $9 OR w.state IN ('UNKNOWN','REJECTED','BLOCKED'))
+LEFT JOIN orders_native_document_results n ON n.work_id=w.id AND n.tenant_id=w.tenant_id
+ AND n.moysklad_account=w.moysklad_account AND n.ozon_account=w.ozon_account
+GROUP BY o.id,o.preview_id,o.created_at ORDER BY o.created_at DESC,o.id DESC`
 
 func scanOrderHistory(rows pgx.Rows, scope orders.Scope, page orders.PageRequest, cursor ordersCursor) (orders.HistoryPage, error) {
 	defer rows.Close()

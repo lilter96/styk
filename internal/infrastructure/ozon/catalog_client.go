@@ -7,13 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 
 	"github.com/lilter96/styk/internal/catalog"
-	"github.com/lilter96/styk/internal/domain"
-	"github.com/lilter96/styk/internal/testpublication"
+	"github.com/lilter96/styk/internal/catalogaccess"
 )
 
 var (
@@ -63,12 +61,17 @@ func NewControlledTestCatalogClient(scope catalog.Scope, key string) (*CatalogCl
 }
 
 func NewControlledTestCatalogClientFromClient(client *Client, scope catalog.Scope) (*CatalogClient, error) {
+	return NewWritableCatalogClientFromClient(client, scope)
+}
+
+// NewWritableCatalogClientFromClient binds a catalog writer to one scoped account.
+func NewWritableCatalogClientFromClient(client *Client, scope catalog.Scope) (*CatalogClient, error) {
 	reader, err := NewCatalogReaderFromClient(client, scope)
 	if err != nil {
 		return nil, err
 	}
 	reader.synthetic = client.allowSyntheticStockWrites
-	reader.controlled = client.base.String() == BaseURL && catalogTestEnabled(scope)
+	reader.controlled = client.base.String() == BaseURL && catalogaccess.Allows(scope)
 	if !reader.writeEnabled() {
 		return nil, ErrCatalogWritesDisabled
 	}
@@ -96,11 +99,6 @@ func hardenCatalogTransport(client *Client) error {
 	return nil
 }
 
-func catalogTestEnabled(scope catalog.Scope) bool {
-	stockScope := domain.StockSyncScope{Tenant: scope.Tenant, MoyskladAccount: scope.MoyskladAccount, OzonAccount: scope.OzonAccount}
-	return os.Getenv("STYK_TEST_ACCOUNT_CATALOG") == "true" && stockScope == testpublication.Scope()
-}
-
 // NewSyntheticCatalogClient accepts only an explicit IP loopback HTTP server
 // and the standard transport. It cannot enable a real provider host.
 func NewSyntheticCatalogClient(options Options, scope catalog.Scope) (*CatalogClient, error) {
@@ -122,7 +120,7 @@ func (c *CatalogClient) writeEnabled() bool {
 	if c.synthetic {
 		return true
 	}
-	return c.controlled && catalogTestEnabled(c.scope)
+	return c.controlled && catalogaccess.Allows(c.scope)
 }
 
 // BindCatalogIntent freezes the entire journalled command. The callback must

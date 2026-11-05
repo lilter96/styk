@@ -11,8 +11,11 @@ import (
 // Provider reads follow the current recorded account permission, not the browser
 // session that originally configured it. Revocation is checked under DB locks.
 func validateOrderReadAuthority(ctx context.Context, tx pgx.Tx, config orders.Config) error {
-	if !config.Enabled || config.Scope.Validate() != nil || config.Revision < 1 {
+	if !config.ReadsEnabled() || config.Scope.Validate() != nil || config.Revision < 1 {
 		return orders.ErrBlocked
+	}
+	if config.ReadEnabled {
+		return validateSourceReadOwner(ctx, tx, config.Scope)
 	}
 	var owner string
 	args := append(ordersScopeArgs(config.Scope), config.Revision)

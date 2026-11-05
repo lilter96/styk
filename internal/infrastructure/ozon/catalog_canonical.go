@@ -2,9 +2,57 @@ package ozon
 
 import (
 	"encoding/json"
+	"fmt"
+	"sort"
 
 	"github.com/lilter96/styk/internal/catalog"
 )
+
+// Attribute entries have their own IDs; provider enumeration order is not a
+// product change. Keep every entry and its value sequence, including unknown facts.
+func stableCatalogAttributes(wire catalogWire) (catalogWire, error) {
+	result := make(catalogWire, len(wire))
+	for key, value := range wire {
+		result[key] = value
+	}
+	for _, key := range []string{"attributes", "complex_attributes", "attributes_with_defaults"} {
+		value, ok := wire[key]
+		if !ok || string(value) == "null" {
+			continue
+		}
+		ordered, err := stableCatalogEntries(value)
+		if err != nil {
+			return nil, fmt.Errorf("canonicalize catalog attribute collection: %w", err)
+		}
+		result[key] = ordered
+	}
+	return result, nil
+}
+
+func stableCatalogEntries(data json.RawMessage) (json.RawMessage, error) {
+	var entries []json.RawMessage
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return nil, ErrCatalogContract
+	}
+	type entry struct {
+		data json.RawMessage
+		key  string
+	}
+	ordered := make([]entry, 0, len(entries))
+	for _, value := range entries {
+		key, err := catalog.FingerprintValue(catalog.Value{State: catalog.StateKnown, Data: value})
+		if err != nil {
+			return nil, fmt.Errorf("fingerprint catalog attribute: %w", err)
+		}
+		ordered = append(ordered, entry{data: value, key: key})
+	}
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].key < ordered[j].key })
+	result := make([]json.RawMessage, 0, len(ordered))
+	for _, value := range ordered {
+		result = append(result, value.data)
+	}
+	return json.Marshal(result)
+}
 
 func catalogUnownedAttributes(data json.RawMessage) catalog.Value {
 	if len(data) == 0 {

@@ -11,7 +11,7 @@ import (
 )
 
 func (s *Store) BeginCatalogReconciliation(ctx context.Context, req catalogsync.ReconciliationRequest, now time.Time) (catalogsync.ReconciliationClaim, error) {
-	if req.Scope.Validate() != nil || !catalogTestScope(req.Scope) || !req.Acknowledge || req.WorkID == "" || len(req.IdempotencyKey) == 0 || len(req.IdempotencyKey) > 128 || len(req.Reason) < 5 || len(req.Reason) > 1000 {
+	if req.Scope.Validate() != nil || !catalogScopeValid(req.Scope) || !req.Acknowledge || req.WorkID == "" || len(req.IdempotencyKey) == 0 || len(req.IdempotencyKey) > 128 || len(req.Reason) < 5 || len(req.Reason) > 1000 {
 		return catalogsync.ReconciliationClaim{}, catalogsync.ErrInvalid
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)

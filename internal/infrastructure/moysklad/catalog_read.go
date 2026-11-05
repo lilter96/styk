@@ -221,6 +221,10 @@ func (c *CatalogClient) decodeCatalogProduct(raw []byte, account catalog.Account
 		return catalog.Product{}, err
 	}
 	p.Fields, p.Extensions = c.catalogFields(fields), catalogExtensions(fields)
+	p.Fields[catalog.FieldLifecycle] = catalog.Value{State: catalog.StateUnknown}
+	if p.Lifecycle != catalog.LifecycleUnknown {
+		p.Fields[catalog.FieldLifecycle] = catalog.Text(string(p.Lifecycle))
+	}
 	setCatalogProvenance(&p)
 	return p, nil
 }

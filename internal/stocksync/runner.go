@@ -11,15 +11,16 @@ import (
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/infrastructure/ozon"
 	"github.com/lilter96/styk/internal/postgres"
-	"github.com/lilter96/styk/internal/testpublication"
+	"github.com/lilter96/styk/internal/publication"
 )
 
 type Runner struct {
-	Enabled        bool
-	ControlledTest bool
-	WorkerID       string
-	Store          *postgres.Store
-	ResolveOzon    func(context.Context, string, string) (*ozon.Client, error)
+	Enabled           bool
+	ControlledTest    bool
+	WorkerID          string
+	Store             *postgres.Store
+	ResolveOzon       func(context.Context, string, string) (*ozon.Client, error)
+	ResolveScopedOzon func(context.Context, domain.StockSyncScope) (*ozon.Client, error)
 }
 
 // MaintainPresence runs independently of a potentially long catalog traversal.
@@ -48,14 +49,14 @@ func (r Runner) RunNext(ctx context.Context) (bool, error) {
 	if !r.Enabled {
 		return false, nil
 	}
-	if r.Store == nil || r.ResolveOzon == nil {
+	if r.Store == nil || (r.ResolveOzon == nil && r.ResolveScopedOzon == nil) {
 		return false, errors.New("stock publisher requires a store and scoped credential resolver")
 	}
 	now := time.Now().UTC()
 	var op *domain.StockPublication
 	var err error
 	if r.ControlledTest {
-		if !testpublication.Enabled(testpublication.Scope()) {
+		if !publication.StockEnabled() {
 			return false, nil
 		}
 		if err = r.Store.TouchTestStockWorker(ctx, r.WorkerID, now); err != nil {
@@ -98,7 +99,7 @@ func (r Runner) RunNext(ctx context.Context) (bool, error) {
 		}
 		return true, nil
 	}
-	client, err := r.ResolveOzon(ctx, op.Tenant, op.OzonAccount)
+	client, err := r.resolveOzon(ctx, op.StockSyncScope)
 	if err != nil {
 		for _, t := range op.Targets {
 			if t.State == "DISPATCHING" {
@@ -235,7 +236,7 @@ func (r Runner) Reconcile(ctx context.Context, scope domain.StockSyncScope, id s
 	if err != nil {
 		return domain.StockSyncView{}, err
 	}
-	client, err := r.ResolveOzon(ctx, scope.Tenant, scope.OzonAccount)
+	client, err := r.resolveOzon(ctx, scope)
 	if err != nil {
 		return domain.StockSyncView{}, errors.New("stock reconciliation credentials unavailable")
 	}
@@ -255,7 +256,7 @@ func (r Runner) Reconcile(ctx context.Context, scope domain.StockSyncScope, id s
 			}
 			continue
 		}
-		if scope == testpublication.Scope() {
+		if publication.Stock(scope) {
 			var observed *int64
 			if readErr == nil {
 				observed = &quantity
@@ -281,4 +282,14 @@ func (r Runner) Reconcile(ctx context.Context, scope domain.StockSyncScope, id s
 		}
 	}
 	return r.Store.StockSyncStatus(ctx, scope, time.Now().UTC())
+}
+
+func (r Runner) resolveOzon(ctx context.Context, scope domain.StockSyncScope) (*ozon.Client, error) {
+	if r.ResolveScopedOzon != nil {
+		return r.ResolveScopedOzon(ctx, scope)
+	}
+	if r.ResolveOzon == nil {
+		return nil, errors.New("stock provider resolver unavailable")
+	}
+	return r.ResolveOzon(ctx, scope.Tenant, scope.OzonAccount)
 }

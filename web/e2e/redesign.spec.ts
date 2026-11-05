@@ -1,6 +1,124 @@
 import { test, expect, type Page } from "@playwright/test";
 import { auditButtonHovers } from "./hover-contrast";
 
+test("new merchant imports all eligible Ozon products with one confirmation", async ({
+  page,
+}) => {
+  await fixtures(page);
+  const source = (id: string, archived = false) => ({
+    identity: {
+      account: { provider: "ozon", id: scope.ozon_account },
+      entity_type: "product",
+      id,
+      offer_id: `seller-${id}`,
+    },
+    fields: { name: { state: "known", data: `Товар ${id}` } },
+    revision: "source-1",
+    lifecycle: archived ? "archived" : "active",
+  });
+  let configuration = {
+    scope,
+    revision: 0,
+    enabled: false,
+    test_enabled: false,
+    interval_seconds: 300,
+    rules: {},
+    targets: [] as Array<{
+      id: string;
+      source: ReturnType<typeof source>["identity"];
+      target: unknown;
+      create: { values: unknown };
+    }>,
+    updated_at: "",
+  };
+  const approved: string[] = [];
+  await page.route("**/api/catalog-sync/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.pathname.endsWith("config")) {
+      if (request.method() === "POST")
+        configuration = {
+          ...request.postDataJSON().config,
+          revision: configuration.revision + 1,
+        };
+      return route.fulfill({
+        json: { ...configuration, publication_available: true },
+      });
+    }
+    if (url.pathname.endsWith("products"))
+      return route.fulfill({
+        json:
+          url.searchParams.get("provider") !== "ozon"
+            ? { products: [] }
+            : url.searchParams.get("cursor")
+              ? { products: [source("1002"), source("1003", true)] }
+              : { products: [source("1001")], next_cursor: "second-page" },
+      });
+    if (url.pathname.endsWith("operations"))
+      return route.fulfill({ json: { operations: [] } });
+    const body = request.postDataJSON();
+    const target = configuration.targets.find(
+      (item) => item.id === body.enrollment_ids[0],
+    )!;
+    if (url.pathname.endsWith("preview"))
+      return route.fulfill({
+        json: {
+          id: `preview-${target.id}`,
+          scope,
+          config_revision: configuration.revision,
+          expires_at: "2099-01-01T00:00:00Z",
+          decisions: [
+            {
+              enrollment_id: target.id,
+              source: source(target.source.id),
+              target: { identity: target.target },
+              target_absent: true,
+              ready: true,
+              validation: [],
+              plan: { conflicts: [] },
+              commands: [
+                {
+                  action: "create",
+                  target: target.target,
+                  values: target.create.values,
+                },
+              ],
+            },
+          ],
+        },
+      });
+    if (url.pathname.endsWith("approve")) {
+      approved.push(target.source.id);
+      return route.fulfill({
+        json: {
+          id: `operation-${target.id}`,
+          scope,
+          targets: [{ enrollment_id: target.id }],
+        },
+      });
+    }
+    return route.fulfill({ status: 404, json: {} });
+  });
+  await page.goto(origin + "/catalog-sync");
+  const importer = page.getByRole("region", { name: "Импорт товаров из Ozon" });
+  await importer
+    .getByRole("button", { name: "Импортировать все товары" })
+    .click();
+  await expect(importer.getByText(/Новых:/)).toContainText("Новых: 3");
+  await expect(importer.getByText(/Новых:/)).toContainText("В архиве: 1");
+  const start = importer.getByRole("button", { name: "Начать импорт (3)" });
+  await expect(start).toBeDisabled();
+  expect(approved).toEqual([]);
+  await importer
+    .getByRole("checkbox", { name: /Разрешаю создать все/ })
+    .check();
+  await start.click();
+  await expect(importer.getByRole("status")).toContainText(
+    "Передано на отправку: 3",
+  );
+  expect(approved).toEqual(["1001", "1002", "1003"]);
+});
+
 // Presentation fixtures are confined to this test. Application requests and
 // production data flow are unchanged. These checks do not replace API e2e.
 const origin = process.env.STYK_UI_VISUAL_ORIGIN || "http://127.0.0.1:5173";

@@ -12,6 +12,7 @@ func (a *ordersAPI) saveConfig(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		orderRequestScope
 		Config           orders.Config `json:"config"`
+		ReadEnabled      *bool         `json:"read_enabled,omitempty"`
 		ExpectedRevision int64         `json:"expected_revision"`
 		IdempotencyKey   string        `json:"idempotency_key"`
 	}
@@ -24,7 +25,7 @@ func (a *ordersAPI) saveConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body.Config.Scope = scope
-	config, err := a.service.SaveConfig(r.Context(), orders.SaveConfigRequest{Config: body.Config, ExpectedRevision: body.ExpectedRevision, IdempotencyKey: body.IdempotencyKey, Actor: catalogActor(r)})
+	config, err := a.service.SaveConfig(r.Context(), orders.SaveConfigRequest{Config: body.Config, ReadEnabled: body.ReadEnabled, ExpectedRevision: body.ExpectedRevision, IdempotencyKey: body.IdempotencyKey, Actor: catalogActor(r)})
 	if err != nil {
 		ordersHTTPError(w, err)
 		return

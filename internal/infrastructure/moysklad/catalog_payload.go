@@ -38,6 +38,9 @@ func validateCatalogCommand(cmd catalog.Command) error {
 	if cmd.Action != catalog.ActionUpdate && cmd.Action != catalog.ActionArchive {
 		return ErrCatalogInvalid
 	}
+	if _, selected := cmd.Values[catalog.FieldLifecycle]; selected {
+		return ErrCatalogInvalid
+	}
 	if err := catalogIdentity(cmd.Target.Account, cmd.Target); err != nil {
 		return err
 	}
@@ -85,13 +88,11 @@ func (c *CatalogClient) catalogPayload(cmd catalog.Command) (map[string]any, err
 }
 
 func (c *CatalogClient) catalogPayloadField(body map[string]any, kind string, field catalog.Field, value catalog.Value) error {
+	if field == catalog.FieldLifecycle && kind == "product" {
+		return catalogLifecyclePayload(body, value)
+	}
 	if field == catalog.FieldName || field == catalog.FieldDescription || field == catalog.FieldArticle {
-		text, err := catalogTextValue(value, field != catalog.FieldName)
-		if err != nil || utf8.RuneCountInString(text) > map[catalog.Field]int{catalog.FieldName: 255, catalog.FieldDescription: 4096, catalog.FieldArticle: 255}[field] {
-			return ErrCatalogInvalid
-		}
-		body[string(field)] = text
-		return nil
+		return catalogTextPayload(body, field, value)
 	}
 	if field == catalog.FieldPrice {
 		return c.catalogPricePayload(body, value)
@@ -112,6 +113,24 @@ func (c *CatalogClient) catalogPayloadField(body map[string]any, kind string, fi
 	default:
 		return ErrCatalogInvalid
 	}
+}
+
+func catalogLifecyclePayload(body map[string]any, value catalog.Value) error {
+	lifecycle, err := value.StringValue()
+	if err != nil || (lifecycle != string(catalog.LifecycleActive) && lifecycle != string(catalog.LifecycleArchived)) {
+		return ErrCatalogInvalid
+	}
+	body["archived"] = lifecycle == string(catalog.LifecycleArchived)
+	return nil
+}
+
+func catalogTextPayload(body map[string]any, field catalog.Field, value catalog.Value) error {
+	text, err := catalogTextValue(value, field != catalog.FieldName)
+	if err != nil || utf8.RuneCountInString(text) > map[catalog.Field]int{catalog.FieldName: 255, catalog.FieldDescription: 4096, catalog.FieldArticle: 255}[field] {
+		return ErrCatalogInvalid
+	}
+	body[string(field)] = text
+	return nil
 }
 
 func catalogTextValue(value catalog.Value, clear bool) (string, error) {

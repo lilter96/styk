@@ -520,6 +520,13 @@ it("exposes label downloads only after reconciliation and rejects external artif
       : undefined,
   );
   mount(<OrdersOperations scope={scope} />);
+  const historyOpeners = await screen.findAllByRole("button", {
+    name: /Подробнее:/,
+  });
+  fireEvent.click(historyOpeners[0]);
+  expect(screen.queryByRole("link", { name: "Скачать этикетку" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Закрыть" }));
+  fireEvent.click(historyOpeners[1]);
   const download = await screen.findAllByRole("link", {
     name: "Скачать этикетку",
   });

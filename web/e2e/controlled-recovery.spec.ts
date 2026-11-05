@@ -33,7 +33,7 @@ test("operator accepts a test-only unknown outcome and reviews a separate public
   ).toBeVisible();
   await page.getByRole("button", { name: "Разрешить новую проверку" }).click();
   const recovery = page.getByRole("dialog", {
-    name: "Принять неопределённость тестовой отправки?",
+    name: "Принять неопределённость отправки?",
   });
   await expect(
     recovery.getByText(/Старый запрос может изменить остаток позже/),

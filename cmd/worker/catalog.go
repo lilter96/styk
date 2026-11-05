@@ -10,12 +10,12 @@ import (
 
 	"github.com/lilter96/styk/internal/application"
 	"github.com/lilter96/styk/internal/catalog"
+	"github.com/lilter96/styk/internal/catalogaccess"
 	"github.com/lilter96/styk/internal/catalogprovider"
 	"github.com/lilter96/styk/internal/catalogsync"
 	"github.com/lilter96/styk/internal/credentials"
 	"github.com/lilter96/styk/internal/postgres"
 	"github.com/lilter96/styk/internal/providercall"
-	"github.com/lilter96/styk/internal/testpublication"
 )
 
 // catalogWork shares the normal worker's fair RunNext turn and durable outbox.
@@ -44,13 +44,11 @@ func (w *catalogWork) RunNext(ctx context.Context) (bool, error) {
 }
 
 func catalogAllowed(scope catalog.Scope) bool {
-	allowed := testpublication.Scope()
-	return os.Getenv("STYK_TEST_ACCOUNT_CATALOG") == "true" && scope.Tenant == allowed.Tenant &&
-		scope.MoyskladAccount == allowed.MoyskladAccount && scope.OzonAccount == allowed.OzonAccount
+	return catalogaccess.Allows(scope)
 }
 
 func newCatalogWork(db *postgres.Store, resolver *credentials.Resolver) (application.PublicationRunner, error) {
-	if os.Getenv("STYK_TEST_ACCOUNT_CATALOG") != "true" {
+	if !catalogaccess.Enabled() {
 		return nil, nil
 	}
 	var instance [16]byte

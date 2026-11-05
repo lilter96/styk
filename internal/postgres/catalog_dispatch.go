@@ -101,7 +101,7 @@ func catalogDispatchCurrent(ctx context.Context, tx pgx.Tx, w catalogsync.Work, 
 	if err != nil {
 		return false, err
 	}
-	if !current.Config.Enabled || !current.Config.TestEnabled || !catalogTestScope(w.Scope) || current.Config.Revision != w.ConfigRevision || current.Credentials != w.Credentials {
+	if !current.Config.Enabled || !current.Config.TestEnabled || !catalogScopeValid(w.Scope) || current.Config.Revision != w.ConfigRevision || current.Credentials != w.Credentials {
 		return false, nil
 	}
 	for _, t := range current.Targets {

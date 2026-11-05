@@ -252,12 +252,13 @@ export function OrdersConfig({
     setBusy(true);
     setError("");
     try {
-      const { publication_available: available, ...editable } = draft;
+      const { publication_available: available, read_enabled: readEnabled, read_configured: readConfigured, ...editable } = draft;
       const value = await post<OrdersConfigData>(
         "/api/orders/config",
         {
           ...orderScopeBody(scope),
           expected_revision: config.revision,
+          read_enabled: readConfigured ? readEnabled === true : draft.enabled,
           idempotency_key: crypto.randomUUID(),
           config: {
             ...editable,
@@ -313,6 +314,10 @@ export function OrdersConfig({
           Одна запись на отправление Ozon. Связи товаров и складов должны быть
           подтверждены заранее.
         </p>
+        <label className="orders-check">
+          <input type="checkbox" checked={draft.read_configured ? draft.read_enabled === true : draft.enabled} disabled={busy} onChange={(event) => change({ ...draft, read_enabled: event.target.checked, read_configured: true })} />
+          Автоматически загружать отправления из Ozon
+        </label>
         <label className="orders-check">
           <input
             type="checkbox"

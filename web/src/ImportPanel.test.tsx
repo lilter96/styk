@@ -130,6 +130,7 @@ function Harness({
 function setup(
   opts: {
     provider?: ImportProvider;
+    ordersMoyskladAccount?: string;
     latestBatch?: Batch;
     configured?: boolean;
     initial?: ImportOperation;
@@ -142,6 +143,7 @@ function setup(
 ) {
   const fixtureScope: ImportScope = {
     ...scope,
+    ordersMoyskladAccount: opts.ordersMoyskladAccount,
     provider: opts.provider ?? "ozon",
   };
   const fixtureBase: ImportOperation = {
@@ -870,4 +872,22 @@ it("uses total worker timestamps for history duration rather than attempt-local 
   });
   const row = await openHistory();
   expect(row.querySelector(".history-duration")?.textContent).toBe("4 с");
+});
+
+it("Ozon refresh freezes the paired order scope and includes orders in consent", async () => {
+ const {fetcher}=setup({ordersMoyskladAccount:"moy-pair"});
+ await openConfirm();
+ expect(screen.getByText(/Автоматическая загрузка отправлений будет включена/)).toBeTruthy();
+ fireEvent.click(screen.getByRole("checkbox",{name:"Подтверждаю загрузку данных выбранного аккаунта"}));
+ fireEvent.click(screen.getByRole("button",{name:"Подтвердить загрузку"}));
+ await waitFor(()=>expect(fetcher.mock.calls.some(([url,init])=>String(url)==="/api/imports" && init?.method==="POST")).toBe(true));
+ const body=JSON.parse(String(fetcher.mock.calls.find(([url,init])=>String(url)==="/api/imports" && init?.method==="POST")![1]!.body));
+ expect(body.include_orders).toBe(true);
+ expect(body.orders_moysklad_account).toBe("moy-pair");
+ expect(body.ozon_account).toBe(scope.account);
+});
+
+it("catalog success displays the separate order read failure", async()=>{
+ setup({initial:{...base,state:"SUCCEEDED",orders_refresh:{state:"FAILED",code:"SOURCE_READ_FAILED",postings_count:0,moysklad_account:"moy-pair",requested_at:base.created_at}}});
+ expect((await screen.findAllByText(/Не удалось загрузить заказы/)).length).toBeGreaterThan(0);
 });

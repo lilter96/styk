@@ -109,16 +109,18 @@ export const importProviders = {
   },
 } as const;
 export type ImportScope = Readonly<{
+  ordersMoyskladAccount?: string;
   tenant: string;
   provider: ImportProvider;
   account: string;
 }>;
 export const sameImportScope = (a: ImportScope, b: ImportScope) =>
-  a.tenant === b.tenant && a.provider === b.provider && a.account === b.account;
+  a.tenant === b.tenant && a.provider === b.provider && a.account === b.account && a.ordersMoyskladAccount === b.ordersMoyskladAccount;
 export const importAccount = (scope: ImportScope) => ({
   [importProviders[scope.provider].accountField]: scope.account,
 });
 export type ImportOperation = {
+  orders_refresh?: { state: "QUEUED" | "READING" | "SUCCEEDED" | "FAILED" | "PARTIAL" | "CANCELLED"; code: string; postings_count: number; moysklad_account: string; requested_at: string; finished_at?: string };
   id: string;
   tenant: string;
   provider: string;
@@ -187,6 +189,7 @@ export function createImportIntent(scope: ImportScope): ImportIntent {
     body: JSON.stringify({
       tenant: frozenScope.tenant,
       ...importAccount(frozenScope),
+      ...(frozenScope.provider === "ozon" && frozenScope.ordersMoyskladAccount ? { include_orders: true, orders_moysklad_account: frozenScope.ordersMoyskladAccount } : {}),
       operation_type: importProviders[frozenScope.provider].operationType,
       idempotency_key: crypto.randomUUID(),
       acknowledge: true,

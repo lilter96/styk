@@ -110,6 +110,8 @@ export type OrdersConfigData = {
   revision: number;
   enabled: boolean;
   test_enabled: boolean;
+  read_enabled?: boolean;
+  read_configured?: boolean;
   publication_available?: boolean;
   interval_seconds: number;
   source_freshness_seconds: number;
@@ -257,6 +259,7 @@ export type OrderCompositionReplacement = {
 };
 export type OrderCommand = {
   scope: NativeScope;
+  commercial_order_id?: string;
   position_replacement?: OrderCompositionReplacement;
   native_movement?: OrderNativeMovement;
   id: string;

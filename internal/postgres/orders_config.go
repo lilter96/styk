@@ -22,14 +22,17 @@ func (s *Store) OrderConfig(ctx context.Context, scope orders.Scope) (orders.Con
 func readOrderConfig(ctx context.Context, q ordersQuerier, scope orders.Scope) (orders.Config, error) {
 	var config orders.Config
 	var raw []byte
-	err := q.QueryRow(ctx, `SELECT r.config FROM orders_configs c JOIN orders_config_revisions r USING(tenant_id,moysklad_account,ozon_account,revision) WHERE c.tenant_id=$1 AND c.moysklad_account=$2 AND c.ozon_account=$3`, ordersScopeArgs(scope)...).Scan(&raw)
+	err := q.QueryRow(ctx, `SELECT r.config,COALESCE((SELECT p.enabled FROM orders_source_permissions p WHERE p.tenant_id=c.tenant_id AND p.moysklad_account=c.moysklad_account AND p.ozon_account=c.ozon_account),false),EXISTS(SELECT 1 FROM orders_source_permissions p WHERE p.tenant_id=c.tenant_id AND p.moysklad_account=c.moysklad_account AND p.ozon_account=c.ozon_account) FROM orders_configs c JOIN orders_config_revisions r USING(tenant_id,moysklad_account,ozon_account,revision) WHERE c.tenant_id=$1 AND c.moysklad_account=$2 AND c.ozon_account=$3`, ordersScopeArgs(scope)...).Scan(&raw, &config.ReadEnabled, &config.ReadConfigured)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return defaultOrderConfig(ctx, q, scope)
 	}
 	if err != nil {
 		return config, ordersError("read order configuration", err)
 	}
-	return config, ordersDecode(raw, &config)
+	readEnabled, readConfigured := config.ReadEnabled, config.ReadConfigured
+	err = ordersDecode(raw, &config)
+	config.ReadEnabled, config.ReadConfigured = readEnabled, readConfigured
+	return config, err
 }
 
 func defaultOrderConfig(ctx context.Context, q ordersQuerier, scope orders.Scope) (orders.Config, error) {
@@ -98,14 +101,17 @@ func replayOrderConfig(ctx context.Context, tx pgx.Tx, req orders.SaveConfigRequ
 	var raw []byte
 	var previous string
 	args := append(ordersScopeArgs(req.Config.Scope), req.IdempotencyKey)
-	err := tx.QueryRow(ctx, `SELECT config,request_hash FROM orders_config_revisions WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND request_key=$4`, args...).Scan(&raw, &previous)
+	err := tx.QueryRow(ctx, `SELECT config,request_hash,COALESCE((SELECT p.enabled FROM orders_source_permissions p WHERE p.tenant_id=r.tenant_id AND p.moysklad_account=r.moysklad_account AND p.ozon_account=r.ozon_account),false),EXISTS(SELECT 1 FROM orders_source_permissions p WHERE p.tenant_id=r.tenant_id AND p.moysklad_account=r.moysklad_account AND p.ozon_account=r.ozon_account) FROM orders_config_revisions r WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND request_key=$4`, args...).Scan(&raw, &previous, &config.ReadEnabled, &config.ReadConfigured)
 	if err != nil {
 		return config, ordersError("read order configuration replay", err)
 	}
 	if previous != hash {
 		return config, orders.ErrConflict
 	}
-	return config, ordersDecode(raw, &config)
+	readEnabled, readConfigured := config.ReadEnabled, config.ReadConfigured
+	err = ordersDecode(raw, &config)
+	config.ReadEnabled, config.ReadConfigured = readEnabled, readConfigured
+	return config, err
 }
 
 func insertOrderConfig(ctx context.Context, tx pgx.Tx, req orders.SaveConfigRequest, owner, hash string) (orders.Config, error) {
@@ -126,6 +132,12 @@ func insertOrderConfig(ctx context.Context, tx pgx.Tx, req orders.SaveConfigRequ
 	}
 	if err = writeOrderConfig(ctx, tx, req, config, owner, hash); err != nil {
 		return orders.Config{}, err
+	}
+	if req.ReadEnabled != nil {
+		if err = saveOrderSourcePermission(ctx, tx, config.Scope, owner, req.Actor, *req.ReadEnabled); err != nil {
+			return orders.Config{}, err
+		}
+		config.ReadEnabled, config.ReadConfigured = *req.ReadEnabled, true
 	}
 	return config, nil
 }
@@ -157,6 +169,7 @@ func finalizedOrderConfig(config, previous orders.Config, owner string, now time
 }
 
 func writeOrderConfig(ctx context.Context, tx pgx.Tx, req orders.SaveConfigRequest, c orders.Config, owner, hash string) error {
+	c.ReadEnabled, c.ReadConfigured = false, false
 	raw, err := ordersJSON(c)
 	if err != nil {
 		return err
@@ -199,7 +212,7 @@ func (s *Store) DueOrderConfigs(ctx context.Context, _ time.Time, limit int) ([]
 		return nil, ordersError("begin order scheduler", err)
 	}
 	defer rollbackMerchantMutation(tx)
-	rows, err := tx.Query(ctx, `SELECT r.config FROM orders_configs c JOIN orders_config_revisions r USING(tenant_id,moysklad_account,ozon_account,revision) WHERE c.enabled AND c.next_run_at<=clock_timestamp() ORDER BY c.next_run_at,c.tenant_id LIMIT $1 FOR UPDATE OF c SKIP LOCKED`, limit)
+	rows, err := tx.Query(ctx, `SELECT r.config,COALESCE((SELECT p.enabled FROM orders_source_permissions p WHERE p.tenant_id=c.tenant_id AND p.moysklad_account=c.moysklad_account AND p.ozon_account=c.ozon_account),false),EXISTS(SELECT 1 FROM orders_source_permissions p WHERE p.tenant_id=c.tenant_id AND p.moysklad_account=c.moysklad_account AND p.ozon_account=c.ozon_account) FROM orders_configs c JOIN orders_config_revisions r USING(tenant_id,moysklad_account,ozon_account,revision) WHERE ((c.enabled AND NOT EXISTS(SELECT 1 FROM orders_source_permissions p WHERE p.tenant_id=c.tenant_id AND p.moysklad_account=c.moysklad_account AND p.ozon_account=c.ozon_account)) OR EXISTS(SELECT 1 FROM orders_source_permissions p WHERE p.tenant_id=c.tenant_id AND p.moysklad_account=c.moysklad_account AND p.ozon_account=c.ozon_account AND p.enabled)) AND c.next_run_at<=clock_timestamp() ORDER BY c.next_run_at,c.tenant_id LIMIT $1 FOR UPDATE OF c SKIP LOCKED`, limit)
 	if err != nil {
 		return nil, ordersError("select due order configurations", err)
 	}
@@ -222,12 +235,14 @@ func scanOrderConfigs(rows pgx.Rows) ([]orders.Config, error) {
 	for rows.Next() {
 		var raw []byte
 		var config orders.Config
-		if err := rows.Scan(&raw); err != nil {
+		if err := rows.Scan(&raw, &config.ReadEnabled, &config.ReadConfigured); err != nil {
 			return nil, ordersError("scan order configuration", err)
 		}
+		readEnabled, readConfigured := config.ReadEnabled, config.ReadConfigured
 		if err := ordersDecode(raw, &config); err != nil {
 			return nil, err
 		}
+		config.ReadEnabled, config.ReadConfigured = readEnabled, readConfigured
 		configs = append(configs, config)
 	}
 	return configs, ordersRowsError("read order configurations", rows.Err())

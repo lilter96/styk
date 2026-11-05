@@ -58,35 +58,42 @@ test("current posting state stays independent of paginated history and reconcile
   );
   await expect(
     history
-      .locator(".orders-work")
+      .locator(".history-row")
       .filter({ hasText: "position-http-posting" }),
   ).toHaveCount(0);
-  await history
-    .getByRole("button", { name: "Следующие операции", exact: true })
-    .click();
+  await history.getByRole("button", { name: "Следующие", exact: true }).click();
   await expect(history.getByText("Страница 2", { exact: true })).toBeVisible();
   const unknown = history
-    .locator(".orders-work")
-    .filter({ hasText: "Создать отгрузку в МойСклад" });
-  await expect(unknown).toContainText("Результат неизвестен");
-  await expect(unknown).not.toContainText(
-    "Складской документ подтверждён сверкой",
-  );
+    .locator(".history-row")
+    .filter({ hasText: "position-http-posting" })
+    .filter({ hasText: "Нужна проверка" });
+  await expect(unknown).toHaveCount(1);
+  await expect(unknown).not.toContainText("Готово");
+  await unknown.getByRole("button", { name: /^Разобраться:/ }).click();
+  const historyDrawer = page.getByRole("dialog", {
+    name: "Отгрузка в МойСклад",
+    exact: true,
+  });
   await expect(
-    unknown.getByRole("link", { name: /^Заказ МойСклад / }),
+    historyDrawer.getByRole("link", {
+      name: "Открыть заказ МойСклад",
+      exact: true,
+    }),
   ).toBeVisible();
   await expect(checkbox).toBeDisabled();
-  const details = unknown.getByText(
+  const details = historyDrawer.getByText(
     "Проверить неизвестный результат и варианты восстановления",
     { exact: true },
   );
   await details.focus();
   await page.keyboard.press("Enter");
-  await expect(unknown).toContainText(
+  await expect(historyDrawer).toContainText(
     "Для этого действия доступна только проверка",
   );
   await expect(
-    unknown.getByRole("button", { name: "Записать разрешение нового решения" }),
+    historyDrawer.getByRole("button", {
+      name: "Записать разрешение нового решения",
+    }),
   ).toHaveCount(0);
   await page.screenshot({
     path: "test-results/orders-current-state-desktop.png",
@@ -102,6 +109,9 @@ test("current posting state stays independent of paginated history and reconcile
   });
   await expect(checkbox).toBeEnabled();
   await expect(history.getByText("Страница 2", { exact: true })).toBeVisible();
+  await historyDrawer
+    .getByRole("button", { name: "Закрыть подробности операции", exact: true })
+    .click();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("tab", { name: "Отправления", exact: true }).click();
   await page

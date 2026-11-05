@@ -119,10 +119,10 @@ func (i *Ingestor) currentConfig(ctx context.Context, scope orders.Scope) (order
 	if err != nil {
 		return orders.Config{}, fmt.Errorf("read order ingestion config: %w", err)
 	}
-	if config.Scope != scope || config.Revision < 1 || !config.Enabled {
+	if config.Scope != scope || config.Revision < 1 || !config.ReadsEnabled() {
 		return orders.Config{}, orders.ErrBlocked
 	}
-	if config.Automation != nil && !config.Automation.Active(i.options.Now(), scope, config.Revision) {
+	if !config.ReadEnabled && config.Automation != nil && !config.Automation.Active(i.options.Now(), scope, config.Revision) {
 		return orders.Config{}, orders.ErrBlocked
 	}
 	return config, nil
@@ -130,7 +130,7 @@ func (i *Ingestor) currentConfig(ctx context.Context, scope orders.Scope) (order
 
 func ingestionContext(ctx context.Context, config orders.Config, lease orders.IngestionLease) (context.Context, context.CancelFunc) {
 	deadline := lease.LeaseUntil
-	if grant := config.Automation; grant != nil && grant.ExpiresAt.Before(deadline) {
+	if grant := config.Automation; !config.ReadEnabled && grant != nil && grant.ExpiresAt.Before(deadline) {
 		deadline = grant.ExpiresAt
 	}
 	return context.WithDeadline(ctx, deadline)
