@@ -98,3 +98,29 @@ func lineageJSONRoundTrip(value, target any) error {
 	}
 	return json.Unmarshal(raw, target)
 }
+
+func TestAncestorSettlementBindsExactImmutableSelectedGeneration(t *testing.T) {
+	t.Parallel()
+	lineage := lineageNestedFixture(t)
+	facts := SplitAncestorSettlementFacts{
+		Lineage:      lineage,
+		RootTransfer: SplitReserveTransferFacts{Split: lineage.Splits[0].Work, Before: lineage.Splits[0].Before},
+		NodeSplit:    lineage.Splits[1],
+		CurrentNode:  lineage.Splits[1].Before,
+		Selected:     lineage.CurrentHeads[3],
+	}
+	proof, err := NewSplitLineage(facts.Lineage)
+	if err != nil || !ancestorSettlementLineage(facts, proof) {
+		t.Fatal("exact immutable local split generations were not bound", err)
+	}
+	facts.Selected, facts.Lineage.SelectedPosting = lineage.CurrentHeads[2], lineage.CurrentHeads[2].PostingNumber
+	other, err := NewSplitLineage(facts.Lineage)
+	if err != nil || ancestorSettlementLineage(facts, other) {
+		t.Fatal("valid root sibling was mistaken for the node's output", err)
+	}
+	facts.Selected, facts.Lineage.SelectedPosting = lineage.CurrentHeads[3], lineage.SelectedPosting
+	facts.NodeSplit.Work.Command.ID = "same-work-different-command"
+	if ancestorSettlementLineage(facts, proof) {
+		t.Fatal("matching work ID hid a different immutable command")
+	}
+}

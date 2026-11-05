@@ -1,6 +1,7 @@
 package orders
 
 import (
+	"reflect"
 	"slices"
 	"time"
 )
@@ -23,7 +24,7 @@ func ancestorSettlementHeadsFresh(heads []Posting, checkedAt time.Time) bool {
 
 func ancestorSettlementNode(f SplitAncestorSettlementFacts) bool {
 	split, before := f.NodeSplit.Work, f.NodeSplit.Before
-	if split.Command.Action != ActionPostingSplitUnassembled || !unassembledAcknowledgedAllocation(split) || split.Command.Correlation != f.NodeOriginTarget.Correlation || split.Command.ExpectedSourceRevision != before.Evidence.Revision || !before.ParentPostingNumber.IsKnown() || *before.ParentPostingNumber.Value != f.RootTransfer.Parent.PostingNumber {
+	if split.Command.Action != ActionPostingSplitUnassembled || !unassembledAcknowledgedAllocation(split) || split.Command.Correlation != f.NodeOriginTarget.Correlation || split.Command.ExpectedSourceRevision != before.Evidence.Revision || !ancestorParentConsistent(before, f.RootTransfer.Parent.PostingNumber) {
 		return false
 	}
 	if len(split.Receipt.PostingNumbers) != 2 || !slices.Contains(split.Receipt.PostingNumbers, before.PostingNumber) || f.CurrentNode.PostingNumber != before.PostingNumber || !splitTransferSameAllocation(f.CurrentNode, ancestorNodeOutput(split, before.PostingNumber)) {
@@ -35,6 +36,30 @@ func ancestorSettlementNode(f SplitAncestorSettlementFacts) bool {
 		}
 	}
 	return true
+}
+
+// A provider parent field is optional. Local ancestry instead comes from the
+// exact immutable acknowledged split generations, not related_postings or a
+// client-supplied parent assertion. Known contradictory provider facts still fail.
+func ancestorSettlementLineage(f SplitAncestorSettlementFacts, proof SplitLineageProof) bool {
+	if !slices.Equal(proof.PathWorkIDs(), []string{f.RootTransfer.Split.ID, f.NodeSplit.Work.ID}) {
+		return false
+	}
+	root, node := false, false
+	for _, step := range f.Lineage.Splits {
+		if step.Work.ID == f.RootTransfer.Split.ID {
+			root = reflect.DeepEqual(step.Work, f.RootTransfer.Split) && splitTransferPostingEqual(step.Before, f.RootTransfer.Before)
+		}
+		if step.Work.ID == f.NodeSplit.Work.ID {
+			node = reflect.DeepEqual(step.Work, f.NodeSplit.Work) && splitTransferPostingEqual(step.Before, f.NodeSplit.Before)
+		}
+	}
+	output := ancestorNodeOutput(f.NodeSplit.Work, f.Selected.PostingNumber)
+	return root && node && splitTransferSameAllocation(output, f.Selected) && (f.Selected.PostingNumber == f.CurrentNode.PostingNumber || ancestorParentConsistent(f.Selected, f.CurrentNode.PostingNumber))
+}
+
+func ancestorParentConsistent(posting Posting, expected string) bool {
+	return posting.ParentPostingNumber.Validate() == nil && (!posting.ParentPostingNumber.IsKnown() || *posting.ParentPostingNumber.Value == expected)
 }
 
 func validSplitAncestorNative(a SplitAncestorNative, scope Scope) bool {

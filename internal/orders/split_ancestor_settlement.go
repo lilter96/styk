@@ -94,7 +94,7 @@ func ancestorSettlementRoot(f SplitAncestorSettlementFacts) (SplitReserveTransfe
 		return SplitReserveTransferPermission{}, ErrBlocked
 	}
 	graph, err := NewSplitLineage(f.Lineage)
-	if err != nil || !graph.CurrentMatches(f.Selected) {
+	if err != nil || !graph.CurrentMatches(f.Selected) || !ancestorSettlementLineage(f, graph) {
 		return SplitReserveTransferPermission{}, ErrBlocked
 	}
 	rootBaseline, err := ProjectionPositionBaseline(f.RootOrigin, f.RootOriginTarget)
@@ -166,7 +166,7 @@ func (p SplitAncestorSettlementPermission) Validate() error {
 		}
 		seen[a.Posting.PostingNumber] = true
 	}
-	if p.Mode == SplitAncestorReduce && p.Source.PostingNumber != p.Node.PostingNumber || p.Mode == SplitAncestorAdmit && (p.NodeReductionWorkID == "" || p.Source.PostingNumber == p.Node.PostingNumber || !p.Source.ParentPostingNumber.IsKnown() || *p.Source.ParentPostingNumber.Value != p.Node.PostingNumber) {
+	if p.Mode == SplitAncestorReduce && p.Source.PostingNumber != p.Node.PostingNumber || p.Mode == SplitAncestorAdmit && (p.NodeReductionWorkID == "" || p.Source.PostingNumber == p.Node.PostingNumber || !ancestorParentConsistent(p.Source, p.Node.PostingNumber)) {
 		return ErrBlocked
 	}
 	return nil
