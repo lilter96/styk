@@ -37,6 +37,7 @@ type SplitAncestorSettlementPermission struct {
 }
 
 type SplitAncestorSettlementFacts struct {
+	RetainedHistory     []SplitRetainedGeneration
 	Path                []SplitAncestorGeneration
 	Attempts            []NestedSplitAttempt
 	NativeAttempts      []NestedSplitAttempt
@@ -57,6 +58,9 @@ type SplitAncestorSettlementFacts struct {
 }
 
 func NewSplitAncestorSettlement(f SplitAncestorSettlementFacts) (SplitAncestorSettlementPermission, error) {
+	if len(f.RetainedHistory) > 1 {
+		return newRetainedHistorySettlement(f)
+	}
 	if len(f.Path) > 1 {
 		return newDeepAncestorSettlement(f)
 	}
@@ -159,7 +163,7 @@ func ancestorSettlementReduced(f SplitAncestorSettlementFacts, before SplitAnces
 }
 
 func (p SplitAncestorSettlementPermission) Validate() error {
-	if p.Scope.Validate() != nil || (p.Mode != SplitAncestorReduce && p.Mode != SplitAncestorAdmit) || !validID(p.SplitWorkID) || !validID(p.RootSplitWorkID) || !validID(p.NodeOriginWorkID) || p.SplitWorkID == p.RootSplitWorkID || len(p.Ancestors) < 2 || len(p.Ancestors) > MaxSplitLineageDepth || p.Baseline.Validate() != nil || p.Baseline.Scope != p.Scope {
+	if p.Scope.Validate() != nil || (p.Mode != SplitAncestorReduce && p.Mode != SplitAncestorAdmit) || !validID(p.SplitWorkID) || !validID(p.RootSplitWorkID) || !validID(p.NodeOriginWorkID) || p.SplitWorkID == p.RootSplitWorkID || len(p.Ancestors) < 1 || len(p.Ancestors) > MaxSplitLineageDepth || p.Baseline.Validate() != nil || p.Baseline.Scope != p.Scope {
 		return ErrBlocked
 	}
 	if p.Before.Scope != p.Scope || p.Node.Scope != p.Scope || p.Source.Scope != p.Scope || p.Before.Validate() != nil || p.Node.Validate() != nil || p.Source.Validate() != nil || p.Before.PostingNumber != p.Node.PostingNumber || !retainedSplitSourceReduced(p.Before, p.Node, p.Baseline) {
