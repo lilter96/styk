@@ -5,11 +5,12 @@ func forestNativeValid(f SplitForestFacts, e SplitForestNative) bool {
 	if e.Work.Command.Action == ActionMirrorCreate {
 		return !found && forestCreation(f, e)
 	}
-	if !found || e.Work.Command.Action != ActionMirrorPositionUpdate || e.Work.Command.PositionPatch == nil || !PositionPatchObserved(e.Work.Command, e.Target) {
+	prior, invalid := OwnedSplitReductionBaseline(e.Work.Command)
+	if !found || invalid != nil || !OwnedSplitReductionObserved(e.Work.Command, e.Target) {
 		return false
 	}
 	baseline, err := ProjectionPositionBaseline(previous.Work, previous.Target)
-	if err != nil || !e.Work.Command.PositionPatch.Baseline.Equal(baseline) {
+	if err != nil || !prior.Equal(baseline) {
 		return false
 	}
 	step, ok := forestSplit(f, retainedNativeEventSplit(e.Work.Command))

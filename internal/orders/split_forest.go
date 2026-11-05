@@ -42,7 +42,7 @@ func NewSplitForestSettlement(f SplitForestFacts) (SplitAncestorSettlementPermis
 func forestReductionsUnique(native []SplitForestNative) bool {
 	seen := make(map[string]bool, len(native))
 	for _, event := range native {
-		if event.Work.Command.Action != ActionMirrorPositionUpdate {
+		if event.Work.Command.Action != ActionMirrorPositionUpdate && event.Work.Command.Action != ActionMirrorCompositionUpdate {
 			continue
 		}
 		id := retainedNativeEventSplit(event.Work.Command)

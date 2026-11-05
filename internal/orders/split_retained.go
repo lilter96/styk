@@ -34,7 +34,7 @@ func (permission SplitRetainedReservePermission) Allows(posting Posting, baselin
 
 func retainedSplitSourceReduced(before, posting Posting, baseline PositionBaseline) bool {
 	original, invalid := reservationLineQuantities(before.Lines)
-	if invalid.Code != "" || len(original) != len(posting.Lines) || len(original) != len(baseline.Bindings) {
+	if invalid.Code != "" || len(posting.Lines) == 0 || len(posting.Lines) > len(baseline.Bindings) || len(baseline.Bindings) > len(original) {
 		return false
 	}
 	current, invalid := reservationLineQuantities(posting.Lines)
@@ -45,15 +45,15 @@ func retainedSplitSourceReduced(before, posting Posting, baseline PositionBaseli
 		key := binding.Source.Identity.Key()
 		previous, present := original[key]
 		quantity, retained := current[key]
-		if !present || !retained || !nonnegativeNotGreater(binding.Source.Quantity, previous) || !nonnegativeNotGreater(quantity, binding.Source.Quantity) {
+		if !present || !nonnegativeNotGreater(binding.Source.Quantity, previous) || retained && !nonnegativeNotGreater(quantity, binding.Source.Quantity) {
 			return false
 		}
-		if !binding.Source.Reserve.IsKnown() || !binding.Native.Reserve.IsKnown() || !binding.Native.Shipped.IsKnown() || !decimalZero(*binding.Native.Shipped.Value) {
+		if !retainedSplitBindingUnshipped(binding) {
 			return false
 		}
-		delete(original, key)
+		delete(current, key)
 	}
-	return len(original) == 0
+	return len(current) == 0
 }
 
 func ApplyRetainedSplitOpenQuantityReserve(posting Posting, write *CustomerOrderWrite, baseline PositionBaseline, permission SplitRetainedReservePermission) Validation {
@@ -73,7 +73,7 @@ func ApplyRetainedSplitOpenQuantityReserve(posting Posting, write *CustomerOrder
 }
 
 func retainedSplitWriteReduced(write CustomerOrderWrite, baseline PositionBaseline) bool {
-	if len(write.Positions) != len(baseline.Bindings) {
+	if len(write.Positions) == 0 || len(write.Positions) > len(baseline.Bindings) {
 		return false
 	}
 	for _, wanted := range write.Positions {
@@ -81,7 +81,16 @@ func retainedSplitWriteReduced(write CustomerOrderWrite, baseline PositionBaseli
 			return false
 		}
 	}
+	for _, binding := range baseline.Bindings {
+		if !slices.ContainsFunc(write.Positions, func(p PositionWrite) bool { return p.Identity.Key() == binding.Source.Identity.Key() }) && !retainedSplitBindingUnshipped(binding) {
+			return false
+		}
+	}
 	return true
+}
+
+func retainedSplitBindingUnshipped(binding PositionBinding) bool {
+	return binding.Source.Reserve.IsKnown() && nonnegativeNotGreater(*binding.Source.Reserve.Value, binding.Source.Quantity) && binding.Native.Reserve.IsKnown() && nonnegativeNotGreater(*binding.Native.Reserve.Value, binding.Native.Quantity) && binding.Native.Shipped.IsKnown() && decimalZero(*binding.Native.Shipped.Value)
 }
 
 func retainedSplitPositionReduced(wanted PositionWrite, bindings []PositionBinding) bool {

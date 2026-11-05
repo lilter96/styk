@@ -2,11 +2,12 @@ package orders
 
 func deferredReduction(f SplitAncestorSettlementFacts, prior, next SplitDeferredNative) bool {
 	w := next.Work
-	if !deferredNativeBound(f, next) || w.Command.Action != ActionMirrorPositionUpdate || w.Command.PositionPatch == nil || !PositionPatchObserved(w.Command, next.Target) {
+	priorBaseline, invalid := OwnedSplitReductionBaseline(w.Command)
+	if !deferredNativeBound(f, next) || invalid != nil || !OwnedSplitReductionObserved(w.Command, next.Target) {
 		return false
 	}
 	baseline, err := ProjectionPositionBaseline(prior.Work, prior.Target)
-	if err != nil || !w.Command.PositionPatch.Baseline.Equal(baseline) {
+	if err != nil || !priorBaseline.Equal(baseline) {
 		return false
 	}
 	step, found := deferredReductionStep(f, w)

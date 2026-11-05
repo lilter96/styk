@@ -108,20 +108,21 @@ func splitTransferSameAllocation(before, current Posting) bool {
 func splitTransferParentVerified(facts SplitReserveTransferFacts) bool {
 	work, target := facts.ParentRelease, facts.ParentTarget
 	command := work.Command
-	if command.Validate() != nil {
+	prior, err := OwnedSplitReductionBaseline(command)
+	if command.Validate() != nil || err != nil {
 		return false
 	}
-	if work.Scope != facts.Before.Scope || !validID(work.ID) || work.State != StateReconciled || command.Action != ActionMirrorPositionUpdate || command.Scope != work.Scope || command.Correlation != facts.OriginalCorrelation || command.RetainedSplitWorkID != facts.Split.ID || !CompositionDispatchAcknowledged(work) {
+	if work.Scope != facts.Before.Scope || !validID(work.ID) || work.State != StateReconciled || command.Scope != work.Scope || command.Correlation != facts.OriginalCorrelation || command.RetainedSplitWorkID != facts.Split.ID || !CompositionDispatchAcknowledged(work) {
 		return false
 	}
-	if command.PositionPatch == nil || command.CustomerOrder == nil || command.CommercialOrderID != facts.Before.CommercialOrderID || command.ExpectedSourceRevision != facts.Parent.Evidence.Revision || command.PostingNumber != facts.Parent.PostingNumber {
+	if command.CustomerOrder == nil || command.CommercialOrderID != facts.Before.CommercialOrderID || command.ExpectedSourceRevision != facts.Parent.Evidence.Revision || command.PostingNumber != facts.Parent.PostingNumber {
 		return false
 	}
-	if target.Scope != work.Scope || target.Correlation != facts.OriginalCorrelation || !validID(target.Revision) || !target.Complete || target.ObservedAt.IsZero() || !target.Fields.Applicable.IsKnown() || !*target.Fields.Applicable.Value || !compositionReferencesMatch(command, target) || !PositionPatchObserved(command, target) {
+	if target.Scope != work.Scope || target.Correlation != facts.OriginalCorrelation || !validID(target.Revision) || !target.Complete || target.ObservedAt.IsZero() || !target.Fields.Applicable.IsKnown() || !*target.Fields.Applicable.Value || !compositionReferencesMatch(command, target) || !OwnedSplitReductionObserved(command, target) {
 		return false
 	}
 	retained := SplitRetainedReservePermission{Scope: work.Scope, SplitWorkID: facts.Split.ID, Before: facts.Before, Correlation: facts.OriginalCorrelation}
-	if retained.ValidateWrite(facts.Parent, *command.CustomerOrder, command.PositionPatch.Baseline) != nil {
+	if retained.ValidateWrite(facts.Parent, *command.CustomerOrder, prior) != nil {
 		return false
 	}
 	baseline, err := ProjectionPositionBaseline(work, target)

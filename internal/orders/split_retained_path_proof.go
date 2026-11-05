@@ -19,7 +19,11 @@ func retainedHistoryRoot(f SplitAncestorSettlementFacts) (SplitReserveTransferPe
 	}
 	first := f.RetainedHistory[0]
 	baseline, err := ProjectionPositionBaseline(first.Origin, first.OriginTarget)
-	if err != nil || first.Origin.Command.Action != ActionMirrorCreate || !retainedOriginBound(first) || first.Reduction == nil || first.ReductionTarget == nil || !ancestorNativeAcknowledged(*first.Reduction, *first.ReductionTarget) || first.Reduction.Command.PositionPatch == nil || !baseline.Equal(first.Reduction.Command.PositionPatch.Baseline) {
+	if err != nil || first.Origin.Command.Action != ActionMirrorCreate || !retainedOriginBound(first) || first.Reduction == nil || first.ReductionTarget == nil || !ancestorNativeAcknowledged(*first.Reduction, *first.ReductionTarget) {
+		return SplitReserveTransferPermission{}, ErrBlocked
+	}
+	prior, err := OwnedSplitReductionBaseline(first.Reduction.Command)
+	if err != nil || !baseline.Equal(prior) {
 		return SplitReserveTransferPermission{}, ErrBlocked
 	}
 	return retainedHistoryRootTransfer(f)

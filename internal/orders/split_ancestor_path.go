@@ -56,7 +56,8 @@ func deepAncestorRoot(f SplitAncestorSettlementFacts) (SplitReserveTransferPermi
 		return SplitReserveTransferPermission{}, ErrBlocked
 	}
 	baseline, err := ProjectionPositionBaseline(f.RootOrigin, f.RootOriginTarget)
-	if err != nil || !ancestorNativeAcknowledged(f.RootOrigin, f.RootOriginTarget) || f.RootTransfer.ParentRelease.Command.PositionPatch == nil || !baseline.Equal(f.RootTransfer.ParentRelease.Command.PositionPatch.Baseline) {
+	prior, invalid := OwnedSplitReductionBaseline(f.RootTransfer.ParentRelease.Command)
+	if err != nil || invalid != nil || !ancestorNativeAcknowledged(f.RootOrigin, f.RootOriginTarget) || !baseline.Equal(prior) {
 		return SplitReserveTransferPermission{}, ErrBlocked
 	}
 	if !splitTransferPostingEqual(f.RootTransfer.Child, f.Path[0].Split.Before) {

@@ -116,7 +116,8 @@ func ancestorSettlementRoot(f SplitAncestorSettlementFacts) (SplitReserveTransfe
 		return SplitReserveTransferPermission{}, ErrBlocked
 	}
 	rootBaseline, err := ProjectionPositionBaseline(f.RootOrigin, f.RootOriginTarget)
-	if err != nil || !ancestorNativeAcknowledged(f.RootOrigin, f.RootOriginTarget) || f.RootTransfer.ParentRelease.Command.PositionPatch == nil || !rootBaseline.Equal(f.RootTransfer.ParentRelease.Command.PositionPatch.Baseline) {
+	prior, invalid := OwnedSplitReductionBaseline(f.RootTransfer.ParentRelease.Command)
+	if err != nil || invalid != nil || !ancestorNativeAcknowledged(f.RootOrigin, f.RootOriginTarget) || !rootBaseline.Equal(prior) {
 		return SplitReserveTransferPermission{}, ErrBlocked
 	}
 	root, err := NewSplitReserveTransfer(f.RootTransfer)
@@ -160,7 +161,11 @@ func ancestorNativeAcknowledged(w Work, t TargetObservation) bool {
 
 func ancestorSettlementReduced(f SplitAncestorSettlementFacts, before SplitAncestorSettlementPermission) error {
 	w := f.NodeReduction
-	if w == nil || f.NodeReductionTarget == nil || w.Command.Action != ActionMirrorPositionUpdate || !ancestorNativeAcknowledged(*w, *f.NodeReductionTarget) || w.Command.SplitAncestorSettlement == nil || !w.Command.SplitAncestorSettlement.Equal(before) || w.Command.PositionPatch == nil || !w.Command.PositionPatch.Baseline.Equal(before.Baseline) || !PositionPatchObserved(w.Command, *f.NodeReductionTarget) {
+	if w == nil || f.NodeReductionTarget == nil {
+		return ErrBlocked
+	}
+	prior, err := OwnedSplitReductionBaseline(w.Command)
+	if err != nil || !ancestorNativeAcknowledged(*w, *f.NodeReductionTarget) || w.Command.SplitAncestorSettlement == nil || !w.Command.SplitAncestorSettlement.Equal(before) || !prior.Equal(before.Baseline) || !OwnedSplitReductionObserved(w.Command, *f.NodeReductionTarget) {
 		return ErrBlocked
 	}
 	baseline, err := ProjectionPositionBaseline(*w, *f.NodeReductionTarget)

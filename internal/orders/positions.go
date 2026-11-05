@@ -448,6 +448,9 @@ func sameNativeVATEnabled(a, b Field[bool]) bool {
 }
 
 func projectionNativePositionIndex(command Command, source PositionWrite, positions []TargetPosition) int {
+	if command.PositionReplacement != nil {
+		return replacementNativePositionIndex(command, source, positions)
+	}
 	if command.PositionPatch == nil {
 		return uniqueNativePosition(source, positions)
 	}
