@@ -49,7 +49,7 @@ func connectionFixture(t *testing.T, accountSuffix string) (*postgres.Store, htt
 	m, _ := moysklad.New(moysklad.Options{BaseURL: mock.URL + "/", Token: "synthetic-only-token", Timeout: time.Second, Interval: time.Millisecond, Backoff: time.Millisecond, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 1})
 	o, _ := ozon.New(ozon.Options{BaseURL: mock.URL, ClientID: ozAccount, APIKey: "synthetic-only-key", Timeout: time.Second, Interval: time.Millisecond, Backoff: time.Millisecond, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 1})
 	c := &connections{db: db, moyAccount: msAccount, ozonAccount: ozAccount, moy: m, ozon: o, checks: map[string]map[string]connectionCheck{}}
-	handler, err := handlerWithConnections(db, strings.Repeat("s", 32), "http://127.0.0.1:15174", c)
+	handler, err := fixtureWithConnections(db, strings.Repeat("s", 32), "http://127.0.0.1:15174", c)
 	if err != nil {
 		t.Fatal(err)
 	}

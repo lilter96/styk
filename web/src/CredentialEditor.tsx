@@ -37,6 +37,7 @@ export function CredentialEditor({
   const [disconnectAck, setDisconnectAck] = useState(false);
   const [localError, setLocalError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [initialRequestID] = useState(submission.result?.last_request_id);
   const query = useQuery({
     queryKey: ["credentials", scope.tenant, scope.provider, scope.account],
     queryFn: ({ signal }) =>
@@ -55,6 +56,8 @@ export function CredentialEditor({
   }, [metadata?.name]);
   const finished =
     submission.result &&
+    (scope.account !== "" ||
+      submission.result.last_request_id !== initialRequestID) &&
     submission.result.tenant === scope.tenant &&
     submission.result.provider === scope.provider &&
     (submission.result.account === scope.account || !scope.account)
@@ -112,7 +115,7 @@ export function CredentialEditor({
           )}
         </div>
       )}
-      {accounts.length > 0 && (
+      {scope.provider === "ozon" && accounts.length > 0 && (
         <label className="integration-field">
           Аккаунт для работы
           <select
@@ -323,7 +326,7 @@ export function CredentialEditor({
             </>
           )}
         </dl>
-        {accounts.length > 0 && (
+        {scope.provider === "ozon" && accounts.length > 0 && (
           <>
             <h4>Добавленные аккаунты</h4>
             <ul className="technical-account-list">

@@ -26,7 +26,7 @@ test("operator queues, reconciles and observes a worker import without marketpla
   });
   const state = async () => (await request.get(`${api}/__test/state`)).json();
   expect((await state()).operations).toBe(0);
-  await signIn(page, "ssssssssssssssssssssssssssssssss", origin);
+  await signIn(page, origin);
   await selectWorkspace(
     page,
     tenant,
@@ -195,7 +195,13 @@ test("operator queues, reconciles and observes a worker import without marketpla
   });
   await page.reload();
   await page.locator(".workspace-selector > summary").click();
-  expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem("styk-selected-accounts") || "{}").tenant)).toBe(tenant);
+  expect(
+    await page.evaluate(
+      () =>
+        JSON.parse(sessionStorage.getItem("styk-selected-accounts") || "{}")
+          .tenant,
+    ),
+  ).toBe(tenant);
   await expect(page.getByRole("combobox", { name, exact: true })).toHaveValue(
     account,
   );

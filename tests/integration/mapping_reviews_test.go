@@ -21,7 +21,7 @@ func TestDurableReviewScopedSessionAndSourceRevisions(t *testing.T) {
 	f := newStockFixture(t)
 	ctx := context.Background()
 	secret := strings.Repeat("s", 32)
-	h, err := console.Handler(f.store, secret, "http://127.0.0.1:5173")
+	h, err := console.FixtureHandler(f.store, secret, "http://127.0.0.1:5173")
 	if err != nil {
 		t.Fatal(err)
 	}

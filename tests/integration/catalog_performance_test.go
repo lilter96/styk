@@ -209,7 +209,7 @@ func catalogSeed(b testing.TB, pool *pgxpool.Pool, size int) {
 func catalogHandler(b testing.TB, pool *pgxpool.Pool) (http.Handler, *http.Cookie) {
 	b.Helper()
 	secret := strings.Repeat("s", 32)
-	h, err := console.Handler(&postgres.Store{Pool: pool, Timeout: 150 * time.Second}, secret, "http://127.0.0.1:5173")
+	h, err := console.FixtureHandler(&postgres.Store{Pool: pool, Timeout: 150 * time.Second}, secret, "http://127.0.0.1:5173")
 	if err != nil {
 		b.Fatalf("create console: %v", err)
 	}

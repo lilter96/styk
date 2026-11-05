@@ -110,7 +110,7 @@ func newCredentialFixture(t *testing.T) *credentialFixture {
 		return ozon.New(ozon.Options{BaseURL: mock.URL, ClientID: account, APIKey: key, Timeout: time.Second, Interval: time.Millisecond, Backoff: time.Millisecond, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 100})
 	}
 	f.c = c
-	a, err := newAuth(strings.Repeat("s", 32), "http://127.0.0.1:15723")
+	a, err := newFixtureAuth(strings.Repeat("s", 32), "http://127.0.0.1:15723")
 	if err != nil {
 		t.Fatal(err)
 	}

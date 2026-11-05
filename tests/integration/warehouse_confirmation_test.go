@@ -53,7 +53,7 @@ func newWarehouseConfirmationHarnessWithHistory(t *testing.T, includeHistory boo
 	if _, err := f.store.SaveOzonImport(context.Background(), f.ozon, "warehouse-confirm-ozon"); err != nil {
 		t.Fatal(err)
 	}
-	handler, err := console.Handler(f.store, confirmationTestSecret, confirmationTestOrigin)
+	handler, err := console.FixtureHandler(f.store, confirmationTestSecret, confirmationTestOrigin)
 	if err != nil {
 		t.Fatal(err)
 	}

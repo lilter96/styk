@@ -1,11 +1,14 @@
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 
-export async function signIn(page: Page, secret: string, origin: string) {
-  await page.goto(process.env.STYK_E2E_ORIGIN || origin);
-  await page
-    .getByLabel("Ключ входа")
-    .fill(process.env.STYK_E2E_SECRET || secret);
-  await page.getByRole("button", { name: "Войти", exact: true }).click();
+// Only used by Go integration fixtures; the normal API accepts merchant login.
+export async function signIn(page: Page, origin: string) {
+  const base = new URL(process.env.STYK_E2E_ORIGIN || origin).origin;
+  const response = await page.request.post(base + "/api/session", {
+    headers: { Origin: base },
+    data: { fixture: true },
+  });
+  expect(response.status()).toBe(204);
+  await page.goto(base);
 }
 
 export async function selectWorkspace(
@@ -17,21 +20,17 @@ export async function selectWorkspace(
   // Legacy loopback-operator fixtures keep their synthetic scope in test-only
   // browser state; the merchant UI never asks a seller for a tenant ID.
   await page.evaluate(
-    (scope) => sessionStorage.setItem("styk-selected-accounts", JSON.stringify(scope)),
+    (scope) =>
+      sessionStorage.setItem("styk-selected-accounts", JSON.stringify(scope)),
     { tenant, moy, ozon },
   );
   await page.reload();
-  const selector = page.locator(".workspace-selector");
-  if ((await selector.getAttribute("open")) === null)
-    await selector.locator("summary").first().click();
   await page
     .getByRole("combobox", { name: "МойСклад", exact: true })
     .selectOption(moy);
   await page
     .getByRole("combobox", { name: "Ozon", exact: true })
     .selectOption(ozon);
-  if ((await selector.getAttribute("open")) !== null)
-    await selector.locator("summary").first().click();
 }
 
 export async function navigate(page: Page, name: string) {

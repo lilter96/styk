@@ -35,13 +35,10 @@ test("orders review reaches real API replicas and durable worker readback", asyn
     }
     await login(a, "orders-process-a@example.test");
     await login(b, "orders-process-b@example.test");
-    const selector = a.locator(".workspace-selector");
-    if ((await selector.getAttribute("open")) === null)
-      await selector.locator("summary").click();
-    await selector
+    await a
       .getByRole("combobox", { name: "МойСклад", exact: true })
       .selectOption(scope.moysklad_account);
-    await selector
+    await a
       .getByRole("combobox", { name: "Ozon", exact: true })
       .selectOption(scope.ozon_account);
     await a.getByRole("link", { name: "Заказы", exact: true }).click();
@@ -131,9 +128,12 @@ test("orders review reaches real API replicas and durable worker readback", asyn
       expect(await response.text()).not.toContain("browser-create");
     }
     await a.setViewportSize({ width: 390, height: 844 });
+    await a.getByRole("button", { name: "Открыть меню" }).click();
+    const menu = a.getByRole("dialog", { name: "Разделы STYK" });
     await expect(
-      a.getByRole("navigation", { name: "Разделы" }).getByRole("link"),
-    ).toHaveCount(6);
+      menu.getByRole("navigation", { name: "Разделы" }).getByRole("link"),
+    ).toHaveCount(7);
+    await a.keyboard.press("Escape");
     const overflow = await a.evaluate(() => ({
       viewport: window.innerWidth,
       document: document.documentElement.scrollWidth,

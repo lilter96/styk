@@ -208,7 +208,7 @@ func controlledStockBrowserMode(t *testing.T, recovery, automatic, multi bool) {
 	}()
 	const origin = "http://127.0.0.1:15178"
 	const secret = "synthetic-controlled-browser-operator-secret"
-	handler, err := console.Handler(db, secret, origin)
+	handler, err := console.FixtureHandler(db, secret, origin)
 	if err != nil {
 		t.Fatal(err)
 	}

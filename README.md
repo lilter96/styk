@@ -41,11 +41,15 @@ terminates its owned process group. Desktop/mobile captures are written under
 `web/test-results`. The synthetic mailbox exists only in the integration harness;
 the application has no mailbox-read or local-operator authentication bypass.
 
+## Console redesign
+
+The console uses the design from PRs #2 and #3 with the current order workflows, authentication and provider controls retained. Upgrade the API and frontend together and apply migrations 65–66 for connection display settings. See the [integration review](docs/design/redesign-integration.md) for API compatibility, migration rollback constraints and current verification. Earlier PR audit reports describe their original revisions and are not current release evidence.
+
 ## Merchant catalog synchronization
 
 Open `/catalog-sync` after connecting both providers and importing their catalogs. Existing confirmed product mappings are reused. Choose the source for each supported field, select products with server-side search, review the diff and explicitly confirm the changes. Unsupported updates remain visible as limitations rather than erasing destination data.
 
-Apply all migrations (currently 59) and upgrade both API and worker together. `STYK_TEST_ACCOUNT_CATALOG=true` enables catalog writes **only** for the fixed, registered owner-controlled account pair. It is independent of the stock publication flag and cannot activate arbitrary merchant accounts. Keep it disabled outside an authorized test. `STYK_CATALOG_REQUEST_AUDIT=true` records bounded, secret-free HTTP attempt metadata for diagnostics.
+Apply all migrations (currently 66) and upgrade both API and worker together. `STYK_TEST_ACCOUNT_CATALOG=true` enables catalog writes **only** for the fixed, registered owner-controlled account pair. It is independent of the stock publication flag and cannot activate arbitrary merchant accounts. Keep it disabled outside an authorized test. `STYK_CATALOG_REQUEST_AUDIT=true` records bounded, secret-free HTTP attempt metadata for diagnostics.
 
 Product creation is separately approved. MoySklad creation uses a durable unique marker and returns the actual provider ID; import the created product and confirm its correspondence before enrolling it for ordinary updates. Ozon creation requires actual category/type, mandatory attributes, VAT, dimensions and other factual declarations; STYK does not invent them. An Ozon task ID means acceptance, not completion.
 
@@ -209,19 +213,19 @@ Each registered source is assessed independently; cross-system checks require bo
 
 Run `go run ./cmd/doctor -tenant TENANT -moysklad-account MS_ACCOUNT -ozon-account OZ_ACCOUNT` to inspect registered local evidence, or add `-format json`. It reports import windows, ages, counts, mapping and correlation gaps, one sampled stock calculation and its missing proofs. Publication remains disabled. `-demo` seeds an isolated synthetic namespace in a disposable migrated database; `-live` explicitly opts into bounded read probes using locally configured credentials. See [usage, scope and limitations](docs/integration-doctor.md). Offline mode requires only `DATABASE_URL` and never contacts external APIs.
 
-### Local operator web console
+### Merchant web console
 
 Merchant authentication is the default API mode. It requires a credential encryption key, a configured origin and SMTP verification delivery; see the [identity and migration guide](docs/saas-identity-plan.md). New merchant accounts can configure read-only synchronization drafts, but do not receive production publication permission automatically.
 
-For the legacy local operator console, start PostgreSQL and apply migrations with `make up` and `make migrate`; export `DATABASE_URL`, `HTTP_ADDR=127.0.0.1:8080`, `STYK_AUTH_MODE=local`, `STYK_CONSOLE_ORIGIN=http://127.0.0.1:5173`, and a random `STYK_OPERATOR_SECRET` of at least 32 characters in the API environment, then run `go run ./cmd/api`. In another terminal run `cd web && npm ci && npm run dev`, and open `http://127.0.0.1:5173`. Enter the operator secret, tenant ID and registered accounts. Do not commit secrets.
+Start PostgreSQL and apply all migrations, configure merchant authentication as described above, then run the API and `cd web && npm ci && npm run dev`. Open `http://127.0.0.1:5173` and use email registration, verification and password login. The retired `local` authentication mode, operator-key form and `STYK_OPERATOR_SECRET` are no longer supported. Use `STYK_AUTH_MODE=disabled` only when exposing health endpoints without a console.
 
-The console shows persisted imports, product suggestions, warehouse observations and Integration Doctor results. Provider checks and imports can be started explicitly. A completed import does not prove current connectivity or synchronization readiness. Real stock publication is restricted to the separately enabled, fixed owner-controlled test scope; general production publication remains disabled. The local shared-secret mode is not merchant authentication. See [web console V1](docs/web-console-v1.md) for the original local workflow.
+The console shows persisted imports, product suggestions, warehouse observations, orders and diagnostics. Provider checks and imports can be started explicitly. A completed import does not prove current connectivity or synchronization readiness. Production publication remains gated by existing account-specific permissions. See [console access and browser verification](docs/web-console-v1.md).
 
 For browser imports, apply migrations through 22 and configure `OZON_CLIENT_ID`/`OZON_API_KEY` for Ozon or `MOYSKLAD_ACCOUNT_ID`/`MOYSKLAD_TOKEN` for MoySklad in both the API and worker environments, register the account, and run `go run ./cmd/worker` with the same `DATABASE_URL`. Stop or upgrade older mock-only workers before submitting import tasks. Select the registered provider account in Integrations and explicitly acknowledge the import. Each provider has separate history and progress. The screen reports durable operation history, attempt-local progress and batch references; only queued imports can be cancelled. See [import management UI](docs/import-management-ui-v1.md), [MoySklad browser imports](docs/moysklad-import-management-ui-v1.md) and [backend semantics](docs/import-management-backend-v1.md) for recovery, idempotency and limitations.
 
 The Products page offers bounded MoySklad product/variant search, durable review and explicit mapping confirmation with operator attestation or deterministic candidate evidence. Confirmation uses revision checks, audit and idempotency; it does not establish verified human identity or independently verified product identity. See [product mapping review](docs/product-mapping-review-v1.md) and [confirmation backend](docs/product-mapping-confirmation-backend.md).
 
-The local operator API creates and inspects short-lived, revision-bound product mapping reviews. Reviews do not themselves confirm mappings. The configured `STYK_REVIEW_LIFETIME` defaults to five minutes (maximum ten). A separate local API endpoint explicitly confirms a current review with a client idempotency key and immutable audit. Stock publication is a separate, narrowly scoped test-account workflow; general production publication remains disabled. See [confirmation backend](docs/product-mapping-confirmation-backend.md) for request fields, session limits and recovery semantics.
+The authenticated merchant API creates and inspects short-lived, revision-bound product mapping reviews. Reviews do not themselves confirm mappings. The configured `STYK_REVIEW_LIFETIME` defaults to five minutes (maximum ten). A separate authenticated API endpoint explicitly confirms a current review with a client idempotency key and immutable audit. Stock publication is a separate, narrowly scoped test-account workflow; general production publication remains disabled. See [confirmation backend](docs/product-mapping-confirmation-backend.md) for request fields, session limits and recovery semantics.
 
 ### Automatic stock synchronization for the registered test pair
 

@@ -16,11 +16,7 @@ test("explicit warehouse confirmation survives lost response and persists audit"
       } else await route.continue();
     },
   );
-  await signIn(
-    page,
-    "synthetic-browser-operator-secret-not-real-123",
-    "http://127.0.0.1:15173/",
-  );
+  await signIn(page, "http://127.0.0.1:15173/");
   await selectWorkspace(page, "ui-e2e-tenant", "ui-e2e-moy", "ui-e2e-ozon");
   await navigate(page, "Склады");
   const ms = page

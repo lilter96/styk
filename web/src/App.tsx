@@ -1,4 +1,12 @@
-import { Integrations } from "./Integrations";
+import { AppShell } from "./AppShell";
+import { connectionState, type MoyProvider } from "./MoySkladSettingsData";
+import { OverviewDashboard } from "./OverviewDashboard";
+import { StatePanel, ProviderBadge, PageHeader, Icon } from "./UI";
+import {
+  WorkspaceSwitcher,
+  marketplaceNames,
+  type Marketplace,
+} from "./WorkspaceSwitcher";
 import {
   CredentialNotice,
   useCredentialSubmission,
@@ -9,8 +17,6 @@ import {
   useImportSubmission,
 } from "./ImportSubmission";
 import { ProductMappingPage } from "./ProductMappingPage";
-import { CatalogSync } from "./CatalogSync";
-import { Orders } from "./Orders";
 import { WarehouseReview } from "./WarehouseReview";
 import { hasAuthLink, MerchantAuth } from "./MerchantAuth";
 import {
@@ -18,7 +24,7 @@ import {
   useConfirmation,
   type Confirmation,
 } from "./Confirmation";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   NavLink,
@@ -42,6 +48,20 @@ import {
 } from "./api";
 
 type Scope = { tenant: string; moy: string; ozon: string };
+const Orders = lazy(() =>
+  import("./Orders").then((module) => ({ default: module.Orders })),
+);
+const CatalogSync = lazy(() =>
+  import("./CatalogSync").then((module) => ({ default: module.CatalogSync })),
+);
+const Integrations = lazy(() =>
+  import("./Integrations").then((module) => ({ default: module.Integrations })),
+);
+const MoySkladAccountSettingsPage = lazy(() =>
+  import("./MoySkladAccountSettingsPage").then((module) => ({
+    default: module.MoySkladAccountSettingsPage,
+  })),
+);
 type MerchantSession = {
   user: { id: string; email: string };
   account_id: string;
@@ -62,20 +82,16 @@ function State({ status }: { status: string }) {
   );
 }
 function Notice({ children }: { children: React.ReactNode }) {
-  return <div className="notice">{children}</div>;
+  return <StatePanel>{children}</StatePanel>;
 }
 function Loading() {
-  return (
-    <div className="notice" role="status">
-      Загружаем данные…
-    </div>
-  );
+  return <StatePanel kind="loading">Загружаем данные…</StatePanel>;
 }
 function Failure({ error }: { error: unknown }) {
   return (
-    <div className="error" role="alert">
+    <StatePanel kind="error">
       {error instanceof Error ? error.message : "Не удалось загрузить данные."}
-    </div>
+    </StatePanel>
   );
 }
 function scopeParams(s: Scope) {
@@ -86,68 +102,6 @@ function scopeParams(s: Scope) {
   });
 }
 
-function Login({ onDone }: { onDone: () => void }) {
-  const [secret, setSecret] = useState(""),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError("");
-    try {
-      const r = await fetch("/api/session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ secret }),
-      });
-      setSecret("");
-      if (!r.ok)
-        throw new Error(
-          r.status === 401
-            ? "Ключ входа не принят."
-            : "Не удалось войти. Проверьте доступность STYK.",
-        );
-      onDone();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Не удалось войти.");
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <main className="login">
-      <div className="login-mark">
-        S<span>TYK</span>
-      </div>
-      <div className="login-panel">
-        <p className="eyebrow">Аккаунт STYK</p>
-        <h1>Войти в STYK</h1>
-        <p>
-          Подключайте сервисы, загружайте данные и проверяйте соответствия
-          товаров.
-        </p>
-        <form onSubmit={submit}>
-          <label htmlFor="secret">Ключ входа</label>
-          <input
-            id="secret"
-            type="password"
-            autoComplete="off"
-            value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-            required
-          />
-          <button disabled={busy}>{busy ? "Входим…" : "Войти"}</button>
-          {error && (
-            <div className="error" role="alert">
-              {error}
-            </div>
-          )}
-        </form>
-      </div>
-      <p className="login-footer">STYK · Управление остатками</p>
-    </main>
-  );
-}
 function SourceCard({
   name,
   batch,
@@ -168,7 +122,10 @@ function SourceCard({
   return (
     <article className="read-source-card">
       <header>
-        <h2>{name}</h2>
+        <h2>
+          <ProviderBadge provider={name === "Ozon" ? "ozon" : "moysklad"} />
+          {name}
+        </h2>
         <State status={status} />
       </header>
       <p>
@@ -231,12 +188,15 @@ export function Overview({
         данные.
       </Notice>
     );
+  const warehousesMapped = report.checks.some(
+    (check) => check.code === "WAREHOUSE_MAPPINGS" && check.status === "PASS",
+  );
   return (
-    <div className="read-page">
-      <header className="read-heading">
-        <h1>Обзор</h1>
-        <p>Последние загруженные данные выбранных аккаунтов.</p>
-      </header>
+    <OverviewDashboard
+      report={report}
+      checkTitles={checkTitles}
+      checkSummary={checkSummary}
+    >
       <div className="read-source-grid">
         <SourceCard
           name="МойСклад"
@@ -256,19 +216,24 @@ export function Overview({
         />
       </div>
       <section className="read-next">
-        <h2>Следующий шаг</h2>
+        <h2>{warehousesMapped ? "Рабочие разделы" : "Следующий шаг"}</h2>
         <p>
-          Проверьте соответствия товаров и складов. Загрузка данных не меняет
-          остатки в сервисах.
+          {warehousesMapped
+            ? "Склады уже сопоставлены для выбранных аккаунтов. Можно проверить товары, настройки подключений и диагностику."
+            : "Проверьте соответствия товаров и складов. Загрузка данных не меняет остатки в сервисах."}
         </p>
         <nav>
           <NavLink to="/integrations">Настроить интеграции</NavLink>
           <NavLink to="/products">Сопоставить товары</NavLink>
-          <NavLink to="/warehouses">Сопоставить склады</NavLink>
+          <NavLink to="/warehouses">
+            {warehousesMapped
+              ? "Посмотреть соответствие складов"
+              : "Сопоставить склады"}
+          </NavLink>
           <NavLink to="/diagnostics">Диагностика</NavLink>
         </nav>
       </section>
-    </div>
+    </OverviewDashboard>
   );
 }
 export function Products({
@@ -496,14 +461,10 @@ export function Warehouses({
   const [ozonWarehouse, setOzonWarehouse] = useState("");
   return (
     <div className="read-page warehouse-mapping-page">
-      <div className="read-heading">
-        <div>
-          <h1>Сопоставление складов</h1>
-          <p className="subtitle">
-            Выберите склад МойСклад и соответствующий ему склад Ozon.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title="Сопоставление складов"
+        description="Выберите склад МойСклад и соответствующий ему склад Ozon."
+      />
       <Notice>
         Отсутствие данных об остатках не означает нулевой остаток. Совпадение
         названий складов само по себе не подтверждает соответствие.
@@ -627,13 +588,10 @@ export function Diagnostics({
   };
   return (
     <div className="read-page diagnostics-page">
-      <header className="read-heading">
-        <h1>Диагностика</h1>
-        <p>
-          Состояние данных выбранных аккаунтов. Ключи доступа в этот отчёт не
-          входят.
-        </p>
-      </header>
+      <PageHeader
+        title="Диагностика"
+        description="Состояние данных выбранных аккаунтов. Ключи доступа в этот отчёт не входят."
+      />
       <section className="read-next">
         <h2>
           {decisionLabels[report.decision_status] ||
@@ -717,7 +675,8 @@ export function App() {
   const credentialSubmission = useCredentialSubmission();
   const stockSyncSubmission = useStockSyncSubmission();
   const navigate = useNavigate();
-  const integrationPage = useLocation().pathname === "/integrations";
+  const pathname = useLocation().pathname;
+  const integrationPage = pathname === "/integrations";
   useEffect(() => {
     if (
       !confirmation.pending &&
@@ -756,7 +715,7 @@ export function App() {
   const authMode = useQuery({
     queryKey: ["auth-mode"],
     queryFn: ({ signal }) =>
-      api<{ mode: "local" | "merchant" }>("/api/auth-mode", signal),
+      api<{ mode: "merchant" }>("/api/auth-mode", signal),
     enabled: session.isError,
     retry: false,
   });
@@ -772,6 +731,7 @@ export function App() {
   }, [session.data]);
   const [initialAccounts] = useState(savedAccounts);
   const [accountsOpen, setAccountsOpen] = useState(false);
+  const [marketplace, setMarketplace] = useState<Marketplace>("ozon");
   const [moy, setMoy] = useState(initialAccounts.moy),
     [ozon, setOzon] = useState(initialAccounts.ozon),
     [loadedIdentity, setLoadedIdentity] = useState(""),
@@ -851,6 +811,16 @@ export function App() {
     enabled: session.isSuccess && !!chosen && identityReady,
   });
   const scope = { tenant: chosen, moy, ozon };
+  const moyConnection = useQuery({
+    queryKey: ["integrations", chosen, "moysklad", moy],
+    queryFn: ({ signal }) =>
+      api<{ providers: MoyProvider[] }>(
+        `/api/integrations?${params({ tenant: chosen, moysklad_account: moy })}`,
+        signal,
+      ),
+    enabled: session.isSuccess && !!chosen && !!moy && identityReady,
+    retry: false,
+  });
   useEffect(() => {
     if (!accounts.data) return;
     const moyAccounts = accounts.data.accounts.filter(
@@ -886,7 +856,10 @@ export function App() {
     queryKey: ["diagnostics", scope],
     queryFn: ({ signal }) =>
       api<Report>("/api/diagnostics?" + scopeParams(scope), signal),
-    enabled: session.isSuccess && !!chosen && identityReady,
+    enabled:
+      session.isSuccess && !!chosen && identityReady && marketplace === "ozon",
+    refetchInterval: pathname === "/" ? 30_000 : false,
+    refetchOnWindowFocus: true,
   });
   if (authLinkInSession) {
     const leaveLink = () => {
@@ -935,12 +908,6 @@ export function App() {
               void client.invalidateQueries({ queryKey: ["session"] });
             }}
           />
-        ) : authMode.data?.mode === "local" ? (
-          <Login
-            onDone={() => {
-              void client.invalidateQueries({ queryKey: ["session"] });
-            }}
-          />
         ) : (
           <main className="login">
             <Failure error={authMode.error} />
@@ -971,54 +938,6 @@ export function App() {
       setLogoutError("Не удалось завершить сессию. Повторите попытку.");
     }
   }
-  const accountControls = (
-    <div className="scope-panel">
-      {session.data && <span>Вы вошли как {session.data.user.email}</span>}
-      {accounts.isLoading && <span>Загружаем аккаунты…</span>}
-      {accounts.error && <Failure error={accounts.error} />}{" "}
-      {accounts.data && (
-        <>
-          <label>
-            МойСклад
-            <select value={moy} onChange={(e) => setMoy(e.target.value)}>
-              <option value="">Выберите аккаунт</option>
-              {accounts.data.accounts
-                .filter((a) => a.source === "moysklad")
-                .map((a, index) => (
-                  <option key={a.account} value={a.account}>
-                    {a.name || `Аккаунт ${index + 1}`} ·{" "}
-                    {new Date(a.registered_at).toLocaleDateString("ru-RU")}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <label>
-            Ozon
-            <select value={ozon} onChange={(e) => setOzon(e.target.value)}>
-              <option value="">Выберите аккаунт</option>
-              {accounts.data.accounts
-                .filter((a) => a.source === "ozon")
-                .map((a, index) => (
-                  <option key={a.account} value={a.account}>
-                    {a.name || `Аккаунт ${index + 1}`} ·{" "}
-                    {new Date(a.registered_at).toLocaleDateString("ru-RU")}
-                  </option>
-                ))}
-            </select>
-          </label>
-          {accounts.data.accounts.length === 0 && (
-            <span>Подключите МойСклад и Ozon, чтобы начать.</span>
-          )}
-          {accounts.data.truncated && (
-            <span>
-              Показана часть аккаунтов. Уточните нужный аккаунт у
-              администратора.
-            </span>
-          )}
-        </>
-      )}
-    </div>
-  );
   const importNotice = (
     <ImportSubmissionNotice
       submission={importSubmission}
@@ -1037,6 +956,7 @@ export function App() {
       }}
       restore={(original) => {
         if (original.tenant !== chosen) return;
+        setMarketplace("ozon");
         if (original.provider === "moysklad") setMoy(original.account);
         else setOzon(original.account);
         navigate("/integrations");
@@ -1044,21 +964,83 @@ export function App() {
     />
   );
   return (
-    <div className="shell reference-shell">
-      <header className="app-topbar">
+    <AppShell
+      workspace={(onNavigate) => (
+        <WorkspaceSwitcher
+          marketplace={marketplace}
+          onMarketplaceChange={setMarketplace}
+          accounts={accounts.data?.accounts || []}
+          account={ozon}
+          onAccountChange={setOzon}
+          onMoyAccountChange={setMoy}
+          onAdd={() => {
+            navigate("/integrations?connect=ozon");
+            onNavigate?.();
+          }}
+          moyLabel={
+            accounts.data?.accounts.find(
+              (a) => a.source === "moysklad" && a.account === moy,
+            )?.name || (moy ? "Аккаунт подключён" : "Не подключён")
+          }
+          moyAccount={moy}
+          moyStatus={
+            !moy
+              ? "Не подключён"
+              : moyConnection.isError
+                ? "Статус недоступен"
+                : moyConnection.isLoading
+                  ? "Проверяем состояние…"
+                  : connectionState(
+                      moyConnection.data?.providers.find(
+                        (p) => p.provider === "moysklad",
+                      ),
+                    ).text
+          }
+          onNavigate={onNavigate}
+          loading={accounts.isLoading}
+          error={!!accounts.error}
+          addDisabled={!!credentialSubmission.pending}
+        />
+      )}
+      context={(onNavigate) => (
         <details
-          className="workspace-selector"
+          className="workspace-selector user-menu"
           key={chosen || "empty"}
           open={accountsOpen}
           onToggle={(event) => setAccountsOpen(event.currentTarget.open)}
         >
           <summary>
-            Подключения <span aria-hidden="true">⌄</span>
+            <span className="user-avatar" aria-hidden="true">
+              {session.data?.user.email.slice(0, 1).toUpperCase() || "S"}
+            </span>
+            <span className="user-menu-label">Профиль</span>
+            <Icon name="chevron-down" size="button" />
           </summary>
           <div className="workspace-popover">
-            {accountControls}
+            {session.data && (
+              <p className="signed-in-user">{session.data.user.email}</p>
+            )}
             <div className="workspace-footer">
-              <NavLink to="/diagnostics">Диагностика</NavLink>
+              <NavLink
+                to="/integrations"
+                onClick={() => {
+                  setMarketplace("ozon");
+                  setAccountsOpen(false);
+                  onNavigate?.();
+                }}
+              >
+                Настройки подключений
+              </NavLink>
+              <NavLink
+                to="/diagnostics"
+                onClick={() => {
+                  setMarketplace("ozon");
+                  setAccountsOpen(false);
+                  onNavigate?.();
+                }}
+              >
+                Диагностика
+              </NavLink>
               <button
                 className="text-action"
                 disabled={
@@ -1077,68 +1059,94 @@ export function App() {
             {logoutError && <p role="alert">{logoutError}</p>}
           </div>
         </details>
-        <nav className="app-tabs" aria-label="Разделы">
-          <NavLink to="/" end>
-            Обзор
-          </NavLink>
-          <NavLink to="/products">Товары</NavLink>
-          <NavLink to="/catalog-sync">Каталог</NavLink>
-          <NavLink to="/orders">Заказы</NavLink>
-          <NavLink to="/warehouses">Склады</NavLink>
-          <NavLink to="/integrations">Интеграции</NavLink>
-        </nav>
-      </header>
-      <main className="main">
-        <div className="content">
-          <ConfirmationNotice
-            confirmation={confirmation}
-            scope={scope}
-            restore={(original) => {
-              if (original.tenant !== chosen) return;
-              setMoy(original.moy);
-              setOzon(original.ozon);
-            }}
-          />
-          <StockSyncNotice
-            submission={stockSyncSubmission}
-            scope={{
-              tenant: chosen,
-              moysklad_account: moy,
-              ozon_account: ozon,
-            }}
-            onIntegrations={integrationPage}
-            restore={(original) => {
-              if (original.tenant !== chosen) return;
-              setMoy(original.moysklad_account);
-              setOzon(original.ozon_account);
-              navigate("/integrations");
-            }}
-          />
-          <CredentialNotice
-            submission={credentialSubmission}
+      )}
+    >
+      <ConfirmationNotice
+        compact={pathname === "/products"}
+        confirmation={confirmation}
+        scope={scope}
+        restore={(original) => {
+          if (original.tenant !== chosen) return;
+          setMarketplace("ozon");
+          setMoy(original.moy);
+          setOzon(original.ozon);
+        }}
+      />
+      <StockSyncNotice
+        submission={stockSyncSubmission}
+        scope={{
+          tenant: chosen,
+          moysklad_account: moy,
+          ozon_account: ozon,
+        }}
+        onIntegrations={integrationPage}
+        restore={(original) => {
+          if (original.tenant !== chosen) return;
+          setMarketplace("ozon");
+          setMoy(original.moysklad_account);
+          setOzon(original.ozon_account);
+          navigate("/integrations");
+        }}
+      />
+      <CredentialNotice
+        submission={credentialSubmission}
+        tenant={chosen}
+        restore={(original) => {
+          if (original.tenant !== chosen) return;
+          setMarketplace("ozon");
+          if (original.provider === "moysklad") setMoy(original.account);
+          else setOzon(original.account);
+          navigate("/integrations");
+        }}
+      />
+      {!integrationPage && importNotice}
+      {pathname === "/integrations/moysklad/settings" ? (
+        <Suspense fallback={<Loading />}>
+          <MoySkladAccountSettingsPage
             tenant={chosen}
-            restore={(original) => {
-              if (original.tenant !== chosen) return;
-              if (original.provider === "moysklad") setMoy(original.account);
-              else setOzon(original.account);
-              navigate("/integrations");
-            }}
+            account={moy}
+            accounts={accounts.data?.accounts || []}
+            accountsLoading={accounts.isLoading}
+            credentials={credentialSubmission}
+            imports={importSubmission}
           />
-          {!integrationPage && importNotice}
-          <Routes>
-            <Route
-              path="/orders"
-              element={<Orders key={JSON.stringify(scope)} scope={scope} />}
-            />
-            <Route
-              path="/catalog-sync"
-              element={
+        </Suspense>
+      ) : marketplace === "ozon" ? (
+        <Routes>
+          <Route
+            path="/orders"
+            element={
+              <Suspense fallback={<Loading />}>
+                <Orders
+                  key={JSON.stringify(scope)}
+                  scope={scope}
+                  moyLabel={
+                    accounts.data?.accounts.find(
+                      (item) =>
+                        item.source === "moysklad" && item.account === moy,
+                    )?.name
+                  }
+                  ozonLabel={
+                    accounts.data?.accounts.find(
+                      (item) => item.source === "ozon" && item.account === ozon,
+                    )?.name
+                  }
+                />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/catalog-sync"
+            element={
+              <Suspense fallback={<Loading />}>
                 <CatalogSync key={JSON.stringify(scope)} scope={scope} />
-              }
-            />
-            <Route
-              path="/integrations"
-              element={
+              </Suspense>
+            }
+          />
+          <Route
+            path="/integrations"
+            element={
+              <Suspense fallback={<Loading />}>
                 <Integrations
                   key={chosen}
                   tenant={chosen}
@@ -1154,51 +1162,61 @@ export function App() {
                   stockSyncSubmission={stockSyncSubmission}
                   notice={importNotice}
                 />
-              }
-            />
-            <Route
-              path="/"
-              element={
-                <Overview
-                  report={report.data}
-                  loading={report.isLoading && !!chosen}
-                  error={report.error}
-                />
-              }
-            />
-            <Route
-              path="/products"
-              element={
-                <Products
-                  key={`${scope.tenant}:${scope.moy}:${scope.ozon}`}
-                  scope={scope}
-                  confirmation={confirmation}
-                />
-              }
-            />
-            <Route
-              path="/warehouses"
-              element={
-                <Warehouses
-                  key={`${scope.tenant}:${scope.moy}:${scope.ozon}`}
-                  scope={scope}
-                  confirmation={confirmation}
-                />
-              }
-            />
-            <Route
-              path="/diagnostics"
-              element={
-                <Diagnostics
-                  report={report.data}
-                  loading={report.isLoading && !!chosen}
-                  error={report.error}
-                />
-              }
-            />
-          </Routes>
-        </div>
-      </main>
-    </div>
+              </Suspense>
+            }
+          />
+          <Route
+            path="/"
+            element={
+              <Overview
+                report={report.data}
+                loading={report.isLoading && !!chosen}
+                error={report.error}
+              />
+            }
+          />
+          <Route
+            path="/products"
+            element={
+              <Products
+                key={`${scope.tenant}:${scope.moy}:${scope.ozon}`}
+                scope={scope}
+                confirmation={confirmation}
+              />
+            }
+          />
+          <Route
+            path="/warehouses"
+            element={
+              <Warehouses
+                key={`${scope.tenant}:${scope.moy}:${scope.ozon}`}
+                scope={scope}
+                confirmation={confirmation}
+              />
+            }
+          />
+          <Route
+            path="/diagnostics"
+            element={
+              <Diagnostics
+                report={report.data}
+                loading={report.isLoading && !!chosen}
+                error={report.error}
+              />
+            }
+          />
+        </Routes>
+      ) : (
+        <StatePanel>
+          <div>
+            <h1>{marketplaceNames[marketplace]}</h1>
+            <p>
+              Подключение этой площадки пока не поддерживается. Выберите Ozon,
+              чтобы работать с подключёнными аккаунтами.
+            </p>
+          </div>
+        </StatePanel>
+      )}
+    </AppShell>
   );
 }

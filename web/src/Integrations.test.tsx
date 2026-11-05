@@ -7,657 +7,326 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Integrations } from "./Integrations";
 import type { Account, Report } from "./api";
-
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
-const tenant = "synthetic-tenant";
 const accounts: Account[] = [
   {
     source: "moysklad",
-    account: "moy-account",
+    account: "moy-a",
+    name: "Склад А",
     registered_at: "2026-01-01T00:00:00Z",
   },
   {
     source: "ozon",
-    account: "ozon-account",
+    account: "ozon-a",
+    name: "Основной Ozon",
+    registered_at: "2026-01-01T00:00:00Z",
+  },
+  {
+    source: "ozon",
+    account: "ozon-b",
+    name: "Второй Ozon",
     registered_at: "2026-01-01T00:00:00Z",
   },
 ];
-const selected = { moy: "moy-account", ozon: "ozon-account" };
 const batch = {
   present: true,
   completed: true,
-  age: "2h",
+  age: "1m",
   observed_at: "2026-01-01T00:00:00Z",
-  counts: { products: 3, warehouses: 2, stock_rows: 0 },
+  counts: { products: 14, variants: 4, warehouses: 3 },
 };
 const report: Report = {
-  batches: { moysklad: batch, ozon: batch },
   checks: [],
-  decision_status: "NOT_CHECKED",
-  decision_reasons: [],
+  batches: { moysklad: batch, ozon: batch },
   publication: "DISABLED",
   mapping_counts: {},
+  decision_status: "NOT_CHECKED",
+  decision_reasons: [],
 };
-function mount(props: Partial<React.ComponentProps<typeof Integrations>> = {}) {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  return render(
-    <QueryClientProvider client={client}>
+function Location() {
+  const location = useLocation();
+  return (
+    <output data-testid="location">
+      {location.pathname + location.search}
+    </output>
+  );
+}
+function fixture(
+  options: { errorAccount?: string; importState?: string } = {},
+) {
+  const views = (moy = "moy-a", ozon = "ozon-a") => [
+    {
+      provider: "moysklad",
+      account: moy,
+      status: "VERIFIED",
+      registration: "REGISTERED",
+      import: batch,
+    },
+    {
+      provider: "ozon",
+      account: ozon,
+      status: "VERIFIED",
+      registration: "REGISTERED",
+      import: {
+        ...batch,
+        counts: { products: ozon === "ozon-b" ? 99 : 22, warehouses: 2 },
+      },
+    },
+  ];
+  const operation = {
+    id: "a".repeat(32),
+    tenant: "merchant",
+    provider: "ozon",
+    account: "ozon-b",
+    state: options.importState,
+    operation_type: "OZON_CATALOG_IMPORT",
+    phase: "READING_PRODUCTS",
+    created_at: "2026-01-01T00:00:00Z",
+    started_at: null,
+    finished_at: null,
+    attempt: 1,
+    max_attempts: 3,
+    counts: { products: 8 },
+    limits: {},
+  };
+  const requests: { url: string; body: Record<string, unknown> }[] = [];
+  const fetcher = vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(async (input, init) => {
+      const url = String(input),
+        query = new URLSearchParams(url.split("?")[1]);
+      const json = (value: unknown, status = 200) =>
+        new Response(JSON.stringify(value), { status });
+      if (init?.method === "POST") {
+        requests.push({ url, body: JSON.parse(String(init.body)) });
+        throw new Error("synthetic uncertain response");
+      }
+      if (url.startsWith("/api/integrations?")) {
+        if (
+          query.get("ozon_account") === options.errorAccount &&
+          options.errorAccount
+        )
+          return json({ error: "UNAVAILABLE" }, 503);
+        return json({
+          providers: views(
+            query.get("moysklad_account") || "moy-a",
+            query.get("ozon_account") || "ozon-a",
+          ),
+        });
+      }
+      if (url.includes("/credentials?"))
+        return json({
+          storage_available: true,
+          credential: query.get("account")
+            ? {
+                tenant: "merchant",
+                provider: "ozon",
+                account: query.get("account"),
+                name:
+                  query.get("account") === "ozon-b"
+                    ? "Второй Ozon"
+                    : "Основной Ozon",
+                revision: 3,
+                enabled: true,
+                checked_at: "2026-01-01T00:00:00Z",
+              }
+            : null,
+        });
+      if (url.startsWith("/api/imports?"))
+        return json({
+          items:
+            query.get("ozon_account") === "ozon-b" && options.importState
+              ? [operation]
+              : [],
+          has_next: false,
+          offset: 0,
+        });
+      if (url.startsWith("/api/imports/")) return json(operation);
+      if (url.startsWith("/api/stock-sync/eligibility"))
+        return json({ state: "PRODUCTION_DISABLED" });
+      if (url.startsWith("/api/stock-sync?"))
+        return json({
+          tenant: "merchant",
+          moysklad_account: "moy-a",
+          ozon_account: "ozon-a",
+          enabled: false,
+          version: 0,
+          last_operation: null,
+        });
+      throw new Error("Unexpected synthetic read " + url);
+    });
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
       <MemoryRouter>
-        <Integrations tenant={tenant} accounts={[]} {...props} />
+        <Location />
+        <Integrations
+          tenant="merchant"
+          accounts={accounts}
+          selected={{ moy: "moy-a", ozon: "ozon-a" }}
+          report={report}
+        />
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return { requests, fetcher };
 }
-function settings(card: HTMLElement) {
-  fireEvent.click(
-    within(card).getByRole("button", {
-      name: /^(Настройки|Подключить|Выбрать аккаунт|Обновить ключ)$/,
-    }),
-  );
-  const dialog = screen.getByRole("dialog", { name: /Подключение/ });
-  const legacy = dialog.querySelector<HTMLElement>(
-    ".legacy-connection-settings",
-  )!;
-  fireEvent.click(
-    within(legacy).getByText("Проверка доступа и настройки сервера"),
-  );
-  return legacy;
+async function card(name: string) {
+  const article = await screen.findByRole("article", { name });
+  await within(article).findByText("Работает");
+  return article;
 }
-function ancillaryResponse(path: string) {
-  if (path.includes("/credentials?"))
-    return { storage_available: false, credential: null };
-  if (path.startsWith("/api/stock-sync?"))
-    return {
-      tenant,
-      moysklad_account: selected.moy,
-      ozon_account: selected.ozon,
-      enabled: false,
-      version: 0,
-      last_operation: null,
-    };
-  if (path.startsWith("/api/imports?"))
-    return { items: [], has_next: false, offset: 0 };
-  return null;
-}
-function setup(failure = "") {
-  let verified = false,
-    registered = false;
-  const fetcher = vi
-    .spyOn(globalThis, "fetch")
-    .mockImplementation(async (input) => {
-      const path = String(input);
-      const ancillary = ancillaryResponse(path);
-      if (ancillary)
-        return new Response(JSON.stringify(ancillary), { status: 200 });
-      if (path.endsWith("/probe")) {
-        verified = true;
-        return new Response("{}", { status: 200 });
-      }
-      if (path.endsWith("/register")) {
-        if (failure)
-          return new Response(JSON.stringify({ error: failure }), {
-            status: failure === "OWNERSHIP_CONFLICT" ? 409 : 503,
-          });
-        registered = true;
-        return new Response('{"status":"REGISTERED"}', { status: 200 });
-      }
-      return new Response(
-        JSON.stringify({
-          providers: [
-            {
-              provider: "moysklad",
-              account: "moy-account",
-              status: verified ? "VERIFIED" : "CONFIGURED_NOT_VERIFIED",
-              registration: registered ? "REGISTERED" : "NOT_REGISTERED",
-              check: verified
-                ? {
-                    checked_at: new Date().toISOString(),
-                    identity: "NOT_ESTABLISHED",
-                  }
-                : undefined,
-            },
-            {
-              provider: "ozon",
-              status: "NOT_CONFIGURED",
-              registration: "NOT_CHECKED",
-            },
-          ],
-        }),
-        { status: 200 },
-      );
-    });
-  mount();
-  return fetcher;
-}
-async function moyCard() {
-  return (await screen.findByRole("heading", { name: "МойСклад" })).closest(
-    "article",
-  )!;
-}
-async function verify(card: HTMLElement) {
-  fireEvent.click(
-    within(card).getByRole("button", { name: "Проверить подключение" }),
-  );
-  await within(card).findByText(/^Доступ проверен/);
-}
-it("keeps registration explicit and requires a recent connection check and ownership acknowledgement", async () => {
-  const fetcher = setup();
-  const card = await moyCard();
-  expect(within(card).getByText("Не подключено")).toBeTruthy();
+it("renders actual account groups with logos only in headers and disables unsupported providers", async () => {
+  fixture();
+  await card("Склад А");
+  expect(document.querySelectorAll("[data-provider-group]").length).toBe(4);
   expect(
-    fetcher.mock.calls.some(
-      ([p, init]) => String(p).endsWith("/probe") || init?.method === "POST",
-    ),
-  ).toBe(false);
+    document.querySelectorAll(
+      "[data-provider-group=ozon] .integration-account-card",
+    ).length,
+  ).toBe(2);
+  expect(
+    document.querySelectorAll(".integration-account-card img").length,
+  ).toBe(0);
+  expect(
+    document.querySelectorAll(".integration-provider-header img").length,
+  ).toBe(4);
+  expect(
+    (
+      document.querySelector(
+        "[data-provider-group=wildberries] .provider-add",
+      ) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  expect(
+    document.querySelectorAll("[data-provider-group=yandex] article").length,
+  ).toBe(0);
+});
+it("opens source settings using the card account without a modal or mutation", async () => {
+  const { requests } = fixture();
+  fireEvent.click(
+    within(await card("Склад А")).getByRole("button", { name: "Настройки" }),
+  );
+  expect(screen.getByTestId("location").textContent).toBe(
+    "/integrations/moysklad/settings?account=moy-a",
+  );
   expect(screen.queryByRole("dialog")).toBeNull();
-  const legacy = settings(card);
-  const register = within(card).getByRole("button", {
-    name: "Добавить аккаунт",
-  }) as HTMLButtonElement;
-  expect(register.disabled).toBe(true);
-  fireEvent.click(
-    within(legacy).getByLabelText(/Подтверждаю, что этот аккаунт/),
-  );
-  expect(register.disabled).toBe(true);
-  await verify(legacy);
-  expect(
-    within(legacy).getByText(/Проверка доступа не заменяет подтверждение/),
-  ).toBeTruthy();
-  fireEvent.click(register);
-  await screen.findByText(/Аккаунт добавлен\./);
-  const calls = fetcher.mock.calls.filter(([p]) =>
-    String(p).endsWith("/register"),
-  );
-  expect(calls).toHaveLength(1);
-  expect(JSON.parse(String(calls[0][1]?.body))).toEqual({
-    tenant,
-    acknowledge: true,
-  });
-  expect(
-    within(card).getByRole("link", { name: "Товары" }).getAttribute("href"),
-  ).toBe("/products");
-  expect(
-    within(card).getByRole("link", { name: "Склады" }).getAttribute("href"),
-  ).toBe("/warehouses");
-  expect(
-    within(card)
-      .getByRole("link", { name: "Диагностика" })
-      .getAttribute("href"),
-  ).toBe("/diagnostics");
-  fireEvent.click(screen.getByRole("button", { name: "Закрыть настройки" }));
-  const ozon = screen
-    .getByRole("heading", { name: "Ozon" })
-    .closest("article")!;
-  const ozonLegacy = settings(ozon);
-  expect(
-    (
-      within(ozonLegacy).getByRole("button", {
-        name: "Проверить подключение",
-      }) as HTMLButtonElement
-    ).disabled,
-  ).toBe(true);
+  expect(requests).toHaveLength(0);
 });
-it("reconciles an unknown registration outcome before allowing another attempt", async () => {
-  const fetcher = setup("REGISTRATION_OUTCOME_UNKNOWN");
-  const card = await moyCard();
-  const legacy = settings(card);
-  await verify(legacy);
-  fireEvent.click(
-    within(legacy).getByLabelText(/Подтверждаю, что этот аккаунт/),
-  );
-  fireEvent.click(
-    within(card).getByRole("button", { name: "Добавить аккаунт" }),
-  );
-  await screen.findByText(/Результат добавления неизвестен/);
-  expect(
-    (
-      within(card).getByRole("button", {
-        name: "Добавить аккаунт",
-      }) as HTMLButtonElement
-    ).disabled,
-  ).toBe(true);
-  expect(
-    fetcher.mock.calls.filter(([p]) => String(p).endsWith("/register")),
-  ).toHaveLength(1);
-  fireEvent.click(
-    screen.getByRole("button", { name: "Проверить результат добавления" }),
-  );
-  await screen.findByText(/Статус добавления проверен/);
-});
-it("shows conflicting registration without transferring ownership", async () => {
-  const fetcher = setup("OWNERSHIP_CONFLICT");
-  const card = await moyCard();
-  const legacy = settings(card);
-  await verify(legacy);
-  fireEvent.click(
-    within(legacy).getByLabelText(/Подтверждаю, что этот аккаунт/),
-  );
-  fireEvent.click(
-    within(card).getByRole("button", { name: "Добавить аккаунт" }),
-  );
-  await screen.findByText(/Перенос недоступен/);
-  expect(
-    fetcher.mock.calls.filter(([p]) => String(p).endsWith("/register")),
-  ).toHaveLength(1);
-});
-type ProviderFixture = {
-  provider: string;
-  account: string;
-  status: string;
-  registration: string;
-  import?: typeof batch;
-  check?: { checked_at: string; identity: string; reason?: string };
-};
-function mockRegistered(
-  providers: ProviderFixture[] = [
-    {
-      provider: "moysklad",
-      account: "moy-account",
-      status: "CONFIGURED_NOT_VERIFIED",
-      registration: "REGISTERED",
-      import: batch,
-    },
-    {
-      provider: "ozon",
-      account: "ozon-account",
-      status: "CONFIGURED_NOT_VERIFIED",
-      registration: "REGISTERED",
-      import: batch,
-    },
-  ],
-) {
-  return vi
-    .spyOn(globalThis, "fetch")
-    .mockImplementation(
-      async (input) =>
-        new Response(
-          JSON.stringify(
-            String(input).startsWith("/api/imports?")
-              ? { items: [], has_next: false, offset: 0 }
-              : ancillaryResponse(String(input)) || { providers },
-          ),
-          { status: 200 },
-        ),
-    );
-}
-it("offers mapping review only when both selected registered accounts have eligible imports", async () => {
-  const fetcher = mockRegistered();
-  mount({ accounts, selected, report });
-  const next = await screen.findByRole("region", {
-    name: "Настройка синхронизации",
-  });
-  expect(within(next).getByText("Данные обеих систем загружены")).toBeTruthy();
-  expect(
-    within(next)
-      .getByRole("link", { name: "Сопоставить товары" })
-      .getAttribute("href"),
-  ).toBe("/products");
-  expect(
-    within(next)
-      .getByRole("link", { name: "Сопоставить склады" })
-      .getAttribute("href"),
-  ).toBe("/warehouses");
-  expect(
-    within(next).getByText("Нужна проверка перед включением"),
-  ).toBeTruthy();
-  expect(fetcher.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
-    false,
-  );
-  const card = await moyCard();
-  expect(within(card).getByText("Доступ не проверен")).toBeTruthy();
-  expect(within(card).queryByText(/^Доступ проверен/)).toBeNull();
-});
-it("does not use configured-account imports to claim selected-account readiness", async () => {
-  mockRegistered();
-  mount({
-    accounts,
-    selected,
-    report: {
-      ...report,
-      batches: { moysklad: batch, ozon: { ...batch, completed: false } },
-    },
-  });
-  const next = await screen.findByRole("region", {
-    name: "Настройка синхронизации",
-  });
-  expect(within(next).getByText("Загрузить данные")).toBeTruthy();
-  expect(
-    within(next).queryByRole("link", { name: "Сопоставить товары" }),
-  ).toBeNull();
-  expect(within(next).queryByText("Данные обеих систем загружены")).toBeNull();
-});
-it("keeps identifiers behind technical disclosure and account selection in settings", async () => {
-  const writeText = vi.fn().mockResolvedValue(undefined);
-  Object.defineProperty(navigator, "clipboard", {
-    configurable: true,
-    value: { writeText },
-  });
-  mockRegistered();
-  const onSelect = vi.fn();
-  mount({
-    accounts: [...accounts, { ...accounts[0], account: "second-moy" }],
-    selected,
-    report,
-    onSelect,
-  });
-  const card = await moyCard();
-  expect(within(card).queryByRole("combobox")).toBeNull();
-  expect(within(card).queryByRole("dialog")).toBeNull();
-  expect(
-    within(card).queryByRole("button", { name: "Копировать идентификаторы" }),
-  ).toBeNull();
-  settings(card);
-  fireEvent.change(
-    within(card).getByRole("combobox", { name: "МойСклад: аккаунт" }),
-    { target: { value: "second-moy" } },
-  );
-  expect(onSelect).toHaveBeenCalledWith("moysklad", "second-moy");
-  const technical = screen
-    .getByRole("dialog")
-    .querySelector<HTMLDetailsElement>(".credential-details")!;
-  expect(technical.open).toBe(false);
-  fireEvent.click(within(technical).getByText("Технические детали"));
-  expect(technical.open).toBe(true);
-  expect(within(technical).queryByText(tenant)).toBeNull();
-  const accountList = technical.querySelector<HTMLElement>(
-    ".technical-account-list",
-  )!;
-  expect(within(accountList).getByText("moy-account")).toBeTruthy();
-  expect(within(accountList).getByText("second-moy")).toBeTruthy();
-  expect(within(accountList).getByText(/^Аккаунт 2/)).toBeTruthy();
-  expect(
-    within(technical).getByRole("button", {
-      name: "Копировать идентификаторы",
-    }),
-  ).toBeTruthy();
-  fireEvent.click(
-    within(technical).getByRole("button", {
-      name: "Копировать идентификаторы",
-    }),
-  );
-  await within(technical).findByRole("button", { name: "Скопировано" });
-  expect(writeText).toHaveBeenCalledWith(
-    expect.stringContaining("account 2: second-moy"),
-  );
-});
-it("blocks registration when the successful probe is stale or has a future timestamp", async () => {
-  for (const checked_at of [
-    new Date(Date.now() - 6 * 60 * 1000).toISOString(),
-    new Date(Date.now() + 60 * 1000).toISOString(),
-  ]) {
-    mockRegistered([
-      {
-        provider: "moysklad",
-        account: "moy-account",
-        status: "VERIFIED",
-        registration: "NOT_REGISTERED",
-        import: batch,
-        check: { checked_at, identity: "NOT_ESTABLISHED" },
-      },
-    ]);
-    mount();
-    const card = await moyCard();
-    const legacy = settings(card);
-    fireEvent.click(
-      within(legacy).getByLabelText(/Подтверждаю, что этот аккаунт/),
-    );
-    expect(
-      (
-        within(card).getByRole("button", {
-          name: "Добавить аккаунт",
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(true);
-    cleanup();
-    vi.restoreAllMocks();
-  }
-});
-it("keeps setup contextual and opens missing-provider settings without a submission", async () => {
-  const fetcher = setup();
-  const card = await moyCard();
-  const setupPanel = screen.getByRole("region", {
-    name: "Настройка синхронизации",
-  });
-  expect(within(setupPanel).getByText("Шаг 1 из 5")).toBeTruthy();
-  expect(
-    within(setupPanel).getByText("Проверено подключений: 0 из 2"),
-  ).toBeTruthy();
-  settings(card);
-  expect(
-    screen.getByRole("dialog", { name: "Подключение МойСклад" }),
-  ).toBeTruthy();
-  expect(screen.queryByRole("link", { name: "Сопоставить товары" })).toBeNull();
-  expect(fetcher.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
-    false,
-  );
-});
-
-for (const [state, heading] of [
-  ["RUNNING", "Загружаем…"],
-  ["OUTCOME_UNKNOWN", "Результат уточняется"],
-] as const)
-  it(`shows a contextual wait instead of another setup or load action for ${state}`, async () => {
-    const operation = {
-      id: "a".repeat(32),
-      tenant,
-      account: selected.ozon,
-      provider: "ozon",
-      operation_type: "OZON_CATALOG_IMPORT",
-      state,
-      phase: state === "RUNNING" ? "READING_PRODUCTS" : "PERSISTING",
-      outcome: null,
-      limiting_resource: null,
-      created_at: "2026-01-01T00:00:00Z",
-      started_at: "2026-01-01T00:00:01Z",
-      finished_at: null,
-      attempt_started_at: "2026-01-01T00:00:01Z",
-      progress_at: null,
-      lease_expires_at: null,
-      attempt: 1,
-      max_attempts: 3,
-      elapsed_ms: 1000,
-      batch_id: null,
-      batch_created: null,
-      counts: {
-        requests: 1,
-        attempts: 1,
-        pages: 1,
-        completed_requests: 1,
-        completed_pages: 1,
-        products: 8,
-        warehouses: 0,
-        observations: 0,
-      },
-      limits: {
-        requests: 100,
-        attempts: 100,
-        pages: 100,
-        products: 1000,
-        warehouses: 1000,
-        observations: 1000,
-        response_bytes: 4194304,
-        duration_ns: 180000000000,
-        database_timeout_ns: 10000000000,
-      },
-    };
-    const fetcher = mockRegistered();
-    const defaultFetch = fetcher.getMockImplementation()!;
-    fetcher.mockImplementation(async (input, init) => {
-      const path = String(input);
-      if (path.startsWith("/api/imports?")) {
-        const query = new URLSearchParams(path.split("?")[1]);
-        return new Response(
-          JSON.stringify({
-            items: query.has("ozon_account") ? [operation] : [],
-            has_next: false,
-            offset: 0,
-          }),
-          { status: 200 },
-        );
-      }
-      if (path.startsWith("/api/imports/"))
-        return new Response(JSON.stringify(operation), { status: 200 });
-      return defaultFetch(input, init);
-    });
-    mount({
-      accounts,
-      selected,
-      report: {
-        ...report,
-        batches: {
-          moysklad: batch,
-          ozon: { ...batch, present: false, completed: false },
-        },
-      },
-    });
-    const next = await screen.findByRole("region", {
-      name: "Настройка синхронизации",
-    });
-    await within(
-      await screen.findByRole("article", { name: "Ozon" }),
-    ).findAllByText(heading);
-    expect(within(next).queryByRole("button")).toBeNull();
-    expect(within(next).queryByRole("link")).toBeNull();
-    expect(within(next).queryByText("Загрузите первый каталог")).toBeNull();
-    const ozon = await screen.findByRole("article", { name: "Ozon" });
-    expect(
-      (
-        within(ozon).getByRole("button", {
-          name: "Загрузить данные",
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(true);
-    expect(fetcher.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
-      false,
-    );
-  });
-
-it("shows a direct first-import action that requires explicit confirmation", async () => {
-  const fetcher = mockRegistered();
-  mount({
-    accounts,
-    selected,
-    report: {
-      ...report,
-      batches: {
-        moysklad: batch,
-        ozon: { ...batch, present: false, completed: false },
-      },
-    },
-  });
-  const next = await screen.findByRole("region", {
-    name: "Настройка синхронизации",
-  });
-  const ozon = await screen.findByRole("article", { name: "Ozon" });
-  const action = within(ozon).getByRole("button", {
-    name: "Загрузить данные",
-  }) as HTMLButtonElement;
-  await waitFor(() => expect(action.disabled).toBe(false));
-  expect(within(next).getByText("Загрузить данные")).toBeTruthy();
-  fireEvent.click(action);
-  expect(
-    screen.getByRole("dialog", { name: "Загрузить данные Ozon?" }),
-  ).toBeTruthy();
-  expect(
-    (
-      screen.getByRole("button", {
-        name: "Подтвердить загрузку",
-      }) as HTMLButtonElement
-    ).disabled,
-  ).toBe(true);
-  expect(fetcher.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
-    false,
-  );
-});
-
-it("does not mark setup complete when connection verification is missing", async () => {
-  const now = new Date(),
-    future = new Date(now.getTime() + 3600000).toISOString();
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-    const path = String(input);
-    let data: unknown;
-    if (path.includes("/api/stock-sync/automatic?"))
-      data = {
-        available: true,
-        policy: {
-          revision: 1,
-          enabled: true,
-          valid_until: future,
-          interval_seconds: 60,
-          targets: [],
-        },
-        last_cycle: {
-          id: "cycle",
-          config_revision: 1,
-          state: "COMPLETE",
-          outcome: "NO_CHANGE",
-          metrics: { blocked_targets: 0 },
-        },
-      };
-    else if (path.includes("/api/stock-sync?"))
-      data = {
-        tenant,
-        moysklad_account: selected.moy,
-        ozon_account: selected.ozon,
-        enabled: true,
-        ready: true,
-        state: "RECONCILED",
-        publication_available: true,
-        test_account_mode: true,
-        targets: [],
-        checks: [],
-      };
-    else if (path.includes("/api/imports?"))
-      data = { items: [], has_next: false, offset: 0 };
-    else if (path.includes("/credentials?"))
-      data = { storage_available: false };
-    else
-      data = {
-        providers: [
-          {
-            provider: "moysklad",
-            account: selected.moy,
-            status: "CONFIGURED_NOT_VERIFIED",
-            registration: "REGISTERED",
-            import: batch,
-          },
-          {
-            provider: "ozon",
-            account: selected.ozon,
-            status: "CONFIGURED_NOT_VERIFIED",
-            registration: "REGISTERED",
-            import: batch,
-          },
-        ],
-      };
-    return new Response(JSON.stringify(data), { status: 200 });
-  });
-  mount({
-    accounts,
-    selected,
-    report: {
-      ...report,
-      mapping_counts: {
-        catalog_confirmed_products: 1,
-        catalog_products: 2,
-        confirmed_warehouses: 1,
-      },
-    },
-  });
-  const panel = await screen.findByRole("region", {
-    name: "Настройка синхронизации",
+it("keeps Ozon settings and totals bound to the second account instead of the selected first one", async () => {
+  const { fetcher } = fixture();
+  const second = await card("Второй Ozon");
+  expect(within(second).getByText("99")).toBeTruthy();
+  expect(within(second).queryByText("22")).toBeNull();
+  fireEvent.click(within(second).getByRole("button", { name: "Настройки" }));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Подключение Ozon",
   });
   await waitFor(() =>
-    expect(within(panel).getByText("Шаг 1 из 5")).toBeTruthy(),
+    expect(
+      (
+        within(dialog).getByLabelText(
+          "Название подключения",
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("Второй Ozon"),
   );
-  expect(within(panel).queryByText("Все шаги выполнены")).toBeNull();
+  expect(
+    fetcher.mock.calls.some(
+      ([path]) =>
+        String(path).includes("credentials?") &&
+        String(path).includes("account=ozon-b"),
+    ),
+  ).toBe(true);
 });
+it("offers new Ozon credentials without replacing an existing account", async () => {
+  fixture();
+  await card("Второй Ozon");
+  const group = screen.getByRole("region", { name: "Ozon: аккаунты" });
+  fireEvent.click(
+    within(group).getByRole("button", { name: /Добавить аккаунт/ }),
+  );
+  const dialog = await screen.findByRole("dialog", {
+    name: "Подключение Ozon",
+  });
+  expect(
+    (within(dialog).getByLabelText("ID клиента Ozon") as HTMLInputElement)
+      .value,
+  ).toBe("");
+});
+it("keeps sync setup collapsed until requested and preserves stock inspection", async () => {
+  fixture();
+  await card("Склад А");
+  expect(
+    screen.queryByRole("region", { name: "Настройка синхронизации" }),
+  ).toBeNull();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Настройка синхронизации" }),
+  );
+  const setup = screen.getByRole("region", { name: "Настройка синхронизации" });
+  expect(
+    within(setup).getByRole("button", { name: "Проверить остатки" }),
+  ).toBeTruthy();
+  expect(within(setup).getByText("Шаг 3 из 5")).toBeTruthy();
+});
+it("requires explicit import consent and fences an uncertain submission for the exact account", async () => {
+  const { requests } = fixture();
+  const second = await card("Второй Ozon");
+  fireEvent.click(
+    within(second).getByRole("button", { name: "Обновить" }),
+  );
+  const dialog = await screen.findByRole("dialog", {
+    name: "Загрузить данные Ozon?",
+  });
+  expect(requests).toHaveLength(0);
+  fireEvent.click(within(dialog).getByRole("checkbox"));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Подтвердить загрузку" }));
+  await waitFor(() => expect(requests).toHaveLength(1));
+  expect(requests[0].body.ozon_account).toBe("ozon-b");
+  expect(requests[0].body.tenant).toBe("merchant");
+  expect(
+    (
+      within(second).getByRole("button", {
+        name: "Обновить",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+});
+it("does not borrow another account's data after an API failure", async () => {
+  fixture({ errorAccount: "ozon-b" });
+  const second = await screen.findByRole("article", { name: "Второй Ozon" });
+  await within(second).findByText("Состояние недоступно");
+  expect(within(second).queryByText("99")).toBeNull();
+  expect(within(second).queryByText("22")).toBeNull();
+  expect(
+    within(second).getByRole("button", { name: "Повторить" }),
+  ).toBeTruthy();
+  await card("Основной Ozon");
+});
+it.each(["QUEUED", "RUNNING", "OUTCOME_UNKNOWN"])(
+  "keeps an %s import fenced and retains completed snapshot totals",
+  async (state) => {
+    fixture({ importState: state });
+    const second = await screen.findByRole("article", { name: "Второй Ozon" });
+    await waitFor(() =>
+      expect(
+        (
+          within(second).getByRole("button", {
+            name: "Обновить",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(true),
+    );
+    expect(within(second).getByText("99")).toBeTruthy();
+  },
+);

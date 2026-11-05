@@ -160,30 +160,67 @@ it("opens an email link while another session is active", async () => {
   });
   fireEvent.click(screen.getByRole("button", { name: "Сохранить пароль" }));
   await screen.findByText(/Пароль изменён/);
-  expect(screen.getByRole("button", { name: "Вернуться в приложение" })).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Вернуться в приложение" }),
+  ).toBeTruthy();
 });
 
 it("automatically selects a sole connection once without overriding a later choice", async () => {
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
     const path = String(input);
     if (path === "/api/session")
-      return new Response(JSON.stringify({
-        user: { id: "user", email: "seller@example.test" },
-        account_id: "merchant-account", csrf: "csrf", expires_at: "2099-01-01T00:00:00Z",
-      }), { status: 200 });
+      return new Response(
+        JSON.stringify({
+          user: { id: "user", email: "seller@example.test" },
+          account_id: "merchant-account",
+          csrf: "csrf",
+          expires_at: "2099-01-01T00:00:00Z",
+        }),
+        { status: 200 },
+      );
     if (path.startsWith("/api/registrations?"))
-      return new Response(JSON.stringify({ accounts: [
-        { source: "moysklad", account: "source", registered_at: "2026-01-01T00:00:00Z" },
-        { source: "ozon", account: "market", registered_at: "2026-01-01T00:00:00Z" },
-      ], truncated: false }), { status: 200 });
+      return new Response(
+        JSON.stringify({
+          accounts: [
+            {
+              source: "moysklad",
+              account: "source",
+              registered_at: "2026-01-01T00:00:00Z",
+            },
+            {
+              source: "ozon",
+              account: "market",
+              registered_at: "2026-01-01T00:00:00Z",
+            },
+          ],
+          truncated: false,
+        }),
+        { status: 200 },
+      );
     if (path.startsWith("/api/diagnostics?"))
-      return new Response(JSON.stringify({ checks: [], batches: {}, mapping_counts: {} }), { status: 200 });
+      return new Response(
+        JSON.stringify({ checks: [], batches: {}, mapping_counts: {} }),
+        { status: 200 },
+      );
     throw new Error("unexpected request");
   });
   mount();
-  fireEvent.click(await screen.findByText("Подключения"));
   const source = await screen.findByRole("combobox", { name: "МойСклад" });
-  await waitFor(() => expect((source as HTMLSelectElement).value).toBe("source"));
+  await waitFor(() =>
+    expect((source as HTMLSelectElement).value).toBe("source"),
+  );
   fireEvent.change(source, { target: { value: "" } });
   await waitFor(() => expect((source as HTMLSelectElement).value).toBe(""));
+});
+
+it("rejects the retired local mode without displaying a token form", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    if (String(input) === "/api/auth-mode")
+      return new Response(JSON.stringify({ mode: "local" }));
+    return new Response(null, { status: 401 });
+  });
+  mount();
+  await screen.findByRole("alert");
+  expect(screen.queryByLabelText("Ключ входа")).toBeNull();
+  expect(screen.queryByRole("button")).toBeNull();
 });

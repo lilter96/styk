@@ -25,8 +25,13 @@ test("explicit local registration uses bounded synthetic providers", async ({
       })
     ).status(),
   ).toBe(401);
-  await signIn(page, "ssssssssssssssssssssssssssssssss", origin);
-  await page.evaluate(() => sessionStorage.setItem("styk-selected-accounts", JSON.stringify({ tenant: "browser-tenant", moy: "", ozon: "" })));
+  await signIn(page, origin);
+  await page.evaluate(() =>
+    sessionStorage.setItem(
+      "styk-selected-accounts",
+      JSON.stringify({ tenant: "browser-tenant", moy: "", ozon: "" }),
+    ),
+  );
   await page.reload();
   await navigate(page, "Интеграции");
   const moy = page
@@ -146,7 +151,12 @@ test("explicit local registration uses bounded synthetic providers", async ({
   await ozonSelector.selectOption(configuredOzon);
   await expect(ozonSelector).toHaveValue(configuredOzon);
   await ozonDialog.getByRole("button", { name: "Закрыть настройки" }).click();
-  await page.evaluate(() => sessionStorage.setItem("styk-selected-accounts", JSON.stringify({ tenant: "other-tenant", moy: "", ozon: "" })));
+  await page.evaluate(() =>
+    sessionStorage.setItem(
+      "styk-selected-accounts",
+      JSON.stringify({ tenant: "other-tenant", moy: "", ozon: "" }),
+    ),
+  );
   await page.reload();
   await expect(moy.locator(".connection-state")).toContainText(
     "Нужно действие",

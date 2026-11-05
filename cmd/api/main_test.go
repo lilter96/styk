@@ -23,9 +23,8 @@ func TestMerchantStartupRequiresExplicitSecurityConfiguration(t *testing.T) {
 	}
 }
 
-func TestLocalOperatorModeRequiresExplicitSecretAndLoopback(t *testing.T) {
+func TestRemovedLocalModeIsRejected(t *testing.T) {
 	t.Setenv("STYK_AUTH_MODE", "local")
-	t.Setenv("STYK_OPERATOR_SECRET", "")
 	t.Setenv("STYK_ALLOW_REMOTE_BIND", "true")
 	if _, err := configuredHandler(nil, "127.0.0.1:8080"); err == nil {
 		t.Fatal("local operator mode accepted missing secret or database")

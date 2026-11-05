@@ -20,7 +20,7 @@ import (
 func TestConsoleScopedAuthenticatedReads(t *testing.T) {
 	f := newStockFixture(t)
 	secret := strings.Repeat("s", 32)
-	h, e := console.Handler(f.store, secret, "http://127.0.0.1:5173")
+	h, e := console.FixtureHandler(f.store, secret, "http://127.0.0.1:5173")
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -159,7 +159,7 @@ func TestConsoleAmbiguousCandidatesAreNotConfirmed(t *testing.T) {
 		t.Fatal(e)
 	}
 	secret := strings.Repeat("s", 32)
-	h, e := console.Handler(f.store, secret, "http://127.0.0.1:5173")
+	h, e := console.FixtureHandler(f.store, secret, "http://127.0.0.1:5173")
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -212,7 +212,7 @@ func TestConsoleProductPagination(t *testing.T) {
 		t.Fatal(err)
 	}
 	secret := strings.Repeat("s", 32)
-	h, err := console.Handler(f.store, secret, "http://127.0.0.1:5173")
+	h, err := console.FixtureHandler(f.store, secret, "http://127.0.0.1:5173")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,7 +262,7 @@ func TestConsoleProductPagination(t *testing.T) {
 func TestConsoleHistoryRespectsImportHistoryRegistration(t *testing.T) {
 	f := newStockFixtureWithHistory(t, false)
 	secret := strings.Repeat("s", 32)
-	h, err := console.Handler(f.store, secret, "http://127.0.0.1:5173")
+	h, err := console.FixtureHandler(f.store, secret, "http://127.0.0.1:5173")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func TestWarehouseReviewScopesEvidenceAndIsReadOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	secret := strings.Repeat("w", 32)
-	h, err := console.Handler(f.store, secret, "http://127.0.0.1:5173")
+	h, err := console.FixtureHandler(f.store, secret, "http://127.0.0.1:5173")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,7 +403,7 @@ func TestWarehouseReviewScopesEvidenceAndIsReadOnly(t *testing.T) {
 func TestWarehouseReviewDoesNotExposePreRegistrationHistory(t *testing.T) {
 	f := newStockFixtureWithHistory(t, false)
 	secret := strings.Repeat("q", 32)
-	h, err := console.Handler(f.store, secret, "http://127.0.0.1:5173")
+	h, err := console.FixtureHandler(f.store, secret, "http://127.0.0.1:5173")
 	if err != nil {
 		t.Fatal(err)
 	}

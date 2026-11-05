@@ -33,16 +33,12 @@ test("current posting state stays independent of paginated history and reconcile
     .getByLabel("Пароль", { exact: true })
     .fill("synthetic-orders-process-password");
   await page.getByRole("button", { name: "Войти", exact: true }).click();
-  const selector = page.locator(".workspace-selector");
-  if ((await selector.getAttribute("open")) === null)
-    await selector.locator("summary").click();
-  await selector
+  await page
     .getByRole("combobox", { name: "МойСклад", exact: true })
     .selectOption(scope.moysklad_account);
-  await selector
+  await page
     .getByRole("combobox", { name: "Ozon", exact: true })
     .selectOption(scope.ozon_account);
-  await selector.locator("summary").click();
   await page.getByRole("link", { name: "Заказы", exact: true }).click();
   await page
     .getByLabel("Найти отправление или заказ")

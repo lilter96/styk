@@ -402,3 +402,27 @@ func TestMerchantCannotReadOrRecoverForeignPublication(t *testing.T) {
 		t.Fatalf("foreign request changed historical outcome: %+v %v", persisted, err)
 	}
 }
+
+func TestMerchantRejectsRemovedKeyLogin(t *testing.T) {
+	db, _ := controlledFixture(t)
+	t.Setenv("STYK_CREDENTIAL_ENCRYPTION_KEY", base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)))
+	mailbox := &testMailbox{tokens: map[string]string{}}
+	handler, err := console.MerchantHandler(db, "http://127.0.0.1:5173", mailbox)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	browser := newMerchantBrowser(t, server.URL)
+	status, _ := browser.request(t, http.MethodPost, "/api/session", `{"secret":"obsolete-shared-key"}`, false)
+	if status != http.StatusBadRequest {
+		t.Fatalf("removed login status: %d", status)
+	}
+	for _, path := range []string{"/api/session", "/api/integrations", "/api/diagnostics?tenant=other"} {
+		status, _ = browser.request(t, http.MethodGet, path, "", false)
+		if status != http.StatusUnauthorized {
+			t.Fatalf("anonymous %s: %d", path, status)
+		}
+	}
+	browser.registerAndLogin(t, mailbox, "removed-key@example.test")
+}

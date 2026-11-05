@@ -2,11 +2,7 @@ import { test, expect } from "@playwright/test";
 import { signIn, selectWorkspace, navigate } from "./workspace";
 
 test("review synthetic mapping and audit without writing", async ({ page }) => {
-  await signIn(
-    page,
-    "synthetic-review-operator-secret-123456789",
-    "http://127.0.0.1:5174",
-  );
+  await signIn(page, "http://127.0.0.1:5174");
   await selectWorkspace(page, "doctor-synthetic", "doctor-moy", "doctor-ozon");
   await navigate(page, "Товары");
   await page.getByRole("button", { name: /^Сопоставить / }).click();

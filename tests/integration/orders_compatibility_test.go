@@ -47,6 +47,20 @@ func TestOrdersStartupRequiresCompositionActionConstraint(t *testing.T) {
 	}
 }
 
+func TestStartupRequiresConnectionSettingsStructure(t *testing.T) {
+	db := catalogSyncDB(t)
+	ctx := context.Background()
+	if err := db.RequireCurrentSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Pool.Exec(ctx, `ALTER TABLE connection_settings RENAME COLUMN archived TO incomplete_archive`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.RequireCurrentSchema(ctx); !errors.Is(err, postgres.ErrSchemaIncompatible) {
+		t.Fatal("migration version concealed missing connection settings", err)
+	}
+}
+
 func TestOrdersStartupRequiresNativePointStructures(t *testing.T) {
 	for _, statement := range []string{
 		`ALTER TABLE orders_ingestion_leases RENAME COLUMN attempt_started_at TO missing_attempt_clock`,

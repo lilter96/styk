@@ -83,7 +83,8 @@ test("merchant registers, verifies email and retains isolated sessions across AP
     path: "test-results/merchant-smoke-mobile.png",
     fullPage: true,
   });
-  const selector = page.locator(".workspace-selector");
+  await page.getByRole("button", { name: "Открыть меню" }).click();
+  const selector = page.locator(".navigation-drawer .workspace-selector");
   if ((await selector.getAttribute("open")) === null)
     await selector.locator("summary").click();
   await selector.getByRole("button", { name: "Выйти" }).click();

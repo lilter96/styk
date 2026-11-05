@@ -11,7 +11,7 @@ import (
 
 func TestStockSyncRoutesRequireSessionOriginAndExplicitAcknowledgement(t *testing.T) {
 	origin := "http://127.0.0.1:15177"
-	a, err := newAuth(strings.Repeat("s", 32), origin)
+	a, err := newFixtureAuth(strings.Repeat("s", 32), origin)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestStockSyncRoutesRequireSessionOriginAndExplicitAcknowledgement(t *testin
 
 func TestStockPublicationDeploymentGateCannotBeBypassedByEnableRequest(t *testing.T) {
 	origin := "http://127.0.0.1:15177"
-	auth, err := newAuth(strings.Repeat("s", 32), origin)
+	auth, err := newFixtureAuth(strings.Repeat("s", 32), origin)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { useOrdersMetadata } from "./useOrdersMetadata";
 import { post } from "./api";
 import { OrdersMetadataSetup } from "./OrdersMetadataSetup";
+import { Icon } from "./UI";
 import {
   orderScopeBody,
   orderRequestError,
@@ -289,8 +290,13 @@ export function OrdersConfig({
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary>
-        <strong>Настройки передачи в МойСклад</strong>
-        <span>{config.enabled ? "Включена" : "Выключена"}</span>
+        <strong>
+          <Icon name="settings" />
+          Настройки передачи в МойСклад
+        </strong>
+        <span className="orders-badge">
+          {config.enabled ? "Включена" : "Выключена"}
+        </span>
       </summary>
       <form
         onSubmit={(event) => {

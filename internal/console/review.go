@@ -28,9 +28,10 @@ func reviewParams(r *http.Request) (string, string, string, string, int, bool) {
 }
 func searchTargets(db *postgres.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tenant, moy, ozon, search, offset, ok := reviewParams(r)
-		if !ok {
-			writeError(w, 400, "INVALID_SCOPE")
+		tenant, moy, ozon, _, offset, ok := reviewParams(r)
+		options, err := targetOptions(r, offset)
+		if !ok || err != nil {
+			writeError(w, 400, "INVALID_SEARCH")
 			return
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), db.Timeout)
@@ -44,42 +45,16 @@ func searchTargets(db *postgres.Store) http.HandlerFunc {
 			writeError(w, 404, "SCOPE_NOT_REGISTERED")
 			return
 		}
-		rows, err := db.Pool.Query(ctx, `WITH latest AS (SELECT i.id FROM source_imports i JOIN stock_connections c ON c.tenant_id=$1 AND c.source=i.source AND c.account_id=i.account_id WHERE i.source='moysklad' AND i.account_id=$2 AND (c.include_import_history OR i.started_at>=c.registered_at) ORDER BY i.id DESC LIMIT 1) SELECT e.kind,e.external_id,e.name,e.article,e.code,e.parent_id FROM source_entities e JOIN latest l ON l.id=e.import_id WHERE e.kind IN ('product','variant') AND ($3='' OR e.external_id ILIKE '%'||$3||'%' OR e.name ILIKE '%'||$3||'%' OR e.article ILIKE '%'||$3||'%' OR e.code ILIKE '%'||$3||'%') ORDER BY e.kind,e.external_id LIMIT 51 OFFSET $4`, tenant, moy, search, offset)
+		if options.ActiveOnly || options.SearchBy == "sku" {
+			writeError(w, 422, "FIELD_NOT_IMPORTED")
+			return
+		}
+		result, err := db.SearchMappingTargets(ctx, tenant, moy, ozon, options)
 		if err != nil {
 			writeError(w, 503, "SEARCH_UNAVAILABLE")
 			return
 		}
-		defer rows.Close()
-		type item struct {
-			Kind     string `json:"kind"`
-			ID       string `json:"id"`
-			Name     string `json:"name"`
-			Article  string `json:"article"`
-			Code     string `json:"code"`
-			ParentID string `json:"parent_id"`
-		}
-		items := []item{}
-		for rows.Next() {
-			var v item
-			if rows.Scan(&v.Kind, &v.ID, &v.Name, &v.Article, &v.Code, &v.ParentID) != nil {
-				writeError(w, 503, "SEARCH_UNAVAILABLE")
-				return
-			}
-			items = append(items, v)
-		}
-		if rows.Err() != nil {
-			writeError(w, 503, "SEARCH_UNAVAILABLE")
-			return
-		}
-		more := len(items) > 50
-		if more {
-			items = items[:50]
-		}
-		writeJSON(w, struct {
-			Items   []item `json:"items"`
-			HasNext bool   `json:"has_next"`
-			Offset  int    `json:"offset"`
-		}{items, more, offset})
+		writeJSON(w, result)
 	}
 }
 func mappingHistory(db *postgres.Store) http.HandlerFunc {

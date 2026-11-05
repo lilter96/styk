@@ -35,6 +35,48 @@ const response = (data: unknown) =>
   );
 
 describe("read-only views", () => {
+  it.each(["PASS", "WARN"])(
+    "shows warehouse actions from the current diagnostic status: %s",
+    (status) => {
+      const report: Report = {
+        checks: [
+          {
+            code: "WAREHOUSE_MAPPINGS",
+            status,
+            detail: "Selected account pair",
+          },
+        ],
+        batches: {},
+        decision_status: "NOT_CHECKED",
+        decision_reasons: [],
+        publication: "DISABLED",
+        mapping_counts: { confirmed_warehouses: 1 },
+      };
+      mount(<Overview report={report} loading={false} error={null} />);
+      if (status === "PASS") {
+        expect(
+          screen.getByText(/Склады уже сопоставлены для выбранных аккаунтов/),
+        ).toBeTruthy();
+        expect(
+          screen
+            .getByRole("link", { name: "Посмотреть соответствие складов" })
+            .getAttribute("href"),
+        ).toBe("/warehouses");
+        expect(
+          screen.queryByRole("link", {
+            name: "Сопоставить склады",
+          }),
+        ).toBeNull();
+      } else {
+        expect(
+          screen.getByRole("link", { name: "Сопоставить склады" }),
+        ).toBeTruthy();
+        expect(
+          screen.queryByText(/Склады уже сопоставлены для выбранных аккаунтов/),
+        ).toBeNull();
+      }
+    },
+  );
   it("shows loading and missing workspace states", () => {
     const x = mount(<Overview loading error={null} />);
     expect(screen.getByRole("status").textContent).toContain("Загружаем");
@@ -113,10 +155,12 @@ describe("read-only views", () => {
       }),
     );
     mount(<Products scope={scope} />);
-    expect(await screen.findByText("Нужно выбрать товар")).toBeTruthy();
+    expect(await screen.findByText("Не сопоставлен")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Сопоставить sample" }));
     fireEvent.click(screen.getByText(/Возможные соответствия/));
-    expect(screen.getByText(/variant · b/)).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /Посмотреть предложение 2/ }),
+    ).toBeTruthy();
     fireEvent.click(
       screen.getByRole("button", { name: "Закрыть сопоставление" }),
     );

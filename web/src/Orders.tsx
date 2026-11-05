@@ -9,6 +9,7 @@ import { useOrdersMetadata } from "./useOrdersMetadata";
 import { OrdersPostings } from "./OrdersPostings";
 import { OrdersPreview } from "./OrdersPreview";
 import { OrdersOperations } from "./OrdersOperations";
+import { OrdersHeader } from "./OrdersHeader";
 import {
   ordersURL,
   orderScopeBody,
@@ -34,7 +35,7 @@ export function Orders(props: OrdersProps) {
   if (!scope?.tenant || !scope.moy || !scope.ozon)
     return (
       <section className="orders-console">
-        <h1>Заказы</h1>
+        <OrdersHeader />
         <p className="orders-empty">
           Подключите МойСклад и Ozon в разделе интеграций, чтобы настроить
           передачу заказов.
@@ -356,17 +357,7 @@ function OrdersAccount({
   }
   return (
     <div className="orders-console">
-      <header className="orders-heading">
-        <h1>Заказы</h1>
-        <p>
-          Ozon: <strong>{ozonLabel}</strong> · МойСклад:{" "}
-          <strong>{moyLabel}</strong>
-        </p>
-        <p>
-          Проверьте отправления, передавайте заказы в МойСклад и подтверждайте
-          действия в Ozon.
-        </p>
-      </header>
+      <OrdersHeader moyLabel={moyLabel} ozonLabel={ozonLabel} />
       {config.isLoading && <p role="status">Загружаем настройки заказов…</p>}
       {config.isError && (
         <p role="alert" className="orders-error">

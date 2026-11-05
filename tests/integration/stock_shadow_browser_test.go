@@ -96,7 +96,7 @@ func TestStockShadowBrowser(t *testing.T) {
 	}
 	const origin = "http://127.0.0.1:15176"
 	const secret = "synthetic-shadow-browser-operator-secret"
-	handler, err := console.Handler(f.db, secret, origin)
+	handler, err := console.FixtureHandler(f.db, secret, origin)
 	if err != nil {
 		t.Fatal(err)
 	}

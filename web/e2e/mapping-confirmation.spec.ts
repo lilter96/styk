@@ -16,11 +16,7 @@ test("explicit manual variant confirmation survives a lost response and persists
       } else await route.continue();
     },
   );
-  await signIn(
-    page,
-    "synthetic-browser-operator-secret-not-real-123",
-    "http://127.0.0.1:15173/",
-  );
+  await signIn(page, "http://127.0.0.1:15173/");
   await selectWorkspace(page, "ui-e2e-tenant", "ui-e2e-moy", "ui-e2e-ozon");
   await navigate(page, "Товары");
   await page.getByRole("button", { name: /^Сопоставить / }).click();

@@ -152,7 +152,7 @@ func TestProbeTimeoutStopsRequest(t *testing.T) {
 	}
 }
 func TestConnectionMutationRequiresOriginAndJSON(t *testing.T) {
-	a, err := newAuth(strings.Repeat("x", 32), "http://127.0.0.1:5173")
+	a, err := newFixtureAuth(strings.Repeat("x", 32), "http://127.0.0.1:5173")
 	if err != nil {
 		t.Fatal(err)
 	}

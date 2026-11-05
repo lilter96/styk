@@ -40,7 +40,7 @@ func uncertaintyShadowClient(t *testing.T, db *postgres.Store) func(domain.Stock
 	server := httptest.NewUnstartedServer(http.NotFoundHandler())
 	origin := "http://" + server.Listener.Addr().String()
 	secret := strings.Repeat("s", 32)
-	h, err := console.Handler(db, secret, origin)
+	h, err := console.FixtureHandler(db, secret, origin)
 	if err != nil {
 		t.Fatal(err)
 	}

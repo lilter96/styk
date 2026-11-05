@@ -1,9 +1,7 @@
 .orders-console {
-  color: #0f172a;
-  font:
-    400 15px/1.5 Inter,
-    system-ui,
-    sans-serif;
+  color: var(--styk-ink);
+  font: inherit;
+  line-height: 1.5;
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -13,17 +11,17 @@
   margin: 0;
 }
 .orders-heading h1 {
-  font-size: 28px;
+  font-size: 26px;
   line-height: 1.25;
   letter-spacing: -0.01em;
 }
 .orders-heading p {
   margin-top: 8px;
-  color: #475569;
+  color: var(--styk-muted);
 }
 .orders-section {
   background: #fff;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--styk-line);
   border-radius: 16px;
   padding: 24px;
   display: flex;
@@ -56,13 +54,32 @@
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  list-style: revert;
+  list-style: none;
+  align-items: center;
   cursor: pointer;
 }
+.orders-settings > summary strong {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.orders-settings > summary::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid var(--styk-muted);
+  border-bottom: 1.5px solid var(--styk-muted);
+  transform: rotate(45deg);
+  flex: none;
+}
+.orders-settings[open] > summary::after {
+  transform: rotate(225deg);
+}
 .orders-settings > summary span {
+  margin-left: auto;
   flex-shrink: 0;
   white-space: nowrap;
-  color: #475569;
+  color: var(--styk-muted);
   font-size: 13px;
 }
 .orders-settings[open] > summary {
@@ -90,10 +107,10 @@
   min-height: 44px;
   width: 100%;
   padding: 9px 12px;
-  color: #0f172a;
+  color: var(--styk-ink);
   font: inherit;
   background: #fff;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--styk-control-line);
   border-radius: 10px;
   box-sizing: border-box;
 }
@@ -102,7 +119,7 @@
   height: 18px;
   margin: 3px 0;
   flex-shrink: 0;
-  accent-color: #2563eb;
+  accent-color: var(--styk-primary);
 }
 .orders-console .orders-check {
   flex-direction: row;
@@ -110,12 +127,16 @@
   gap: 10px;
 }
 .orders-console button {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
   min-height: 44px;
   font: inherit;
   cursor: pointer;
   overflow-wrap: anywhere;
-  border: 1px solid #2563eb;
-  background: #2563eb;
+  border: 1px solid var(--styk-primary);
+  background: var(--styk-gradient);
   color: #fff;
   border-radius: 10px;
   padding: 10px 14px;
@@ -123,13 +144,13 @@
 }
 .orders-console button.secondary {
   background: #fff;
-  color: #334155;
-  border-color: #cbd5e1;
+  color: var(--styk-ink);
+  border-color: var(--styk-control-line);
 }
 .orders-console button.text-action {
   padding: 0;
   background: transparent;
-  color: #1d4ed8;
+  color: var(--styk-primary);
   border: 0;
   text-align: left;
   min-height: 36px;
@@ -143,11 +164,11 @@
 }
 .orders-console
   :is(button, input, select, textarea, summary, a, [tabindex]):focus-visible {
-  outline: 3px solid #2563eb;
+  outline: 3px solid var(--styk-primary);
   outline-offset: 3px;
 }
 .orders-console a {
-  color: #1d4ed8;
+  color: var(--styk-primary);
   overflow-wrap: anywhere;
 }
 .orders-console summary {
@@ -167,7 +188,7 @@
 .orders-note,
 .orders-source-action p {
   font-size: 13px;
-  color: #475569;
+  color: var(--styk-muted);
 }
 .orders-form-grid {
   display: grid;
@@ -198,7 +219,7 @@
   gap: 16px;
 }
 .orders-posting {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--styk-line);
   border-radius: 12px;
   padding: 20px;
   display: flex;
@@ -216,23 +237,23 @@
 .orders-badge {
   display: inline-block;
   align-self: flex-start;
-  background: #f1f5f9;
-  color: #334155;
-  border: 1px solid #e2e8f0;
+  background: var(--styk-subtle);
+  color: var(--styk-ink);
+  border: 1px solid var(--styk-line);
   border-radius: 6px;
   padding: 3px 8px;
   font-size: 12px;
   font-weight: 500;
 }
 .orders-badge.warning {
-  background: #fff7ed;
-  color: #9a3412;
-  border-color: #fed7aa;
+  background: var(--styk-warning-soft);
+  color: var(--styk-warning-ink);
+  border-color: var(--styk-warning-line);
 }
 .orders-badge.success {
-  background: #ecfdf5;
-  color: #166534;
-  border-color: #bbf7d0;
+  background: var(--styk-success-soft);
+  color: var(--styk-success-ink);
+  border-color: var(--styk-success);
 }
 .orders-facts {
   display: grid;
@@ -241,7 +262,7 @@
   margin: 0;
 }
 .orders-facts dt {
-  color: #64748b;
+  color: var(--styk-muted);
   font-size: 12px;
 }
 .orders-facts dd {
@@ -253,7 +274,7 @@
   display: block;
   font-size: 12px;
   font-weight: 400;
-  color: #64748b;
+  color: var(--styk-muted);
 }
 .orders-line {
   display: flex;
@@ -261,7 +282,7 @@
   gap: 4px;
   font-size: 13px;
   padding: 12px 0;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--styk-line);
   overflow-wrap: anywhere;
 }
 .orders-split {
@@ -273,7 +294,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--styk-line);
   padding-top: 16px;
   overflow-wrap: anywhere;
 }
@@ -291,24 +312,24 @@
   overflow-wrap: anywhere;
 }
 .orders-warning {
-  background: #fff7ed;
-  border: 1px solid #fed7aa;
-  color: #9a3412;
+  background: var(--styk-warning-soft);
+  border: 1px solid var(--styk-warning-line);
+  color: var(--styk-warning-ink);
 }
 .orders-error {
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  color: #991b1b;
+  background: var(--styk-danger-soft);
+  border: 1px solid var(--styk-danger-line);
+  color: var(--styk-danger-ink);
 }
 .orders-success {
-  background: #ecfdf5;
-  border: 1px solid #bbf7d0;
-  color: #166534;
+  background: var(--styk-success-soft);
+  border: 1px solid var(--styk-success);
+  color: var(--styk-success-ink);
 }
 .orders-empty {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  color: #475569;
+  background: var(--styk-subtle);
+  border: 1px solid var(--styk-line);
+  color: var(--styk-muted);
 }
 .orders-console code {
   font-size: 12px;
@@ -383,7 +404,7 @@
 
 .orders-console fieldset.orders-action-package {
   padding: 16px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--styk-line);
   border-radius: 10px;
 }
 .orders-action-form textarea {
@@ -395,10 +416,50 @@
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  background: #f8fafc;
-  border-left: 3px solid #cbd5e1;
+  background: var(--styk-subtle);
+  border-left: 3px solid var(--styk-control-line);
   overflow-wrap: anywhere;
 }
 .orders-current-state small {
-  color: #475569;
+  color: var(--styk-muted);
+}
+
+.orders-account-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  color: var(--styk-muted);
+  font-size: 12px;
+}
+.orders-account-context > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.orders-account-context strong {
+  color: var(--styk-ink);
+  font-weight: 600;
+}
+@media (max-width: 720px) {
+  .orders-account-context > .styk-icon {
+    display: none;
+  }
+  .orders-account-context {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .orders-settings > summary {
+    flex-wrap: wrap;
+  }
+  .orders-settings > summary strong {
+    flex: 1;
+    min-width: 0;
+  }
+  .orders-console button {
+    min-height: 44px;
+  }
 }

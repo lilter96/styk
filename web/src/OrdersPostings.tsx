@@ -13,6 +13,7 @@ import type { OrderNativeProposal } from "./OrdersNativeTypes";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./api";
+import { Icon } from "./UI";
 import { OrdersActionEligibility } from "./OrdersActionEligibility";
 import { OrdersActions } from "./OrdersActions";
 import {
@@ -152,6 +153,7 @@ export function OrdersPostings({
           disabled={page.isFetching}
           onClick={() => void page.refetch()}
         >
+          <Icon name="refresh" size="button" />
           Обновить список отправлений
         </button>
       </div>

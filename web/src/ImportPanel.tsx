@@ -15,6 +15,8 @@ import {
 } from "./api";
 import type { ImportSubmissionState } from "./ImportSubmission";
 import { IntegrationDialog } from "./IntegrationDialog";
+import { IntegrationMetrics } from "./IntegrationCardParts";
+import { Icon } from "./UI";
 
 const phaseLabels: Record<string, string> = {
   READING_PRODUCTS: "Загружаем товары",
@@ -258,6 +260,7 @@ export function ImportPanel({
   repairCredentials,
   probeBusy,
   historyManaged = false,
+  compact = false,
 }: {
   scope: ImportScope;
   configured: boolean;
@@ -271,6 +274,7 @@ export function ImportPanel({
   repairCredentials?: boolean;
   probeBusy?: boolean;
   historyManaged?: boolean;
+  compact?: boolean;
   onStateChange?: (
     scope: ImportScope,
     state: ImportOperation["state"] | undefined,
@@ -567,6 +571,7 @@ export function ImportPanel({
       aria-label={`${name}: история обновлений`}
     >
       <summary>
+        <Icon name="chevron-right" size="button" />
         <span>{name}</span>
         <span className="history-preview">
           {latest.error
@@ -668,26 +673,31 @@ export function ImportPanel({
       data-provider={scope.provider}
       aria-label={`${name}: импорт данных`}
     >
-      {connectionProblem ? (
-        <p className="provider-summary">{connectionProblem}</p>
-      ) : (
-        !(current && active(current.state)) &&
-        current?.state !== "FAILED" && (
-          <p className="import-baseline">
-            {completed && latestBatch.observed_at ? (
-              <>
-                Данные обновлены{" "}
-                <time dateTime={latestBatch.observed_at}>
-                  {cardTimestamp(latestBatch.observed_at)}
-                </time>
-                .
-              </>
-            ) : (
-              "Каталог ещё не загружен. Загрузите товары, склады и остатки."
-            )}
-          </p>
-        )
+      {compact && (
+        <IntegrationMetrics provider={scope.provider} batch={latestBatch} />
       )}
+      <div className={compact ? "integration-import-info" : undefined}>
+        {connectionProblem ? (
+          <p className="provider-summary">{connectionProblem}</p>
+        ) : (
+          !compact && !(current && active(current.state)) &&
+          current?.state !== "FAILED" && (
+            <p className="import-baseline">
+              {completed && latestBatch.observed_at ? (
+                <>
+                  Данные обновлены{" "}
+                  <time dateTime={latestBatch.observed_at}>
+                    {cardTimestamp(latestBatch.observed_at)}
+                  </time>
+                  .
+                </>
+              ) : (
+                "Каталог ещё не загружен. Загрузите товары, склады и остатки."
+              )}
+            </p>
+          )
+        )}
+      </div>
       {latest.isLoading && <p role="status">Проверяем состояние загрузки…</p>}
       {!!latest.error && (
         <div className="import-warning" role="alert">
@@ -794,17 +804,21 @@ export function ImportPanel({
                 setConfirm(true);
               }}
             >
-              {completed ? "Обновить данные" : "Загрузить данные"}
+              {compact && <Icon name="refresh" />}
+                {compact ? "Обновить" : completed ? "Обновить данные" : "Загрузить данные"}
             </button>
             {onSettings && (
               <button className="text-action" onClick={onSettings}>
+                {compact && <Icon name="settings" />}
                 Настройки
               </button>
             )}
           </>
         )}
       </div>
-      <div className="provider-footnote">
+      {!compact && <div
+        className={`provider-footnote ${compact ? "integration-import-footnote" : ""}`}
+      >
         {connectionProblem && completed && latestBatch.observed_at ? (
           <>
             Данные от{" "}
@@ -865,7 +879,7 @@ export function ImportPanel({
             )}
           </dl>
         )}
-      </div>
+      </div>}
       {confirm && (
         <Confirm
           title={`Загрузить данные ${name}?`}

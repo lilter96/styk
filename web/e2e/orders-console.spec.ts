@@ -458,13 +458,21 @@ const fulfill = (route: Route, body: unknown) =>
   route.fulfill({
     status: 200,
     contentType: "application/json",
-    body: JSON.stringify(body),
+    body: JSON.stringify(body, (key, value: unknown) => {
+      if (key !== "targets" || !Array.isArray(value)) return value;
+      return value.map((work: Record<string, unknown>) => ({
+        scope,
+        ...work,
+        command: { scope, ...(work.command as Record<string, unknown>) },
+      }));
+    }),
   });
 
 async function openOrders(
   page: Page,
   lostApproval = false,
   actionMode = false,
+  withShell = false,
 ) {
   const approvals: unknown[] = [];
   const previews: { proposals?: OrderActionProposal[] }[] = [];
@@ -502,6 +510,53 @@ async function openOrders(
       ? route.continue()
       : route.abort(),
   );
+  if (withShell) {
+    await page.route("**/api/**", (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path === "/api/session")
+        return fulfill(route, {
+          user: { id: "synthetic-user", email: "seller@example.test" },
+          account_id: scope.tenant,
+          csrf: "synthetic-csrf",
+          expires_at: "2099-01-01T00:00:00Z",
+        });
+      if (path === "/api/registrations")
+        return fulfill(route, {
+          accounts: [
+            {
+              source: "moysklad",
+              account: scope.moysklad_account,
+              name: "Учёт товаров",
+              registered_at: "2026-01-01",
+            },
+            {
+              source: "ozon",
+              account: scope.ozon_account,
+              name: "Магазин",
+              registered_at: "2026-01-01",
+            },
+          ],
+          truncated: false,
+        });
+      if (path === "/api/diagnostics")
+        return fulfill(route, { checks: [], batches: {}, mapping_counts: {} });
+      if (path === "/api/integrations")
+        return fulfill(route, {
+          providers: [
+            {
+              provider: "moysklad",
+              status: "VERIFIED",
+              registration: "REGISTERED",
+              credentials_stored: true,
+            },
+          ],
+        });
+      return route.fulfill({
+        status: 404,
+        json: { error: "FIXTURE_ENDPOINT_UNAVAILABLE" },
+      });
+    });
+  }
   await page.route("**/api/orders/**", (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -645,10 +700,10 @@ async function openOrders(
   await page.route("**/__orders-ui", (route) =>
     route.fulfill({
       contentType: "text/html",
-      body: `<!doctype html><html lang="ru"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>STYK: заказы</title></head><body class="reference-shell"><main style="max-width:1100px;margin:24px auto;padding:16px"><div id="orders-root"></div></main><script type="module">import RefreshRuntime from '/@react-refresh';RefreshRuntime.injectIntoGlobalHook(window);window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>type=>type;window.__vite_plugin_react_preamble_installed__=true;</script><script type="module">import React from '/node_modules/.vite/deps/react.js';import ReactDOM from '/node_modules/.vite/deps/react-dom_client.js';import {QueryClient,QueryClientProvider} from '${queryModule}';import {Orders} from '/src/Orders.tsx';import '/src/style.css';ReactDOM.createRoot(document.getElementById('orders-root')).render(React.createElement(QueryClientProvider,{client:new QueryClient({defaultOptions:{queries:{retry:false}}})},React.createElement(Orders,{accountScope:{tenant:'synthetic-orders',moy:'synthetic-moy',ozon:'synthetic-ozon'},moyLabel:'Учёт товаров',ozonLabel:'Магазин'})));</script></body></html>`,
+      body: `<!doctype html><html lang="ru"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>STYK: заказы</title></head><body class="reference-shell"><main style="max-width:1100px;margin:24px auto;padding:16px"><div id="orders-root"></div></main><script type="module">import RefreshRuntime from '/@react-refresh';RefreshRuntime.injectIntoGlobalHook(window);window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>type=>type;window.__vite_plugin_react_preamble_installed__=true;</script><script type="module">import React from '/node_modules/.vite/deps/react.js';import ReactDOM from '/node_modules/.vite/deps/react-dom_client.js';import {QueryClient,QueryClientProvider} from '${queryModule}';import {Orders} from '/src/Orders.tsx';import '/src/style.css';import '/src/design-system.css';ReactDOM.createRoot(document.getElementById('orders-root')).render(React.createElement(QueryClientProvider,{client:new QueryClient({defaultOptions:{queries:{retry:false}}})},React.createElement(Orders,{accountScope:{tenant:'synthetic-orders',moy:'synthetic-moy',ozon:'synthetic-ozon'},moyLabel:'Учёт товаров',ozonLabel:'Магазин'})));</script></body></html>`,
     }),
   );
-  await page.goto(`${origin}/__orders-ui`);
+  await page.goto(`${origin}/${withShell ? "orders" : "__orders-ui"}`);
   await expect(
     page.getByRole("heading", { name: "Заказы", exact: true }),
   ).toBeVisible();
@@ -1491,5 +1546,41 @@ test("country command explains requirement-only reconciliation and never invents
       /Ozon не предоставляет отдельное чтение установленной страны/,
     ),
   ).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("current orders integrate with the redesigned shell on desktop and mobile", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const { errors } = await openOrders(page, false, false, true);
+  await expect(
+    page.getByRole("link", { name: "Заказы", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
+  await expect(page.getByLabel("Аккаунты заказов")).toContainText("Магазин");
+  await expect(page.getByLabel("Аккаунты заказов")).toContainText(
+    "Учёт товаров",
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("orders-shell-desktop.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Открыть меню" }).click();
+  const menu = page.getByRole("dialog", { name: "Разделы STYK" });
+  await expect(
+    menu.getByRole("link", { name: "Заказы", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("orders-shell-mobile.png"),
+    fullPage: true,
+  });
   expect(errors).toEqual([]);
 });

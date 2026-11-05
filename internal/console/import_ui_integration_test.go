@@ -152,7 +152,7 @@ func testProviderImportBrowser(t *testing.T, provider string) {
 		t.Fatal(err)
 	}
 	c := &connections{db: db, moyAccount: account, moy: mc, ozonAccount: account, ozon: client, checks: map[string]map[string]connectionCheck{}}
-	handler, err := handlerWithConnections(db, strings.Repeat("s", 32), "http://127.0.0.1:15175", c)
+	handler, err := fixtureWithConnections(db, strings.Repeat("s", 32), "http://127.0.0.1:15175", c)
 	if err != nil {
 		t.Fatal(err)
 	}

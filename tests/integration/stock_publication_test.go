@@ -563,7 +563,7 @@ func TestStockPublicationHTTPExplicitEnableReplayAndDisable(t *testing.T) {
 	server := httptest.NewUnstartedServer(http.NotFoundHandler())
 	origin := "http://" + server.Listener.Addr().String()
 	secret := strings.Repeat("s", 32)
-	handler, err := console.Handler(f.db, secret, origin)
+	handler, err := console.FixtureHandler(f.db, secret, origin)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -28,6 +28,8 @@ func registerCredentialRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c
 		c.vault, _ = credentials.FromEnvironment()
 	}
 	api := &credentialAPI{db, c}
+	mux.HandleFunc("GET /api/integrations/moysklad/settings", a.authorized(api.getSettings))
+	mux.HandleFunc("POST /api/integrations/moysklad/settings", a.authorized(a.connectionMutation(api.saveSettings)))
 	mux.HandleFunc("GET /api/integrations/{provider}/credentials", a.authorized(api.get))
 	mux.HandleFunc("POST /api/integrations/{provider}/credentials", a.authorized(a.connectionMutation(api.save)))
 	mux.HandleFunc("POST /api/integrations/{provider}/disconnect", a.authorized(a.connectionMutation(api.disconnect)))

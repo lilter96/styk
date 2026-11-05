@@ -1,3 +1,4 @@
+import { Icon } from "./UI";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, authFetch, params, post } from "./api";
@@ -1007,11 +1008,11 @@ export function StockSyncControls({
                 {review.ready ? (
                   <ul className="sync-checklist">
                     <li>
-                      ✓ Условия отправки подтверждены для{" "}
+                      <Icon name="check" size="button" /> Условия отправки подтверждены для{" "}
                       {review.targets.length} позиций по складам
                     </li>
-                    <li>✓ Остатки в МойСклад не изменятся</li>
-                    <li>✓ Синхронизацию можно выключить</li>
+                    <li><Icon name="check" size="button" /> Остатки в МойСклад не изменятся</li>
+                    <li><Icon name="check" size="button" /> Синхронизацию можно выключить</li>
                   </ul>
                 ) : (
                   <div className="integration-feedback">

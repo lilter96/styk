@@ -41,7 +41,7 @@ func shadowClient(t *testing.T, f publicationFixture) func(domain.StockSyncScope
 	server := httptest.NewUnstartedServer(http.NotFoundHandler())
 	origin := "http://" + server.Listener.Addr().String()
 	secret := strings.Repeat("x", 32)
-	handler, err := console.Handler(f.db, secret, origin)
+	handler, err := console.FixtureHandler(f.db, secret, origin)
 	if err != nil {
 		t.Fatal(err)
 	}

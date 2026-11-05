@@ -487,7 +487,7 @@ func TestMoyAPIRequiresConfiguredCredentialsAndExactScope(t *testing.T) {
 	const origin = "http://127.0.0.1:5173"
 	t.Setenv("MOYSKLAD_ACCOUNT_ID", f.account)
 	t.Setenv("MOYSKLAD_TOKEN", "")
-	h, err := console.Handler(f.db, strings.Repeat("s", 32), origin)
+	h, err := console.FixtureHandler(f.db, strings.Repeat("s", 32), origin)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -511,7 +511,7 @@ func TestMoyAPIRequiresConfiguredCredentialsAndExactScope(t *testing.T) {
 	}
 	// The same untrusted account text cannot select another configured provider.
 	t.Setenv("MOYSKLAD_TOKEN", "synthetic-only")
-	h, err = console.Handler(f.db, strings.Repeat("s", 32), origin)
+	h, err = console.FixtureHandler(f.db, strings.Repeat("s", 32), origin)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,5 +1,6 @@
 import { OrdersNativeSummary, nativeDocumentURL } from "./OrdersNativeSummary";
 import { OrdersRecovery } from "./OrdersRecovery";
+import { Icon } from "./UI";
 import { useOrdersHistory } from "./useOrdersHistory";
 import { useLabelExpiryClock } from "./useLabelExpiryClock";
 import { useEffect, useState } from "react";
@@ -66,6 +67,7 @@ export function OrdersOperations({
           disabled={history.isFetching}
           onClick={() => void history.refetch()}
         >
+          <Icon name="refresh" size="button" />
           Обновить статусы заказов
         </button>
       </div>

@@ -501,7 +501,7 @@ func testCatalogImportAPI(t *testing.T, provider string) {
 	t.Setenv("OZON_CLIENT_ID", f.account)
 	t.Setenv("OZON_API_KEY", "synthetic-secret-never-expose")
 	secret := strings.Repeat("s", 32)
-	handler, err := console.Handler(f.db, secret, "http://127.0.0.1:5173")
+	handler, err := console.FixtureHandler(f.db, secret, "http://127.0.0.1:5173")
 	if err != nil {
 		t.Fatal(err)
 	}
