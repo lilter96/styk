@@ -150,7 +150,18 @@ func preparePositionPatch(command *orders.Command, baselines []orders.PositionBa
 }
 
 func ownedCompositionRequired(command orders.Command, baseline orders.PositionBaseline) orders.Validation {
-	if command.CustomerOrder == nil || len(command.CustomerOrder.Positions) >= len(baseline.Bindings) {
+	if command.CustomerOrder == nil {
+		return orders.Validation{}
+	}
+	wanted := make(map[string]bool, len(command.CustomerOrder.Positions))
+	for _, position := range command.CustomerOrder.Positions {
+		wanted[position.Identity.Key()] = true
+	}
+	missing := false
+	for _, binding := range baseline.Bindings {
+		missing = missing || !wanted[binding.Source.Identity.Key()]
+	}
+	if !missing {
 		return orders.Validation{}
 	}
 	code := "composition_manual_confirmation_required"

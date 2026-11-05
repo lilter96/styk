@@ -64,3 +64,37 @@ func TestTargetRepresentsPreservesUnchangedUnownedExtraPositions(t *testing.T) {
 		t.Fatal("changed unowned reservation was accepted as unchanged")
 	}
 }
+
+func TestOwnedPositionCannotBecomeForeignMatchingNoop(t *testing.T) {
+	t.Parallel()
+	for _, changedIdentity := range []bool{true, false} {
+		name := "remapped_product"
+		if changedIdentity {
+			name = "replaced_identity"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			command, target := scalarPositionRegression(t)
+			prior := command.CustomerOrder.Positions[0]
+			baseline := orders.PositionBaseline{Scope: command.Scope, WorkID: "native-origin", CommandID: "native-origin-command", Correlation: target.Correlation, ObservedAt: target.ObservedAt, Bindings: []orders.PositionBinding{{Source: prior, Native: target.Positions[0]}}}
+			if err := baseline.Validate(); err != nil {
+				t.Fatal(err)
+			}
+			wanted := prior
+			wanted.Mapping.MoyskladID = "replacement-product"
+			if changedIdentity {
+				wanted.Identity.OfferID, wanted.Mapping.OfferID = "replacement-offer", "replacement-offer"
+			}
+			command.CustomerOrder.Positions = []orders.PositionWrite{wanted}
+			foreign := target.Positions[0]
+			foreign.ID, foreign.MoyskladID, foreign.Identity = "foreign-matching-values", wanted.Mapping.MoyskladID, wanted.Identity
+			target.Positions = append(target.Positions, foreign)
+			if validation := prepareMirrorUpdate(&command, target, baseline); validation.Code == "" {
+				t.Fatal("foreign values were adopted despite a different owned UUID or mapping")
+			}
+			if command.PositionPatch != nil || command.PositionBaseline != nil {
+				t.Fatal("foreign values created an owned mutation or scalar baseline")
+			}
+		})
+	}
+}

@@ -70,7 +70,10 @@ func prepareMirrorUpdate(command *orders.Command, target orders.TargetObservatio
 		}
 	}
 	wanted.OwnedFields = changedScalarFields(*wanted, target.Fields)
-	if len(baselines) == 1 && orders.ScalarPositionFrontier(*command, baselines[0], target.Positions) {
+	if len(baselines) == 1 && baselines[0].Validate() == nil {
+		if !orders.ScalarPositionFrontier(*command, baselines[0], target.Positions) {
+			return preparePositionPatch(command, baselines)
+		}
 		proof := baselines[0]
 		command.PositionBaseline = &proof
 	}
