@@ -14,6 +14,13 @@ func loadOwnedForestSettlement(ctx context.Context, q ordersQuerier, nested orde
 	if err != nil {
 		return f, err
 	}
+	anchored, err := ownedForestHasNativeAnchor(ctx, q, f.Lineage, number, selfID, fingerprint, split)
+	if err != nil || !anchored {
+		if err == nil {
+			err = orders.ErrBlocked
+		}
+		return f, err
+	}
 	forest.Native, err = readOwnedForestNative(ctx, q, f.Lineage.Scope, numbers, len(f.Lineage.Splits), selfID, fingerprint, number, node, split)
 	if err != nil {
 		return f, err
@@ -37,8 +44,8 @@ func ownedForestReadScope(lineage orders.SplitLineageFacts) ([]string, string, s
 	if err != nil {
 		return nil, "", "", err
 	}
-	path := proof.PathWorkIDs()
-	if len(path) == 0 {
+	path, err := ownedForestOwnerPath(lineage, proof)
+	if err != nil {
 		return nil, "", "", orders.ErrBlocked
 	}
 	numbers := make([]string, 0, len(lineage.CurrentHeads))

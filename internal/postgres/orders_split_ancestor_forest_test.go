@@ -18,6 +18,7 @@ type forestVisibilityCase struct {
 	dispatched  int
 	otherSelf   bool
 	visible     bool
+	anchor      bool
 }
 
 // Exercise the actual production query against constrained durable work, not a
@@ -27,13 +28,15 @@ func TestOwnedForestSelfExclusionPreservesUnknownOrMissingProof(t *testing.T) {
 	initial := orderInventoryPosting(t, f, "forest-original", "awaiting_packaging")
 	orderInventoryReconciled(t, f, initial, "1")
 	cases := []forestVisibilityCase{
-		{"missing", "missing", orders.ActionMirrorPositionUpdate, orders.StateQueued, 0, false, true},
-		{"null", "null", orders.ActionMirrorPositionUpdate, orders.StateQueued, 0, false, true},
-		{"matching_reduction", "matching", orders.ActionMirrorPositionUpdate, orders.StateQueued, 0, false, false},
-		{"matching_admission", "matching", orders.ActionMirrorCreate, orders.StateClaimed, 0, false, false},
-		{"other_pending", "matching", orders.ActionMirrorPositionUpdate, orders.StateQueued, 0, true, true},
-		{"already_dispatched", "matching", orders.ActionMirrorPositionUpdate, orders.StatePolling, 1, false, true},
-		{"unknown", "matching", orders.ActionMirrorPositionUpdate, orders.StateUnknown, 1, false, true},
+		{"missing", "missing", orders.ActionMirrorPositionUpdate, orders.StateQueued, 0, false, true, true},
+		{"null", "null", orders.ActionMirrorPositionUpdate, orders.StateQueued, 0, false, true, true},
+		{"matching_reduction", "matching", orders.ActionMirrorPositionUpdate, orders.StateQueued, 0, false, false, true},
+		{"matching_admission", "matching", orders.ActionMirrorCreate, orders.StateClaimed, 0, false, false, true},
+		{"other_pending", "matching", orders.ActionMirrorPositionUpdate, orders.StateQueued, 0, true, true, true},
+		{"already_dispatched", "matching", orders.ActionMirrorPositionUpdate, orders.StatePolling, 1, false, true, true},
+		{"unknown", "matching", orders.ActionMirrorPositionUpdate, orders.StateUnknown, 1, false, true, true},
+		{"legacy_unsent_create", "source", orders.ActionMirrorCreate, orders.StateQueued, 0, false, true, false},
+		{"legacy_null_source", "null_source", orders.ActionMirrorCreate, orders.StateQueued, 0, false, true, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) { assertForestHistoryVisibility(t, f, tc) })
@@ -61,6 +64,16 @@ func assertForestHistoryVisibility(t *testing.T, f orderInventoryFixture, tc for
 	if err = rows.Err(); err != nil || (count == 1) != tc.visible || count > 1 {
 		t.Fatalf("forest history visible=%t count=%d: %v", tc.visible, count, err)
 	}
+	assertForestAnchorVisibility(t, f, work, self, tc.anchor)
+}
+
+func assertForestAnchorVisibility(t *testing.T, f orderInventoryFixture, work orders.Work, self string, expected bool) {
+	t.Helper()
+	args := append(ordersScopeArgs(work.Scope), []string{work.Command.PostingNumber}, self, work.CommandFingerprint, work.Command.PostingNumber, "forest-split")
+	var exists bool
+	if err := f.db.Pool.QueryRow(f.ctx, ownedForestAnchorSQL, args...).Scan(&exists); err != nil || exists != expected {
+		t.Fatal("actual native anchor visibility", exists, expected, err)
+	}
 }
 
 func seedForestVisibilityWork(t *testing.T, f orderInventoryFixture, posting orders.Posting, tc forestVisibilityCase) orders.Work {
@@ -70,6 +83,9 @@ func seedForestVisibilityWork(t *testing.T, f orderInventoryFixture, posting ord
 		t.Fatal(err)
 	}
 	command := orders.Command{ID: "command-" + tc.name, Scope: posting.Scope, Action: tc.action, PostingNumber: posting.PostingNumber, CommercialOrderID: posting.CommercialOrderID, Correlation: correlation, ExpectedSourceRevision: posting.Evidence.Revision}
+	if tc.proof == "source" {
+		command.SplitSourceWorkID = "forest-split"
+	}
 	if tc.proof == "matching" {
 		mode := orders.SplitAncestorReduce
 		if tc.action == orders.ActionMirrorCreate {
@@ -108,6 +124,9 @@ func forestVisibilityJSON(t *testing.T, work orders.Work, tc forestVisibilityCas
 	command := raw["command"].(map[string]any)
 	if tc.proof == "null" {
 		command["split_ancestor_settlement"] = nil
+	}
+	if tc.proof == "null_source" {
+		command["split_source_work_id"] = nil
 	}
 	return inventoryJSON(t, raw)
 }
