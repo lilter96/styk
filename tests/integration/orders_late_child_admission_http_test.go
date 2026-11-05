@@ -68,7 +68,7 @@ func (m lateChildFixture) preview(t *testing.T) orders.Preview {
 
 func TestOrdersLateChildAdmissionUsesActualPostSplitQuantityBeforeGrandchild(t *testing.T) {
 	m := newLateChildFixture(t)
-	repeatedRetainedHeld(t, m.f, deepOwnedGrand)
+	_ = sparseAncestorPreview(t, m, "2", m.childSplit)
 	m.f.approve(t, m.preview(t))
 	m.f.run(t, orders.StateAcknowledged)
 	repeatedRetainedHeld(t, m.f, deepOwnedGrand)
