@@ -136,9 +136,6 @@ func preparePositionPatch(command *orders.Command, baselines []orders.PositionBa
 		if validation := ownedCompositionRequired(*command, baselines[0]); validation.Code != "" {
 			return validation
 		}
-		if replacementConsentAvailable(*command, baselines[0]) {
-			return orders.Validation{Field: "positions", Code: "composition_manual_confirmation_required"}
-		}
 		return orders.Validation{Field: "positions", Code: "position_ownership_or_replacement_unverified"}
 	}
 	command.Action = orders.ActionMirrorPositionUpdate
@@ -150,14 +147,6 @@ func preparePositionPatch(command *orders.Command, baselines []orders.PositionBa
 	command.CustomerOrder.ShipmentAddressFull = orders.Field[orders.ShipmentAddress]{}
 	command.ProtectedCustomer, command.PII = nil, nil
 	return orders.Validation{}
-}
-
-func replacementConsentAvailable(command orders.Command, baseline orders.PositionBaseline) bool {
-	if command.CustomerOrder == nil {
-		return false
-	}
-	_, err := orders.PlanPositionReplacement(command, baseline, command.CustomerOrder.VATEnabled, command.CustomerOrder.Applicable)
-	return err == nil
 }
 
 func ownedCompositionRequired(command orders.Command, baseline orders.PositionBaseline) orders.Validation {
