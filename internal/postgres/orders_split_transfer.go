@@ -43,7 +43,10 @@ func enrichOrderSplitTransfers(ctx context.Context, q ordersQuerier, result *ord
 	if err := enrichReducedSplitTransfers(ctx, q, result, dependencies); err != nil {
 		return err
 	}
-	return enrichRetainedSplitAdmissions(ctx, q, result, dependencies)
+	if err := enrichRetainedSplitAdmissions(ctx, q, result, dependencies); err != nil {
+		return err
+	}
+	return enrichRetainedAdmissionRefreshes(ctx, q, result, dependencies)
 }
 
 func enrichReducedSplitTransfers(ctx context.Context, q ordersQuerier, result *orders.ReviewContext, dependencies map[string]string) error {

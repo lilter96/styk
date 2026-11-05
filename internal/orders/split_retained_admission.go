@@ -23,7 +23,7 @@ type RetainedSplitAdmissionFacts struct {
 // already reserved only its retained allocation. No reduction is invented, and
 // stock-baseline attribution remains the separate commitment-engine decision.
 func NewRetainedSplitAdmission(f RetainedSplitAdmissionFacts) (SplitReserveTransferPermission, error) {
-	if !retainedAdmissionSplit(f) || !retainedAdmissionNative(f) {
+	if !f.SoleNativeAdmission || !retainedAdmissionSplit(f) || !retainedAdmissionNative(f) {
 		return SplitReserveTransferPermission{}, ErrBlocked
 	}
 	proof := SplitReserveTransferPermission{Scope: f.Before.Scope, SplitWorkID: f.Split.ID, ParentWorkID: f.Admission.ID, PostingNumber: f.Child.PostingNumber, ParentPosting: splitTransferSafePosting(f.Parent), ChildPosting: splitTransferSafePosting(f.Child), ParentCorrelation: f.Target.Correlation, ParentTargetRevision: f.Target.Revision, ParentStoreID: f.Target.Fields.StoreID, ParentOrganizationID: f.Target.Fields.OrganizationID, ParentPositions: slices.Clone(f.Target.Positions), ConfirmedAt: f.Target.ObservedAt}
@@ -43,7 +43,7 @@ func NewRetainedSplitAdmission(f RetainedSplitAdmissionFacts) (SplitReserveTrans
 
 func retainedAdmissionSplit(f RetainedSplitAdmissionFacts) bool {
 	w, b, c := f.Split, f.Before, f.Split.Command
-	if !f.SoleNativeAdmission || !lineagePostingTrustworthy(b) || b.ParentPostingNumber.IsKnown() || len(b.ChildPostingNumbers) > 0 || w.Scope != b.Scope || w.State != StateReconciled || w.DispatchCount != 1 || !validID(w.ID) {
+	if !lineagePostingTrustworthy(b) || b.ParentPostingNumber.IsKnown() || len(b.ChildPostingNumbers) > 0 || w.Scope != b.Scope || w.State != StateReconciled || w.DispatchCount != 1 || !validID(w.ID) {
 		return false
 	}
 	if c.Action != ActionPostingSplitUnassembled || c.PostingAction == nil || c.Scope != b.Scope || c.PostingNumber != b.PostingNumber || c.CommercialOrderID != b.CommercialOrderID || c.ExpectedSourceRevision != b.Evidence.Revision {
