@@ -25,6 +25,7 @@ func TestOrdersMerchantCurrentStateBrowserStack(t *testing.T) {
 		t.Skip("requires isolated process/browser acceptance flags")
 	}
 	s := newNativeProcessStack(t)
+	reportMerchantNativeFailure(t, s)
 	s.provider.server.Config.Handler = merchantJourneyProvider(s)
 	prepareMultiInstanceNativeRoot(t, s)
 	s.hidden.Store(true)
@@ -46,6 +47,33 @@ func TestOrdersMerchantCurrentStateBrowserStack(t *testing.T) {
 	fixture := ordersStoreFixture{db: s.db, ctx: ctx}
 	assertOrdersRowCount(t, fixture, `SELECT count(*) FROM orders_native_document_retries`, 1)
 	assertOrdersRowCount(t, fixture, `SELECT count(*) FROM orders_work WHERE action='demand_create' AND state='REJECTED' AND work#>>'{receipt,http_status}'='403'`, 1)
+}
+
+func reportMerchantNativeFailure(t *testing.T, s *nativeProcessStack) {
+	t.Helper()
+	t.Cleanup(func() {
+		if !t.Failed() {
+			return
+		}
+		rows, err := s.db.Pool.Query(context.Background(), `SELECT id,state,COALESCE(work->>'code',''),dispatch_count FROM orders_work WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND action='demand_create' ORDER BY created_at,id`, s.a.scope.Tenant, s.a.scope.MoyskladAccount, s.a.scope.OzonAccount)
+		if err != nil {
+			t.Log("read synthetic native failure phases", err)
+			return
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id, state, code string
+			var dispatches int
+			if err = rows.Scan(&id, &state, &code, &dispatches); err != nil {
+				t.Log("scan synthetic native failure phase", err)
+				return
+			}
+			t.Logf("synthetic native attempt id=%s state=%s code=%s dispatches=%d", id, state, code, dispatches)
+		}
+		if err = rows.Err(); err != nil {
+			t.Log("complete synthetic native failure phases", err)
+		}
+	})
 }
 
 func merchantJourneyProvider(s *nativeProcessStack) http.Handler {
