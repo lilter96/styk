@@ -26,6 +26,9 @@ func forestGrant(f SplitForestFacts, e SplitForestNative, p SplitAncestorSettlem
 	if !splitTransferSameAllocation(forestPrefix(f, owner, e.Attempt.CreatedAt), p.Node) || p.Mode == SplitAncestorAdmit && p.NodeReductionWorkID != previous.Work.ID {
 		return false
 	}
+	if p.Mode == SplitAncestorAdmit && !splitTransferAllParentLinesReserved(p.Node, baseline) {
+		return false
+	}
 	return forestGrantAncestors(f, e, p, owner) && forestNativeIDBefore(f, p.NodeOriginWorkID, owner, e.Attempt.CreatedAt)
 }
 

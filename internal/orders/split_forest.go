@@ -2,7 +2,8 @@ package orders
 
 import "time"
 
-// One origin per posting and at most one owned reduction per retained split.
+// Bound the complete native event history, including staged row reductions.
+// Each reduction must prove its exact preceding reconciled UUID frontier.
 const MaxSplitForestNative = MaxSplitLineageHeads + MaxSplitLineageSteps
 
 // SplitForestNative is one actual, immutable native operation and its approved
@@ -28,7 +29,7 @@ type SplitForestFacts struct {
 // NewSplitForestSettlement reconstructs reserve authority for mixed branches
 // using the existing calculation and permission format. It issues no command.
 func NewSplitForestSettlement(f SplitForestFacts) (SplitAncestorSettlementPermission, error) {
-	if !forestFactsValid(f) || !forestReductionsUnique(f.Native) {
+	if !forestFactsValid(f) {
 		return SplitAncestorSettlementPermission{}, ErrBlocked
 	}
 	for _, event := range f.Native {
@@ -37,21 +38,6 @@ func NewSplitForestSettlement(f SplitForestFacts) (SplitAncestorSettlementPermis
 		}
 	}
 	return forestCurrentPermission(f)
-}
-
-func forestReductionsUnique(native []SplitForestNative) bool {
-	seen := make(map[string]bool, len(native))
-	for _, event := range native {
-		if event.Work.Command.Action != ActionMirrorPositionUpdate && event.Work.Command.Action != ActionMirrorCompositionUpdate {
-			continue
-		}
-		id := retainedNativeEventSplit(event.Work.Command)
-		if id == "" || seen[id] {
-			return false
-		}
-		seen[id] = true
-	}
-	return true
 }
 
 func forestFactsValid(f SplitForestFacts) bool {

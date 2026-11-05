@@ -10,7 +10,7 @@ func forestNativeValid(f SplitForestFacts, e SplitForestNative) bool {
 		return false
 	}
 	baseline, err := ProjectionPositionBaseline(previous.Work, previous.Target)
-	if err != nil || !prior.Equal(baseline) {
+	if err != nil || !prior.Equal(baseline) || !stagedSplitReductionProgress(e.Work, e.Target, baseline) {
 		return false
 	}
 	step, ok := forestSplit(f, retainedNativeEventSplit(e.Work.Command))
@@ -92,8 +92,7 @@ func forestLegacyReduction(f SplitForestFacts, e SplitForestNative, step SplitLi
 		if child.PostingNumber == step.Before.PostingNumber {
 			continue
 		}
-		_, err := NewSplitReserveTransfer(SplitReserveTransferFacts{Split: step.Work, Before: step.Before, OriginalCorrelation: step.Work.Command.Correlation, ParentRelease: e.Work, Parent: e.Source, ParentTarget: e.Target, Child: child})
-		if err == nil {
+		if stagedLegacySplitReduction(SplitReserveTransferFacts{Split: step.Work, Before: step.Before, OriginalCorrelation: step.Work.Command.Correlation, ParentRelease: e.Work, Parent: e.Source, ParentTarget: e.Target, Child: child}) {
 			return true
 		}
 	}

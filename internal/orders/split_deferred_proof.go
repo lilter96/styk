@@ -4,7 +4,7 @@ import "slices"
 
 func deferredStructure(f SplitAncestorSettlementFacts) bool {
 	d := f.Deferred
-	if d == nil || !f.HistoryUnambiguous || len(d.Spine) < 2 || len(d.Spine) > MaxSplitLineageDepth || len(d.Spine) != len(f.Lineage.Splits) || len(d.Reductions) > len(d.Spine) || !ancestorSettlementHeadsFresh(f.Lineage.CurrentHeads, f.CheckedAt) {
+	if d == nil || !f.HistoryUnambiguous || len(d.Spine) < 2 || len(d.Spine) > MaxSplitLineageDepth || len(d.Spine) != len(f.Lineage.Splits) || len(d.Reductions)+1 > MaxSplitForestNative || !ancestorSettlementHeadsFresh(f.Lineage.CurrentHeads, f.CheckedAt) {
 		return false
 	}
 	graph, err := buildSplitLineage(f.Lineage)

@@ -7,7 +7,7 @@ func deferredReduction(f SplitAncestorSettlementFacts, prior, next SplitDeferred
 		return false
 	}
 	baseline, err := ProjectionPositionBaseline(prior.Work, prior.Target)
-	if err != nil || !priorBaseline.Equal(baseline) {
+	if err != nil || !priorBaseline.Equal(baseline) || !stagedSplitReductionProgress(w, next.Target, baseline) {
 		return false
 	}
 	step, found := deferredReductionStep(f, w)
@@ -28,8 +28,7 @@ func deferredReduction(f SplitAncestorSettlementFacts, prior, next SplitDeferred
 	if !actual.Equal(expected) || !actual.AllowsCommand(w.Command) {
 		return false
 	}
-	current, err := ProjectionPositionBaseline(w, next.Target)
-	return err == nil && splitTransferAllParentLinesReserved(next.Source, current)
+	return true
 }
 
 func deferredReductionStep(f SplitAncestorSettlementFacts, w Work) (SplitLineageStep, bool) {
@@ -50,10 +49,9 @@ func deferredLegacyReduction(f SplitAncestorSettlementFacts, n SplitDeferredNati
 		if output.PostingNumber == step.Before.PostingNumber {
 			continue
 		}
-		_, err := NewSplitReserveTransfer(SplitReserveTransferFacts{Split: step.Work, Before: step.Before,
+		if stagedLegacySplitReduction(SplitReserveTransferFacts{Split: step.Work, Before: step.Before,
 			OriginalCorrelation: f.Deferred.Origin.Target.Correlation, ParentRelease: n.Work,
-			Parent: n.Source, ParentTarget: n.Target, Child: output})
-		if err == nil {
+			Parent: n.Source, ParentTarget: n.Target, Child: output}) {
 			return true
 		}
 	}
