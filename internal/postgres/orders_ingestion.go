@@ -254,6 +254,10 @@ func insertOrderCheckpoint(ctx context.Context, tx pgx.Tx, page orders.SourcePag
 }
 
 func mergeOrderCheckpointFailures(checkpoint *orders.Checkpoint, previous orders.Checkpoint, page orders.SourcePage) {
+	page.RetainNativeDocumentFailures(previous)
+	checkpoint.NativeDocumentFailures = page.NativeDocumentFailures
+	checkpoint.NativeDocumentFailuresTruncated = page.NativeDocumentFailuresTruncated
+	checkpoint.Complete = checkpoint.Complete && page.Complete
 	if page.Stream != "ozon-orders-active" && page.Stream != orders.NativePointStream {
 		return
 	}

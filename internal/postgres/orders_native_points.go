@@ -37,6 +37,11 @@ func saveOrderNativePointPage(ctx context.Context, tx pgx.Tx, page orders.Source
 			return err
 		}
 	}
+	for _, read := range page.NativeDocumentReads {
+		if err = saveNativeDocumentPointRead(ctx, tx, page, read, pageID, *admitted, now); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

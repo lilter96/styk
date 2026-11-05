@@ -83,6 +83,7 @@ func refreshStatusFailure(status int) (string, bool) {
 }
 
 func retainRefreshFailures(page *orders.SourcePage, previous orders.Checkpoint) {
+	page.RetainNativeDocumentFailures(previous)
 	if page.Stream != ActiveStream && page.Stream != orders.NativePointStream {
 		return
 	}

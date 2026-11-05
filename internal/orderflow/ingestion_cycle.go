@@ -202,6 +202,8 @@ func (i *Ingestor) collectLeasedPage(ctx context.Context, config orders.Config, 
 	readErr := err
 	page.Postings, page.NextCursor, page.Complete = result.Postings, result.NextCursor, result.Complete
 	page.NativeReads = result.NativeReads
+	page.NativeDocumentReads = result.NativeDocumentReads
+	page.NativeDocumentFailures = result.NativeDocumentFailures
 	page.Failures, page.Exhausted = result.Failures, result.Exhausted
 	retainRefreshFailures(&page, checkpoint)
 	if ctx.Err() != nil {

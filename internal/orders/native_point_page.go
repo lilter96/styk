@@ -1,6 +1,9 @@
 package orders
 
 func (page SourcePage) validateNativePointReads() error {
+	if err := page.validateNativeDocumentReads(); err != nil {
+		return err
+	}
 	if page.Stream == NativePointStream && (len(page.Postings) > 0 || len(page.Secrets) > 0) {
 		return ErrInvalid
 	}

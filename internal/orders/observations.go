@@ -12,12 +12,14 @@ type OrderWindow struct {
 	Limit    int
 }
 type OrderSourcePage struct {
-	NativeReads []NativeOrderPointRead
-	Postings    []Posting
-	NextCursor  string
-	Complete    bool
-	Exhausted   bool
-	Failures    []ReadFailure
+	NativeDocumentFailures []NativeDocumentReadFailure
+	NativeDocumentReads    []NativeDocumentPointRead
+	NativeReads            []NativeOrderPointRead
+	Postings               []Posting
+	NextCursor             string
+	Complete               bool
+	Exhausted              bool
+	Failures               []ReadFailure
 }
 type SourceReader interface {
 	ReadOrderPage(context.Context, Scope, OrderWindow, string) (OrderSourcePage, error)
