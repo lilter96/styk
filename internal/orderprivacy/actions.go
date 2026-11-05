@@ -50,6 +50,10 @@ func (p ActionProtector) ReadOrderActionInput(ctx context.Context, scope orders.
 	if err != nil {
 		return orders.ActionParameters{}, err
 	}
+	return p.decryptActionInput(scope, number, action, ref, secret)
+}
+
+func (p ActionProtector) decryptActionInput(scope orders.Scope, number string, action orders.Action, ref orders.ProtectedActionInput, secret orders.ActionSecret) (orders.ActionParameters, error) {
 	plain, err := p.Vault.DecryptRecord(actionRecord(scope, number, action, ref), secret.Ciphertext)
 	if err != nil {
 		return orders.ActionParameters{}, err
