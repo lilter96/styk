@@ -39,6 +39,13 @@ func TestOwnedForestSelfExclusionPreservesUnknownOrMissingProof(t *testing.T) {
 		{"unknown", "matching", orders.ActionMirrorPositionUpdate, orders.StateUnknown, 1, false, true, true},
 		{"legacy_unsent_create", "source", orders.ActionMirrorCreate, orders.StateQueued, 0, false, true, false},
 		{"legacy_null_source", "null_source", orders.ActionMirrorCreate, orders.StateQueued, 0, false, true, true},
+		{"node_admission", "node", orders.ActionMirrorCreate, orders.StateClaimed, 0, false, false, true},
+		{"node_missing", "missing", orders.ActionMirrorCreate, orders.StateQueued, 0, false, true, true},
+		{"node_null", "null", orders.ActionMirrorCreate, orders.StateQueued, 0, false, true, true},
+		{"node_other_pending", "node", orders.ActionMirrorCreate, orders.StateQueued, 0, true, true, true},
+		{"node_unknown", "node", orders.ActionMirrorCreate, orders.StateUnknown, 1, false, true, true},
+		{"node_wrong_source", "node_wrong_source", orders.ActionMirrorCreate, orders.StateQueued, 0, false, true, true},
+		{"node_wrong_node", "node_wrong_node", orders.ActionMirrorCreate, orders.StateQueued, 0, false, true, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) { assertForestHistoryVisibility(t, f, tc) })
@@ -68,6 +75,19 @@ func assertForestHistoryVisibility(t *testing.T, f orderInventoryFixture, tc for
 	}
 	assertForestAnchorVisibility(t, f, work, self, tc.anchor)
 	assertRetainedRootNativeVisibility(t, f, work, self, tc)
+	assertForestNativeHistoryWitness(t, f, work, self, tc.visible)
+}
+
+func assertForestNativeHistoryWitness(t *testing.T, f orderInventoryFixture, work orders.Work, self string, visible bool) {
+	t.Helper()
+	number := work.Command.PostingNumber
+	history, err := readOwnedForestNativeHistory(f.ctx, f.db.Pool, work.Scope, []string{number}, self, work.CommandFingerprint, number, number, "forest-split")
+	if err != nil || len(history) != 1 || history[0].Scope != work.Scope || history[0].PostingNumber != number || history[0].BindingIDs == nil || len(history[0].BindingIDs) != 0 || history[0].MirrorWorkIDs == nil {
+		t.Fatal("explicit forest absence witness missing or unscoped", err)
+	}
+	if (len(history[0].MirrorWorkIDs) == 1) != visible {
+		t.Fatal("forest absence witness disagrees with complete native traversal")
+	}
 }
 
 func assertRetainedRootNativeVisibility(t *testing.T, f orderInventoryFixture, work orders.Work, self string, tc forestVisibilityCase) {
@@ -95,21 +115,7 @@ func assertForestAnchorVisibility(t *testing.T, f orderInventoryFixture, work or
 
 func seedForestVisibilityWork(t *testing.T, f orderInventoryFixture, posting orders.Posting, tc forestVisibilityCase) orders.Work {
 	t.Helper()
-	correlation, err := orders.CorrelationFor(posting.Scope, posting.PostingNumber)
-	if err != nil {
-		t.Fatal(err)
-	}
-	command := orders.Command{ID: "command-" + tc.name, Scope: posting.Scope, Action: tc.action, PostingNumber: posting.PostingNumber, CommercialOrderID: posting.CommercialOrderID, Correlation: correlation, ExpectedSourceRevision: posting.Evidence.Revision}
-	if tc.proof == "source" {
-		command.SplitSourceWorkID = "forest-split"
-	}
-	if tc.proof == "matching" {
-		mode := orders.SplitAncestorReduce
-		if tc.action == orders.ActionMirrorCreate {
-			mode = orders.SplitAncestorAdmit
-		}
-		command.SplitAncestorSettlement = &orders.SplitAncestorSettlementPermission{Mode: mode, SplitWorkID: "forest-split"}
-	}
+	command := forestVisibilityCommand(t, posting, tc)
 	work := orders.Work{ID: "work-" + tc.name, OperationID: "native-operation", Scope: posting.Scope, ConfigRevision: f.config.Revision, State: tc.state, DispatchCount: tc.dispatched, Command: command, CommandFingerprint: strings.Repeat("b", 64), Receipt: orders.Receipt{ObservedAt: f.now}}
 	raw := forestVisibilityJSON(t, work, tc)
 	tx, err := f.db.Pool.Begin(f.ctx)
@@ -130,6 +136,36 @@ func seedForestVisibilityWork(t *testing.T, f orderInventoryFixture, posting ord
 		t.Fatal("commit constrained forest work", err)
 	}
 	return work
+}
+
+func forestVisibilityCommand(t *testing.T, posting orders.Posting, tc forestVisibilityCase) orders.Command {
+	t.Helper()
+	correlation, err := orders.CorrelationFor(posting.Scope, posting.PostingNumber)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := orders.Command{ID: "command-" + tc.name, Scope: posting.Scope, Action: tc.action, PostingNumber: posting.PostingNumber, CommercialOrderID: posting.CommercialOrderID, Correlation: correlation, ExpectedSourceRevision: posting.Evidence.Revision}
+	if tc.proof == "source" {
+		command.SplitSourceWorkID = "forest-split"
+	}
+	if tc.proof == "matching" {
+		mode := orders.SplitAncestorReduce
+		if tc.action == orders.ActionMirrorCreate {
+			mode = orders.SplitAncestorAdmit
+		}
+		command.SplitAncestorSettlement = &orders.SplitAncestorSettlementPermission{Mode: mode, SplitWorkID: "forest-split"}
+	}
+	if strings.HasPrefix(tc.proof, "node") {
+		proof := &orders.SplitAncestorSettlementPermission{Mode: orders.SplitAncestorNodeAdmit, SplitWorkID: "forest-split", Source: orders.Posting{PostingNumber: posting.PostingNumber}, Node: orders.Posting{PostingNumber: posting.PostingNumber}}
+		if tc.proof == "node_wrong_source" {
+			proof.Source.PostingNumber = "different-source"
+		}
+		if tc.proof == "node_wrong_node" {
+			proof.Node.PostingNumber = "different-node"
+		}
+		command.SplitAncestorSettlement = proof
+	}
+	return command
 }
 
 func forestVisibilityJSON(t *testing.T, work orders.Work, tc forestVisibilityCase) []byte {

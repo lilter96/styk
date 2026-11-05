@@ -28,6 +28,10 @@ func loadOwnedForestSettlement(ctx context.Context, q ordersQuerier, nested orde
 	if len(forest.Native) == 0 {
 		return f, orders.ErrBlocked
 	}
+	forest.NativeHistory, err = readOwnedForestNativeHistory(ctx, q, f.Lineage.Scope, numbers, selfID, fingerprint, number, node, split)
+	if err != nil {
+		return f, err
+	}
 	if err = q.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&forest.CheckedAt); err != nil {
 		return f, ordersRowsError("read forest settlement clock", err)
 	}
