@@ -87,12 +87,8 @@ func seedMerchantHistoryOutsideLatestPage(t *testing.T, s *nativeProcessStack) {
 		numbers[i] = ordersProcessNumber("merchant-history", i)
 		s.provider.add(s.a.scope.OzonAccount, numbers[i], "FBS", false)
 	}
-	s.a.check(t)
-	ordersProcessEventually(t, 20*time.Second, "merchant history posting traversal", func() bool {
-		var count int
-		err := s.db.Pool.QueryRow(context.Background(), `SELECT count(*) FROM orders_posting_heads WHERE tenant_id=$1 AND posting_number=ANY($2::text[])`, s.a.scope.Tenant, numbers).Scan(&count)
-		return err == nil && count == len(numbers)
-	})
+	awaitMerchantHistoryTraversal(t, s, numbers)
+
 	for _, number := range numbers {
 		s.a.approve(t, s.a.preview(t, number))
 	}
@@ -196,4 +192,36 @@ func merchantJourneyForward(w http.ResponseWriter, response *httptest.ResponseRe
 	if _, err := w.Write(response.Body.Bytes()); err != nil {
 		t.Error("forward merchant list provider response")
 	}
+}
+
+func awaitMerchantHistoryTraversal(t *testing.T, s *nativeProcessStack, numbers []string) {
+	t.Helper()
+	count := 0
+	defer func() {
+		if !t.Failed() {
+			return
+		}
+		t.Logf("merchant fixture persisted posting heads: %d/%d", count, len(numbers))
+		for _, stream := range []string{"ozon-orders-discovery", "ozon-orders-unfulfilled"} {
+			checkpoint, err := s.db.OrderCheckpoint(context.Background(), s.a.scope, stream)
+			if err != nil {
+				t.Logf("merchant checkpoint unavailable for %s", stream)
+				continue
+			}
+			t.Logf("merchant checkpoint %s: revision=%d cursor=%q complete=%v failures=%v", stream, checkpoint.Revision, checkpoint.Cursor, checkpoint.Complete, checkpoint.Failures)
+		}
+	}()
+	s.a.check(t)
+	nextCheck := time.Now().Add(500 * time.Millisecond)
+	// The real collector deliberately reads one bounded discovery page per
+	// cycle. Continue through normal check commands, like ordersProcessStack.add,
+	// rather than pretend one check imports an arbitrary number of pages.
+	ordersProcessEventually(t, 20*time.Second, "merchant history posting traversal", func() bool {
+		if time.Now().After(nextCheck) {
+			s.a.check(t)
+			nextCheck = time.Now().Add(500 * time.Millisecond)
+		}
+		err := s.db.Pool.QueryRow(context.Background(), `SELECT count(*) FROM orders_posting_heads WHERE tenant_id=$1 AND posting_number=ANY($2::text[])`, s.a.scope.Tenant, numbers).Scan(&count)
+		return err == nil && count == len(numbers)
+	})
 }
