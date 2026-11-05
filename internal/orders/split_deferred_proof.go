@@ -49,7 +49,13 @@ func deferredSelected(f SplitAncestorSettlementFacts) bool {
 func deferredOrigin(f SplitAncestorSettlementFacts) bool {
 	d := f.Deferred
 	o, first := d.Origin, d.Spine[0]
-	if o.Work.Command.Action != ActionMirrorCreate || !deferredNativeBound(f, o) || !splitTransferPostingEqual(o.Source, first.Before) || o.Target.Correlation != first.Work.Command.Correlation {
+	if o.Work.Command.Action != ActionMirrorCreate || !deferredNativeBound(f, o) {
+		return false
+	}
+	if deferredOriginCut(f) == deferredOriginPostFirstSplit {
+		return deferredOriginAfterFirst(f)
+	}
+	if deferredOriginCut(f) != deferredOriginPreSplit || !splitTransferPostingEqual(o.Source, first.Before) || o.Target.Correlation != first.Work.Command.Correlation {
 		return false
 	}
 	baseline, err := ProjectionPositionBaseline(o.Work, o.Target)
