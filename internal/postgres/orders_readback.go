@@ -152,7 +152,19 @@ func normalizedOrderDecimal(value orders.Decimal) string {
 
 func sanitizedOrderTarget(command orders.Command, target orders.TargetObservation) orders.TargetObservation {
 	if command.CustomerOrder != nil {
+		// Retain the observed non-PII header facts. An omitted desired value is
+		// not evidence that a provider default was missing in the readback.
+		actual := target.Fields
 		target.Fields = *command.CustomerOrder
+		target.Fields.OrganizationID = actual.OrganizationID
+		target.Fields.AgentID = actual.AgentID
+		target.Fields.StoreID = actual.StoreID
+		target.Fields.SalesChannelID = actual.SalesChannelID
+		target.Fields.CurrencyID = actual.CurrencyID
+		target.Fields.RateValue = actual.RateValue
+		target.Fields.Applicable = actual.Applicable
+		target.Fields.VATEnabled = actual.VATEnabled
+		target.Fields.VATIncluded = actual.VATIncluded
 	}
 	return target
 }
