@@ -71,7 +71,11 @@ func ownedForestReadScope(lineage orders.SplitLineageFacts) ([]string, string, s
 
 func readOwnedForestNative(ctx context.Context, q ordersQuerier, scope orders.Scope, numbers []string, selfID, fingerprint, selected, node, split string) ([]orders.SplitForestNative, error) {
 	maximum := orders.MaxSplitForestNative
-	rows, err := q.Query(ctx, ownedForestNativeSQL, append(ordersScopeArgs(scope), numbers, selfID, fingerprint, selected, node, split, maximum+1)...)
+	metadataSelf, err := readScalarMetadataSelf(ctx, q, scope, selfID, fingerprint)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := q.Query(ctx, ownedForestNativeSQL, append(ordersScopeArgs(scope), numbers, selfID, fingerprint, selected, node, split, metadataSelf, maximum+1)...)
 	if err != nil {
 		return nil, ordersError("read forest native history", err)
 	}

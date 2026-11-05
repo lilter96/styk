@@ -42,14 +42,19 @@ const deferredOwnedRowsSQL = `SELECT w.work,r.observed_target,w.created_at,w.dis
  AND NOT COALESCE((w.id=$5 AND w.command_fingerprint=$6 AND w.dispatch_count=0 AND w.state IN('QUEUED','CLAIMED')
  AND ((w.action IN ('mirror_position_update','mirror_composition_update') AND w.work#>>'{command,split_ancestor_settlement,mode}'='retained_reduction'
  AND w.work#>>'{command,split_ancestor_settlement,split_work_id}'=$7)
- OR (w.action='mirror_create' AND w.work#>>'{command,split_source_work_id}'=$7))
+ OR (w.action='mirror_create' AND w.work#>>'{command,split_source_work_id}'=$7)
+ OR (w.action='mirror_update' AND $9::boolean))
  AND EXISTS(SELECT 1 FROM orders_target_fences f WHERE f.work_id=w.id AND f.tenant_id=w.tenant_id
  AND f.moysklad_account=w.moysklad_account AND f.ozon_account=w.ozon_account AND f.posting_number=w.posting_number)),false)
  ORDER BY w.created_at,w.id LIMIT $8`
 
 func readDeferredOwnedRows(ctx context.Context, q ordersQuerier, scope orders.Scope, spine []orders.SplitLineageStep, selfID, fingerprint string) ([]deferredOwnedRow, error) {
 	maximum := orders.MaxSplitForestNative
-	rows, err := q.Query(ctx, deferredOwnedRowsSQL, append(ordersScopeArgs(scope), spine[0].Before.PostingNumber, selfID, fingerprint, spine[len(spine)-1].Work.ID, maximum+1)...)
+	metadataSelf, err := readScalarMetadataSelf(ctx, q, scope, selfID, fingerprint)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := q.Query(ctx, deferredOwnedRowsSQL, append(ordersScopeArgs(scope), spine[0].Before.PostingNumber, selfID, fingerprint, spine[len(spine)-1].Work.ID, maximum+1, metadataSelf)...)
 	if err != nil {
 		return nil, ordersError("read deferred owned history", err)
 	}
@@ -100,7 +105,7 @@ func assignDeferredOwnedRows(f *orders.SplitAncestorSettlementFacts, rows []defe
 			f.Deferred.Origin = native
 		} else {
 			id := retainedNativeSplitID(w)
-			if id == "" || !steps[id] || w.Command.Correlation != f.Deferred.Origin.Target.Correlation {
+			if w.Command.Correlation != f.Deferred.Origin.Target.Correlation || w.Command.Action != orders.ActionMirrorUpdate && (id == "" || !steps[id]) {
 				return false
 			}
 			f.Deferred.Reductions = append(f.Deferred.Reductions, native)
