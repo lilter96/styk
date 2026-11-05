@@ -21,11 +21,11 @@ const ownedForestNativeSQL = `SELECT w.work,r.observed_target,w.created_at,w.dis
  AND d#>>'{posting,evidence,revision}'=w.work#>>'{command,expected_source_revision}' LIMIT 1) source ON true
  WHERE w.tenant_id=$1 AND w.moysklad_account=$2 AND w.ozon_account=$3 AND w.posting_number=ANY($4::text[])
  AND w.action IN('mirror_create','mirror_update','mirror_position_update','mirror_composition_update')
- AND NOT(w.id=$5 AND w.command_fingerprint=$6 AND w.dispatch_count=0 AND w.state IN('QUEUED','CLAIMED')
+ AND NOT COALESCE((w.id=$5 AND w.command_fingerprint=$6 AND w.dispatch_count=0 AND w.state IN('QUEUED','CLAIMED')
  AND w.posting_number=$7 AND w.work#>>'{command,split_ancestor_settlement,split_work_id}'=$9
  AND ((w.action='mirror_position_update' AND w.posting_number=$8
  AND w.work#>>'{command,split_ancestor_settlement,mode}'='retained_reduction')
  OR (w.action='mirror_create' AND w.work#>>'{command,split_ancestor_settlement,mode}'='child_admission'))
  AND EXISTS(SELECT 1 FROM orders_target_fences f WHERE f.work_id=w.id AND f.tenant_id=w.tenant_id
- AND f.moysklad_account=w.moysklad_account AND f.ozon_account=w.ozon_account AND f.posting_number=w.posting_number))
+ AND f.moysklad_account=w.moysklad_account AND f.ozon_account=w.ozon_account AND f.posting_number=w.posting_number)),false)
  ORDER BY w.created_at,w.id LIMIT $10`
