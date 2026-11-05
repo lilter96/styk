@@ -225,20 +225,9 @@ func insertOrderReconciliation(ctx context.Context, tx pgx.Tx, work orders.Work,
 			return err
 		}
 	}
-	var target []byte
-	if completion.ObservedTarget != nil {
-		observed, sealErr := completion.ObservedTarget.WithHeaderRevision()
-		if sealErr != nil {
-			return ordersError("seal native header evidence", sealErr)
-		}
-		observed = sanitizedOrderTarget(work.Command, observed)
-		if work.Command.Action.IsNativeMovement() {
-			observed = orders.NativeParentFacts(observed)
-		}
-		target, err = ordersJSON(observed)
-		if err != nil {
-			return err
-		}
+	target, err := orderReconciliationTarget(work.Command, completion.ObservedTarget)
+	if err != nil {
+		return err
 	}
 	var native []byte
 	if completion.ObservedNativeDocument != nil {
@@ -249,6 +238,21 @@ func insertOrderReconciliation(ctx context.Context, tx pgx.Tx, work orders.Work,
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO orders_reconciliations(work_id,tenant_id,moysklad_account,ozon_account,correlation,observed_posting,observed_target,created_at,observed_native_document) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, work.ID, work.Scope.Tenant, work.Scope.MoyskladAccount, work.Scope.OzonAccount, raw, posting, target, now, native)
 	return ordersRowsError("save complete order readback evidence", err)
+}
+
+func orderReconciliationTarget(command orders.Command, target *orders.TargetObservation) ([]byte, error) {
+	if target == nil {
+		return nil, nil
+	}
+	observed, err := target.WithHeaderRevision()
+	if err != nil {
+		return nil, ordersError("seal native header evidence", err)
+	}
+	observed = sanitizedOrderTarget(command, observed)
+	if command.Action.IsNativeMovement() {
+		observed = orders.NativeParentFacts(observed)
+	}
+	return ordersJSON(observed)
 }
 
 func validateUnassembledSplitReceiptUpdate(work orders.Work, completion orders.Completion) error {
