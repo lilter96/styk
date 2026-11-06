@@ -9,7 +9,7 @@ const env = {
   VITE_NEON_AUTH_URL: process.env.NEON_AUTH_BASE_URL,
   VITE_NEON_REALTIME_URL: process.env.NEON_REALTIME_URL,
 };
-if (!env.DATABASE_URL) throw new Error("Run neon deploy to populate .env.local");
+if (!env.DATABASE_URL) throw new Error("Set DATABASE_URL or DATABASE_URL_UNPOOLED in the selected env file");
 
 const grouped = process.platform !== "win32";
 const options = { env, stdio: "inherit", detached: grouped };

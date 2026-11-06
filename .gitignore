@@ -8,3 +8,8 @@ web/playwright-report/
 .neon
 node_modules/
 .env.local
+
+# Locally installed Neon agent skills and installer state.
+/.agents/skills/neon/
+/.agents/skills/neon-*/
+/skills-lock.json

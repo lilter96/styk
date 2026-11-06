@@ -13,6 +13,11 @@
     "dev": "node --env-file=.env.local scripts/dev.mjs",
     "db:status": "node --env-file=.env.local scripts/migrate.mjs status",
     "db:migrate": "node --env-file=.env.local scripts/migrate.mjs up",
-    "dev:worker": "node --env-file=.env.local scripts/worker.mjs"
+    "dev:worker": "node --env-file=.env.local scripts/worker.mjs",
+    "build:local": "node --env-file=.env scripts/build.mjs",
+    "dev:local": "node --env-file=.env scripts/dev.mjs",
+    "dev:worker:local": "node --env-file=.env scripts/worker.mjs",
+    "db:status:local": "node --env-file=.env scripts/migrate.mjs status",
+    "db:migrate:local": "node --env-file=.env scripts/migrate.mjs up"
   }
 }

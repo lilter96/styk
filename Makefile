@@ -3,8 +3,8 @@ SHELL := /bin/sh
 export GOTOOLCHAIN := go1.27.3
 # Test/build entry points must never implicitly load provider credentials.
 ifneq ($(filter up down migrate,$(or $(MAKECMDGOALS),up)),)
--include .env
--include .env.local
+ENV_FILE ?= $(if $(wildcard .env),.env,.env.local)
+-include $(ENV_FILE)
 export
 endif
 GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0

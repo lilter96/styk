@@ -6,6 +6,9 @@ Go 1.27.3, net/http, pgx, slog, PostgreSQL 17 and goose are used in one modular 
 
 ## Local setup
 
+For shared development, use the [Neon environment](#shared-neon-development)
+below. This section starts an isolated local PostgreSQL environment.
+
 Requires Go 1.27.3 (Go's toolchain auto-download is supported), Docker Compose, and access to Go module downloads. Copy `.env.example` to `.env`, then:
 
 ```sh
@@ -253,32 +256,98 @@ The Integrations page can explicitly enable a time-limited automatic policy for 
 
 All connected scopes use a single-attempt writer; transport uncertainty still requires readback and an audited recovery decision. The [controlled lab report](docs/controlled-live-integration-lab-2026-10.md) records the observed sequence and limitations; the [safety audit](docs/stock-publication-safety-audit.md) describes the historical baseline and remaining evidence requirements.
 
-## Neon development environment
+## Database environments: local and shared development
 
-The linked Neon project's `production` branch is the main **development** database.
-It contains the imported STYK development accounts, catalog and orders. The latest
-migration on `origin/master` is `00070_product_matching_workspace.sql`; it has been
-applied to this branch. Use the direct connection: STYK uses session advisory locks,
-which are incompatible with transaction pooling. `pgx` remains the database driver.
+`npm run dev` uses the **shared Neon development database** by default. For an
+isolated local environment, use your own compatible PostgreSQL database and the
+`:local` commands. Go uses `pgx` in both environments.
 
-From the project root (Node 22.20+ recommended):
+| Environment | Database | Configuration | Start API and frontend |
+| --- | --- | --- | --- |
+| Isolated local | Your own PostgreSQL, including the PostgreSQL 17 Compose service | `.env` | `npm run dev:local` |
+| Shared development (default) | Neon project `styk` (`empty-tree-35481203`), org `org-aged-glitter-58569728`, branch `production` | `.env.local` | `npm run dev` |
+
+The Neon branch is named `production`; its role in STYK is **shared development**.
+It holds the imported development Ozon/MoySklad accounts, catalog and orders, so
+connected developers see the same data. Changes to this database are shared.
+Migration `00070_product_matching_workspace.sql` was applied during setup; use
+`npm run db:status` to inspect the current state and apply the repository's
+migrations explicitly when upgrading.
+
+Install application dependencies once (Node 22.20+ recommended):
 
 ```sh
 npm ci
 npm --prefix web ci
-neon deploy
+```
+
+### Shared Neon development
+
+Authenticate with `neon login`, then link and pull the existing shared branch:
+
+```sh
+neon link -y --org-id org-aged-glitter-58569728 --project-id empty-tree-35481203 --branch production --no-env-pull
+neon env pull --file .env.local
 npm run db:status
-npm run db:migrate
 npm run build
 npm run dev
 ```
 
-`neon deploy` updates the ignored `.env.local`. Preserve the original imported
-`STYK_CREDENTIAL_ENCRYPTION_KEY`, and configure `STYK_SMTP_ADDRESS` and
-`STYK_SMTP_FROM` for the existing STYK login. `npm run dev` starts the API and
-frontend at `http://127.0.0.1:5173`; `npm run dev:worker` separately runs the worker
-against the same `DATABASE_URL_UNPOOLED`. Publication still requires the existing
-explicit application controls. Automated tests use disposable local PostgreSQL.
+Use `npm run db:migrate` to apply pending migrations and `npm run dev:worker` to
+start the worker separately. Runtime and migration commands use
+`DATABASE_URL_UNPOOLED` when present, falling back to `DATABASE_URL`. STYK requires
+a direct or session-pooled connection because it uses session advisory locks;
+transaction pooling is incompatible.
+
+`.env.local` also needs the original imported `STYK_CREDENTIAL_ENCRYPTION_KEY`
+to decrypt the shared provider credentials, plus `STYK_SMTP_ADDRESS` and
+`STYK_SMTP_FROM` for STYK's verification and recovery mail. Obtain these settings
+from the environment owner; generating a different encryption key will not open
+the imported credentials. Environment files and `.neon` stay out of Git.
+
+For infrastructure changes, run `neon deploy --no-env-pull`, then
+`neon env pull --file .env.local`. The explicit target preserves a separate local
+`.env`; the CLI's automatic env pull would otherwise choose an existing `.env`.
+`neon deploy` manages services declared in `neon.ts`; SQL migrations use the
+`db:migrate` commands above.
+
+### Isolated local PostgreSQL
+
+Copy `.env.example` to `.env`, set `DATABASE_URL` to your own PostgreSQL URL and
+configure merchant authentication, the encryption key and SMTP in that file.
+For the bundled database, `make up` starts the Compose service. Then run:
+
+```sh
+npm run db:migrate:local
+npm run build:local
+npm run dev:local
+# In another terminal, when a worker is needed:
+npm run dev:worker:local
+```
+
+Use `npm run db:status:local` to inspect this database. The `:local` commands load
+only `.env`; the shared commands load only `.env.local`. Keep Neon service
+variables in `.env.local` when using these separate environments. Without Neon
+service settings, local labels use inline encrypted storage and history uses
+the existing API refresh behavior.
+
+For operational Make targets, `ENV_FILE` selects one configuration file. It
+defaults to `.env` when present, otherwise `.env.local`. For example,
+`make migrate ENV_FILE=.env.local` explicitly targets shared development, while
+`make migrate ENV_FILE=.env` targets the isolated database. Automated checks read
+neither file and use disposable local PostgreSQL.
+
+Both app modes serve `http://127.0.0.1:5173`. Start one mode at a time on the
+default ports. Existing approvals and automation policies govern provider writes.
+
+### Agent skills
+
+The Neon guides under `.agents/skills/neon*` and `skills-lock.json` are locally
+installed agent tooling and are ignored by Git. They can be reinstalled with the
+Neon CLI. Application dependencies are declared in `package.json`, its lockfile,
+and `go.mod`/`go.sum`; project instructions remain in the versioned `AGENTS.md`.
+
+### Neon file storage and live history
 
 Set `STYK_LABEL_BUCKET=assets` to externalize new encrypted PDF labels into the
 private Neon bucket. Uploads run before the completion transaction; a failed or
