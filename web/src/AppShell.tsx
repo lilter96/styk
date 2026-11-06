@@ -12,20 +12,28 @@ const navigation: { path: string; label: string; icon: IconName }[] = [
   { path: "/integrations", label: "Интеграции", icon: "integrations" },
   { path: "/diagnostics", label: "Диагностика", icon: "diagnostics" },
 ];
-function Navigation({ onNavigate }: { onNavigate?: () => void }) {
+function Navigation({
+  onNavigate,
+  supportMode,
+}: {
+  onNavigate?: () => void;
+  supportMode: boolean;
+}) {
   return (
     <nav className="app-tabs" aria-label="Разделы">
-      {navigation.map((item) => (
-        <NavLink
-          key={item.path}
-          to={item.path}
-          end={item.path === "/"}
-          onClick={onNavigate}
-        >
-          <Icon name={item.icon} />
-          {item.label}
-        </NavLink>
-      ))}
+      {navigation
+        .filter((item) => !supportMode || item.path !== "/catalog-sync")
+        .map((item) => (
+          <NavLink
+            key={item.path}
+            to={item.path}
+            end={item.path === "/"}
+            onClick={onNavigate}
+          >
+            <Icon name={item.icon} />
+            {item.label}
+          </NavLink>
+        ))}
     </nav>
   );
 }
@@ -33,10 +41,12 @@ export function AppShell({
   context,
   workspace,
   children,
+  supportMode = false,
 }: {
   context: (onNavigate?: () => void) => ReactNode;
   workspace: (onNavigate?: () => void) => ReactNode;
   children: ReactNode;
+  supportMode?: boolean;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   return (
@@ -46,7 +56,7 @@ export function AppShell({
       </a>
       <aside className="app-sidebar">
         {workspace()}
-        <Navigation />
+        <Navigation supportMode={supportMode} />
         <div className="app-sidebar-foot">
           <Brand />
           {context()}
@@ -70,7 +80,10 @@ export function AppShell({
           onClose={() => setMenuOpen(false)}
         >
           {workspace(() => setMenuOpen(false))}
-          <Navigation onNavigate={() => setMenuOpen(false)} />
+          <Navigation
+            supportMode={supportMode}
+            onNavigate={() => setMenuOpen(false)}
+          />
           <div className="app-sidebar-foot">
             <Brand />
             {context(() => setMenuOpen(false))}

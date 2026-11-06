@@ -21,6 +21,12 @@ export type IconName =
   | "chevron-down"
   | "close"
   | "search"
+  | "calendar"
+  | "users"
+  | "store"
+  | "warning"
+  | "layers"
+  | "activity"
   | "history"
   | "more"
   | "error"
@@ -45,6 +51,26 @@ const paths: Record<IconName, ReactNode> = {
       <path d="m16 16 5 5" />
     </>
   ),
+  calendar: (
+    <>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M7 3v4m10-4v4M3 10h18m-14 4h2m3 0h2m-7 3h2" />
+    </>
+  ),
+  users: (
+    <>
+      <circle cx="9" cy="7" r="3" />
+      <path d="M3 20v-2a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5v2m1-16a3 3 0 0 1 0 6m2 4a4 4 0 0 1 3 4v2" />
+    </>
+  ),
+  store: (
+    <path d="M4 10v10h16V10M3 9l2-5h14l2 5v1a2.25 2.25 0 0 1-4.5 0 2.25 2.25 0 0 1-4.5 0 2.25 2.25 0 0 1-4.5 0A2.25 2.25 0 0 1 3 10V9Zm7 11v-6h4v6" />
+  ),
+  warning: (
+    <path d="m10.3 4.5-7.7 13A1.7 1.7 0 0 0 4.1 20h15.8a1.7 1.7 0 0 0 1.5-2.5l-7.7-13a2 2 0 0 0-3.4 0ZM12 9v4m0 3h.01" />
+  ),
+  layers: <path d="m12 3 9 5-9 5-9-5 9-5ZM3 12l9 5 9-5M3 16l9 5 9-5" />,
+  activity: <path d="M3 12h4l3-8 4 16 3-8h4" />,
   history: (
     <>
       <path d="M3 4v5h5M3 9a9 9 0 1 1 1 8M12 7v5l3 2" />

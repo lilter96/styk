@@ -32,9 +32,11 @@ export class ApiError extends Error {
     public code?: string,
   ) {
     super(
-      status === 401
-        ? "Сессия завершилась. Войдите снова."
-        : "Не удалось загрузить данные.",
+      code === "SUPPORT_READ_ONLY"
+        ? "В режиме поддержки доступен только просмотр."
+        : status === 401
+          ? "Сессия завершилась. Войдите снова."
+          : "Не удалось загрузить данные.",
     );
   }
 }
@@ -115,12 +117,23 @@ export type ImportScope = Readonly<{
   account: string;
 }>;
 export const sameImportScope = (a: ImportScope, b: ImportScope) =>
-  a.tenant === b.tenant && a.provider === b.provider && a.account === b.account && a.ordersMoyskladAccount === b.ordersMoyskladAccount;
+  a.tenant === b.tenant &&
+  a.provider === b.provider &&
+  a.account === b.account &&
+  a.ordersMoyskladAccount === b.ordersMoyskladAccount;
 export const importAccount = (scope: ImportScope) => ({
   [importProviders[scope.provider].accountField]: scope.account,
 });
 export type ImportOperation = {
-  orders_refresh?: { state: "QUEUED" | "READING" | "SUCCEEDED" | "FAILED" | "PARTIAL" | "CANCELLED"; code: string; postings_count: number; moysklad_account: string; requested_at: string; finished_at?: string };
+  orders_refresh?: {
+    state:
+      "QUEUED" | "READING" | "SUCCEEDED" | "FAILED" | "PARTIAL" | "CANCELLED";
+    code: string;
+    postings_count: number;
+    moysklad_account: string;
+    requested_at: string;
+    finished_at?: string;
+  };
   id: string;
   tenant: string;
   provider: string;
@@ -180,16 +193,19 @@ export type ImportSubmission = {
 };
 export function createImportIntent(scope: ImportScope): ImportIntent {
   if (!scope.tenant || !scope.account)
-    throw new Error(
-      "Выберите подключённый аккаунт.",
-    );
+    throw new Error("Выберите подключённый аккаунт.");
   const frozenScope = Object.freeze({ ...scope });
   return Object.freeze({
     scope: frozenScope,
     body: JSON.stringify({
       tenant: frozenScope.tenant,
       ...importAccount(frozenScope),
-      ...(frozenScope.provider === "ozon" && frozenScope.ordersMoyskladAccount ? { include_orders: true, orders_moysklad_account: frozenScope.ordersMoyskladAccount } : {}),
+      ...(frozenScope.provider === "ozon" && frozenScope.ordersMoyskladAccount
+        ? {
+            include_orders: true,
+            orders_moysklad_account: frozenScope.ordersMoyskladAccount,
+          }
+        : {}),
       operation_type: importProviders[frozenScope.provider].operationType,
       idempotency_key: crypto.randomUUID(),
       acknowledge: true,

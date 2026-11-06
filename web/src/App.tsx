@@ -1,4 +1,5 @@
 import { AppShell } from "./AppShell";
+import { PlatformAdmin } from "./PlatformAdmin";
 import { connectionState, type MoyProvider } from "./MoySkladSettingsData";
 import { OverviewDashboard } from "./OverviewDashboard";
 import { StatePanel, ProviderBadge, PageHeader, Icon } from "./UI";
@@ -67,7 +68,55 @@ type MerchantSession = {
   account_id: string;
   csrf: string;
   expires_at: string;
+  support?: { workspace?: string; expires_at?: string; expired: boolean };
 };
+
+function SupportBanner({
+  support,
+}: {
+  support: NonNullable<MerchantSession["support"]>;
+}) {
+  const [leaving, setLeaving] = useState(false);
+  const [failed, setFailed] = useState(false);
+  async function exitSupport() {
+    setLeaving(true);
+    setFailed(false);
+    try {
+      const response = await authFetch("/api/admin/support", {
+        method: "DELETE",
+        credentials: "same-origin",
+      });
+      if (!response.ok) throw new Error("support exit failed");
+      window.location.assign("/admin?section=users");
+    } catch {
+      setFailed(true);
+      setLeaving(false);
+    }
+  }
+  return (
+    <section className="support-mode-banner" aria-label="Режим поддержки">
+      <div>
+        <strong>
+          {support.expired ? "Сеанс поддержки завершён" : "Режим поддержки"}
+        </strong>
+        {!support.expired && <p>{support.workspace} · Только просмотр</p>}
+        {failed && (
+          <p role="alert">
+            Не удалось выйти из режима поддержки. Повторите попытку.
+          </p>
+        )}
+      </div>
+      <button
+        type="button"
+        className="secondary"
+        disabled={leaving}
+        onClick={() => void exitSupport()}
+      >
+        {leaving ? "Возвращаемся…" : "Вернуться в админку"}
+      </button>
+    </section>
+  );
+}
 const stateLabels: Record<string, string> = {
   PASS: "В порядке",
   WARN: "Нужно проверить",
@@ -861,7 +910,7 @@ export function App() {
     refetchInterval: pathname === "/" ? 30_000 : false,
     refetchOnWindowFocus: true,
   });
-  if (authLinkInSession) {
+  if (authLinkInSession && !session.data?.support) {
     const leaveLink = () => {
       setCSRF("");
       try {
@@ -921,6 +970,23 @@ export function App() {
         <Loading />
       </main>
     );
+  const support = session.data?.support;
+  const onAdmin = pathname === "/admin" || pathname === "/admin/";
+  if (support && (support.expired || onAdmin))
+    return (
+      <main className="support-mode-panel">
+        <SupportBanner support={support} />
+      </main>
+    );
+  if (onAdmin)
+    return (
+      <PlatformAdmin
+        key={identityKey}
+        sessionKey={identityKey}
+        email={session.data?.user.email}
+        accountID={session.data?.account_id}
+      />
+    );
   async function logout() {
     try {
       const response = await authFetch("/api/session", {
@@ -965,6 +1031,7 @@ export function App() {
   );
   return (
     <AppShell
+      supportMode={!!support}
       workspace={(onNavigate) => (
         <WorkspaceSwitcher
           marketplace={marketplace}
@@ -999,7 +1066,7 @@ export function App() {
           onNavigate={onNavigate}
           loading={accounts.isLoading}
           error={!!accounts.error}
-          addDisabled={!!credentialSubmission.pending}
+          addDisabled={!!support || !!credentialSubmission.pending}
         />
       )}
       context={(onNavigate) => (
@@ -1041,26 +1108,29 @@ export function App() {
               >
                 Диагностика
               </NavLink>
-              <button
-                className="text-action"
-                disabled={
-                  (!!confirmation.pending && !confirmation.sessionLost) ||
-                  (!!importSubmission.pending &&
-                    !importSubmission.sessionLost) ||
-                  (!!credentialSubmission.pending &&
-                    !credentialSubmission.sessionLost) ||
-                  !!stockSyncSubmission.pending
-                }
-                onClick={() => void logout()}
-              >
-                Выйти
-              </button>
+              {!support && (
+                <button
+                  className="text-action"
+                  disabled={
+                    (!!confirmation.pending && !confirmation.sessionLost) ||
+                    (!!importSubmission.pending &&
+                      !importSubmission.sessionLost) ||
+                    (!!credentialSubmission.pending &&
+                      !credentialSubmission.sessionLost) ||
+                    !!stockSyncSubmission.pending
+                  }
+                  onClick={() => void logout()}
+                >
+                  Выйти
+                </button>
+              )}
             </div>
             {logoutError && <p role="alert">{logoutError}</p>}
           </div>
         </details>
       )}
     >
+      {support && <SupportBanner support={support} />}
       <ConfirmationNotice
         compact={pathname === "/products"}
         confirmation={confirmation}

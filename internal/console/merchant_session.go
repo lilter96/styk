@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/lilter96/styk/internal/identity"
 )
@@ -16,12 +17,17 @@ func (m *merchantAuth) session(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "UNAVAILABLE")
 		return
 	}
+	writeMerchantSession(w, session, tenant, nil)
+}
+
+func writeMerchantSession(w http.ResponseWriter, session identity.Session, tenant string, support *supportSessionView) {
 	writeJSON(w, struct {
-		User      identity.User `json:"user"`
-		AccountID string        `json:"account_id"`
-		CSRF      string        `json:"csrf"`
-		Expires   string        `json:"expires_at"`
-	}{session.User, tenant, session.CSRF, session.Expires.UTC().Format("2006-01-02T15:04:05Z07:00")})
+		User      identity.User       `json:"user"`
+		AccountID string              `json:"account_id"`
+		CSRF      string              `json:"csrf"`
+		Expires   string              `json:"expires_at"`
+		Support   *supportSessionView `json:"support,omitempty"`
+	}{session.User, tenant, session.CSRF, session.Expires.UTC().Format(time.RFC3339), support})
 }
 
 func (m *merchantAuth) logout(w http.ResponseWriter, r *http.Request) {

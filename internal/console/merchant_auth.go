@@ -20,14 +20,15 @@ const merchantCookie = "styk_session"
 type merchantSessionKey struct{}
 
 type merchantAuth struct {
-	identity *identity.Store
-	db       *postgres.Store
-	sender   identity.Sender
-	origin   string
-	host     string
-	local    bool
-	secure   bool
-	proxies  []netip.Prefix
+	identity        *identity.Store
+	db              *postgres.Store
+	sender          identity.Sender
+	origin          string
+	host            string
+	local           bool
+	secure          bool
+	proxies         []netip.Prefix
+	platformAdminID string
 }
 
 func newMerchantAuth(db *postgres.Store, origin string, sender identity.Sender) (*auth, error) {
@@ -96,6 +97,18 @@ func (m *merchantAuth) sameOrigin(r *http.Request) bool {
 }
 
 func (m *merchantAuth) authorized(next http.HandlerFunc) http.HandlerFunc {
+	return m.withSession(func(w http.ResponseWriter, r *http.Request, session identity.Session) {
+		if proof, active := supportProof(r); active {
+			m.serveSupport(w, r, session, proof, next)
+			return
+		}
+		if m.authorizeScope(w, r, session) {
+			next(w, r)
+		}
+	})
+}
+
+func (m *merchantAuth) withSession(next func(http.ResponseWriter, *http.Request, identity.Session)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -123,10 +136,7 @@ func (m *merchantAuth) authorized(next http.HandlerFunc) http.HandlerFunc {
 		ctx = context.WithValue(ctx, auditContextKey{}, session.AuditID)
 		ctx = identity.WithSession(ctx, session)
 		r = r.WithContext(ctx)
-		if !m.authorizeScope(w, r, session) {
-			return
-		}
-		next(w, r)
+		next(w, r, session)
 	}
 }
 
