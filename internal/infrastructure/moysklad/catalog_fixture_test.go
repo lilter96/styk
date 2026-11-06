@@ -65,7 +65,7 @@ func newCatalogSimulator(t *testing.T) *catalogSimulator {
 
 func (s *catalogSimulator) writer(t *testing.T) *CatalogClient {
 	t.Helper()
-	c, err := NewControlledTestCatalogClient(s.client, catalogTestScope())
+	c, err := NewWritableCatalogClient(s.client, catalogTestScope())
 	if err != nil {
 		t.Fatal(err)
 	}

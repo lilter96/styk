@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/lilter96/styk/internal/domain"
-	"github.com/lilter96/styk/internal/testpublication"
+	"github.com/lilter96/styk/internal/stockfixture"
 )
 
 func TestControlledUnknownSupersessionIsAuditedAndSerialized(t *testing.T) {
@@ -24,7 +24,7 @@ func TestControlledUnknownSupersessionIsAuditedAndSerialized(t *testing.T) {
 		t.Fatalf("claim: %+v %v", claimed, err)
 	}
 	request := domain.StockRecoveryRequest{StockSyncScope: oldReview.StockSyncScope, OperationID: claimed.ID, SessionID: "synthetic-session-audit", IdempotencyKey: "synthetic-recovery-key-1", ExpectedReadbackAt: base.Add(time.Second), ExpectedQuantity: "0", Reason: "Accept uncertain outcome for synthetic test target", Acknowledge: true, WorkerStopped: true}
-	if _, err = db.SupersedeTestUnknown(ctx, request, base.Add(2*time.Second)); !errors.Is(err, domain.ErrStockSyncBlocked) {
+	if _, err = db.SupersedeStockUnknown(ctx, request, base.Add(2*time.Second)); !errors.Is(err, domain.ErrStockSyncBlocked) {
 		t.Fatalf("active dispatch allowed: %v", err)
 	}
 	if err = db.FinishStockTarget(ctx, claimed.StockSyncScope, claimed.ID, claimed.Targets[0].ID, "UNKNOWN", "REQUEST_OUTCOME_UNKNOWN", base); err != nil {
@@ -34,16 +34,16 @@ func TestControlledUnknownSupersessionIsAuditedAndSerialized(t *testing.T) {
 	if err = db.RecordUnknownStockReadback(ctx, claimed.StockSyncScope, claimed.ID, claimed.Targets[0].ID, &zero, request.ExpectedReadbackAt); err != nil {
 		t.Fatal(err)
 	}
-	if err = db.TouchTestStockWorker(ctx, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", base.Add(2*time.Second)); err != nil {
+	if err = db.TouchStockWorker(ctx, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", base.Add(2*time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.SupersedeTestUnknown(ctx, request, base.Add(3*time.Second)); !errors.Is(err, domain.ErrStockSyncBlocked) {
+	if _, err = db.SupersedeStockUnknown(ctx, request, base.Add(3*time.Second)); !errors.Is(err, domain.ErrStockSyncBlocked) {
 		t.Fatalf("active worker allowed: %v", err)
 	}
 	for _, bad := range []func(*domain.StockRecoveryRequest){func(r *domain.StockRecoveryRequest) { r.Acknowledge = false }, func(r *domain.StockRecoveryRequest) { r.WorkerStopped = false }, func(r *domain.StockRecoveryRequest) { r.Tenant = "another-tenant" }, func(r *domain.StockRecoveryRequest) { r.OzonAccount = "another-account" }} {
 		v := request
 		bad(&v)
-		if _, e := db.SupersedeTestUnknown(ctx, v, base.Add(20*time.Second)); !errors.Is(e, domain.ErrStockSyncInvalid) {
+		if _, e := db.SupersedeStockUnknown(ctx, v, base.Add(20*time.Second)); !errors.Is(e, domain.ErrStockSyncInvalid) {
 			t.Fatalf("invalid authorization: %v", e)
 		}
 	}
@@ -52,7 +52,7 @@ func TestControlledUnknownSupersessionIsAuditedAndSerialized(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, e := db.SupersedeTestUnknown(ctx, request, base.Add(20*time.Second)); e != nil {
+			if _, e := db.SupersedeStockUnknown(ctx, request, base.Add(20*time.Second)); e != nil {
 				t.Errorf("idempotent concurrent recovery: %v", e)
 			}
 		}()
@@ -76,8 +76,8 @@ func TestControlledUnknownSupersessionIsAuditedAndSerialized(t *testing.T) {
 	// evidence is operator-attested, as it will be in the live test scope.
 	stock, reserve, incoming := "7", "0", "0"
 	archived, rfbs := false, false
-	source := domain.InventoryImport{Account: request.MoyskladAccount, StartedAt: base.Add(22 * time.Second), FinishedAt: base.Add(23 * time.Second), Entities: []domain.ExternalEntity{{Kind: "product", ID: testpublication.SourceProduct, Article: "synthetic"}, {Kind: "store", ID: testpublication.SourceWarehouse}}, WarehouseStock: []domain.WarehouseStockObservation{{Kind: "product", ExternalID: testpublication.SourceProduct, WarehouseID: testpublication.SourceWarehouse, Stock: &stock, Reserve: &reserve, InTransit: &incoming}}}
-	market := domain.OzonImport{Account: request.OzonAccount, StartedAt: base.Add(22 * time.Second), FinishedAt: base.Add(23 * time.Second), Products: []domain.OzonProduct{{ProductID: testpublication.OzonProduct, OfferID: testpublication.OzonOffer, SKU: testpublication.OzonSKU, Archived: &archived}}, Warehouses: []domain.OzonWarehouse{{ID: testpublication.OzonWarehouse, Status: "created", IsRFBS: &rfbs}}, Stocks: []domain.OzonStock{{ProductID: testpublication.OzonProduct, OfferID: testpublication.OzonOffer, SKU: testpublication.OzonSKU, WarehouseID: testpublication.OzonWarehouse, Present: 0, Reserved: 0, FreeStock: 0}}}
+	source := domain.InventoryImport{Account: request.MoyskladAccount, StartedAt: base.Add(22 * time.Second), FinishedAt: base.Add(23 * time.Second), Entities: []domain.ExternalEntity{{Kind: "product", ID: stockfixture.SourceProduct, Article: "synthetic"}, {Kind: "store", ID: stockfixture.SourceWarehouse}}, WarehouseStock: []domain.WarehouseStockObservation{{Kind: "product", ExternalID: stockfixture.SourceProduct, WarehouseID: stockfixture.SourceWarehouse, Stock: &stock, Reserve: &reserve, InTransit: &incoming}}}
+	market := domain.OzonImport{Account: request.OzonAccount, StartedAt: base.Add(22 * time.Second), FinishedAt: base.Add(23 * time.Second), Products: []domain.OzonProduct{{ProductID: stockfixture.OzonProduct, OfferID: stockfixture.OzonOffer, SKU: stockfixture.OzonSKU, Archived: &archived}}, Warehouses: []domain.OzonWarehouse{{ID: stockfixture.OzonWarehouse, Status: "created", IsRFBS: &rfbs}}, Stocks: []domain.OzonStock{{ProductID: stockfixture.OzonProduct, OfferID: stockfixture.OzonOffer, SKU: stockfixture.OzonSKU, WarehouseID: stockfixture.OzonWarehouse, Present: 0, Reserved: 0, FreeStock: 0}}}
 	if _, err = db.SaveInventoryImport(ctx, source, "recovery-synthetic-source"); err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestControlledUnknownDistinctConcurrentRecoveriesOnlyOneAccepted(t *testing
 			defer wg.Done()
 			r := request
 			r.IdempotencyKey = fmt.Sprintf("distinct-recovery-key-%d", i)
-			_, e := db.SupersedeTestUnknown(ctx, r, now.Add(time.Second))
+			_, e := db.SupersedeStockUnknown(ctx, r, now.Add(time.Second))
 			results <- e
 		}(i)
 	}

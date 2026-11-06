@@ -7,7 +7,7 @@ func TestStockPublicationRequiresExplicitLoopbackSimulator(t *testing.T) {
 		flag, endpoint string
 		allowed        bool
 	}{
-		{"", "http://127.0.0.1:1234", false}, {"false", "http://127.0.0.1:1234", false}, {"TRUE", "http://127.0.0.1:1234", false},
+		{"", "http://127.0.0.1:1234", true}, {"false", "http://127.0.0.1:1234", true}, {"TRUE", "http://127.0.0.1:1234", true},
 		{"true", "", false}, {"true", "https://api-seller.ozon.ru", false}, {"true", "http://localhost:1234", false}, {"true", "http://127.0.0.1.evil.example:1234", false},
 		{"true", "http://127.0.0.1:1234/path", false}, {"true", "http://127.0.0.1:1234?secret=x", false}, {"true", "http://127.0.0.1:1234", true}, {"true", "http://[::1]:1234", true},
 	} {

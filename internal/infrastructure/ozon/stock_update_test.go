@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lilter96/styk/internal/testpublication"
+	"github.com/lilter96/styk/internal/stockfixture"
 )
 
 type stockCleanupBody struct {
@@ -92,7 +92,7 @@ func TestControlledClientNegotiatesHTTP1WithHTTP2CapableServer(t *testing.T) {
 			server.EnableHTTP2 = supportsHTTP2
 			server.StartTLS()
 			t.Cleanup(server.Close)
-			c, err := NewControlledTestStockClient(testpublication.Scope(), "synthetic-key")
+			c, err := NewStockWriter(stockfixture.Scope(), "synthetic-key")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -105,8 +105,8 @@ func TestControlledClientNegotiatesHTTP1WithHTTP2CapableServer(t *testing.T) {
 			pool := x509.NewCertPool()
 			pool.AddCert(server.Certificate())
 			transport.TLSClientConfig.RootCAs = pool
-			item := StockUpdate{testpublication.OzonProduct, testpublication.OzonWarehouse, 1}
-			if err = c.BindControlledTestIntent(item, func(context.Context) (bool, error) { return true, nil }); err != nil {
+			item := StockUpdate{stockfixture.OzonProduct, stockfixture.OzonWarehouse, 1}
+			if err = c.BindStockIntent(item, func(context.Context) (bool, error) { return true, nil }); err != nil {
 				t.Fatal(err)
 			}
 			result, err := c.UpdateStocks(context.Background(), []StockUpdate{item})
@@ -117,19 +117,19 @@ func TestControlledClientNegotiatesHTTP1WithHTTP2CapableServer(t *testing.T) {
 	}
 }
 
-func TestControlledLiveClientIsFixedToOneAccountAndTarget(t *testing.T) {
-	scope := testpublication.Scope()
+func TestStockWriterRequiresValidScopeAndBoundIntent(t *testing.T) {
+	scope := stockfixture.Scope()
 	t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", "")
-	if _, err := NewControlledTestStockClient(scope, "synthetic-key"); !errors.Is(err, ErrStockWritesDisabled) {
-		t.Fatal("controlled live client must be default-off")
+	if _, err := NewStockWriter(scope, "synthetic-key"); err != nil {
+		t.Fatal("connected stock writer rejected")
 	}
 	t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", "true")
 	wrong := scope
-	wrong.OzonAccount = "another-account"
-	if _, err := NewControlledTestStockClient(wrong, "synthetic-key"); !errors.Is(err, ErrStockWritesDisabled) {
-		t.Fatal("another account was authorized")
+	wrong.OzonAccount = ""
+	if _, err := NewStockWriter(wrong, "synthetic-key"); !errors.Is(err, ErrStockWritesDisabled) {
+		t.Fatal("invalid account was authorized")
 	}
-	c, err := NewControlledTestStockClient(scope, "synthetic-key")
+	c, err := NewStockWriter(scope, "synthetic-key")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,11 +139,11 @@ func TestControlledLiveClientIsFixedToOneAccountAndTarget(t *testing.T) {
 		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"result":[{"product_id":2764544165,"warehouse_id":1020001323428000,"updated":true,"errors":[]}]}`))}, nil
 	})
 	for _, items := range [][]StockUpdate{
-		{{"another-product", testpublication.OzonWarehouse, 1}},
-		{{testpublication.OzonProduct, "another-warehouse", 1}},
-		{{testpublication.OzonProduct, testpublication.OzonWarehouse, 8}},
-		{{testpublication.OzonProduct, testpublication.OzonWarehouse, -1}},
-		{{testpublication.OzonProduct, testpublication.OzonWarehouse, 1}, {testpublication.OzonProduct, testpublication.OzonWarehouse, 0}},
+		{{"another-product", stockfixture.OzonWarehouse, 1}},
+		{{stockfixture.OzonProduct, "another-warehouse", 1}},
+		{{stockfixture.OzonProduct, stockfixture.OzonWarehouse, 8}},
+		{{stockfixture.OzonProduct, stockfixture.OzonWarehouse, -1}},
+		{{stockfixture.OzonProduct, stockfixture.OzonWarehouse, 1}, {stockfixture.OzonProduct, stockfixture.OzonWarehouse, 0}},
 	} {
 		if _, err := c.UpdateStocks(context.Background(), items); !errors.Is(err, ErrStockWritesDisabled) {
 			t.Fatalf("out-of-scope update accepted: %v", err)
@@ -152,8 +152,8 @@ func TestControlledLiveClientIsFixedToOneAccountAndTarget(t *testing.T) {
 	if calls.Load() != 0 {
 		t.Fatal("an unapproved target reached the transport")
 	}
-	item := StockUpdate{testpublication.OzonProduct, testpublication.OzonWarehouse, 7}
-	if err = c.BindControlledTestIntent(item, func(context.Context) (bool, error) { return true, nil }); err != nil {
+	item := StockUpdate{stockfixture.OzonProduct, stockfixture.OzonWarehouse, 7}
+	if err = c.BindStockIntent(item, func(context.Context) (bool, error) { return true, nil }); err != nil {
 		t.Fatal(err)
 	}
 	result, err := c.UpdateStocks(context.Background(), []StockUpdate{item})
@@ -161,14 +161,14 @@ func TestControlledLiveClientIsFixedToOneAccountAndTarget(t *testing.T) {
 		t.Fatalf("approved target: %+v %v", result, err)
 	}
 	t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", "false")
-	if _, err = c.UpdateStocks(context.Background(), []StockUpdate{{testpublication.OzonProduct, testpublication.OzonWarehouse, 1}}); !errors.Is(err, ErrStockWritesDisabled) || calls.Load() != 1 {
-		t.Fatal("disabled test policy did not stop an existing client")
+	if _, err = c.UpdateStocks(context.Background(), []StockUpdate{{stockfixture.OzonProduct, stockfixture.OzonWarehouse, 1}}); !errors.Is(err, ErrStockWritesDisabled) || calls.Load() != 1 {
+		t.Fatal("consumed intent was reused")
 	}
 }
 
 func TestControlledAutomaticIntentIsExactAndSingleUse(t *testing.T) {
 	t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", "true")
-	c, err := NewControlledTestStockClient(testpublication.Scope(), "synthetic-key")
+	c, err := NewStockWriter(stockfixture.Scope(), "synthetic-key")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func TestControlledAutomaticIntentIsExactAndSingleUse(t *testing.T) {
 		t.Fatal("unbound target was accepted")
 	}
 	var checks atomic.Int32
-	if err = c.BindControlledTestIntent(item, func(context.Context) (bool, error) { checks.Add(1); return true, nil }); err != nil {
+	if err = c.BindStockIntent(item, func(context.Context) (bool, error) { checks.Add(1); return true, nil }); err != nil {
 		t.Fatal(err)
 	}
 	wrong := item
@@ -203,14 +203,14 @@ func TestControlledAutomaticIntentIsExactAndSingleUse(t *testing.T) {
 
 func TestControlledAutomaticIntentRequiresCurrentAuthorization(t *testing.T) {
 	t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", "true")
-	c, err := NewControlledTestStockClient(testpublication.Scope(), "synthetic-key")
+	c, err := NewStockWriter(stockfixture.Scope(), "synthetic-key")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var calls atomic.Int32
 	c.http.Transport = transportFunc(func(*http.Request) (*http.Response, error) { calls.Add(1); return nil, errors.New("unexpected") })
 	item := StockUpdate{ProductID: "123", WarehouseID: "456", Quantity: 10}
-	if err = c.BindControlledTestIntent(item, func(context.Context) (bool, error) { return false, nil }); err != nil {
+	if err = c.BindStockIntent(item, func(context.Context) (bool, error) { return false, nil }); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = c.UpdateStocks(context.Background(), []StockUpdate{item}); !errors.Is(err, ErrStockWritesDisabled) || calls.Load() != 0 {
@@ -223,7 +223,7 @@ func TestControlledAutomaticIntentRequiresCurrentAuthorization(t *testing.T) {
 
 func TestControlledManualStockRequiresBoundIntent(t *testing.T) {
 	t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", "true")
-	c, err := NewControlledTestStockClient(testpublication.Scope(), "synthetic-key")
+	c, err := NewStockWriter(stockfixture.Scope(), "synthetic-key")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestControlledManualStockRequiresBoundIntent(t *testing.T) {
 		calls.Add(1)
 		return nil, errors.New("unexpected transport call")
 	})
-	item := StockUpdate{ProductID: testpublication.OzonProduct, WarehouseID: testpublication.OzonWarehouse, Quantity: 1}
+	item := StockUpdate{ProductID: stockfixture.OzonProduct, WarehouseID: stockfixture.OzonWarehouse, Quantity: 1}
 	if _, err = c.UpdateStocks(context.Background(), []StockUpdate{item}); !errors.Is(err, ErrStockWritesDisabled) {
 		t.Fatalf("unbound manual write was not rejected: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestControlledWriteRechecksAuthorizationAfterRateWait(t *testing.T) {
 		name string
 		item StockUpdate
 	}{
-		{"manual", StockUpdate{ProductID: testpublication.OzonProduct, WarehouseID: testpublication.OzonWarehouse, Quantity: 1}},
+		{"manual", StockUpdate{ProductID: stockfixture.OzonProduct, WarehouseID: stockfixture.OzonWarehouse, Quantity: 1}},
 		{"automatic", StockUpdate{ProductID: "123", WarehouseID: "456", Quantity: 1}},
 	}
 	for _, tc := range tests {
@@ -268,7 +268,7 @@ func TestControlledWriteRechecksAuthorizationAfterRateWait(t *testing.T) {
 
 func assertAuthorizationAfterRateWait(t *testing.T, item StockUpdate) {
 	t.Helper()
-	c, err := NewControlledTestStockClient(testpublication.Scope(), "synthetic-key")
+	c, err := NewStockWriter(stockfixture.Scope(), "synthetic-key")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +279,7 @@ func assertAuthorizationAfterRateWait(t *testing.T, item StockUpdate) {
 	})
 	var authorized atomic.Bool
 	authorized.Store(true)
-	if err = c.BindControlledTestIntent(item, func(context.Context) (bool, error) { return authorized.Load(), nil }); err != nil {
+	if err = c.BindStockIntent(item, func(context.Context) (bool, error) { return authorized.Load(), nil }); err != nil {
 		t.Fatal(err)
 	}
 	c.next = time.Now().Add(2 * time.Second)

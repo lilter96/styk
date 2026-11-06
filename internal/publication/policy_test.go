@@ -10,7 +10,7 @@ import (
 
 func TestConnectedScopesAndProtocolQuantityBounds(t *testing.T) {
 	for _, key := range []string{"STYK_CATALOG_PUBLICATION_ENABLED", "STYK_ORDERS_PUBLICATION_ENABLED", "STYK_STOCK_PUBLICATION_ENABLED"} {
-		t.Setenv(key, "true")
+		t.Setenv(key, "false")
 	}
 	t.Setenv("STYK_STOCK_PUBLICATION_TEST_ENDPOINT", "")
 	for _, tenant := range []string{"merchant-one", "merchant-two"} {

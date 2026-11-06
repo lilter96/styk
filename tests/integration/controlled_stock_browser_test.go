@@ -27,8 +27,8 @@ import (
 	"github.com/lilter96/styk/internal/infrastructure/ozon"
 	"github.com/lilter96/styk/internal/ozonjob"
 	"github.com/lilter96/styk/internal/postgres"
+	"github.com/lilter96/styk/internal/stockfixture"
 	"github.com/lilter96/styk/internal/stocksync"
-	"github.com/lilter96/styk/internal/testpublication"
 )
 
 // The browser, actual API, worker and PostgreSQL communicate only with local
@@ -68,7 +68,7 @@ func controlledStockBrowser(t *testing.T, recovery, automatic bool) {
 func controlledStockBrowserMode(t *testing.T, recovery, automatic, multi bool) {
 	var oldOperation string
 	db, review := controlledFixtureWithMapping(t, recovery || automatic)
-	scope := testpublication.Scope()
+	scope := stockfixture.Scope()
 	if multi {
 		seedMultiBrowserMapping(t, db)
 	}
@@ -149,25 +149,25 @@ func controlledStockBrowserMode(t *testing.T, recovery, automatic, multi bool) {
 			}
 		case "/entity/product":
 			if multi {
-				fixturePrintf(t, w, `{"meta":{"size":2,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Первый товар"},{"id":"ea33e770-d389-11f1-0a80-0d480029c772","name":"Товар с резервом"}]}`, testpublication.SourceProduct)
+				fixturePrintf(t, w, `{"meta":{"size":2,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Первый товар"},{"id":"ea33e770-d389-11f1-0a80-0d480029c772","name":"Товар с резервом"}]}`, stockfixture.SourceProduct)
 			} else {
-				fixturePrintf(t, w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Тестовый товар","article":"synthetic"}]}`, testpublication.SourceProduct)
+				fixturePrintf(t, w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Тестовый товар","article":"synthetic"}]}`, stockfixture.SourceProduct)
 			}
 		case "/entity/variant":
 			fixtureText(t, w, `{"meta":{"size":0,"limit":100,"offset":0},"rows":[]}`)
 		case "/entity/store":
-			fixturePrintf(t, w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Тестовый склад"}]}`, testpublication.SourceWarehouse)
+			fixturePrintf(t, w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Тестовый склад"}]}`, stockfixture.SourceWarehouse)
 		case "/report/stock/all":
 			if multi {
-				fixturePrintf(t, w, `{"meta":{"size":2,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stock":4,"reserve":0,"inTransit":0,"quantity":4},{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/ea33e770-d389-11f1-0a80-0d480029c772","type":"product"},"stock":10,"reserve":3,"inTransit":0,"quantity":7}]}`, testpublication.SourceProduct)
+				fixturePrintf(t, w, `{"meta":{"size":2,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stock":4,"reserve":0,"inTransit":0,"quantity":4},{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/ea33e770-d389-11f1-0a80-0d480029c772","type":"product"},"stock":10,"reserve":3,"inTransit":0,"quantity":7}]}`, stockfixture.SourceProduct)
 			} else {
-				fixturePrintf(t, w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stock":7,"reserve":0,"inTransit":0,"quantity":7}]}`, testpublication.SourceProduct)
+				fixturePrintf(t, w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stock":7,"reserve":0,"inTransit":0,"quantity":7}]}`, stockfixture.SourceProduct)
 			}
 		case "/report/stock/bystore":
 			if multi {
-				fixturePrintf(t, w, `{"meta":{"size":2,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stockByStore":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/store/%s","type":"store"},"stock":4,"reserve":0,"inTransit":0}]},{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/ea33e770-d389-11f1-0a80-0d480029c772","type":"product"},"stockByStore":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/store/%s","type":"store"},"stock":10,"reserve":3,"inTransit":0}]}]}`, testpublication.SourceProduct, testpublication.SourceWarehouse, testpublication.SourceWarehouse)
+				fixturePrintf(t, w, `{"meta":{"size":2,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stockByStore":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/store/%s","type":"store"},"stock":4,"reserve":0,"inTransit":0}]},{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/ea33e770-d389-11f1-0a80-0d480029c772","type":"product"},"stockByStore":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/store/%s","type":"store"},"stock":10,"reserve":3,"inTransit":0}]}]}`, stockfixture.SourceProduct, stockfixture.SourceWarehouse, stockfixture.SourceWarehouse)
 			} else {
-				fixturePrintf(t, w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stockByStore":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/store/%s","type":"store"},"stock":7,"reserve":0,"inTransit":0}]}]}`, testpublication.SourceProduct, testpublication.SourceWarehouse)
+				fixturePrintf(t, w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stockByStore":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/store/%s","type":"store"},"stock":7,"reserve":0,"inTransit":0}]}]}`, stockfixture.SourceProduct, stockfixture.SourceWarehouse)
 			}
 		default:
 			t.Errorf("unexpected synthetic provider path %s", r.URL.Path)
@@ -183,7 +183,7 @@ func controlledStockBrowserMode(t *testing.T, recovery, automatic, multi bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pub := stocksync.Runner{Enabled: true, ControlledTest: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return oz, nil }}
+	pub := stocksync.Runner{Enabled: true, DurableDispatch: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return oz, nil }}
 	imports := ozonjob.Runner{Store: db, Account: scope.OzonAccount, Client: oz, MoyskladAccount: scope.MoyskladAccount, MoyskladClient: mo}
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
@@ -293,13 +293,13 @@ func controlledStockBrowserMode(t *testing.T, recovery, automatic, multi bool) {
 
 func seedMultiBrowserMapping(t *testing.T, db *postgres.Store) {
 	t.Helper()
-	scope := testpublication.Scope()
+	scope := stockfixture.Scope()
 	now := time.Now().UTC().Add(-time.Second)
 	zero, four, ten, three := "0", "4", "10", "3"
 	fbs, archived := false, false
 	const item = "ea33e770-d389-11f1-0a80-0d480029c772"
-	source := domain.InventoryImport{Account: scope.MoyskladAccount, StartedAt: now, FinishedAt: now.Add(time.Millisecond), Entities: []domain.ExternalEntity{{Kind: "product", ID: testpublication.SourceProduct}, {Kind: "product", ID: item}, {Kind: "store", ID: testpublication.SourceWarehouse}}, WarehouseStock: []domain.WarehouseStockObservation{{Kind: "product", ExternalID: testpublication.SourceProduct, WarehouseID: testpublication.SourceWarehouse, Stock: &four, Reserve: &zero, InTransit: &zero}, {Kind: "product", ExternalID: item, WarehouseID: testpublication.SourceWarehouse, Stock: &ten, Reserve: &three, InTransit: &zero}}}
-	market := domain.OzonImport{Account: scope.OzonAccount, StartedAt: now, FinishedAt: now.Add(time.Millisecond), Products: []domain.OzonProduct{{ProductID: testpublication.OzonProduct, OfferID: testpublication.OzonOffer, SKU: testpublication.OzonSKU, Archived: &archived}, {ProductID: "2764939447", OfferID: "ATEST-0010987", SKU: "2889575995", Archived: &archived}}, Warehouses: []domain.OzonWarehouse{{ID: testpublication.OzonWarehouse, Status: "created", IsRFBS: &fbs}}, Stocks: []domain.OzonStock{{ProductID: testpublication.OzonProduct, OfferID: testpublication.OzonOffer, SKU: testpublication.OzonSKU, WarehouseID: testpublication.OzonWarehouse}, {ProductID: "2764939447", OfferID: "ATEST-0010987", SKU: "2889575995", WarehouseID: testpublication.OzonWarehouse}}}
+	source := domain.InventoryImport{Account: scope.MoyskladAccount, StartedAt: now, FinishedAt: now.Add(time.Millisecond), Entities: []domain.ExternalEntity{{Kind: "product", ID: stockfixture.SourceProduct}, {Kind: "product", ID: item}, {Kind: "store", ID: stockfixture.SourceWarehouse}}, WarehouseStock: []domain.WarehouseStockObservation{{Kind: "product", ExternalID: stockfixture.SourceProduct, WarehouseID: stockfixture.SourceWarehouse, Stock: &four, Reserve: &zero, InTransit: &zero}, {Kind: "product", ExternalID: item, WarehouseID: stockfixture.SourceWarehouse, Stock: &ten, Reserve: &three, InTransit: &zero}}}
+	market := domain.OzonImport{Account: scope.OzonAccount, StartedAt: now, FinishedAt: now.Add(time.Millisecond), Products: []domain.OzonProduct{{ProductID: stockfixture.OzonProduct, OfferID: stockfixture.OzonOffer, SKU: stockfixture.OzonSKU, Archived: &archived}, {ProductID: "2764939447", OfferID: "ATEST-0010987", SKU: "2889575995", Archived: &archived}}, Warehouses: []domain.OzonWarehouse{{ID: stockfixture.OzonWarehouse, Status: "created", IsRFBS: &fbs}}, Stocks: []domain.OzonStock{{ProductID: stockfixture.OzonProduct, OfferID: stockfixture.OzonOffer, SKU: stockfixture.OzonSKU, WarehouseID: stockfixture.OzonWarehouse}, {ProductID: "2764939447", OfferID: "ATEST-0010987", SKU: "2889575995", WarehouseID: stockfixture.OzonWarehouse}}}
 	ctx := context.Background()
 	if _, err := db.SaveInventoryImport(ctx, source, "synthetic-browser-multi-source"); err != nil {
 		t.Fatal(err)

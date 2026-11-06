@@ -196,12 +196,11 @@ func run() error {
 			return client, nil
 		},
 	}
-	// The existing simulator and the single authorized real-account experiment
-	// are mutually exclusive. Neither switch enables arbitrary real targets.
+	// An explicit local simulator replaces real provider dispatch.
 	testEndpoint, publicationEnabled := config.StockPublicationTestEndpoint()
 	controlled := publication.StockEnabled()
 	if controlled && publicationEnabled {
-		return errors.New("controlled live test and publication simulator cannot run together")
+		return errors.New("provider dispatch and publication simulator cannot run together")
 	}
 	publications := stocksync.Runner{Enabled: publicationEnabled, Store: db, ResolveOzon: func(_ context.Context, _, _ string) (*ozon.Client, error) {
 		return ozon.New(ozon.Options{BaseURL: testEndpoint, ClientID: "synthetic-test-seller", APIKey: "synthetic-test-key", Timeout: 20 * time.Second, Interval: 400 * time.Millisecond, Backoff: time.Second, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 100, AllowSyntheticStockWrites: true})
@@ -211,9 +210,9 @@ func run() error {
 		if _, err := rand.Read(instance[:]); err != nil {
 			return err
 		}
-		publications = stocksync.Runner{Enabled: true, ControlledTest: true, WorkerID: hex.EncodeToString(instance[:]), Store: db, ResolveScopedOzon: func(ctx context.Context, scope domain.StockSyncScope) (*ozon.Client, error) {
+		publications = stocksync.Runner{Enabled: true, DurableDispatch: true, WorkerID: hex.EncodeToString(instance[:]), Store: db, ResolveScopedOzon: func(ctx context.Context, scope domain.StockSyncScope) (*ozon.Client, error) {
 			if !publication.Stock(scope) {
-				return nil, errors.New("controlled test publication scope mismatch")
+				return nil, errors.New("invalid publication scope")
 			}
 			key, revision, err := resolver.ResolveWithRevision(ctx, credentials.Scope{Tenant: scope.Tenant, Provider: "ozon", Account: scope.OzonAccount})
 			if err != nil {

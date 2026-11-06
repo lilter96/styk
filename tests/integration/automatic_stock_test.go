@@ -22,13 +22,13 @@ import (
 	"github.com/lilter96/styk/internal/infrastructure/moysklad"
 	"github.com/lilter96/styk/internal/infrastructure/ozon"
 	"github.com/lilter96/styk/internal/ozonjob"
+	"github.com/lilter96/styk/internal/stockfixture"
 	"github.com/lilter96/styk/internal/stocksync"
-	"github.com/lilter96/styk/internal/testpublication"
 )
 
 func TestAutomaticStockCyclesUseOutboxAndDeduplicate(t *testing.T) {
 	db, _ := controlledFixture(t)
-	scope := testpublication.Scope()
+	scope := stockfixture.Scope()
 	ctx, cancel := context.WithTimeout(context.Background(), 75*time.Second)
 	defer cancel()
 	var source, marketplace, writes atomic.Int32
@@ -69,15 +69,15 @@ func TestAutomaticStockCyclesUseOutboxAndDeduplicate(t *testing.T) {
 			marketplace.Store(in.Stocks[0].Stock)
 			fixtureText(t, w, `{"result":[{"product_id":2764544165,"warehouse_id":1020001323428000,"updated":true,"errors":[]}]}`)
 		case "/entity/product":
-			fixturePrintf(t, w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Test","article":"synthetic"}]}`, testpublication.SourceProduct)
+			fixturePrintf(t, w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Test","article":"synthetic"}]}`, stockfixture.SourceProduct)
 		case "/entity/variant":
 			fixtureText(t, w, `{"meta":{"size":0,"limit":100,"offset":0},"rows":[]}`)
 		case "/entity/store":
-			fixturePrintf(t, w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Test"}]}`, testpublication.SourceWarehouse)
+			fixturePrintf(t, w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Test"}]}`, stockfixture.SourceWarehouse)
 		case "/report/stock/all":
-			fixturePrintf(t, w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stock":%d,"reserve":0,"inTransit":0,"quantity":%d}]}`, testpublication.SourceProduct, source.Load(), source.Load())
+			fixturePrintf(t, w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stock":%d,"reserve":0,"inTransit":0,"quantity":%d}]}`, stockfixture.SourceProduct, source.Load(), source.Load())
 		case "/report/stock/bystore":
-			fixturePrintf(t, w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stockByStore":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/store/%s","type":"store"},"stock":%d,"reserve":0,"inTransit":0}]}]}`, testpublication.SourceProduct, testpublication.SourceWarehouse, source.Load())
+			fixturePrintf(t, w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stockByStore":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/store/%s","type":"store"},"stock":%d,"reserve":0,"inTransit":0}]}]}`, stockfixture.SourceProduct, stockfixture.SourceWarehouse, source.Load())
 		default:
 			t.Errorf("unexpected provider path: %s", r.URL.Path)
 			http.Error(w, "unexpected", 500)
@@ -92,7 +92,7 @@ func TestAutomaticStockCyclesUseOutboxAndDeduplicate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pub := stocksync.Runner{Enabled: true, ControlledTest: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return oz, nil }}
+	pub := stocksync.Runner{Enabled: true, DurableDispatch: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return oz, nil }}
 	imports := ozonjob.Runner{Store: db, Account: scope.OzonAccount, Client: oz, MoyskladAccount: scope.MoyskladAccount, MoyskladClient: mo}
 	worker := application.Worker{Store: db, Handler: application.MockHandler{}, Imports: imports, Publications: pub, Automatic: stocksync.AutomaticRunner{Store: db, Publisher: pub}, ImportAccount: scope.OzonAccount, MoyskladImportAccount: scope.MoyskladAccount, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Poll: 50 * time.Millisecond, Lease: time.Minute, Retry: time.Second}
 	done := make(chan error, 1)
@@ -103,7 +103,7 @@ func TestAutomaticStockCyclesUseOutboxAndDeduplicate(t *testing.T) {
 			t.Errorf("stop automatic stock fixture worker: %v", err)
 		}
 	}()
-	req := domain.AutomaticStockRequest{StockSyncScope: scope, Enabled: true, IntervalSeconds: 30, ValidMinutes: 60, ProductID: testpublication.OzonProduct, WarehouseID: testpublication.OzonWarehouse, SafetyStock: "0", Unreflected: "0", UnseenBound: "0", Maximum: 7, Acknowledge: true, SessionID: "synthetic-operator", IdempotencyKey: "automatic-enable-0001"}
+	req := domain.AutomaticStockRequest{StockSyncScope: scope, Enabled: true, IntervalSeconds: 30, ValidMinutes: 60, ProductID: stockfixture.OzonProduct, WarehouseID: stockfixture.OzonWarehouse, SafetyStock: "0", Unreflected: "0", UnseenBound: "0", Maximum: 7, Acknowledge: true, SessionID: "synthetic-operator", IdempotencyKey: "automatic-enable-0001"}
 	bad := req
 	bad.OzonAccount = "different-account"
 	if _, err = db.ConfigureAutomaticStock(ctx, bad, time.Now()); err == nil {
@@ -218,7 +218,7 @@ func TestAutomaticPolicyCannotBypassUnknownFenceOrTenant(t *testing.T) {
 	if err = db.FinishStockTarget(ctx, review.StockSyncScope, claim.ID, claim.Targets[0].ID, "UNKNOWN", "REQUEST_OUTCOME_UNKNOWN", time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	req := domain.AutomaticStockRequest{StockSyncScope: review.StockSyncScope, Enabled: true, IntervalSeconds: 30, ValidMinutes: 60, ProductID: testpublication.OzonProduct, WarehouseID: testpublication.OzonWarehouse, SafetyStock: "0", Unreflected: "0", UnseenBound: "0", Maximum: 7, Acknowledge: true, SessionID: "synthetic-session", IdempotencyKey: "auto-policy-unknown-01"}
+	req := domain.AutomaticStockRequest{StockSyncScope: review.StockSyncScope, Enabled: true, IntervalSeconds: 30, ValidMinutes: 60, ProductID: stockfixture.OzonProduct, WarehouseID: stockfixture.OzonWarehouse, SafetyStock: "0", Unreflected: "0", UnseenBound: "0", Maximum: 7, Acknowledge: true, SessionID: "synthetic-session", IdempotencyKey: "auto-policy-unknown-01"}
 	if _, err = db.ConfigureAutomaticStock(ctx, req, time.Now()); !errors.Is(err, domain.ErrStockSyncBlocked) {
 		t.Fatalf("unknown fence bypassed: %v", err)
 	}
@@ -255,9 +255,9 @@ func TestAutomaticReadFailureClassificationAndRestart(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			db, _ := controlledFixture(t)
 			ctx := context.Background()
-			scope := testpublication.Scope()
+			scope := stockfixture.Scope()
 			now := time.Now().UTC()
-			req := domain.AutomaticStockRequest{StockSyncScope: scope, Enabled: true, IntervalSeconds: 30, ValidMinutes: 60, ProductID: testpublication.OzonProduct, WarehouseID: testpublication.OzonWarehouse, SafetyStock: "0", Unreflected: "0", UnseenBound: "0", Maximum: 7, Acknowledge: true, SessionID: "synthetic", IdempotencyKey: "automatic-read-failure-01"}
+			req := domain.AutomaticStockRequest{StockSyncScope: scope, Enabled: true, IntervalSeconds: 30, ValidMinutes: 60, ProductID: stockfixture.OzonProduct, WarehouseID: stockfixture.OzonWarehouse, SafetyStock: "0", Unreflected: "0", UnseenBound: "0", Maximum: 7, Acknowledge: true, SessionID: "synthetic", IdempotencyKey: "automatic-read-failure-01"}
 			if _, err := db.ConfigureAutomaticStock(ctx, req, now); err != nil {
 				t.Fatal(err)
 			}

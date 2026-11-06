@@ -20,7 +20,7 @@ type AutomaticRunner struct {
 
 func (r AutomaticRunner) RunNext(ctx context.Context) (bool, error) {
 	_, simulator := config.StockPublicationTestEndpoint()
-	if r.Store == nil || (!r.Publisher.ControlledTest && !simulator) || !r.Publisher.Enabled {
+	if r.Store == nil || (!r.Publisher.DurableDispatch && !simulator) || !r.Publisher.Enabled {
 		return false, nil
 	}
 	action, worked, err := r.Store.AdvanceAutomaticStock(ctx, time.Now().UTC())

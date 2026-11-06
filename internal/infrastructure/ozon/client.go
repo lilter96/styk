@@ -51,7 +51,7 @@ type Client struct {
 	mu                                        sync.Mutex
 	next                                      time.Time
 	allowSyntheticStockWrites                 bool
-	controlledTestScope                       *domain.StockSyncScope
+	writeScope                                *domain.StockSyncScope
 	controlledIntent                          *StockUpdate
 	controlledAuthorize                       func(context.Context) (bool, error)
 	intentMu                                  sync.Mutex
@@ -59,12 +59,8 @@ type Client struct {
 	includeProductNames                       bool
 }
 
-// NewControlledTestStockClient permits the owner-authorized test scope and
+// NewStockWriter permits the connected account scope and
 // official Ozon host. Every write requires a bound, database-revalidated intent.
-func NewControlledTestStockClient(scope domain.StockSyncScope, key string) (*Client, error) {
-	return NewStockWriter(scope, key)
-}
-
 // NewStockWriter binds one connected account scope to single-attempt intents.
 func NewStockWriter(scope domain.StockSyncScope, key string) (*Client, error) {
 	if !publication.Stock(scope) {
@@ -94,7 +90,7 @@ func NewStockWriter(scope domain.StockSyncScope, key string) (*Client, error) {
 	transport.TLSClientConfig.NextProtos = []string{"http/1.1"}
 	transport.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
 	c.http.Transport = transport
-	c.controlledTestScope = &scope
+	c.writeScope = &scope
 	return c, nil
 }
 

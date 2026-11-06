@@ -14,7 +14,7 @@ import (
 	"github.com/lilter96/styk/internal/catalog"
 	"github.com/lilter96/styk/internal/infrastructure/moysklad"
 	"github.com/lilter96/styk/internal/infrastructure/ozon"
-	"github.com/lilter96/styk/internal/testpublication"
+	"github.com/lilter96/styk/internal/stockfixture"
 )
 
 func TestCatalogSecurityRealHostCatalogGateIsIndependent(t *testing.T) {
@@ -31,12 +31,12 @@ func TestCatalogSecurityRealHostCatalogGateIsIndependent(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", tc.stock)
 			t.Setenv("STYK_TEST_ACCOUNT_CATALOG", tc.catalog)
-			scope := catalog.Scope{Tenant: testpublication.Tenant, MoyskladAccount: testpublication.MoyskladAccount, OzonAccount: testpublication.OzonAccount}
-			_, err := moysklad.NewControlledTestCatalogClient(catalogSecurityMoyClient(t, moysklad.BaseURL), scope)
+			scope := catalog.Scope{Tenant: stockfixture.Tenant, MoyskladAccount: stockfixture.MoyskladAccount, OzonAccount: stockfixture.OzonAccount}
+			_, err := moysklad.NewWritableCatalogClient(catalogSecurityMoyClient(t, moysklad.BaseURL), scope)
 			if (err == nil) != tc.allowed {
 				t.Errorf("MoySklad catalog constructor allowed=%v, want %v", err == nil, tc.allowed)
 			}
-			_, err = ozon.NewControlledTestCatalogClient(scope, "synthetic-security-token")
+			_, err = ozon.NewWritableCatalogClient(scope, "synthetic-security-token")
 			if (err == nil) != tc.allowed {
 				t.Errorf("Ozon catalog constructor allowed=%v, want %v", err == nil, tc.allowed)
 			}
@@ -85,7 +85,7 @@ func TestCatalogSecurityMoySkladRejectsInvalidSourceBeforeBinding(t *testing.T) 
 				w.WriteHeader(http.StatusServiceUnavailable)
 			}))
 			defer server.Close()
-			client, err := moysklad.NewControlledTestCatalogClient(catalogSecurityMoyClient(t, server.URL), catalogSecurityProviderScope())
+			client, err := moysklad.NewWritableCatalogClient(catalogSecurityMoyClient(t, server.URL), catalogSecurityProviderScope())
 			if err != nil {
 				t.Fatal(err)
 			}

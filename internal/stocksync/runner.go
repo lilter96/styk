@@ -16,7 +16,7 @@ import (
 
 type Runner struct {
 	Enabled           bool
-	ControlledTest    bool
+	DurableDispatch   bool
 	WorkerID          string
 	Store             *postgres.Store
 	ResolveOzon       func(context.Context, string, string) (*ozon.Client, error)
@@ -27,7 +27,7 @@ type Runner struct {
 // Heartbeats make active test workers visible to the operator recovery gate;
 // an expired heartbeat still cannot prove that a remote request has finished.
 func (r Runner) MaintainPresence(ctx context.Context) {
-	if !r.ControlledTest || !r.Enabled || r.Store == nil {
+	if !r.DurableDispatch || !r.Enabled || r.Store == nil {
 		return
 	}
 	ticker := time.NewTicker(5 * time.Second)
@@ -36,7 +36,7 @@ func (r Runner) MaintainPresence(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		_ = r.Store.TouchTestStockWorker(ctx, r.WorkerID, time.Now().UTC())
+		_ = r.Store.TouchStockWorker(ctx, r.WorkerID, time.Now().UTC())
 		select {
 		case <-ctx.Done():
 			return
@@ -55,11 +55,11 @@ func (r Runner) RunNext(ctx context.Context) (bool, error) {
 	now := time.Now().UTC()
 	var op *domain.StockPublication
 	var err error
-	if r.ControlledTest {
+	if r.DurableDispatch {
 		if !publication.StockEnabled() {
 			return false, nil
 		}
-		if err = r.Store.TouchTestStockWorker(ctx, r.WorkerID, now); err != nil {
+		if err = r.Store.TouchStockWorker(ctx, r.WorkerID, now); err != nil {
 			return false, err
 		}
 		if err = r.Store.RecoverControlledStockPublications(ctx, now); err != nil {
@@ -142,11 +142,11 @@ func (r Runner) RunNext(ctx context.Context) (bool, error) {
 		}
 		return true, nil
 	}
-	if r.ControlledTest {
+	if r.DurableDispatch {
 		if len(items) != 1 {
-			return true, errors.New("controlled test publication must contain exactly one target")
+			return true, errors.New("durable publication must contain exactly one target")
 		}
-		if err = client.BindControlledTestIntent(items[0], func(check context.Context) (bool, error) {
+		if err = client.BindStockIntent(items[0], func(check context.Context) (bool, error) {
 			return r.Store.StockPublicationCanDispatch(check, *op, time.Now().UTC())
 		}); err != nil {
 			return true, err
@@ -195,14 +195,14 @@ func (r Runner) RunNext(ctx context.Context) (bool, error) {
 			continue
 		}
 		state := result.State
-		if (r.ControlledTest || automatic) && state == "SUCCEEDED" {
+		if (r.DurableDispatch || automatic) && state == "SUCCEEDED" {
 			state = "ACKNOWLEDGED"
 		}
 		status := result.HTTPStatus
 		if err = finishProvider(t, state, result.SafeError, &status, result.Updated, result.ErrorCodes); err != nil {
 			return true, err
 		}
-		if (r.ControlledTest || automatic) && state == "ACKNOWLEDGED" && t.Decision.Evidence.ProductMapping != nil {
+		if (r.DurableDispatch || automatic) && state == "ACKNOWLEDGED" && t.Decision.Evidence.ProductMapping != nil {
 			readCtx, readCancel := context.WithTimeout(ctx, 20*time.Second)
 			quantity, readErr := client.ReadStockQuantity(readCtx, t.ProductID, t.WarehouseID, t.Decision.Evidence.ProductMapping.OfferID)
 			readCancel()

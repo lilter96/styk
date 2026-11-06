@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/postgres"
-	"github.com/lilter96/styk/internal/testpublication"
+	"github.com/lilter96/styk/internal/stockfixture"
 )
 
 func TestExpiredMockClaimCannotFinishBeforeReclaim(t *testing.T) {
@@ -110,7 +110,7 @@ func testImportClaimLockExpiry(t *testing.T, lockOperation bool, mutate func(con
 	db, _ := controlledFixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	scope := testpublication.Scope()
+	scope := stockfixture.Scope()
 	op, _, err := db.SubmitCatalogImport(ctx, scope.Tenant, "ozon", scope.OzonAccount, "expired-import", "synthetic", domain.DefaultOzonImportLimits())
 	if err != nil {
 		t.Fatal(err)

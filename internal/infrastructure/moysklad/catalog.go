@@ -70,11 +70,7 @@ func NewCatalogClient(c *Client) (*CatalogClient, error) {
 	return &CatalogClient{client: c}, nil
 }
 
-// NewControlledTestCatalogClient is retained for existing integrations.
-func NewControlledTestCatalogClient(c *Client, scope catalog.Scope) (*CatalogClient, error) {
-	return NewWritableCatalogClient(c, scope)
-}
-
+// NewWritableCatalogClient is retained for existing integrations.
 // NewWritableCatalogClient binds one account scope under the catalog switch.
 // Tenant ownership and one-use durable intent checks remain mandatory.
 func NewWritableCatalogClient(c *Client, scope catalog.Scope) (*CatalogClient, error) {

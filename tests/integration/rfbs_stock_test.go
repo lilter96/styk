@@ -15,21 +15,21 @@ import (
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/infrastructure/ozon"
 	"github.com/lilter96/styk/internal/postgres"
+	"github.com/lilter96/styk/internal/stockfixture"
 	"github.com/lilter96/styk/internal/stocksync"
-	"github.com/lilter96/styk/internal/testpublication"
 )
 
 func rfbsStockFixture(t *testing.T, kind string) (*postgres.Store, domain.AutomaticStockPolicy) {
 	t.Helper()
 	db, _ := controlledFixtureWithMapping(t, false)
 	t.Setenv("STYK_STOCK_PUBLICATION_ENABLED", "true")
-	ctx, scope := context.Background(), testpublication.Scope()
-	if _, err := db.Pool.Exec(ctx, `UPDATE ozon_warehouse_observations SET warehouse_type=$1,is_rfbs=true WHERE warehouse_id=$2`, kind, testpublication.OzonWarehouse); err != nil {
+	ctx, scope := context.Background(), stockfixture.Scope()
+	if _, err := db.Pool.Exec(ctx, `UPDATE ozon_warehouse_observations SET warehouse_type=$1,is_rfbs=true WHERE warehouse_id=$2`, kind, stockfixture.OzonWarehouse); err != nil {
 		t.Fatal(err)
 	}
 	rfbsStockConfirmMappings(t, db)
 	configured, err := db.ConfigureAutomaticStock(ctx, domain.AutomaticStockRequest{StockSyncScope: scope, Enabled: true, IntervalSeconds: 30, ValidMinutes: 60,
-		Targets:     []domain.AutomaticStockTargetRequest{{ProductID: testpublication.OzonProduct, WarehouseID: testpublication.OzonWarehouse, SafetyStock: "0", Unreflected: "0", UnseenBound: "0", Maximum: 7}},
+		Targets:     []domain.AutomaticStockTargetRequest{{ProductID: stockfixture.OzonProduct, WarehouseID: stockfixture.OzonWarehouse, SafetyStock: "0", Unreflected: "0", UnseenBound: "0", Maximum: 7}},
 		Acknowledge: true, SessionID: "synthetic-rfbs", IdempotencyKey: "rfbs-stock-policy-001"}, time.Now())
 	if err != nil || configured.Policy == nil || len(configured.Candidates) != 1 || !configured.Candidates[0].Eligible {
 		t.Fatalf("rFBS policy or candidate rejected: %v", err)
@@ -40,9 +40,9 @@ func rfbsStockFixture(t *testing.T, kind string) (*postgres.Store, domain.Automa
 
 func rfbsStockConfirmMappings(t *testing.T, db *postgres.Store) {
 	t.Helper()
-	ctx, scope := context.Background(), testpublication.Scope()
+	ctx, scope := context.Background(), stockfixture.Scope()
 	product, err := db.CreateMappingReview(ctx, domain.MappingReviewRequest{Tenant: scope.Tenant, MoyskladAccount: scope.MoyskladAccount, OzonAccount: scope.OzonAccount,
-		ProductID: testpublication.OzonProduct, TargetKind: "product", TargetID: testpublication.SourceProduct, Evidence: domain.MappingOperatorAttested, SessionID: "synthetic-rfbs", Lifetime: time.Minute})
+		ProductID: stockfixture.OzonProduct, TargetKind: "product", TargetID: stockfixture.SourceProduct, Evidence: domain.MappingOperatorAttested, SessionID: "synthetic-rfbs", Lifetime: time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func rfbsStockConfirmMappings(t *testing.T, db *postgres.Store) {
 		t.Fatal(err)
 	}
 	warehouse, err := db.CreateWarehouseReview(ctx, domain.WarehouseReviewRequest{Tenant: scope.Tenant, MoyskladAccount: scope.MoyskladAccount, OzonAccount: scope.OzonAccount,
-		MoyskladWarehouseID: testpublication.SourceWarehouse, OzonWarehouseID: testpublication.OzonWarehouse, SessionID: "synthetic-rfbs", Lifetime: time.Minute})
+		MoyskladWarehouseID: stockfixture.SourceWarehouse, OzonWarehouseID: stockfixture.OzonWarehouse, SessionID: "synthetic-rfbs", Lifetime: time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,13 +74,13 @@ func rfbsStockRefresh(t *testing.T, db *postgres.Store, kind string) {
 
 func rfbsStockSnapshots(kind string) (domain.InventoryImport, domain.OzonImport) {
 	now, zero, seven, archived, rfbs := time.Now().UTC().Truncate(time.Microsecond), "0", "7", false, true
-	source := domain.InventoryImport{Account: testpublication.MoyskladAccount, StartedAt: now, FinishedAt: now,
-		Entities:       []domain.ExternalEntity{{Kind: "product", ID: testpublication.SourceProduct}, {Kind: "store", ID: testpublication.SourceWarehouse}},
-		WarehouseStock: []domain.WarehouseStockObservation{{Kind: "product", ExternalID: testpublication.SourceProduct, WarehouseID: testpublication.SourceWarehouse, Stock: &seven, Reserve: &zero, InTransit: &zero}}}
-	market := domain.OzonImport{Account: testpublication.OzonAccount, StartedAt: now, FinishedAt: now,
-		Products:   []domain.OzonProduct{{ProductID: testpublication.OzonProduct, OfferID: testpublication.OzonOffer, SKU: testpublication.OzonSKU, Archived: &archived}},
-		Warehouses: []domain.OzonWarehouse{{ID: testpublication.OzonWarehouse, WarehouseType: kind, Status: "created", IsRFBS: &rfbs}},
-		Stocks:     []domain.OzonStock{{ProductID: testpublication.OzonProduct, OfferID: testpublication.OzonOffer, SKU: testpublication.OzonSKU, WarehouseID: testpublication.OzonWarehouse}}}
+	source := domain.InventoryImport{Account: stockfixture.MoyskladAccount, StartedAt: now, FinishedAt: now,
+		Entities:       []domain.ExternalEntity{{Kind: "product", ID: stockfixture.SourceProduct}, {Kind: "store", ID: stockfixture.SourceWarehouse}},
+		WarehouseStock: []domain.WarehouseStockObservation{{Kind: "product", ExternalID: stockfixture.SourceProduct, WarehouseID: stockfixture.SourceWarehouse, Stock: &seven, Reserve: &zero, InTransit: &zero}}}
+	market := domain.OzonImport{Account: stockfixture.OzonAccount, StartedAt: now, FinishedAt: now,
+		Products:   []domain.OzonProduct{{ProductID: stockfixture.OzonProduct, OfferID: stockfixture.OzonOffer, SKU: stockfixture.OzonSKU, Archived: &archived}},
+		Warehouses: []domain.OzonWarehouse{{ID: stockfixture.OzonWarehouse, WarehouseType: kind, Status: "created", IsRFBS: &rfbs}},
+		Stocks:     []domain.OzonStock{{ProductID: stockfixture.OzonProduct, OfferID: stockfixture.OzonOffer, SKU: stockfixture.OzonSKU, WarehouseID: stockfixture.OzonWarehouse}}}
 	return source, market
 }
 
@@ -157,7 +157,7 @@ func rfbsStockCommitReads(t *testing.T, db *postgres.Store, policy domain.Automa
 	t.Helper()
 	ctx := context.Background()
 	var kind string
-	if err := db.Pool.QueryRow(ctx, `SELECT warehouse_type FROM ozon_warehouse_observations WHERE warehouse_id=$1 ORDER BY import_id DESC LIMIT 1`, testpublication.OzonWarehouse).Scan(&kind); err != nil {
+	if err := db.Pool.QueryRow(ctx, `SELECT warehouse_type FROM ozon_warehouse_observations WHERE warehouse_id=$1 ORDER BY import_id DESC LIMIT 1`, stockfixture.OzonWarehouse).Scan(&kind); err != nil {
 		t.Fatal(err)
 	}
 	for range 2 {
@@ -214,7 +214,7 @@ func rfbsStockRun(t *testing.T, db *postgres.Store, review domain.StockSyncRevie
 		}
 		fixtureText(t, w, `{"products":[{"product_id":2764544165,"warehouse_id":1020001323428000,"offer_id":"ATEST-897677","present":9,"reserved":2,"free_stock":7}],"has_next":false}`)
 	})
-	runner := stocksync.Runner{Enabled: true, ControlledTest: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return client, nil }}
+	runner := stocksync.Runner{Enabled: true, DurableDispatch: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return client, nil }}
 	if worked, err := runner.RunNext(context.Background()); err != nil || !worked {
 		t.Fatalf("rFBS worker did not dispatch: %v", err)
 	}
@@ -253,7 +253,7 @@ func TestRFBSStockRejectsUnallocatedSharedSourceWarehouse(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := db.CreateWarehouseReview(ctx, domain.WarehouseReviewRequest{Tenant: policy.Tenant, MoyskladAccount: policy.MoyskladAccount, OzonAccount: policy.OzonAccount,
-		MoyskladWarehouseID: testpublication.SourceWarehouse, OzonWarehouseID: "1020001795665000", SessionID: "synthetic-rfbs", Lifetime: time.Minute})
+		MoyskladWarehouseID: stockfixture.SourceWarehouse, OzonWarehouseID: "1020001795665000", SessionID: "synthetic-rfbs", Lifetime: time.Minute})
 	if err == nil {
 		t.Fatal("one physical source warehouse was allocated in full to a second delivery warehouse")
 	}
@@ -267,7 +267,7 @@ func TestRFBSStockRevalidatesWarehouseBeforeDispatch(t *testing.T) {
 	db, policy := rfbsStockFixture(t, "rfbs_express")
 	review := rfbsReadyReview(t, db, policy)
 	rfbsPublicationID(t, db, review)
-	if _, err := db.Pool.Exec(context.Background(), `UPDATE ozon_warehouse_observations SET status='disabled' WHERE warehouse_id=$1`, testpublication.OzonWarehouse); err != nil {
+	if _, err := db.Pool.Exec(context.Background(), `UPDATE ozon_warehouse_observations SET status='disabled' WHERE warehouse_id=$1`, stockfixture.OzonWarehouse); err != nil {
 		t.Fatal(err)
 	}
 	var calls atomic.Int32
@@ -282,7 +282,7 @@ func TestRFBSStockRevalidatesWarehouseBeforeDispatch(t *testing.T) {
 }
 
 func rfbsStockRunner(db *postgres.Store, client *ozon.Client) stocksync.Runner {
-	return stocksync.Runner{Enabled: true, ControlledTest: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return client, nil }}
+	return stocksync.Runner{Enabled: true, DurableDispatch: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return client, nil }}
 }
 
 func TestRFBSStockProviderPermissionIsIndependentAndNeverReplayed(t *testing.T) {

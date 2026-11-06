@@ -11,9 +11,6 @@ import (
 // the external contract has been independently validated. This is not a
 // production enable switch. Empty, malformed and non-loopback values fail closed.
 func StockPublicationTestEndpoint() (string, bool) {
-	if os.Getenv("STYK_STOCK_PUBLICATION_ENABLED") != "true" {
-		return "", false
-	}
 	value := os.Getenv("STYK_STOCK_PUBLICATION_TEST_ENDPOINT")
 	u, err := url.Parse(value)
 	if err != nil || u.Scheme != "http" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.Port() == "" {

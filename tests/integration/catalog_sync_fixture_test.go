@@ -17,7 +17,7 @@ import (
 	"github.com/lilter96/styk/internal/catalogsync"
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/postgres"
-	"github.com/lilter96/styk/internal/testpublication"
+	"github.com/lilter96/styk/internal/stockfixture"
 )
 
 func catalogSyncDB(t testing.TB) *postgres.Store {
@@ -69,7 +69,7 @@ func catalogSyncMigrate(t testing.TB, dsn string, args ...string) {
 
 func catalogSyncFixture(t testing.TB) (*postgres.Store, catalogsync.Config) {
 	t.Helper()
-	scope := catalog.Scope{Tenant: testpublication.Tenant, MoyskladAccount: testpublication.MoyskladAccount, OzonAccount: testpublication.OzonAccount}
+	scope := catalog.Scope{Tenant: stockfixture.Tenant, MoyskladAccount: stockfixture.MoyskladAccount, OzonAccount: stockfixture.OzonAccount}
 	return catalogSyncFixtureForScope(t, scope)
 }
 

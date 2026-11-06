@@ -17,7 +17,6 @@ import (
 	"github.com/lilter96/styk/internal/config"
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/publication"
-	"github.com/lilter96/styk/internal/testpublication"
 )
 
 var syncProofCodes = map[string]bool{
@@ -176,18 +175,6 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 	if err != nil {
 		return review, err
 	}
-	legacyManualTest := !publication.StockGeneral() && testpublication.Enabled(scope) && len(automaticProducts) == 0
-	if legacyManualTest {
-		// The real test mode never publishes the other confirmed mappings in
-		// this workspace. Shared-pool checks still inspect all mappings below.
-		selected := targets[:0]
-		for _, t := range targets {
-			if t.pid == testpublication.OzonProduct && t.wid == testpublication.OzonWarehouse && t.kind == "product" && t.item == testpublication.SourceProduct && t.sourceWarehouse == testpublication.SourceWarehouse {
-				selected = append(selected, t)
-			}
-		}
-		targets = selected
-	}
 	if len(targets) == 0 || len(targets) > 100 {
 		review.Ready = false
 		code, msg := "MAPPINGS_REQUIRED", "Подтвердите соответствия товаров и складов."
@@ -290,13 +277,12 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 				JOIN product_mapping_history h ON h.mapping_id=$5 AND h.version=$6
 				JOIN ozon_product_observations original ON original.import_id=h.ozon_import_id AND original.product_id=h.ozon_product_id AND original.offer_id=h.ozon_offer_id AND original.sku=p.sku
 				WHERE p.import_id=$1 AND p.product_id=$2 AND p.offer_id=$3 AND p.archived=false AND p.sku IS NOT NULL
-				AND ($10::boolean OR EXISTS(SELECT 1 FROM ozon_fbs_stock_observations s WHERE s.import_id=p.import_id AND s.product_id=p.product_id AND s.offer_id=p.offer_id AND s.sku=p.sku AND s.warehouse_id=$4))
-				AND (NOT $7::boolean OR (p.offer_id=$8 AND p.sku=$9))
-			)`, *e.Marketplace.ImportID, t.pid, e.ProductMapping.OfferID, t.wid, e.ProductMapping.ID, e.ProductMapping.Version, legacyManualTest, testpublication.OzonOffer, testpublication.OzonSKU, initial).Scan(&productIdentity)
+				AND ($7::boolean OR EXISTS(SELECT 1 FROM ozon_fbs_stock_observations s WHERE s.import_id=p.import_id AND s.product_id=p.product_id AND s.offer_id=p.offer_id AND s.sku=p.sku AND s.warehouse_id=$4))
+			)`, *e.Marketplace.ImportID, t.pid, e.ProductMapping.OfferID, t.wid, e.ProductMapping.ID, e.ProductMapping.Version, initial).Scan(&productIdentity)
 			if err != nil {
 				return review, err
 			}
-			warehouseIdentity, err = readStockWarehouseSupported(ctx, tx, scope, *e.Marketplace.ImportID, t.wid, automaticTarget != nil && automaticValid, !publication.StockGeneral() && testpublication.Enabled(scope))
+			warehouseIdentity, err = readStockWarehouseSupported(ctx, tx, scope, *e.Marketplace.ImportID, t.wid, automaticTarget != nil && automaticValid, false)
 			if err != nil {
 				return review, err
 			}
@@ -402,8 +388,8 @@ func (s *Store) stockSyncReview(ctx context.Context, tx pgx.Tx, scope domain.Sto
 			if d.Quantity != nil {
 				quantity = *d.Quantity
 			}
-			testAllowed = approved && (((legacyManualTest || publication.StockGeneral()) && publication.ManualTarget(scope, t.pid, t.wid, t.item, t.sourceWarehouse, quantity)) || (automaticTarget != nil && automaticValid && publication.Quantity(scope, quantity)))
-			checks = append(checks, domain.StockSyncCheck{Code: "TEST_TARGET_ALLOWED", Passed: testAllowed, Message: "Тестовая пара, подтверждённые соответствия и ограничение количества проверены."})
+			testAllowed = approved && ((publication.ManualTarget(scope, t.pid, t.wid, t.item, t.sourceWarehouse, quantity)) || (automaticTarget != nil && automaticValid && publication.Quantity(scope, quantity)))
+			checks = append(checks, domain.StockSyncCheck{Code: "TARGET_ALLOWED", Passed: testAllowed, Message: "Подтверждённые соответствия и допустимое количество проверены."})
 		}
 		if automaticTarget != nil && d.Quantity != nil {
 			quantity, parseErr := strconv.ParseInt(*d.Quantity, 10, 64)
@@ -534,7 +520,7 @@ func createPublication(ctx context.Context, tx pgx.Tx, review domain.StockSyncRe
 		}
 	}
 	if len(review.Targets) == 1 && review.Targets[0].InitialPublication {
-		// Only the immutable, current test policy can authorize a first-write
+		// Only the immutable, current policy can authorize a first-write
 		// takeover. Never use this route for a previously dispatched target.
 		allowed, err := authorizedAutomaticReview(ctx, tx, review, now)
 		if err != nil {

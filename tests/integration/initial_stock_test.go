@@ -21,13 +21,13 @@ import (
 	"github.com/lilter96/styk/internal/infrastructure/moysklad"
 	"github.com/lilter96/styk/internal/infrastructure/ozon"
 	"github.com/lilter96/styk/internal/ozonjob"
+	"github.com/lilter96/styk/internal/stockfixture"
 	"github.com/lilter96/styk/internal/stocksync"
-	"github.com/lilter96/styk/internal/testpublication"
 )
 
 func TestAutomaticInitialStockRequiresExplicitSingleTakeover(t *testing.T) {
 	db, _ := controlledFixture(t)
-	scope := testpublication.Scope()
+	scope := stockfixture.Scope()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	var row atomic.Bool
@@ -76,15 +76,15 @@ func TestAutomaticInitialStockRequiresExplicitSingleTakeover(t *testing.T) {
 			row.Store(true)
 			reply(w, `{"result":[{"product_id":2764544165,"warehouse_id":1020001323428000,"updated":true,"errors":[]}]}`)
 		case "/entity/product":
-			reply(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Test","article":"synthetic"}]}`, testpublication.SourceProduct)
+			reply(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Test","article":"synthetic"}]}`, stockfixture.SourceProduct)
 		case "/entity/variant":
 			reply(w, `{"meta":{"size":0,"limit":100,"offset":0},"rows":[]}`)
 		case "/entity/store":
-			reply(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Test"}]}`, testpublication.SourceWarehouse)
+			reply(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"id":%q,"name":"Test"}]}`, stockfixture.SourceWarehouse)
 		case "/report/stock/all":
-			reply(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stock":7,"reserve":0,"inTransit":0,"quantity":7}]}`, testpublication.SourceProduct)
+			reply(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stock":7,"reserve":0,"inTransit":0,"quantity":7}]}`, stockfixture.SourceProduct)
 		case "/report/stock/bystore":
-			reply(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stockByStore":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/store/%s","type":"store"},"stock":7,"reserve":0,"inTransit":0}]}]}`, testpublication.SourceProduct, testpublication.SourceWarehouse)
+			reply(w, `{"meta":{"size":1,"limit":100,"offset":0},"rows":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/product/%s","type":"product"},"stockByStore":[{"meta":{"href":"https://api.moysklad.ru/api/remap/1.2/entity/store/%s","type":"store"},"stock":7,"reserve":0,"inTransit":0}]}]}`, stockfixture.SourceProduct, stockfixture.SourceWarehouse)
 		default:
 			t.Errorf("unexpected path %s", r.URL.Path)
 			http.Error(w, "unexpected", 500)
@@ -99,7 +99,7 @@ func TestAutomaticInitialStockRequiresExplicitSingleTakeover(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pub := stocksync.Runner{Enabled: true, ControlledTest: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return oz, nil }}
+	pub := stocksync.Runner{Enabled: true, DurableDispatch: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return oz, nil }}
 	imports := ozonjob.Runner{Store: db, Account: scope.OzonAccount, Client: oz, MoyskladAccount: scope.MoyskladAccount, MoyskladClient: mo}
 	worker := application.Worker{Store: db, Handler: application.MockHandler{}, Imports: imports, Publications: pub, Automatic: stocksync.AutomaticRunner{Store: db, Publisher: pub}, ImportAccount: scope.OzonAccount, MoyskladImportAccount: scope.MoyskladAccount, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Poll: 50 * time.Millisecond, Lease: time.Minute, Retry: time.Second}
 	done := make(chan error, 1)
@@ -110,7 +110,7 @@ func TestAutomaticInitialStockRequiresExplicitSingleTakeover(t *testing.T) {
 			t.Errorf("worker exit: %v", err)
 		}
 	}()
-	req := domain.AutomaticStockRequest{StockSyncScope: scope, Enabled: true, IntervalSeconds: 30, ValidMinutes: 60, Targets: []domain.AutomaticStockTargetRequest{{ProductID: testpublication.OzonProduct, WarehouseID: testpublication.OzonWarehouse, SafetyStock: "0", Unreflected: "0", UnseenBound: "0", Maximum: 7}}, Acknowledge: true, SessionID: "synthetic", IdempotencyKey: "initial-policy-without-authorization"}
+	req := domain.AutomaticStockRequest{StockSyncScope: scope, Enabled: true, IntervalSeconds: 30, ValidMinutes: 60, Targets: []domain.AutomaticStockTargetRequest{{ProductID: stockfixture.OzonProduct, WarehouseID: stockfixture.OzonWarehouse, SafetyStock: "0", Unreflected: "0", UnseenBound: "0", Maximum: 7}}, Acknowledge: true, SessionID: "synthetic", IdempotencyKey: "initial-policy-without-authorization"}
 	if _, err = db.ConfigureAutomaticStock(ctx, req, time.Now()); err != nil {
 		t.Fatal(err)
 	}

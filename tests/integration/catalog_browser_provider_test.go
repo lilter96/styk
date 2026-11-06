@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/lilter96/styk/internal/testpublication"
+	"github.com/lilter96/styk/internal/stockfixture"
 )
 
 type catalogBrowserProvider struct {
@@ -34,7 +34,7 @@ func (p *catalogBrowserProvider) ServeHTTP(w http.ResponseWriter, r *http.Reques
 		p.moy(w, r)
 		return
 	}
-	if r.Header.Get("Client-Id") != testpublication.OzonAccount || r.Header.Get("Api-Key") != "synthetic-ozon-a" {
+	if r.Header.Get("Client-Id") != stockfixture.OzonAccount || r.Header.Get("Api-Key") != "synthetic-ozon-a" {
 		http.Error(w, "synthetic account required", http.StatusForbidden)
 		return
 	}
@@ -44,8 +44,8 @@ func (p *catalogBrowserProvider) ServeHTTP(w http.ResponseWriter, r *http.Reques
 func (p *catalogBrowserProvider) moy(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/context/employee":
-		p.encode(w, map[string]any{"accountId": testpublication.MoyskladAccount})
-	case "/entity/product/" + testpublication.SourceProduct:
+		p.encode(w, map[string]any{"accountId": stockfixture.MoyskladAccount})
+	case "/entity/product/" + stockfixture.SourceProduct:
 		if r.Method == http.MethodPut {
 			var body map[string]any
 			if json.NewDecoder(r.Body).Decode(&body) != nil || len(body) != 1 || body["description"] != catalogBrowserOzonDescription {
@@ -71,8 +71,8 @@ func (p *catalogBrowserProvider) moy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *catalogBrowserProvider) moyProduct(r *http.Request) map[string]any {
-	return map[string]any{"id": testpublication.SourceProduct, "accountId": testpublication.MoyskladAccount,
-		"meta": map[string]any{"href": "http://" + r.Host + "/entity/product/" + testpublication.SourceProduct, "type": "product", "mediaType": "application/json"},
+	return map[string]any{"id": stockfixture.SourceProduct, "accountId": stockfixture.MoyskladAccount,
+		"meta": map[string]any{"href": "http://" + r.Host + "/entity/product/" + stockfixture.SourceProduct, "type": "product", "mediaType": "application/json"},
 		"name": p.moyName, "description": p.moyDescription, "article": "catalog-browser", "archived": false}
 }
 
@@ -107,7 +107,7 @@ func (p *catalogBrowserProvider) ozonPoll(w http.ResponseWriter, r *http.Request
 	if p.pendingName != "" {
 		p.ozonName, p.pendingName = p.pendingName, ""
 	}
-	p.encode(w, map[string]any{"result": map[string]any{"total": 1, "items": []any{map[string]any{"offer_id": testpublication.OzonOffer, "product_id": json.Number(testpublication.OzonProduct), "status": "imported", "errors": []any{}}}}})
+	p.encode(w, map[string]any{"result": map[string]any{"total": 1, "items": []any{map[string]any{"offer_id": stockfixture.OzonOffer, "product_id": json.Number(stockfixture.OzonProduct), "status": "imported", "errors": []any{}}}}})
 }
 
 func (p *catalogBrowserProvider) ozonInfo(fact catalogBrowserOzonFact) map[string]any {
@@ -142,7 +142,7 @@ func (p *catalogBrowserProvider) ozonUpdate(w http.ResponseWriter, r *http.Reque
 	}
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&body) != nil || len(body.Items) != 1 || body.Items[0].OfferID != testpublication.OzonOffer || len(body.Items[0].Attributes) != 1 {
+	if decoder.Decode(&body) != nil || len(body.Items) != 1 || body.Items[0].OfferID != stockfixture.OzonOffer || len(body.Items[0].Attributes) != 1 {
 		p.fail(w, "Ozon write widened approved product or field selection")
 		return
 	}

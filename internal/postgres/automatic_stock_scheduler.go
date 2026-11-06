@@ -9,10 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/lilter96/styk/internal/config"
 	"github.com/lilter96/styk/internal/domain"
-	"github.com/lilter96/styk/internal/publication"
-	"github.com/lilter96/styk/internal/testpublication"
 )
 
 // AutomaticReconcile asks the existing readback path to inspect an acknowledged
@@ -65,21 +62,13 @@ func automaticReadFailure(operations ...domain.ImportOperation) (string, bool) {
 // Cycle/import identities survive restarts and import submissions are
 // idempotent even if the worker dies between submission and linking the ID.
 func (s *Store) AdvanceAutomaticStock(ctx context.Context, now time.Time) (*AutomaticReconcile, bool, error) {
-	scope := testpublication.Scope()
-	if publication.StockGeneral() || !testpublication.Enabled(scope) {
-		// Only the pre-existing loopback simulator may exercise other scopes.
-		// The live database's account constraint still rejects such policies.
-		_, simulator := config.StockPublicationTestEndpoint()
-		if !simulator && !publication.StockGeneral() {
-			return nil, false, nil
-		}
-		err := s.Pool.QueryRow(ctx, `SELECT tenant_id,moysklad_account,ozon_account FROM stock_auto_configs c WHERE enabled AND ($2::boolean OR tenant_id LIKE 'synthetic-auto-%') AND (next_run_at<=$1 OR EXISTS(SELECT 1 FROM stock_auto_cycles x WHERE x.tenant_id=c.tenant_id AND x.moysklad_account=c.moysklad_account AND x.ozon_account=c.ozon_account AND x.state IN ('STARTING','READING','WAITING_PUBLICATION') AND x.next_action_at<=$1)) ORDER BY LEAST(COALESCE(next_run_at,'infinity'::timestamptz),COALESCE((SELECT min(x.next_action_at) FROM stock_auto_cycles x WHERE x.tenant_id=c.tenant_id AND x.moysklad_account=c.moysklad_account AND x.ozon_account=c.ozon_account AND x.state IN ('STARTING','READING','WAITING_PUBLICATION')),'infinity'::timestamptz)),tenant_id LIMIT 1`, now, publication.StockGeneral()).Scan(&scope.Tenant, &scope.MoyskladAccount, &scope.OzonAccount)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, false, nil
-		}
-		if err != nil {
-			return nil, false, err
-		}
+	var scope domain.StockSyncScope
+	err := s.Pool.QueryRow(ctx, `SELECT tenant_id,moysklad_account,ozon_account FROM stock_auto_configs c WHERE enabled AND (next_run_at<=$1 OR EXISTS(SELECT 1 FROM stock_auto_cycles x WHERE x.tenant_id=c.tenant_id AND x.moysklad_account=c.moysklad_account AND x.ozon_account=c.ozon_account AND x.state IN ('STARTING','READING','WAITING_PUBLICATION') AND x.next_action_at<=$1)) ORDER BY LEAST(COALESCE(next_run_at,'infinity'::timestamptz),COALESCE((SELECT min(x.next_action_at) FROM stock_auto_cycles x WHERE x.tenant_id=c.tenant_id AND x.moysklad_account=c.moysklad_account AND x.ozon_account=c.ozon_account AND x.state IN ('STARTING','READING','WAITING_PUBLICATION')),'infinity'::timestamptz)),tenant_id LIMIT 1`, now).Scan(&scope.Tenant, &scope.MoyskladAccount, &scope.OzonAccount)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
 	}
 	return s.advanceAutomaticStockScope(ctx, scope, now)
 }

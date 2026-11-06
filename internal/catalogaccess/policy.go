@@ -1,5 +1,4 @@
-// Package catalogaccess keeps the deployment catalog switch separate from
-// tenant ownership, per-account configuration and durable dispatch guards.
+// Package catalogaccess validates catalog scopes independently of ownership and dispatch guards.
 package catalogaccess
 
 import (
@@ -12,9 +11,8 @@ func Enabled() bool {
 	return publication.CatalogEnabled()
 }
 
-// Allows admits any valid connected-account scope under the general switch.
+// Allows admits any valid connected-account scope.
 // Credential resolution and transactional stores prove registration/ownership.
-// The legacy test switch deliberately retains its original fixed scope.
 func Allows(scope catalog.Scope) bool {
 	return publication.Catalog(scope)
 }

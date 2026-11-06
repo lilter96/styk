@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/lilter96/styk/internal/identity"
-	"github.com/lilter96/styk/internal/testpublication"
+	"github.com/lilter96/styk/internal/stockfixture"
 )
 
 func TestMerchantAccountMigrationPreservesHistoryAndIsolation(t *testing.T) {
@@ -39,7 +39,7 @@ func TestMerchantAccountMigrationPreservesHistoryAndIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	target := testpublication.Tenant
+	target := stockfixture.Tenant
 	if err = store.ClaimLegacy(ctx, target, owner.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -87,10 +87,10 @@ func TestMerchantMigrationRefusesToOrphanBusinessData(t *testing.T) {
 	if err = db.RegisterStockConnection(ctx, initial.ID, "ozon", "existing-business-account", "synthetic", false); err != nil {
 		t.Fatal(err)
 	}
-	if err = store.ClaimLegacy(ctx, testpublication.Tenant, owner.ID); err != nil {
+	if err = store.ClaimLegacy(ctx, stockfixture.Tenant, owner.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err = store.BindLegacyMerchant(ctx, owner.ID, testpublication.Tenant); err == nil {
+	if err = store.BindLegacyMerchant(ctx, owner.ID, stockfixture.Tenant); err == nil {
 		t.Fatal("migration orphaned a nonempty merchant account")
 	}
 	if tenant, err := store.MerchantTenant(ctx, owner.ID); err != nil || tenant != initial.ID {

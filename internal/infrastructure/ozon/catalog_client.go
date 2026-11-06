@@ -52,15 +52,11 @@ func NewCatalogReaderFromClient(client *Client, scope catalog.Scope) (*CatalogCl
 	return &CatalogClient{read: client, scope: scope}, nil
 }
 
-func NewControlledTestCatalogClient(scope catalog.Scope, key string) (*CatalogClient, error) {
+func NewWritableCatalogClient(scope catalog.Scope, key string) (*CatalogClient, error) {
 	client, err := New(Options{BaseURL: BaseURL, ClientID: scope.OzonAccount, APIKey: key, Timeout: 20 * time.Second, Interval: time.Second, Backoff: time.Second, MaxRetryAfter: time.Second, Attempts: 1, PageSize: 100})
 	if err != nil {
 		return nil, err
 	}
-	return NewControlledTestCatalogClientFromClient(client, scope)
-}
-
-func NewControlledTestCatalogClientFromClient(client *Client, scope catalog.Scope) (*CatalogClient, error) {
 	return NewWritableCatalogClientFromClient(client, scope)
 }
 

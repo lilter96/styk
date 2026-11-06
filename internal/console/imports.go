@@ -5,10 +5,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"os"
 	"regexp"
 	"strconv"
-	"strings"
 
 	"github.com/lilter96/styk/internal/credentials"
 	"github.com/lilter96/styk/internal/domain"
@@ -17,21 +15,15 @@ import (
 )
 
 type importAPI struct {
-	db                *postgres.Store
-	configuredAccount string
-	configured        bool
-	moyAccount        string
-	moyConfigured     bool
-	vault             *credentials.Vault
+	db    *postgres.Store
+	vault *credentials.Vault
 }
 
 var importIdempotencyPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
 
 func newImportAPI(db *postgres.Store) *importAPI {
-	account, key := os.Getenv("OZON_CLIENT_ID"), os.Getenv("OZON_API_KEY")
-	moyAccount, token := os.Getenv("MOYSKLAD_ACCOUNT_ID"), os.Getenv("MOYSKLAD_TOKEN")
 	vault, _ := credentials.FromEnvironment()
-	return &importAPI{db: db, vault: vault, moyAccount: moyAccount, moyConfigured: validConnectionTenant(moyAccount) && strings.TrimSpace(token) != "" && !strings.ContainsAny(moyAccount+token, "\r\n"), configuredAccount: account, configured: validConnectionTenant(account) && strings.TrimSpace(key) != "" && !strings.ContainsAny(account+key, "\r\n")}
+	return &importAPI{db: db, vault: vault}
 }
 func importError(w http.ResponseWriter, err error) {
 	switch {
@@ -110,16 +102,12 @@ func (a *importAPI) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !exists {
-		configured := provider == "ozon" && a.configured && in.Account == a.configuredAccount || provider == "moysklad" && a.moyConfigured && in.Account == a.moyAccount
-		if a.vault != nil || configured {
-			_, resolveErr := (credentials.Resolver{Store: a.db, Vault: a.vault}).Resolve(r.Context(), credentials.Scope{Tenant: in.Tenant, Provider: provider, Account: in.Account})
-			if errors.Is(resolveErr, credentials.ErrOwnership) {
-				importError(w, postgres.ErrImportScope)
-				return
-			}
-			configured = resolveErr == nil
+		_, resolveErr := (credentials.Resolver{Store: a.db, Vault: a.vault}).Resolve(r.Context(), credentials.Scope{Tenant: in.Tenant, Provider: provider, Account: in.Account})
+		if errors.Is(resolveErr, credentials.ErrOwnership) {
+			importError(w, postgres.ErrImportScope)
+			return
 		}
-		if !configured {
+		if resolveErr != nil {
 			writeError(w, 403, "ACCOUNT_NOT_CONFIGURED")
 			return
 		}

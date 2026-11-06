@@ -29,7 +29,7 @@ func TestStockConnectedAccountDispatchAndRecoveryKeepOneAttempt(t *testing.T) {
 		}
 		t.Errorf("unexpected endpoint %s", r.URL.Path)
 	})
-	runner := stocksync.Runner{Enabled: true, ControlledTest: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveScopedOzon: func(_ context.Context, actual domain.StockSyncScope) (*ozon.Client, error) {
+	runner := stocksync.Runner{Enabled: true, DurableDispatch: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveScopedOzon: func(_ context.Context, actual domain.StockSyncScope) (*ozon.Client, error) {
 		if actual != scope {
 			t.Error("resolver lost exact merchant account scope")
 		}
@@ -61,16 +61,16 @@ func TestStockConnectedAccountDispatchAndRecoveryKeepOneAttempt(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := domain.StockRecoveryRequest{StockSyncScope: scope, OperationID: op.ID, SessionID: "synthetic-owner", IdempotencyKey: "connected-recovery-001", Acknowledge: true, WorkerStopped: true, Reason: "Owner accepted the uncertain provider result after readback", ExpectedQuantity: "27", ExpectedReadbackAt: *readback.Targets[0].ReadbackAt}
-	if _, err = db.SupersedeTestUnknown(context.Background(), request, time.Now()); err == nil {
+	if _, err = db.SupersedeStockUnknown(context.Background(), request, time.Now()); err == nil {
 		t.Fatal("active worker heartbeat did not block recovery")
 	}
 	if _, err = db.Pool.Exec(context.Background(), `UPDATE stock_test_worker_presence SET expires_at=clock_timestamp()-interval '1 second'`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.SupersedeTestUnknown(context.Background(), request, time.Now()); err != nil {
+	if _, err = db.SupersedeStockUnknown(context.Background(), request, time.Now()); err != nil {
 		t.Fatal("connected recovery remained allowlisted", err)
 	}
-	if _, err = db.SupersedeTestUnknown(context.Background(), request, time.Now()); err != nil {
+	if _, err = db.SupersedeStockUnknown(context.Background(), request, time.Now()); err != nil {
 		t.Fatal("recovery replay lost idempotency", err)
 	}
 	original, err := db.StockPublication(context.Background(), scope, op.ID)

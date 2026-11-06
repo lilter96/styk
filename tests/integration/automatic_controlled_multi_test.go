@@ -17,15 +17,15 @@ import (
 	"github.com/lilter96/styk/internal/application"
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/infrastructure/ozon"
+	"github.com/lilter96/styk/internal/stockfixture"
 	"github.com/lilter96/styk/internal/stocksync"
-	"github.com/lilter96/styk/internal/testpublication"
 )
 
 // The fixed real account scope is exercised only against a loopback provider.
 // No real credentials or hosts occur in this test.
 func TestControlledAutomaticEnrolledTargetsShareTraversal(t *testing.T) {
 	db, _ := controlledFixture(t)
-	scope := testpublication.Scope()
+	scope := stockfixture.Scope()
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 	defer cancel()
 	const second = "2764939447"
@@ -34,8 +34,8 @@ func TestControlledAutomaticEnrolledTargetsShareTraversal(t *testing.T) {
 	now := time.Now().UTC().Add(-time.Second)
 	zero, four, ten, three := "0", "4", "10", "3"
 	fbs, archived := false, false
-	source := domain.InventoryImport{Account: scope.MoyskladAccount, StartedAt: now, FinishedAt: now.Add(time.Millisecond), Entities: []domain.ExternalEntity{{Kind: "product", ID: testpublication.SourceProduct}, {Kind: "product", ID: secondItem}, {Kind: "store", ID: testpublication.SourceWarehouse}}, WarehouseStock: []domain.WarehouseStockObservation{{Kind: "product", ExternalID: testpublication.SourceProduct, WarehouseID: testpublication.SourceWarehouse, Stock: &four, Reserve: &zero, InTransit: &zero}, {Kind: "product", ExternalID: secondItem, WarehouseID: testpublication.SourceWarehouse, Stock: &ten, Reserve: &three, InTransit: &zero}}}
-	market := domain.OzonImport{Account: scope.OzonAccount, StartedAt: now, FinishedAt: now.Add(time.Millisecond), Products: []domain.OzonProduct{{ProductID: testpublication.OzonProduct, OfferID: testpublication.OzonOffer, SKU: testpublication.OzonSKU, Archived: &archived}, {ProductID: second, OfferID: secondOffer, SKU: "2889575995", Archived: &archived}}, Warehouses: []domain.OzonWarehouse{{ID: testpublication.OzonWarehouse, Status: "created", IsRFBS: &fbs}}, Stocks: []domain.OzonStock{{ProductID: testpublication.OzonProduct, OfferID: testpublication.OzonOffer, SKU: testpublication.OzonSKU, WarehouseID: testpublication.OzonWarehouse, Present: 0, Reserved: 0, FreeStock: 0}, {ProductID: second, OfferID: secondOffer, SKU: "2889575995", WarehouseID: testpublication.OzonWarehouse, Present: 0, Reserved: 0, FreeStock: 0}}}
+	source := domain.InventoryImport{Account: scope.MoyskladAccount, StartedAt: now, FinishedAt: now.Add(time.Millisecond), Entities: []domain.ExternalEntity{{Kind: "product", ID: stockfixture.SourceProduct}, {Kind: "product", ID: secondItem}, {Kind: "store", ID: stockfixture.SourceWarehouse}}, WarehouseStock: []domain.WarehouseStockObservation{{Kind: "product", ExternalID: stockfixture.SourceProduct, WarehouseID: stockfixture.SourceWarehouse, Stock: &four, Reserve: &zero, InTransit: &zero}, {Kind: "product", ExternalID: secondItem, WarehouseID: stockfixture.SourceWarehouse, Stock: &ten, Reserve: &three, InTransit: &zero}}}
+	market := domain.OzonImport{Account: scope.OzonAccount, StartedAt: now, FinishedAt: now.Add(time.Millisecond), Products: []domain.OzonProduct{{ProductID: stockfixture.OzonProduct, OfferID: stockfixture.OzonOffer, SKU: stockfixture.OzonSKU, Archived: &archived}, {ProductID: second, OfferID: secondOffer, SKU: "2889575995", Archived: &archived}}, Warehouses: []domain.OzonWarehouse{{ID: stockfixture.OzonWarehouse, Status: "created", IsRFBS: &fbs}}, Stocks: []domain.OzonStock{{ProductID: stockfixture.OzonProduct, OfferID: stockfixture.OzonOffer, SKU: stockfixture.OzonSKU, WarehouseID: stockfixture.OzonWarehouse, Present: 0, Reserved: 0, FreeStock: 0}, {ProductID: second, OfferID: secondOffer, SKU: "2889575995", WarehouseID: stockfixture.OzonWarehouse, Present: 0, Reserved: 0, FreeStock: 0}}}
 	if _, err := db.SaveInventoryImport(ctx, source, "controlled-multi-source"); err != nil {
 		t.Fatal(err)
 	}
@@ -50,14 +50,14 @@ func TestControlledAutomaticEnrolledTargetsShareTraversal(t *testing.T) {
 		t.Fatal(err)
 	}
 	inputs := []domain.AutomaticStockTargetRequest{}
-	for _, id := range []string{testpublication.OzonProduct, second} {
-		inputs = append(inputs, domain.AutomaticStockTargetRequest{ProductID: id, WarehouseID: testpublication.OzonWarehouse, SafetyStock: "0", Unreflected: "0", UnseenBound: "0", Maximum: 7})
+	for _, id := range []string{stockfixture.OzonProduct, second} {
+		inputs = append(inputs, domain.AutomaticStockTargetRequest{ProductID: id, WarehouseID: stockfixture.OzonWarehouse, SafetyStock: "0", Unreflected: "0", UnseenBound: "0", Maximum: 7})
 	}
 	configured, err := db.ConfigureAutomaticStock(ctx, domain.AutomaticStockRequest{StockSyncScope: scope, Enabled: true, IntervalSeconds: 30, ValidMinutes: 60, Targets: inputs, Acknowledge: true, SessionID: "synthetic", IdempotencyKey: "controlled-multi-policy-1"}, time.Now())
 	if err != nil || len(configured.Policy.Targets) != 2 || len(configured.Candidates) != 2 {
 		t.Fatalf("multi-target policy: %+v %v", configured, err)
 	}
-	bad := domain.AutomaticStockRequest{StockSyncScope: scope, Enabled: true, IntervalSeconds: 30, ValidMinutes: 60, Targets: []domain.AutomaticStockTargetRequest{{ProductID: "999", WarehouseID: testpublication.OzonWarehouse, SafetyStock: "0", Unreflected: "0", UnseenBound: "0", Maximum: 7}}, Acknowledge: true, SessionID: "synthetic", IdempotencyKey: "controlled-multi-policy-bad"}
+	bad := domain.AutomaticStockRequest{StockSyncScope: scope, Enabled: true, IntervalSeconds: 30, ValidMinutes: 60, Targets: []domain.AutomaticStockTargetRequest{{ProductID: "999", WarehouseID: stockfixture.OzonWarehouse, SafetyStock: "0", Unreflected: "0", UnseenBound: "0", Maximum: 7}}, Acknowledge: true, SessionID: "synthetic", IdempotencyKey: "controlled-multi-policy-bad"}
 	if _, err = db.ConfigureAutomaticStock(ctx, bad, time.Now()); err == nil {
 		t.Fatal("unmapped product was admitted")
 	}
@@ -117,7 +117,7 @@ func TestControlledAutomaticEnrolledTargetsShareTraversal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runner := stocksync.Runner{Enabled: true, ControlledTest: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return client, nil }}
+	runner := stocksync.Runner{Enabled: true, DurableDispatch: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return client, nil }}
 	for i := 0; i < 20; i++ {
 		if _, _, err = db.AdvanceAutomaticStock(ctx, time.Now()); err != nil {
 			t.Fatal(err)
@@ -284,24 +284,24 @@ func TestControlledAutomaticEnrolledTargetsShareTraversal(t *testing.T) {
 		t.Fatal(err)
 	}
 	recovery := domain.StockRecoveryRequest{StockSyncScope: scope, OperationID: claimed.ID, Acknowledge: true, WorkerStopped: false, SessionID: "synthetic", IdempotencyKey: "controlled-multi-recovery-1", Reason: "Synthetic explicit uncertainty acceptance", ExpectedReadbackAt: observedAt, ExpectedQuantity: "7"}
-	if _, err = db.SupersedeTestUnknown(ctx, recovery, base.Add(43*time.Second)); err == nil {
+	if _, err = db.SupersedeStockUnknown(ctx, recovery, base.Add(43*time.Second)); err == nil {
 		t.Fatal("missing stopped-worker assertion accepted")
 	}
 	recovery.WorkerStopped = true
 	wrong := recovery
 	wrong.OzonAccount = "other-account"
-	if _, err = db.SupersedeTestUnknown(ctx, wrong, base.Add(43*time.Second)); err == nil {
+	if _, err = db.SupersedeStockUnknown(ctx, wrong, base.Add(43*time.Second)); err == nil {
 		t.Fatal("other account was allowed to supersede the target")
 	}
 	wrong = recovery
 	wrong.Acknowledge = false
-	if _, err = db.SupersedeTestUnknown(ctx, wrong, base.Add(43*time.Second)); err == nil {
+	if _, err = db.SupersedeStockUnknown(ctx, wrong, base.Add(43*time.Second)); err == nil {
 		t.Fatal("missing uncertainty acknowledgment was accepted")
 	}
-	if err = db.TouchTestStockWorker(ctx, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", base.Add(43*time.Second)); err != nil {
+	if err = db.TouchStockWorker(ctx, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", base.Add(43*time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.SupersedeTestUnknown(ctx, recovery, base.Add(44*time.Second)); err == nil {
+	if _, err = db.SupersedeStockUnknown(ctx, recovery, base.Add(44*time.Second)); err == nil {
 		t.Fatal("active worker allowed supersession")
 	}
 	results := make(chan error, 2)
@@ -309,7 +309,7 @@ func TestControlledAutomaticEnrolledTargetsShareTraversal(t *testing.T) {
 		go func(i int) {
 			attempt := recovery
 			attempt.IdempotencyKey = fmt.Sprintf("controlled-multi-recovery-%d", i+2)
-			_, e := db.SupersedeTestUnknown(ctx, attempt, base.Add(60*time.Second))
+			_, e := db.SupersedeStockUnknown(ctx, attempt, base.Add(60*time.Second))
 			results <- e
 		}(i)
 	}

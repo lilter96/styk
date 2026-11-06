@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/lilter96/styk/internal/postgres"
-	"github.com/lilter96/styk/internal/testpublication"
+	"github.com/lilter96/styk/internal/stockfixture"
 )
 
 func (p *catalogBrowserProvider) moyCollection(w http.ResponseWriter, r *http.Request) {
@@ -55,7 +55,7 @@ func (p *catalogBrowserProvider) moyCreate(w http.ResponseWriter, r *http.Reques
 }
 
 func (p *catalogBrowserProvider) createdMoyProduct(r *http.Request) map[string]any {
-	return map[string]any{"id": catalogBrowserCreatedID, "accountId": testpublication.MoyskladAccount,
+	return map[string]any{"id": catalogBrowserCreatedID, "accountId": stockfixture.MoyskladAccount,
 		"meta": map[string]any{"href": "http://" + r.Host + "/entity/product/" + catalogBrowserCreatedID, "type": "product", "mediaType": "application/json"},
 		"name": catalogBrowserUnmappedName, "description": catalogBrowserUnmappedDescription, "archived": false,
 		"externalCode": p.createCode, "syncId": p.createSyncID}
@@ -65,8 +65,8 @@ type catalogBrowserOzonFact struct{ id, offer, sku, name, description string }
 
 func (p *catalogBrowserProvider) ozonFact(id string) (catalogBrowserOzonFact, bool) {
 	switch id {
-	case testpublication.OzonProduct:
-		return catalogBrowserOzonFact{id, testpublication.OzonOffer, testpublication.OzonSKU, p.ozonName, p.ozonDescription}, true
+	case stockfixture.OzonProduct:
+		return catalogBrowserOzonFact{id, stockfixture.OzonOffer, stockfixture.OzonSKU, p.ozonName, p.ozonDescription}, true
 	case catalogBrowserUnmappedID:
 		return catalogBrowserOzonFact{id, catalogBrowserUnmappedOffer, "8080000002", catalogBrowserUnmappedName, catalogBrowserUnmappedDescription}, true
 	default:
@@ -133,12 +133,12 @@ func assertCatalogBrowserCreation(t *testing.T, db *postgres.Store, simulator *c
 		t.Fatalf("creation was not uniquely dispatched and read back: creates=%d marker_reads=%d readbacks=%d", simulator.moyCreates, simulator.markerLookups, simulator.createdReadbacks)
 	}
 	var actual, syncID string
-	err := db.Pool.QueryRow(context.Background(), `SELECT work->'created_target'->>'id',work->'command'->>'create_id' FROM catalog_sync_work WHERE tenant_id=$1 AND work->'command'->>'action'='create'`, testpublication.Tenant).Scan(&actual, &syncID)
+	err := db.Pool.QueryRow(context.Background(), `SELECT work->'created_target'->>'id',work->'command'->>'create_id' FROM catalog_sync_work WHERE tenant_id=$1 AND work->'command'->>'action'='create'`, stockfixture.Tenant).Scan(&actual, &syncID)
 	if err != nil || actual != catalogBrowserCreatedID || syncID != simulator.createSyncID || actual == syncID {
 		t.Fatalf("actual provider identity was not persisted separately from syncId: actual=%q err=%v", actual, err)
 	}
 	var mappings int
-	if err := db.Pool.QueryRow(context.Background(), `SELECT count(*) FROM product_mappings WHERE tenant_id=$1`, testpublication.Tenant).Scan(&mappings); err != nil || mappings != 1 {
+	if err := db.Pool.QueryRow(context.Background(), `SELECT count(*) FROM product_mappings WHERE tenant_id=$1`, stockfixture.Tenant).Scan(&mappings); err != nil || mappings != 1 {
 		t.Fatalf("creation manufactured an unreviewed product mapping: count=%d err=%v", mappings, err)
 	}
 }

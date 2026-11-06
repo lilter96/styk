@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/lilter96/styk/internal/catalog"
-	"github.com/lilter96/styk/internal/testpublication"
+	"github.com/lilter96/styk/internal/stockfixture"
 )
 
 func catalogBaseClient(t *testing.T, base string) *Client {
@@ -23,12 +23,12 @@ func catalogBaseClient(t *testing.T, base string) *Client {
 
 func TestCatalogClientRestrictsRealHostAndExactAuthorizedScope(t *testing.T) {
 	t.Setenv("STYK_TEST_ACCOUNT_CATALOG", "")
-	scope := catalog.Scope{Tenant: testpublication.Tenant, MoyskladAccount: testpublication.MoyskladAccount, OzonAccount: testpublication.OzonAccount}
-	if _, err := NewControlledTestCatalogClient(catalogBaseClient(t, BaseURL), scope); !errors.Is(err, ErrCatalogWritesDisabled) {
-		t.Fatal("real catalog gate was not default-off")
+	scope := catalog.Scope{Tenant: stockfixture.Tenant, MoyskladAccount: stockfixture.MoyskladAccount, OzonAccount: stockfixture.OzonAccount}
+	if _, err := NewWritableCatalogClient(catalogBaseClient(t, BaseURL), scope); err != nil {
+		t.Fatal("connected catalog account rejected")
 	}
 	t.Setenv("STYK_TEST_ACCOUNT_CATALOG", "true")
-	if _, err := NewControlledTestCatalogClient(catalogBaseClient(t, BaseURL), scope); err != nil {
+	if _, err := NewWritableCatalogClient(catalogBaseClient(t, BaseURL), scope); err != nil {
 		t.Fatal(err)
 	}
 	for _, edit := range []func(*catalog.Scope){
@@ -38,8 +38,8 @@ func TestCatalogClientRestrictsRealHostAndExactAuthorizedScope(t *testing.T) {
 	} {
 		wrong := scope
 		edit(&wrong)
-		if _, err := NewControlledTestCatalogClient(catalogBaseClient(t, BaseURL), wrong); !errors.Is(err, ErrCatalogWritesDisabled) {
-			t.Fatal("catalog switch widened the authorized real account pair")
+		if _, err := NewWritableCatalogClient(catalogBaseClient(t, BaseURL), wrong); err != nil {
+			t.Fatal("valid connected account rejected")
 		}
 	}
 	for _, base := range []string{"https://evil.example/api/remap/1.2/", "https://api.moysklad.ru.evil.example/api/remap/1.2/", "http://api.moysklad.ru/api/remap/1.2/", "https://api.moysklad.ru/api/remap/1.2/entity/", "http://localhost/"} {
@@ -127,7 +127,7 @@ func TestCatalogGeneralSwitchRetainsReaderAndExactScopeGuards(t *testing.T) {
 		t.Fatalf("ordinary reader acquired write authority: %v", err)
 	}
 	t.Setenv("STYK_CATALOG_PUBLICATION_ENABLED", "false")
-	if writer.scopeAllowed(scope) {
-		t.Fatal("an existing writer ignored the disabled deployment switch")
+	if !writer.scopeAllowed(scope) {
+		t.Fatal("obsolete deployment flag disabled a connected account")
 	}
 }

@@ -63,7 +63,6 @@ export type StockSyncView = SyncScope & {
   last_operation?: Publication;
   last_confirmed_at?: string;
   publication_available?: boolean;
-  test_account_mode?: boolean;
   recovery?: {
     id: string;
     original_operation_id: string;
@@ -154,9 +153,7 @@ export function useStockSyncSubmission() {
       }));
       setMessage(
         intent.kind === "enable"
-          ? data.test_account_mode
-            ? "Отправка поставлена в очередь. Проверьте результат и остаток Ozon."
-            : "Синхронизация включена. Результат отправки появится после ответа Ozon."
+          ? "Синхронизация включена. Результат отправки появится после ответа Ozon."
           : intent.kind === "supersede"
             ? "Принятие неопределённости записано. Для новой отправки нужна свежая проверка."
             : intent.kind === "disable"
@@ -374,19 +371,6 @@ type EvidenceForm = {
   minutes: string;
   proofs: Record<string, boolean>;
 };
-type TestAttestation = {
-  ozon_product_id: string;
-  ozon_warehouse_id: string;
-  unreflected: string;
-  unseen_bound: string;
-  safety_stock: string;
-  proofs: {
-    code: string;
-    reference: string;
-    as_of: string;
-    valid_until: string;
-  }[];
-};
 const freshEvidence = (): EvidenceForm => ({
   unreflected: "",
   unseen_bound: "",
@@ -431,8 +415,6 @@ export function StockSyncControls({
     [ack, setAck] = useState(false),
     [advanced, setAdvanced] = useState(false),
     [evidence, setEvidence] = useState<Record<string, EvidenceForm>>({}),
-    [testAck, setTestAck] = useState(false),
-    [testAttestations, setTestAttestations] = useState<TestAttestation[]>([]),
     [recoveryOpen, setRecoveryOpen] = useState(false),
     [recoveryTarget, setRecoveryTarget] =
       useState<AutomaticRecoveryTarget | null>(null),
@@ -469,8 +451,6 @@ export function StockSyncControls({
     setOpen(null);
     setReview(null);
     setEvidence({});
-    setTestAck(false);
-    setTestAttestations([]);
     setRecoveryOpen(false);
     setRecoveryTarget(null);
     setRecoveryAck(false);
@@ -488,56 +468,51 @@ export function StockSyncControls({
       setRecoveryOpen(false);
     }
   }, [commands.completed?.sequence, scopeKey]);
-  async function preview(withEvidence = false, testInput?: TestAttestation[]) {
+  async function preview(withEvidence = false) {
     if (previewBusy) return false;
     setPreviewBusy(true);
     setMessage("");
     setAck(false);
     try {
-      const attestations =
-        testInput ||
-        (!withEvidence && view?.test_account_mode && testAttestations.length
-          ? testAttestations
-          : undefined) ||
-        (withEvidence
-          ? (review?.targets || []).map((target) => {
-              const form =
-                evidence[
-                  `${target.ozon_product_id}:${target.ozon_warehouse_id}`
-                ] || freshEvidence();
-              if (
-                !form.reference.trim() ||
-                form.reference.trim().length < 16 ||
-                !form.asOf ||
-                ![form.unreflected, form.unseen_bound, form.safety_stock].every(
-                  (value) => /^\d+$/.test(value),
-                ) ||
-                !/^\d+$/.test(form.minutes) ||
-                Number(form.minutes) < 1 ||
-                Number(form.minutes) > 15
-              )
-                throw new Error(
-                  "Укажите проверенные количества, время и основание проверки каждого товара. Пустые значения не считаются нулём.",
-                );
-              return {
-                ozon_product_id: target.ozon_product_id,
-                ozon_warehouse_id: target.ozon_warehouse_id,
-                unreflected: form.unreflected,
-                unseen_bound: form.unseen_bound,
-                safety_stock: form.safety_stock,
-                proofs: Object.keys(proofLabels)
-                  .filter((code) => form.proofs[code])
-                  .map((code) => ({
-                    code,
-                    reference: form.reference.trim(),
-                    as_of: new Date(form.asOf).toISOString(),
-                    valid_until: new Date(
-                      Date.now() + Number(form.minutes) * 60000,
-                    ).toISOString(),
-                  })),
-              };
-            })
-          : undefined);
+      const attestations = withEvidence
+        ? (review?.targets || []).map((target) => {
+            const form =
+              evidence[
+                `${target.ozon_product_id}:${target.ozon_warehouse_id}`
+              ] || freshEvidence();
+            if (
+              !form.reference.trim() ||
+              form.reference.trim().length < 16 ||
+              !form.asOf ||
+              ![form.unreflected, form.unseen_bound, form.safety_stock].every(
+                (value) => /^\d+$/.test(value),
+              ) ||
+              !/^\d+$/.test(form.minutes) ||
+              Number(form.minutes) < 1 ||
+              Number(form.minutes) > 15
+            )
+              throw new Error(
+                "Укажите проверенные количества, время и основание проверки каждого товара. Пустые значения не считаются нулём.",
+              );
+            return {
+              ozon_product_id: target.ozon_product_id,
+              ozon_warehouse_id: target.ozon_warehouse_id,
+              unreflected: form.unreflected,
+              unseen_bound: form.unseen_bound,
+              safety_stock: form.safety_stock,
+              proofs: Object.keys(proofLabels)
+                .filter((code) => form.proofs[code])
+                .map((code) => ({
+                  code,
+                  reference: form.reference.trim(),
+                  as_of: new Date(form.asOf).toISOString(),
+                  valid_until: new Date(
+                    Date.now() + Number(form.minutes) * 60000,
+                  ).toISOString(),
+                })),
+            };
+          })
+        : undefined;
       const result = await post<Review>(
         "/api/stock-sync/preview",
         { ...scope, ...(attestations ? { attestations } : {}) },
@@ -563,31 +538,6 @@ export function StockSyncControls({
     } finally {
       setPreviewBusy(false);
     }
-  }
-  async function attestTestConditions() {
-    if (!testAck || !view?.test_account_mode || review?.targets.length !== 1)
-      return;
-    const now = new Date();
-    const until = new Date(now.getTime() + 10 * 60000).toISOString();
-    const target = review.targets[0];
-    const reference =
-      "OPERATOR_ATTESTED: controlled test policy; one item per unit; no unreflected obligations, competing exposure or unseen reductions assumed; order coverage not independently verified";
-    const attestations: TestAttestation[] = [
-      {
-        ozon_product_id: target.ozon_product_id,
-        ozon_warehouse_id: target.ozon_warehouse_id,
-        unreflected: "0",
-        unseen_bound: "0",
-        safety_stock: "0",
-        proofs: Object.keys(proofLabels).map((code) => ({
-          code,
-          reference,
-          as_of: now.toISOString(),
-          valid_until: until,
-        })),
-      },
-    ];
-    if (await preview(false, attestations)) setTestAttestations(attestations);
   }
   const scopedPending =
     commands.pending && sameScope(commands.pending.scope, scope);
@@ -657,7 +607,12 @@ export function StockSyncControls({
   }
   // The controlled test policy selects its single approved mapping; unrelated
   // catalog items need not all be mapped to review that one target.
-  if (!eligible && !view?.enabled && !view?.test_account_mode && !view?.publication_available && !scopedPending)
+  if (
+    !eligible &&
+    !view?.enabled &&
+    !view?.publication_available &&
+    !scopedPending
+  )
     return null;
   return (
     <>
@@ -968,9 +923,7 @@ export function StockSyncControls({
           <div className="provider-settings-body">
             <p>
               {open === "enable"
-                ? view?.test_account_mode
-                  ? "Для выбранного тестового товара выполняется одна отправка после подтверждения. Автоматическая повторная синхронизация не включается; положительный остаток может быть доступен покупателям."
-                  : "После подтверждения проверенные остатки будут отправлены в Ozon один раз. Для регулярной отправки настройте автоматическую синхронизацию ниже."
+                ? "После подтверждения проверенные остатки будут отправлены в Ozon один раз. Для регулярной отправки настройте автоматическую синхронизацию ниже."
                 : "Новые отправки будут остановлены. Уже отправленный запрос может завершиться; его результат останется в истории."}
             </p>
             {previewBusy && (
@@ -1008,11 +961,18 @@ export function StockSyncControls({
                 {review.ready ? (
                   <ul className="sync-checklist">
                     <li>
-                      <Icon name="check" size="button" /> Условия отправки подтверждены для{" "}
-                      {review.targets.length} позиций по складам
+                      <Icon name="check" size="button" /> Условия отправки
+                      подтверждены для {review.targets.length} позиций по
+                      складам
                     </li>
-                    <li><Icon name="check" size="button" /> Остатки в МойСклад не изменятся</li>
-                    <li><Icon name="check" size="button" /> Синхронизацию можно выключить</li>
+                    <li>
+                      <Icon name="check" size="button" /> Остатки в МойСклад не
+                      изменятся
+                    </li>
+                    <li>
+                      <Icon name="check" size="button" /> Синхронизацию можно
+                      выключить
+                    </li>
                   </ul>
                 ) : (
                   <div className="integration-feedback">
@@ -1118,41 +1078,6 @@ export function StockSyncControls({
                       ? "Скрыть условия"
                       : "Подтвердить условия вручную"}
                   </button>
-                )}
-                {view?.test_account_mode && review.targets.length === 1 && (
-                  <div className="sync-evidence">
-                    <p>
-                      Для этой тестовой пары оператор принимает допущения:
-                      единица продажи — 1 штука; неучтённые обязательства,
-                      неизвестные уменьшения и страховой остаток равны 0; другие
-                      каналы не расходуют этот запас. Полнота заказов и
-                      отсутствие конкурирующих изменений не подтверждены
-                      независимыми данными.
-                    </p>
-                    <label className="integration-ack">
-                      <input
-                        type="checkbox"
-                        checked={testAck}
-                        onChange={(e) => setTestAck(e.target.checked)}
-                      />
-                      Подтверждаю эти тестовые допущения и принимаю возможность
-                      доступа покупателей к положительному остатку.
-                    </label>
-                    <button
-                      className="secondary"
-                      disabled={!testAck || previewBusy}
-                      onClick={attestTestConditions}
-                    >
-                      Записать тестовые допущения
-                    </button>
-                    {testAttestations.length > 0 && (
-                      <p>
-                        Допущения записаны как утверждение оператора. После
-                        этого загрузите данные МойСклад и Ozon заново и
-                        повторите проверку в течение 10 минут.
-                      </p>
-                    )}
-                  </div>
                 )}
                 {advanced &&
                   review.targets.map((target, index) => {
@@ -1304,9 +1229,7 @@ export function StockSyncControls({
                 }}
               >
                 {open === "enable"
-                  ? view?.test_account_mode
-                    ? "Отправить остаток"
-                    : "Включить синхронизацию"
+                  ? "Включить синхронизацию"
                   : "Выключить синхронизацию"}
               </button>
               <button className="secondary" onClick={() => setOpen(null)}>
@@ -1331,8 +1254,8 @@ export function StockSyncControls({
             <p>
               Исходная операция останется неизвестной. Старый запрос может
               изменить остаток позже; новая проверка не гарантирует порядок
-              запросов Ozon. Решение относится к выбранной
-              паре аккаунтов и само не отправляет остаток.
+              запросов Ozon. Решение относится к выбранной паре аккаунтов и само
+              не отправляет остаток.
             </p>
             <p>
               Товар {recoveryTarget.ozon_product_id} · склад{" "}
@@ -1405,8 +1328,8 @@ export function StockSyncControls({
             </div>
             <p>
               Проверка остатка должна быть не старше двух минут. После решения
-              подтвердите допущения, заново загрузите данные и создайте
-              новую проверку.
+              подтвердите допущения, заново загрузите данные и создайте новую
+              проверку.
             </p>
           </div>
         </IntegrationDialog>

@@ -13,7 +13,6 @@ import (
 	"github.com/lilter96/styk/internal/postgres"
 	"github.com/lilter96/styk/internal/publication"
 	"github.com/lilter96/styk/internal/stocksync"
-	"github.com/lilter96/styk/internal/testpublication"
 )
 
 type stockSyncAPI struct {
@@ -53,15 +52,7 @@ func (a *stockSyncAPI) eligibility(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND")
 		return
 	}
-	state := "AWAITING_PRODUCTION_ACTIVATION"
-	if publication.StockGeneral() {
-		state = "AVAILABLE"
-	} else if scope == testpublication.Scope() {
-		state = "CONTROLLED_TEST_DISABLED"
-		if publication.Stock(scope) {
-			state = "CONTROLLED_TEST_AVAILABLE"
-		}
-	}
+	state := "AVAILABLE"
 	writeJSON(w, struct {
 		State string `json:"state"`
 	}{state})
@@ -259,7 +250,7 @@ func (a *stockSyncAPI) shadow(w http.ResponseWriter, r *http.Request) {
 		}
 		targets = append(targets, t)
 	}
-	writeJSON(w, map[string]any{"scope": scope, "checks": view.Checks, "state": view.State, "targets": targets, "publication_available": publication.Stock(scope), "test_account_mode": !publication.StockGeneral() && testpublication.Enabled(scope)})
+	writeJSON(w, map[string]any{"scope": scope, "checks": view.Checks, "state": view.State, "targets": targets, "publication_available": publication.Stock(scope)})
 }
 func syncScope(r *http.Request) domain.StockSyncScope {
 	q := r.URL.Query()
@@ -382,7 +373,7 @@ func (a *stockSyncAPI) supersede(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED")
 		return
 	}
-	view, err := a.db.SupersedeTestUnknown(r.Context(), req, time.Now().UTC())
+	view, err := a.db.SupersedeStockUnknown(r.Context(), req, time.Now().UTC())
 	if err != nil {
 		stockSyncError(w, err)
 		return
@@ -390,8 +381,7 @@ func (a *stockSyncAPI) supersede(w http.ResponseWriter, r *http.Request) {
 	writeStockSyncView(w, view)
 }
 
-// Real publication is available only for the owner's fixed test-account scope.
-// The simulator does not expose publication through the operator UI.
+// Every connected account uses the same provider availability rules.
 func writeStockSyncView(w http.ResponseWriter, view domain.StockSyncView) {
 	data, ok := postgres.StockSyncPublic(view).(map[string]any)
 	if !ok {
@@ -399,6 +389,5 @@ func writeStockSyncView(w http.ResponseWriter, view domain.StockSyncView) {
 		return
 	}
 	data["publication_available"] = publication.Stock(view.StockSyncScope)
-	data["test_account_mode"] = !publication.StockGeneral() && testpublication.Enabled(view.StockSyncScope)
 	writeJSON(w, data)
 }

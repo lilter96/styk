@@ -36,7 +36,7 @@ func (facts stockWarehouseFacts) policySupported(scope domain.StockSyncScope, en
 		return false
 	}
 	if *facts.rfbs {
-		// "created" is the existing conservative STYK test policy. The provider
+		// "created" is the existing warehouse operational policy. The provider
 		// schema gives no operational status enum and grants no API permission.
 		return enrolled && automaticScopeAllowed(scope) && facts.status == "created"
 	}

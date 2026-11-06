@@ -15,8 +15,8 @@ import (
 	"github.com/lilter96/styk/internal/infrastructure/ozon"
 	"github.com/lilter96/styk/internal/postgres"
 	"github.com/lilter96/styk/internal/providercall"
+	"github.com/lilter96/styk/internal/stockfixture"
 	"github.com/lilter96/styk/internal/stocksync"
-	"github.com/lilter96/styk/internal/testpublication"
 )
 
 type stockAdmissionHTTP struct {
@@ -73,7 +73,7 @@ func stockAdmissionClient(t *testing.T, db *postgres.Store, scope domain.StockSy
 }
 
 func stockAdmissionRunner(db *postgres.Store, resolve func(context.Context, string, string) (*ozon.Client, error)) stocksync.Runner {
-	return stocksync.Runner{Enabled: true, ControlledTest: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: resolve}
+	return stocksync.Runner{Enabled: true, DurableDispatch: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: resolve}
 }
 
 func TestStockAdmissionWaitTimeoutBeforeHTTPDoesNotBecomeUnknown(t *testing.T) {
@@ -84,7 +84,7 @@ func TestStockAdmissionWaitTimeoutBeforeHTTPDoesNotBecomeUnknown(t *testing.T) {
 	review = stockAdmissionReview(t, db, review)
 	view := controlledEnable(t, db, review)
 	runner := stockAdmissionRunner(db, func(ctx context.Context, _, _ string) (*ozon.Client, error) {
-		if _, err := client.ReadStockQuantity(ctx, testpublication.OzonProduct, testpublication.OzonWarehouse, testpublication.OzonOffer); err == nil {
+		if _, err := client.ReadStockQuantity(ctx, stockfixture.OzonProduct, stockfixture.OzonWarehouse, stockfixture.OzonOffer); err == nil {
 			t.Fatal("synthetic shared429 precondition missing")
 		}
 		return client, nil
@@ -140,7 +140,7 @@ func stockAdmissionNextDecision(t *testing.T, db *postgres.Store, previous domai
 	t.Helper()
 	now, quantity, zero := time.Now().UTC(), "6", "0"
 	scope := previous.StockSyncScope
-	source := domain.InventoryImport{Account: scope.MoyskladAccount, StartedAt: now.Add(-time.Millisecond), FinishedAt: now, Entities: []domain.ExternalEntity{{Kind: "product", ID: testpublication.SourceProduct, Article: "synthetic"}, {Kind: "store", ID: testpublication.SourceWarehouse}}, WarehouseStock: []domain.WarehouseStockObservation{{Kind: "product", ExternalID: testpublication.SourceProduct, WarehouseID: testpublication.SourceWarehouse, Stock: &quantity, Reserve: &zero, InTransit: &zero}}}
+	source := domain.InventoryImport{Account: scope.MoyskladAccount, StartedAt: now.Add(-time.Millisecond), FinishedAt: now, Entities: []domain.ExternalEntity{{Kind: "product", ID: stockfixture.SourceProduct, Article: "synthetic"}, {Kind: "store", ID: stockfixture.SourceWarehouse}}, WarehouseStock: []domain.WarehouseStockObservation{{Kind: "product", ExternalID: stockfixture.SourceProduct, WarehouseID: stockfixture.SourceWarehouse, Stock: &quantity, Reserve: &zero, InTransit: &zero}}}
 	if _, err := db.SaveInventoryImport(context.Background(), source, "admission-source-six"); err != nil {
 		t.Fatal(err)
 	}

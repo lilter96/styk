@@ -19,8 +19,8 @@ import (
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/infrastructure/ozon"
 	"github.com/lilter96/styk/internal/postgres"
+	"github.com/lilter96/styk/internal/stockfixture"
 	"github.com/lilter96/styk/internal/stocksync"
-	"github.com/lilter96/styk/internal/testpublication"
 )
 
 // Each case has its own migrated schema. These identifiers deliberately equal
@@ -30,7 +30,7 @@ func controlledFixture(t *testing.T) (*postgres.Store, domain.StockSyncReview) {
 }
 
 func controlledFixtureWithMapping(t *testing.T, mapping bool) (*postgres.Store, domain.StockSyncReview) {
-	return controlledFixtureForScope(t, mapping, testpublication.Scope(), "7")
+	return controlledFixtureForScope(t, mapping, stockfixture.Scope(), "7")
 }
 
 func controlledFixtureForScope(t *testing.T, mapping bool, scope domain.StockSyncScope, quantity string) (*postgres.Store, domain.StockSyncReview) {
@@ -70,8 +70,8 @@ func controlledFixtureForScope(t *testing.T, mapping bool, scope domain.StockSyn
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	stock, zero, incoming := quantity, "0", "0"
 	fbs, archived := false, false
-	source := domain.InventoryImport{Account: scope.MoyskladAccount, StartedAt: now.Add(-time.Second), FinishedAt: now, Entities: []domain.ExternalEntity{{Kind: "product", ID: testpublication.SourceProduct, Article: "synthetic"}, {Kind: "store", ID: testpublication.SourceWarehouse}}, WarehouseStock: []domain.WarehouseStockObservation{{Kind: "product", ExternalID: testpublication.SourceProduct, WarehouseID: testpublication.SourceWarehouse, Stock: &stock, Reserve: &zero, InTransit: &incoming}}}
-	market := domain.OzonImport{Account: scope.OzonAccount, StartedAt: now.Add(-time.Second), FinishedAt: now, Products: []domain.OzonProduct{{ProductID: testpublication.OzonProduct, OfferID: testpublication.OzonOffer, SKU: testpublication.OzonSKU, Archived: &archived}}, Warehouses: []domain.OzonWarehouse{{ID: testpublication.OzonWarehouse, Status: "created", IsRFBS: &fbs}}, Stocks: []domain.OzonStock{{ProductID: testpublication.OzonProduct, OfferID: testpublication.OzonOffer, SKU: testpublication.OzonSKU, WarehouseID: testpublication.OzonWarehouse, Present: 0, Reserved: 0, FreeStock: 0}}}
+	source := domain.InventoryImport{Account: scope.MoyskladAccount, StartedAt: now.Add(-time.Second), FinishedAt: now, Entities: []domain.ExternalEntity{{Kind: "product", ID: stockfixture.SourceProduct, Article: "synthetic"}, {Kind: "store", ID: stockfixture.SourceWarehouse}}, WarehouseStock: []domain.WarehouseStockObservation{{Kind: "product", ExternalID: stockfixture.SourceProduct, WarehouseID: stockfixture.SourceWarehouse, Stock: &stock, Reserve: &zero, InTransit: &incoming}}}
+	market := domain.OzonImport{Account: scope.OzonAccount, StartedAt: now.Add(-time.Second), FinishedAt: now, Products: []domain.OzonProduct{{ProductID: stockfixture.OzonProduct, OfferID: stockfixture.OzonOffer, SKU: stockfixture.OzonSKU, Archived: &archived}}, Warehouses: []domain.OzonWarehouse{{ID: stockfixture.OzonWarehouse, Status: "created", IsRFBS: &fbs}}, Stocks: []domain.OzonStock{{ProductID: stockfixture.OzonProduct, OfferID: stockfixture.OzonOffer, SKU: stockfixture.OzonSKU, WarehouseID: stockfixture.OzonWarehouse, Present: 0, Reserved: 0, FreeStock: 0}}}
 	if _, err = db.SaveInventoryImport(ctx, source, "controlled-synthetic-source"); err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func controlledFixtureForScope(t *testing.T, mapping bool, scope domain.StockSyn
 	if !mapping {
 		return db, domain.StockSyncReview{}
 	}
-	pr, err := db.CreateMappingReview(ctx, domain.MappingReviewRequest{Tenant: scope.Tenant, MoyskladAccount: scope.MoyskladAccount, OzonAccount: scope.OzonAccount, ProductID: testpublication.OzonProduct, TargetKind: "product", TargetID: testpublication.SourceProduct, Evidence: domain.MappingOperatorAttested, SessionID: "synthetic-session", Lifetime: time.Minute})
+	pr, err := db.CreateMappingReview(ctx, domain.MappingReviewRequest{Tenant: scope.Tenant, MoyskladAccount: scope.MoyskladAccount, OzonAccount: scope.OzonAccount, ProductID: stockfixture.OzonProduct, TargetKind: "product", TargetID: stockfixture.SourceProduct, Evidence: domain.MappingOperatorAttested, SessionID: "synthetic-session", Lifetime: time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func controlledFixtureForScope(t *testing.T, mapping bool, scope domain.StockSyn
 	if _, err = db.ConfirmMappingReview(ctx, confirm); err != nil {
 		t.Fatal(err)
 	}
-	wr, err := db.CreateWarehouseReview(ctx, domain.WarehouseReviewRequest{Tenant: scope.Tenant, MoyskladAccount: scope.MoyskladAccount, OzonAccount: scope.OzonAccount, MoyskladWarehouseID: testpublication.SourceWarehouse, OzonWarehouseID: testpublication.OzonWarehouse, SessionID: "synthetic-session", Lifetime: time.Minute})
+	wr, err := db.CreateWarehouseReview(ctx, domain.WarehouseReviewRequest{Tenant: scope.Tenant, MoyskladAccount: scope.MoyskladAccount, OzonAccount: scope.OzonAccount, MoyskladWarehouseID: stockfixture.SourceWarehouse, OzonWarehouseID: stockfixture.OzonWarehouse, SessionID: "synthetic-session", Lifetime: time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func controlledFixtureForScope(t *testing.T, mapping bool, scope domain.StockSyn
 	if _, err = db.ConfirmWarehouseReview(ctx, confirm); err != nil {
 		t.Fatal(err)
 	}
-	a := domain.StockSyncAttestation{ProductID: testpublication.OzonProduct, WarehouseID: testpublication.OzonWarehouse, Unreflected: "0", UnseenBound: "0", SafetyStock: "0"}
+	a := domain.StockSyncAttestation{ProductID: stockfixture.OzonProduct, WarehouseID: stockfixture.OzonWarehouse, Unreflected: "0", UnseenBound: "0", SafetyStock: "0"}
 	for _, code := range []string{commitment.ProofUnit, commitment.ProofBaseline, commitment.ProofSourceOrdering, commitment.ProofUnassigned, commitment.ProofAttribution, commitment.ProofPostingCoverage, commitment.ProofCompeting, commitment.ProofBound, commitment.ProofCustomerOrders} {
 		a.Proofs = append(a.Proofs, domain.StockSyncProof{Code: code, Reference: "synthetic operator test assumptions", AsOf: source.StartedAt.Add(-time.Second), ValidUntil: now.Add(5 * time.Minute)})
 	}
@@ -147,7 +147,7 @@ func TestControlledStockPublicationOutboxAndRecovery(t *testing.T) {
 				http.Error(w, "unexpected", 500)
 			}
 		})
-		runner := stocksync.Runner{Enabled: true, ControlledTest: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return client, nil }}
+		runner := stocksync.Runner{Enabled: true, DurableDispatch: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return client, nil }}
 		var wg sync.WaitGroup
 		for i := 0; i < 2; i++ {
 			wg.Add(1)
@@ -231,7 +231,7 @@ func TestControlledStockPublicationUncertainResultsNeverRetry(t *testing.T) {
 				w.WriteHeader(tc.status)
 				fixtureText(t, w, tc.body)
 			})
-			runner := stocksync.Runner{Enabled: true, ControlledTest: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return client, nil }}
+			runner := stocksync.Runner{Enabled: true, DurableDispatch: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return client, nil }}
 			if _, err := runner.RunNext(ctx); err != nil {
 				t.Fatal(err)
 			}
@@ -305,7 +305,7 @@ func TestControlledStockPublicationReadbackMismatchIsFenced(t *testing.T) {
 		reads.Add(1)
 		fixturePrintf(t, w, `{"products":[{"product_id":2764544165,"warehouse_id":1020001323428000,"offer_id":"ATEST-897677","free_stock":%d,"reserved":0,"present":%d}],"has_next":false,"cursor":""}`, observed.Load(), observed.Load())
 	})
-	runner := stocksync.Runner{Enabled: true, ControlledTest: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return client, nil }}
+	runner := stocksync.Runner{Enabled: true, DurableDispatch: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return client, nil }}
 	if _, err := runner.RunNext(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +344,7 @@ func TestControlledUnknownReadbackIsAuditedWithoutResending(t *testing.T) {
 		reads.Add(1)
 		fixtureText(t, w, `{"products":[{"product_id":2764544165,"warehouse_id":1020001323428000,"offer_id":"ATEST-897677","free_stock":0,"reserved":0,"present":0}],"has_next":false,"cursor":""}`)
 	})
-	runner := stocksync.Runner{Enabled: true, ControlledTest: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return client, nil }}
+	runner := stocksync.Runner{Enabled: true, DurableDispatch: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return client, nil }}
 	if _, err := runner.RunNext(ctx); err != nil {
 		t.Fatal(err)
 	}

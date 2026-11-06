@@ -9,39 +9,20 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/publication"
-	"github.com/lilter96/styk/internal/testpublication"
 )
 
-// TouchTestStockWorker makes running worker instances visible to the recovery
+// TouchStockWorker makes running worker instances visible to the recovery
 // gate. An expired heartbeat is not proof that an in-flight HTTP request ended.
-func (s *Store) TouchTestStockWorker(ctx context.Context, workerID string, now time.Time) error {
-	if publication.StockGeneral() && len(workerID) == 32 {
-		return s.touchStockWorkers(ctx, workerID, now)
-	}
-	scope := testpublication.Scope()
-	if !publication.Stock(scope) || len(workerID) != 32 {
+func (s *Store) TouchStockWorker(ctx context.Context, workerID string, now time.Time) error {
+	if len(workerID) != 32 {
 		return domain.ErrStockSyncInvalid
 	}
-	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
-	defer cancel()
-	tx, err := s.Pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer rollbackTransaction(tx)
-	if err = syncLock(ctx, tx, scope); err != nil {
-		return err
-	}
-	_, err = tx.Exec(ctx, `INSERT INTO stock_test_worker_presence(tenant_id,moysklad_account,ozon_account,worker_id,expires_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(tenant_id,moysklad_account,ozon_account,worker_id) DO UPDATE SET expires_at=EXCLUDED.expires_at`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, workerID, now.Add(15*time.Second))
-	if err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
+	return s.touchStockWorkers(ctx, workerID, now)
 }
 
-// SupersedeTestUnknown records the operator's accepted uncertainty before
+// SupersedeStockUnknown records the operator's accepted uncertainty before
 // releasing only the auxiliary fence. It never mutates or retries the old write.
-func (s *Store) SupersedeTestUnknown(ctx context.Context, req domain.StockRecoveryRequest, now time.Time) (domain.StockSyncView, error) {
+func (s *Store) SupersedeStockUnknown(ctx context.Context, req domain.StockRecoveryRequest, now time.Time) (domain.StockSyncView, error) {
 	if !publication.Stock(req.StockSyncScope) || !req.Acknowledge || !req.WorkerStopped || len(req.OperationID) != 32 || req.SessionID == "" || len(req.IdempotencyKey) < 16 || len(req.IdempotencyKey) > 128 || len(strings.TrimSpace(req.Reason)) < 16 || len(req.Reason) > 1000 || strings.ContainsRune(req.Reason, 0) || req.ExpectedReadbackAt.IsZero() || !publication.Quantity(req.StockSyncScope, req.ExpectedQuantity) {
 		return domain.StockSyncView{}, domain.ErrStockSyncInvalid
 	}
@@ -85,12 +66,7 @@ func (s *Store) SupersedeTestUnknown(ctx context.Context, req domain.StockRecove
 	if err != nil {
 		return domain.StockSyncView{}, err
 	}
-	var enrolled bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_auto_cycle_publications cp JOIN stock_auto_cycles c ON c.id=cp.cycle_id JOIN stock_auto_config_audits a ON a.tenant_id=c.tenant_id AND a.moysklad_account=c.moysklad_account AND a.ozon_account=c.ozon_account AND a.revision=c.config_revision WHERE cp.publication_id=$1 AND c.tenant_id=$2 AND c.moysklad_account=$3 AND c.ozon_account=$4 AND cp.product_id=$5 AND cp.warehouse_id=$6 AND a.enabled AND a.snapshot->'targets' @> jsonb_build_array(jsonb_build_object('ozon_product_id',$5::text,'ozon_warehouse_id',$6::text)))`, req.OperationID, req.Tenant, req.MoyskladAccount, req.OzonAccount, product, warehouse).Scan(&enrolled); err != nil {
-		return domain.StockSyncView{}, err
-	}
-	legacy := publication.StockGeneral() || (product == testpublication.OzonProduct && warehouse == testpublication.OzonWarehouse)
-	if state != "UNKNOWN" || taskState != "failed" || attempts != 1 || (!legacy && !enrolled) {
+	if state != "UNKNOWN" || taskState != "failed" || attempts != 1 {
 		return domain.StockSyncView{}, domain.ErrStockSyncBlocked
 	}
 	var alreadyRecovered bool

@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/lilter96/styk/internal/domain"
-	"github.com/lilter96/styk/internal/testpublication"
+	"github.com/lilter96/styk/internal/stockfixture"
 )
 
 func TestAutomaticScopesSeparateConnectedPolicyAndLoopbackSimulation(t *testing.T) {
@@ -31,10 +31,10 @@ func TestAutomaticScopesSeparateConnectedPolicyAndLoopbackSimulation(t *testing.
 	}
 	t.Setenv("STYK_STOCK_PUBLICATION_ENABLED", "")
 	t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", "true")
-	if !automaticScopeAllowed(testpublication.Scope()) {
+	if !automaticScopeAllowed(stockfixture.Scope()) {
 		t.Fatal("fixed owner-controlled policy unavailable")
 	}
-	other := testpublication.Scope()
+	other := stockfixture.Scope()
 	other.OzonAccount = "other"
 	if automaticScopeAllowed(other) {
 		t.Fatal("test switch widened real account scope")

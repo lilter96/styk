@@ -12,14 +12,14 @@ import (
 	"github.com/lilter96/styk/internal/application"
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/postgres"
-	"github.com/lilter96/styk/internal/testpublication"
+	"github.com/lilter96/styk/internal/stockfixture"
 )
 
 func TestCancelledInitialPublicationRequiresFreshAuthorization(t *testing.T) {
 	db, _ := controlledFixture(t)
 	ctx := context.Background()
-	scope := testpublication.Scope()
-	request := domain.AutomaticStockRequest{StockSyncScope: scope, Enabled: true, IntervalSeconds: 30, ValidMinutes: 60, Targets: []domain.AutomaticStockTargetRequest{{ProductID: testpublication.OzonProduct, WarehouseID: testpublication.OzonWarehouse, SafetyStock: "0", Unreflected: "0", UnseenBound: "0", Maximum: 7, InitialPublication: true}}, Acknowledge: true, SessionID: "synthetic", IdempotencyKey: "initial-before-pause-0001"}
+	scope := stockfixture.Scope()
+	request := domain.AutomaticStockRequest{StockSyncScope: scope, Enabled: true, IntervalSeconds: 30, ValidMinutes: 60, Targets: []domain.AutomaticStockTargetRequest{{ProductID: stockfixture.OzonProduct, WarehouseID: stockfixture.OzonWarehouse, SafetyStock: "0", Unreflected: "0", UnseenBound: "0", Maximum: 7, InitialPublication: true}}, Acknowledge: true, SessionID: "synthetic", IdempotencyKey: "initial-before-pause-0001"}
 	if _, err := db.ConfigureAutomaticStock(ctx, request, time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestCancelledInitialPublicationRequiresFreshAuthorization(t *testing.T) {
 		t.Fatal("cancelled intent was reused")
 	}
 	var audits int
-	if err = db.Pool.QueryRow(ctx, `SELECT count(*) FROM stock_initial_publications WHERE ozon_account=$1 AND product_id=$2 AND warehouse_id=$3`, scope.OzonAccount, testpublication.OzonProduct, testpublication.OzonWarehouse).Scan(&audits); err != nil || audits != 2 {
+	if err = db.Pool.QueryRow(ctx, `SELECT count(*) FROM stock_initial_publications WHERE ozon_account=$1 AND product_id=$2 AND warehouse_id=$3`, scope.OzonAccount, stockfixture.OzonProduct, stockfixture.OzonWarehouse).Scan(&audits); err != nil || audits != 2 {
 		t.Fatalf("initial intents not preserved: %d %v", audits, err)
 	}
 	rollbackEmptySaaSMigrations(t, db)
@@ -107,8 +107,8 @@ func commitInitialFakeImports(t *testing.T, db *postgres.Store, scope domain.Sto
 	now := time.Now().UTC()
 	zero, seven := "0", "7"
 	fbs, archived := false, false
-	source := domain.InventoryImport{Account: scope.MoyskladAccount, StartedAt: now, FinishedAt: now, Entities: []domain.ExternalEntity{{Kind: "product", ID: testpublication.SourceProduct}, {Kind: "store", ID: testpublication.SourceWarehouse}}, WarehouseStock: []domain.WarehouseStockObservation{{Kind: "product", ExternalID: testpublication.SourceProduct, WarehouseID: testpublication.SourceWarehouse, Stock: &seven, Reserve: &zero, InTransit: &zero}}}
-	market := domain.OzonImport{Account: scope.OzonAccount, StartedAt: now, FinishedAt: now, Products: []domain.OzonProduct{{ProductID: testpublication.OzonProduct, OfferID: testpublication.OzonOffer, SKU: testpublication.OzonSKU, Archived: &archived}}, Warehouses: []domain.OzonWarehouse{{ID: testpublication.OzonWarehouse, Status: "created", IsRFBS: &fbs}}}
+	source := domain.InventoryImport{Account: scope.MoyskladAccount, StartedAt: now, FinishedAt: now, Entities: []domain.ExternalEntity{{Kind: "product", ID: stockfixture.SourceProduct}, {Kind: "store", ID: stockfixture.SourceWarehouse}}, WarehouseStock: []domain.WarehouseStockObservation{{Kind: "product", ExternalID: stockfixture.SourceProduct, WarehouseID: stockfixture.SourceWarehouse, Stock: &seven, Reserve: &zero, InTransit: &zero}}}
+	market := domain.OzonImport{Account: scope.OzonAccount, StartedAt: now, FinishedAt: now, Products: []domain.OzonProduct{{ProductID: stockfixture.OzonProduct, OfferID: stockfixture.OzonOffer, SKU: stockfixture.OzonSKU, Archived: &archived}}, Warehouses: []domain.OzonWarehouse{{ID: stockfixture.OzonWarehouse, Status: "created", IsRFBS: &fbs}}}
 	for i := 0; i < 2; i++ {
 		task, err := db.ClaimForCatalogWorker(ctx, time.Minute, scope.OzonAccount, scope.MoyskladAccount)
 		if err != nil || task == nil {

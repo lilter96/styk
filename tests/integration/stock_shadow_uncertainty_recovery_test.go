@@ -17,7 +17,7 @@ import (
 	"github.com/lilter96/styk/internal/console"
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/postgres"
-	"github.com/lilter96/styk/internal/testpublication"
+	"github.com/lilter96/styk/internal/stockfixture"
 )
 
 type shadowUncertaintyResponse struct {
@@ -116,7 +116,7 @@ func syntheticIndependentShadowScope(t *testing.T, db *postgres.Store) domain.St
 	stock, zero := "10", "0"
 	rfbs, archived := false, false
 	source := domain.InventoryImport{Account: scope.MoyskladAccount, StartedAt: now, FinishedAt: now, Entities: []domain.ExternalEntity{{Kind: "product", ID: "other-item", Article: "other-offer"}, {Kind: "store", ID: "other-store"}}, WarehouseStock: []domain.WarehouseStockObservation{{Kind: "product", ExternalID: "other-item", WarehouseID: "other-store", Stock: &stock, Reserve: &zero, InTransit: &zero}}}
-	market := domain.OzonImport{Account: scope.OzonAccount, StartedAt: now, FinishedAt: now, Products: []domain.OzonProduct{{ProductID: testpublication.OzonProduct, OfferID: "other-offer", SKU: "999", Archived: &archived}}, Warehouses: []domain.OzonWarehouse{{ID: testpublication.OzonWarehouse, IsRFBS: &rfbs}}, Stocks: []domain.OzonStock{{ProductID: testpublication.OzonProduct, OfferID: "other-offer", SKU: "999", WarehouseID: testpublication.OzonWarehouse, Present: 1, Reserved: 0, FreeStock: 1}}}
+	market := domain.OzonImport{Account: scope.OzonAccount, StartedAt: now, FinishedAt: now, Products: []domain.OzonProduct{{ProductID: stockfixture.OzonProduct, OfferID: "other-offer", SKU: "999", Archived: &archived}}, Warehouses: []domain.OzonWarehouse{{ID: stockfixture.OzonWarehouse, IsRFBS: &rfbs}}, Stocks: []domain.OzonStock{{ProductID: stockfixture.OzonProduct, OfferID: "other-offer", SKU: "999", WarehouseID: stockfixture.OzonWarehouse, Present: 1, Reserved: 0, FreeStock: 1}}}
 	if _, err := db.SaveInventoryImport(ctx, source, "other-source-"+suffix); err != nil {
 		t.Fatal(err)
 	}
@@ -129,10 +129,10 @@ func syntheticIndependentShadowScope(t *testing.T, db *postgres.Store) domain.St
 		}
 	}
 	match := postgres.MatchScope{Tenant: scope.Tenant, MoyskladAccount: scope.MoyskladAccount, OzonAccount: scope.OzonAccount}
-	if _, err := db.ConfirmMatch(ctx, match, testpublication.OzonProduct, "product", "other-item", "synthetic product mapping"); err != nil {
+	if _, err := db.ConfirmMatch(ctx, match, stockfixture.OzonProduct, "product", "other-item", "synthetic product mapping"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.ConfirmWarehouseMapping(ctx, match, "other-store", testpublication.OzonWarehouse, "synthetic warehouse mapping"); err != nil {
+	if _, err := db.ConfirmWarehouseMapping(ctx, match, "other-store", stockfixture.OzonWarehouse, "synthetic warehouse mapping"); err != nil {
 		t.Fatal(err)
 	}
 	return scope
@@ -145,8 +145,8 @@ func addUnrelatedShadowProduct(t *testing.T, db *postgres.Store, scope domain.St
 	stock, zero := "7", "0"
 	rfbs, archived := false, false
 	const product = "27182818"
-	source := domain.InventoryImport{Account: scope.MoyskladAccount, StartedAt: now, FinishedAt: now, Entities: []domain.ExternalEntity{{Kind: "product", ID: testpublication.SourceProduct, Article: "synthetic"}, {Kind: "product", ID: "other-product", Article: "other-offer"}, {Kind: "store", ID: testpublication.SourceWarehouse}}, WarehouseStock: []domain.WarehouseStockObservation{{Kind: "product", ExternalID: testpublication.SourceProduct, WarehouseID: testpublication.SourceWarehouse, Stock: &stock, Reserve: &zero, InTransit: &zero}, {Kind: "product", ExternalID: "other-product", WarehouseID: testpublication.SourceWarehouse, Stock: &stock, Reserve: &zero, InTransit: &zero}}}
-	market := domain.OzonImport{Account: scope.OzonAccount, StartedAt: now, FinishedAt: now, Products: []domain.OzonProduct{{ProductID: testpublication.OzonProduct, OfferID: testpublication.OzonOffer, SKU: testpublication.OzonSKU, Archived: &archived}, {ProductID: product, OfferID: "other-offer", SKU: "271829", Archived: &archived}}, Warehouses: []domain.OzonWarehouse{{ID: testpublication.OzonWarehouse, Status: "created", IsRFBS: &rfbs}}, Stocks: []domain.OzonStock{{ProductID: testpublication.OzonProduct, OfferID: testpublication.OzonOffer, SKU: testpublication.OzonSKU, WarehouseID: testpublication.OzonWarehouse, Present: 0, Reserved: 0, FreeStock: 0}, {ProductID: product, OfferID: "other-offer", SKU: "271829", WarehouseID: testpublication.OzonWarehouse, Present: 0, Reserved: 0, FreeStock: 0}}}
+	source := domain.InventoryImport{Account: scope.MoyskladAccount, StartedAt: now, FinishedAt: now, Entities: []domain.ExternalEntity{{Kind: "product", ID: stockfixture.SourceProduct, Article: "synthetic"}, {Kind: "product", ID: "other-product", Article: "other-offer"}, {Kind: "store", ID: stockfixture.SourceWarehouse}}, WarehouseStock: []domain.WarehouseStockObservation{{Kind: "product", ExternalID: stockfixture.SourceProduct, WarehouseID: stockfixture.SourceWarehouse, Stock: &stock, Reserve: &zero, InTransit: &zero}, {Kind: "product", ExternalID: "other-product", WarehouseID: stockfixture.SourceWarehouse, Stock: &stock, Reserve: &zero, InTransit: &zero}}}
+	market := domain.OzonImport{Account: scope.OzonAccount, StartedAt: now, FinishedAt: now, Products: []domain.OzonProduct{{ProductID: stockfixture.OzonProduct, OfferID: stockfixture.OzonOffer, SKU: stockfixture.OzonSKU, Archived: &archived}, {ProductID: product, OfferID: "other-offer", SKU: "271829", Archived: &archived}}, Warehouses: []domain.OzonWarehouse{{ID: stockfixture.OzonWarehouse, Status: "created", IsRFBS: &rfbs}}, Stocks: []domain.OzonStock{{ProductID: stockfixture.OzonProduct, OfferID: stockfixture.OzonOffer, SKU: stockfixture.OzonSKU, WarehouseID: stockfixture.OzonWarehouse, Present: 0, Reserved: 0, FreeStock: 0}, {ProductID: product, OfferID: "other-offer", SKU: "271829", WarehouseID: stockfixture.OzonWarehouse, Present: 0, Reserved: 0, FreeStock: 0}}}
 	if _, err := db.SaveInventoryImport(ctx, source, "shadow-other-source"); err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +203,7 @@ func TestStockShadowDistinguishesRecoveredAndUnresolvedUnknown(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := domain.StockRecoveryRequest{StockSyncScope: scope, OperationID: claim.ID, SessionID: "synthetic-session", IdempotencyKey: "synthetic-shadow-recovery", ExpectedReadbackAt: now.Add(time.Second), ExpectedQuantity: "0", Reason: "Synthetic acceptance of previous uncertainty", Acknowledge: true, WorkerStopped: true}
-	if _, err = db.SupersedeTestUnknown(ctx, request, now.Add(2*time.Second)); err != nil {
+	if _, err = db.SupersedeStockUnknown(ctx, request, now.Add(2*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	after := get(scope, http.StatusOK)

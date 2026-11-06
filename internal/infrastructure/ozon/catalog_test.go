@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/lilter96/styk/internal/catalog"
-	"github.com/lilter96/styk/internal/testpublication"
+	"github.com/lilter96/styk/internal/stockfixture"
 )
 
 var catalogFixtureScope = catalog.Scope{Tenant: "fixture", MoyskladAccount: "ms", OzonAccount: "1"}
@@ -238,12 +238,12 @@ func TestCatalogScopeAndHostGatesRemainClosed(t *testing.T) {
 			t.Fatalf("synthetic allowed %s", base)
 		}
 	}
-	if _, err := NewControlledTestCatalogClient(catalogFixtureScope, "key"); !errors.Is(err, ErrCatalogWritesDisabled) {
-		t.Fatalf("generic real host enabled: %v", err)
+	if _, err := NewWritableCatalogClient(catalogFixtureScope, "key"); err != nil {
+		t.Fatalf("connected account rejected: %v", err)
 	}
-	stockScope := testpublication.Scope()
+	stockScope := stockfixture.Scope()
 	allowed := catalog.Scope{Tenant: stockScope.Tenant, MoyskladAccount: stockScope.MoyskladAccount, OzonAccount: stockScope.OzonAccount}
-	if _, err := NewControlledTestCatalogClient(allowed, "key"); err != nil {
+	if _, err := NewWritableCatalogClient(allowed, "key"); err != nil {
 		t.Fatalf("fixed authorized scope blocked: %v", err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Error("unexpected network") }))
@@ -279,7 +279,7 @@ func TestGeneralCatalogSwitchRetainsReadOnlyAndAccountBinding(t *testing.T) {
 		t.Fatalf("client credentials escaped the bound account: %v", err)
 	}
 	t.Setenv("STYK_CATALOG_PUBLICATION_ENABLED", "false")
-	if writer.writeEnabled() {
-		t.Fatal("writer ignored the disabled deployment switch")
+	if !writer.writeEnabled() {
+		t.Fatal("obsolete deployment flag disabled a connected account")
 	}
 }

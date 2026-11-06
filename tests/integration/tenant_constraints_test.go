@@ -14,13 +14,13 @@ import (
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/identity"
 	"github.com/lilter96/styk/internal/postgres"
-	"github.com/lilter96/styk/internal/testpublication"
+	"github.com/lilter96/styk/internal/stockfixture"
 )
 
 func TestTenantForeignKeysAndOutboxIdentity(t *testing.T) {
 	db, _ := controlledFixture(t)
 	ctx := context.Background()
-	a := testpublication.Scope()
+	a := stockfixture.Scope()
 	bTenant, bOzon, bMoy := "synthetic-tenant-b", "synthetic-ozon-b", "synthetic-moy-b"
 	if err := db.RegisterStockConnection(ctx, bTenant, "ozon", bOzon, "synthetic", false); err != nil {
 		t.Fatal(err)
@@ -64,7 +64,7 @@ func TestTenantForeignKeysAndOutboxIdentity(t *testing.T) {
 func TestImportRejectsCredentialRotationDuringRead(t *testing.T) {
 	db, _ := controlledFixture(t)
 	ctx := context.Background()
-	scope := testpublication.Scope()
+	scope := stockfixture.Scope()
 	credentialScope := credentials.Scope{Tenant: scope.Tenant, Provider: "ozon", Account: scope.OzonAccount}
 	vault, err := credentials.New(bytes.Repeat([]byte{7}, 32))
 	if err != nil {
@@ -108,7 +108,7 @@ func TestImportRejectsCredentialRotationDuringRead(t *testing.T) {
 func TestPublicationAndCycleReferencesCannotCrossTenants(t *testing.T) {
 	db, review := controlledFixture(t)
 	ctx := context.Background()
-	a := testpublication.Scope()
+	a := stockfixture.Scope()
 	b := domain.StockSyncScope{Tenant: "synthetic-reference-b", MoyskladAccount: "synthetic-reference-moy-b", OzonAccount: "synthetic-reference-ozon-b"}
 	for _, item := range []struct{ provider, account string }{{"moysklad", b.MoyskladAccount}, {"ozon", b.OzonAccount}} {
 		if err := db.RegisterStockConnection(ctx, b.Tenant, item.provider, item.account, "synthetic", false); err != nil {
@@ -196,7 +196,7 @@ func testCycleReferences(t *testing.T, db *postgres.Store, a domain.StockSyncSco
 			t.Fatal("scheduler accepted a reference to another tenant")
 		}
 	}
-	if _, err = db.Pool.Exec(ctx, `INSERT INTO stock_auto_cycle_publications(cycle_id,publication_id,product_id,warehouse_id) VALUES($1,$2,$3,$4)`, cycle, publication, testpublication.OzonProduct, testpublication.OzonWarehouse); err != nil {
+	if _, err = db.Pool.Exec(ctx, `INSERT INTO stock_auto_cycle_publications(cycle_id,publication_id,product_id,warehouse_id) VALUES($1,$2,$3,$4)`, cycle, publication, stockfixture.OzonProduct, stockfixture.OzonWarehouse); err != nil {
 		t.Fatalf("same-tenant cycle publication was rejected: %v", err)
 	}
 }

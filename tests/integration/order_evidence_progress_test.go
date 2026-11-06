@@ -13,7 +13,7 @@ import (
 	"github.com/lilter96/styk/internal/application"
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/postgres"
-	"github.com/lilter96/styk/internal/testpublication"
+	"github.com/lilter96/styk/internal/stockfixture"
 )
 
 func progressScope(f stockFixtureData) domain.StockSyncScope {
@@ -344,7 +344,7 @@ func TestOrderEvidenceLegacyWindowNeverResumes(t *testing.T) {
 func TestOrderEvidenceAndProgressShareSnapshotDuringSeal(t *testing.T) {
 	db, _ := controlledFixture(t)
 	ctx := context.Background()
-	scope := testpublication.Scope()
+	scope := stockfixture.Scope()
 	run, err := db.StartOrderEvidence(ctx, scope, 1, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
@@ -357,7 +357,7 @@ func TestOrderEvidenceAndProgressShareSnapshotDuringSeal(t *testing.T) {
 	result := make(chan error, 1)
 	go func() { _, e := db.CheckpointOrderEvidence(ctx, run, "moysklad", "COMPLETED", ""); result <- e }()
 	for {
-		e, p, eErr := db.StockOrderEvidenceWithProgress(ctx, scope, testpublication.OzonProduct, testpublication.OzonWarehouse)
+		e, p, eErr := db.StockOrderEvidenceWithProgress(ctx, scope, stockfixture.OzonProduct, stockfixture.OzonWarehouse)
 		if eErr != nil || p == nil {
 			t.Fatalf("read evidence snapshot: %+v %v", p, eErr)
 		}

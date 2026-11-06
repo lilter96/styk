@@ -10,13 +10,13 @@ import (
 
 	"github.com/lilter96/styk/internal/application"
 	"github.com/lilter96/styk/internal/domain"
-	"github.com/lilter96/styk/internal/testpublication"
+	"github.com/lilter96/styk/internal/stockfixture"
 )
 
 func TestOzonProductNamesPreserveImmutableSnapshotHistory(t *testing.T) {
 	db, _ := controlledFixtureWithMapping(t, false)
 	ctx := context.Background()
-	snap := domain.OzonImport{Account: testpublication.OzonAccount, StartedAt: time.Now(), FinishedAt: time.Now(), Products: []domain.OzonProduct{{ProductID: "501", OfferID: "named-offer", Name: "Этикетка для склада"}}}
+	snap := domain.OzonImport{Account: stockfixture.OzonAccount, StartedAt: time.Now(), FinishedAt: time.Now(), Products: []domain.OzonProduct{{ProductID: "501", OfferID: "named-offer", Name: "Этикетка для склада"}}}
 	save := func(wantCreated bool) string {
 		t.Helper()
 		fingerprint, err := application.OzonFingerprint(&snap)
@@ -59,7 +59,7 @@ func TestOzonProductNamesPreserveImmutableSnapshotHistory(t *testing.T) {
 func TestOzonProductNameLimitRollsBackEntireImport(t *testing.T) {
 	db, _ := controlledFixtureWithMapping(t, false)
 	ctx := context.Background()
-	snap := domain.OzonImport{Account: testpublication.OzonAccount, StartedAt: time.Now(), FinishedAt: time.Now(), Products: []domain.OzonProduct{{ProductID: "501", OfferID: "valid", Name: "Valid"}, {ProductID: "502", OfferID: "invalid", Name: strings.Repeat("я", 2049)}}}
+	snap := domain.OzonImport{Account: stockfixture.OzonAccount, StartedAt: time.Now(), FinishedAt: time.Now(), Products: []domain.OzonProduct{{ProductID: "501", OfferID: "valid", Name: "Valid"}, {ProductID: "502", OfferID: "invalid", Name: strings.Repeat("я", 2049)}}}
 	if _, err := db.SaveOzonImport(ctx, snap, "invalid-name-size"); err == nil {
 		t.Fatal("oversized product metadata persisted")
 	}

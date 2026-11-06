@@ -30,8 +30,8 @@ import (
 	"github.com/lilter96/styk/internal/infrastructure/ozon"
 	"github.com/lilter96/styk/internal/ozonjob"
 	"github.com/lilter96/styk/internal/postgres"
+	"github.com/lilter96/styk/internal/stockfixture"
 	"github.com/lilter96/styk/internal/stocksync"
-	"github.com/lilter96/styk/internal/testpublication"
 )
 
 const browserAutoWorkspace = "synthetic-auto-browser-b"
@@ -120,7 +120,7 @@ func assertMerchantOrderCheck(t *testing.T, db *postgres.Store) {
 func assertMerchantHistoryRollbackGuard(t *testing.T, db *postgres.Store, automatic bool) {
 	t.Helper()
 	var count, enabled int
-	if err := db.Pool.QueryRow(context.Background(), `SELECT count(*),count(*) FILTER (WHERE enabled) FROM stock_auto_configs WHERE tenant_id<>$1`, testpublication.Tenant).Scan(&count, &enabled); err != nil || count != 1 || (enabled == 1) != automatic {
+	if err := db.Pool.QueryRow(context.Background(), `SELECT count(*),count(*) FILTER (WHERE enabled) FROM stock_auto_configs WHERE tenant_id<>$1`, stockfixture.Tenant).Scan(&count, &enabled); err != nil || count != 1 || (enabled == 1) != automatic {
 		t.Fatalf("unexpected merchant policy count=%d enabled=%d error=%v", count, enabled, err)
 	}
 	before := merchantRollbackSnapshot(t, db)
@@ -169,7 +169,7 @@ func merchantRollbackRejected(t *testing.T, db *postgres.Store) {
 func seedMerchantBrowserCredentials(t *testing.T, db *postgres.Store, vault *credentials.Vault) {
 	t.Helper()
 	ctx := context.Background()
-	scope := testpublication.Scope()
+	scope := stockfixture.Scope()
 	for _, entry := range []struct{ provider, account, secret string }{
 		{"moysklad", scope.MoyskladAccount, "synthetic-moy-a"},
 		{"ozon", scope.OzonAccount, "synthetic-ozon-a"},
@@ -265,9 +265,9 @@ func merchantBrowserAPI(t *testing.T, db *postgres.Store, mailbox *testMailbox, 
 			return
 		}
 		if body.Workspace == "" {
-			body.Workspace = testpublication.Tenant
+			body.Workspace = stockfixture.Tenant
 		}
-		if body.Workspace != testpublication.Tenant && (body.Workspace != browserAutoWorkspace || os.Getenv("STYK_MERCHANT_AUTOSIM") != "1") {
+		if body.Workspace != stockfixture.Tenant && (body.Workspace != browserAutoWorkspace || os.Getenv("STYK_MERCHANT_AUTOSIM") != "1") {
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}

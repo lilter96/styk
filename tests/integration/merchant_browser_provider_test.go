@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/lilter96/styk/internal/testpublication"
+	"github.com/lilter96/styk/internal/stockfixture"
 )
 
 const (
@@ -41,7 +41,7 @@ func (p *merchantFakeProvider) ServeHTTP(w http.ResponseWriter, r *http.Request)
 func (p *merchantFakeProvider) ozon(w http.ResponseWriter, r *http.Request) {
 	account := r.Header.Get("Client-Id")
 	key := r.Header.Get("Api-Key")
-	if (account != testpublication.OzonAccount || key != "synthetic-ozon-a") && (account != browserOzon || key != "synthetic-ozon-b") {
+	if (account != stockfixture.OzonAccount || key != "synthetic-ozon-a") && (account != browserOzon || key != "synthetic-ozon-b") {
 		http.Error(w, "synthetic authentication failed", http.StatusForbidden)
 		return
 	}
@@ -96,7 +96,7 @@ func (p *merchantFakeProvider) ozon(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *merchantFakeProvider) moy(w http.ResponseWriter, r *http.Request) {
-	account, product, store, article := testpublication.MoyskladAccount, testpublication.SourceProduct, testpublication.SourceWarehouse, "A-OFFER"
+	account, product, store, article := stockfixture.MoyskladAccount, stockfixture.SourceProduct, stockfixture.SourceWarehouse, "A-OFFER"
 	switch r.Header.Get("Authorization") {
 	case "Bearer synthetic-moy-a":
 	case "Bearer synthetic-moy-b":

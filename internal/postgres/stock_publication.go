@@ -10,7 +10,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/publication"
-	"github.com/lilter96/styk/internal/testpublication"
 )
 
 func sameSyncConditions(a, b domain.StockSyncReview) bool {
@@ -175,9 +174,9 @@ func (s *Store) NextStockPublication(ctx context.Context, now time.Time) (*domai
 }
 
 // NextControlledStockPublication claims an authorized single-attempt outbox
-// task. Legacy mode additionally restricts selection to its fixture scope.
+// task for any connected account.
 func (s *Store) NextControlledStockPublication(ctx context.Context, now time.Time) (*domain.StockPublication, error) {
-	scope := testpublication.Scope()
+	scope := domain.StockSyncScope{}
 	if !publication.StockEnabled() {
 		return nil, nil
 	}
@@ -331,13 +330,9 @@ func (s *Store) RecoverControlledStockPublications(ctx context.Context, now time
 	if !publication.StockEnabled() {
 		return nil
 	}
-	scopes := []domain.StockSyncScope{testpublication.Scope()}
-	if publication.StockGeneral() {
-		var err error
-		scopes, err = s.expiredStockScopes(ctx, now)
-		if err != nil {
-			return err
-		}
+	scopes, err := s.expiredStockScopes(ctx, now)
+	if err != nil {
+		return err
 	}
 	for _, scope := range scopes {
 		if err := s.recoverStockScope(ctx, scope, now); err != nil {

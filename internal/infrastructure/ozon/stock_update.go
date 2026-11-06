@@ -53,18 +53,18 @@ func safeStockCode(v string) string {
 	}
 }
 
-// BindControlledTestIntent restricts this single-use client to one frozen
+// BindStockIntent restricts this single-use client to one frozen
 // publication. The worker supplies an authorization callback that rechecks the
 // claimed outbox task and current evidence in Postgres before dispatch.
-func (c *Client) BindControlledTestIntent(item StockUpdate, authorize func(context.Context) (bool, error)) error {
+func (c *Client) BindStockIntent(item StockUpdate, authorize func(context.Context) (bool, error)) error {
 	c.intentMu.Lock()
 	defer c.intentMu.Unlock()
-	if c.controlledTestScope == nil && c.allowSyntheticStockWrites {
+	if c.writeScope == nil && c.allowSyntheticStockWrites {
 		// Deterministic loopback fixtures already have a separate hard host
 		// boundary; the worker still performs its database checks.
 		return nil
 	}
-	if c.controlledTestScope == nil || !publication.Stock(*c.controlledTestScope) || c.controlledIntent != nil || authorize == nil || item.ProductID == "" || item.WarehouseID == "" || !publication.Quantity(*c.controlledTestScope, strconv.FormatInt(item.Quantity, 10)) {
+	if c.writeScope == nil || !publication.Stock(*c.writeScope) || c.controlledIntent != nil || authorize == nil || item.ProductID == "" || item.WarehouseID == "" || !publication.Quantity(*c.writeScope, strconv.FormatInt(item.Quantity, 10)) {
 		return ErrStockWritesDisabled
 	}
 	c.controlledIntent = &item
@@ -73,18 +73,18 @@ func (c *Client) BindControlledTestIntent(item StockUpdate, authorize func(conte
 }
 
 func (c *Client) consumeStockIntent(items []StockUpdate) (func(context.Context) (bool, error), error) {
-	if c.controlledTestScope == nil {
+	if c.writeScope == nil {
 		if c.allowSyntheticStockWrites {
 			return nil, nil
 		}
 		return nil, ErrStockWritesDisabled
 	}
-	if !publication.Stock(*c.controlledTestScope) || len(items) != 1 {
+	if !publication.Stock(*c.writeScope) || len(items) != 1 {
 		return nil, ErrStockWritesDisabled
 	}
 	c.intentMu.Lock()
 	defer c.intentMu.Unlock()
-	if c.controlledIntent == nil || c.controlledIntentUsed || *c.controlledIntent != items[0] || c.controlledAuthorize == nil || !publication.Quantity(*c.controlledTestScope, strconv.FormatInt(items[0].Quantity, 10)) {
+	if c.controlledIntent == nil || c.controlledIntentUsed || *c.controlledIntent != items[0] || c.controlledAuthorize == nil || !publication.Quantity(*c.writeScope, strconv.FormatInt(items[0].Quantity, 10)) {
 		return nil, ErrStockWritesDisabled
 	}
 	c.controlledIntentUsed = true
@@ -95,11 +95,11 @@ func (c *Client) authorizeStockIntent(ctx context.Context, authorize func(contex
 	if authorize == nil {
 		return nil
 	}
-	if !publication.Stock(*c.controlledTestScope) {
+	if !publication.Stock(*c.writeScope) {
 		return ErrStockWritesDisabled
 	}
 	allowed, err := authorize(ctx)
-	if err != nil || !allowed || !publication.Stock(*c.controlledTestScope) {
+	if err != nil || !allowed || !publication.Stock(*c.writeScope) {
 		return ErrStockWritesDisabled
 	}
 	return ctx.Err()

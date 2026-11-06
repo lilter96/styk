@@ -12,7 +12,7 @@ import (
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/identity"
 	"github.com/lilter96/styk/internal/postgres"
-	"github.com/lilter96/styk/internal/testpublication"
+	"github.com/lilter96/styk/internal/stockfixture"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -80,7 +80,7 @@ func TestLegacyWorkspaceRequiresExplicitSingleClaim(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	scope := testpublication.Scope()
+	scope := stockfixture.Scope()
 	var unclaimed bool
 	if err = db.Pool.QueryRow(ctx, `SELECT legacy_unclaimed FROM saas_workspaces WHERE id=$1`, scope.Tenant).Scan(&unclaimed); err != nil || !unclaimed {
 		t.Fatal("legacy workspace was not reserved as unclaimed")

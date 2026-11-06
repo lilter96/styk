@@ -25,7 +25,7 @@ import (
 	"github.com/lilter96/styk/internal/infrastructure/moysklad"
 	"github.com/lilter96/styk/internal/infrastructure/ozon"
 	"github.com/lilter96/styk/internal/postgres"
-	"github.com/lilter96/styk/internal/testpublication"
+	"github.com/lilter96/styk/internal/stockfixture"
 )
 
 const catalogBrowserOrigin = "http://127.0.0.1:15180"
@@ -99,15 +99,15 @@ func catalogBrowserVault(t *testing.T, db *postgres.Store) *credentials.Vault {
 func seedCatalogBrowserNames(t *testing.T, db *postgres.Store) {
 	t.Helper()
 	now := time.Now().UTC()
-	scope := testpublication.Scope()
+	scope := stockfixture.Scope()
 	source := domain.InventoryImport{Account: scope.MoyskladAccount, StartedAt: now.Add(-time.Second), FinishedAt: now,
-		Entities: []domain.ExternalEntity{{Kind: "product", ID: testpublication.SourceProduct, Name: catalogBrowserSourceName, Article: "catalog-browser"}}}
+		Entities: []domain.ExternalEntity{{Kind: "product", ID: stockfixture.SourceProduct, Name: catalogBrowserSourceName, Article: "catalog-browser"}}}
 	if _, err := db.SaveInventoryImport(context.Background(), source, "catalog-browser-source"); err != nil {
 		t.Fatal(err)
 	}
 	archived := false
 	market := domain.OzonImport{Account: scope.OzonAccount, StartedAt: now.Add(-time.Second), FinishedAt: now,
-		Products: []domain.OzonProduct{{ProductID: testpublication.OzonProduct, OfferID: testpublication.OzonOffer, SKU: testpublication.OzonSKU, Name: "Старое название Ozon", Archived: &archived},
+		Products: []domain.OzonProduct{{ProductID: stockfixture.OzonProduct, OfferID: stockfixture.OzonOffer, SKU: stockfixture.OzonSKU, Name: "Старое название Ozon", Archived: &archived},
 			{ProductID: catalogBrowserUnmappedID, OfferID: catalogBrowserUnmappedOffer, SKU: "8080000002", Name: catalogBrowserUnmappedName, Archived: &archived}}}
 	if _, err := db.SaveOzonImport(context.Background(), market, "catalog-browser-market"); err != nil {
 		t.Fatal(err)
@@ -125,7 +125,7 @@ func catalogBrowserFactory(db *postgres.Store, vault *credentials.Vault, base st
 
 func startCatalogBrowserWorker(t *testing.T, ctx context.Context, db *postgres.Store, vault *credentials.Vault, base string) func() {
 	t.Helper()
-	scope := catalog.Scope{Tenant: testpublication.Tenant, MoyskladAccount: testpublication.MoyskladAccount, OzonAccount: testpublication.OzonAccount}
+	scope := catalog.Scope{Tenant: stockfixture.Tenant, MoyskladAccount: stockfixture.MoyskladAccount, OzonAccount: stockfixture.OzonAccount}
 	runner := catalogsync.Runner{Enabled: true, WorkerID: "catalog-browser-normal-worker", Store: db,
 		Resolver: catalogBrowserFactory(db, vault, base), AllowScope: func(value catalog.Scope) bool { return value == scope }}
 	worker := application.Worker{Store: db, Handler: application.MockHandler{}, Catalog: runner, StoredCredentials: true,
@@ -152,7 +152,7 @@ func assertCatalogBrowserEffects(t *testing.T, db *postgres.Store, simulator *ca
 		t.Fatal("approved mixed field values were not observed in provider readback")
 	}
 	var reconciled int
-	if err := db.Pool.QueryRow(context.Background(), `SELECT count(*) FROM catalog_sync_work WHERE state='RECONCILED' AND tenant_id=$1`, testpublication.Tenant).Scan(&reconciled); err != nil || reconciled != 3 {
+	if err := db.Pool.QueryRow(context.Background(), `SELECT count(*) FROM catalog_sync_work WHERE state='RECONCILED' AND tenant_id=$1`, stockfixture.Tenant).Scan(&reconciled); err != nil || reconciled != 3 {
 		t.Fatalf("normal worker did not durably reconcile mixed updates and creation: count=%d err=%v", reconciled, err)
 	}
 	assertCatalogBrowserCreation(t, db, simulator)

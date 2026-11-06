@@ -34,9 +34,9 @@ type StockCalculationPolicy struct {
 	SafetyStock       string
 	MaxObservationAge time.Duration
 	DecisionLifetime  time.Duration
-	// Only a scoped controlled-test policy may accept operator assumptions.
+	// Only a scoped configuration may accept operator assumptions.
 	AcceptOperatorAttested bool
-	// A scoped, time-limited test policy may explicitly accept a standing
+	// A scoped, time-limited policy may explicitly accept a standing
 	// operator assumption; this never represents a fresh provider observation.
 	TestStandingAttestationMaxAge time.Duration
 }
