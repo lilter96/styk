@@ -169,7 +169,9 @@ func nativeProviderParent(raw []byte) (string, bool) {
 	if ordersDecode(raw, &field) != nil || field.Validate() != nil {
 		return "", false
 	}
-	if field.IsMissing() || field.Presence == orders.PresenceNull {
+	// Ozon returns an explicit empty string for a root posting. It is
+	// absence of a parent, not an incomplete or conflicting ancestry proof.
+	if field.IsMissing() || field.Presence == orders.PresenceNull || field.Presence == orders.PresenceEmpty {
 		return "", true
 	}
 	if !field.IsKnown() {
