@@ -13,9 +13,12 @@ if (!env.DATABASE_URL) throw new Error("Set DATABASE_URL or DATABASE_URL_UNPOOLE
 
 const grouped = process.platform !== "win32";
 const options = { env, stdio: "inherit", detached: grouped };
+const npm = process.env.npm_execpath;
+const webDev = ["--prefix", "web", "run", "dev"];
+const extension = grouped ? "" : ".exe";
 const children = [
-  spawn("./bin/styk-api", [], options),
-  spawn("npm", ["--prefix", "web", "run", "dev"], options),
+  spawn("./bin/styk-api" + extension, [], options),
+  npm ? spawn(process.execPath, [npm, ...webDev], options) : spawn("npm", webDev, options),
 ];
 let stopping = false;
 function stop(code) {

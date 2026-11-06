@@ -26,6 +26,13 @@ import {
   useConfirmation,
   type Confirmation,
 } from "./Confirmation";
+import {
+  marketplacePlanKey,
+  marketplacePlanName,
+  marketplaceQuotaReason,
+  type MarketplacePlan,
+} from "./marketplacePlan";
+import { ProfileSettings } from "./ProfileSettings";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -686,6 +693,16 @@ export function App() {
       ),
     enabled: session.isSuccess && !!chosen && identityReady,
   });
+  const marketplacePlan = useQuery({
+    queryKey: [marketplacePlanKey, chosen],
+    queryFn: ({ signal }) =>
+      api<MarketplacePlan>(
+        "/api/marketplace-plan?" + params({ tenant: chosen }),
+        signal,
+      ),
+    enabled: session.isSuccess && !!chosen && identityReady,
+    retry: false,
+  });
   const scope = { tenant: chosen, moy, ozon };
   const warehouseScope = JSON.stringify(scope);
   const previousWarehouseScope = useRef<string | null>(null);
@@ -926,6 +943,10 @@ export function App() {
           loading={accounts.isLoading}
           error={!!accounts.error}
           addDisabled={!!support || !!credentialSubmission.pending}
+          quotaReason={marketplaceQuotaReason(
+            marketplacePlan.data,
+            marketplace,
+          )}
         />
       )}
       context={(onNavigate) => (
@@ -946,7 +967,23 @@ export function App() {
             {session.data && (
               <p className="signed-in-user">{session.data.user.email}</p>
             )}
+            {marketplacePlan.data && (
+              <p className="signed-in-plan">
+                {marketplacePlanName(marketplacePlan.data.code)} ·{" "}
+                {marketplacePlan.data.used} из{" "}
+                {marketplacePlan.data.total_limit}
+              </p>
+            )}
             <div className="workspace-footer">
+              <NavLink
+                to="/profile"
+                onClick={() => {
+                  setAccountsOpen(false);
+                  onNavigate?.();
+                }}
+              >
+                Настройки профиля
+              </NavLink>
               <NavLink
                 to="/integrations"
                 onClick={() => {
@@ -1001,6 +1038,15 @@ export function App() {
             imports={importSubmission}
           />
         </Suspense>
+      ) : pathname === "/profile" ? (
+        <ProfileSettings
+          email={session.data?.user.email || ""}
+          plan={marketplacePlan.data}
+          planLoading={marketplacePlan.isLoading}
+          planUnavailable={marketplacePlan.isError}
+          onReloadPlan={() => void marketplacePlan.refetch()}
+          readOnly={!!support}
+        />
       ) : marketplace === "ozon" ? (
         <Routes>
           <Route
@@ -1064,6 +1110,10 @@ export function App() {
                   submission={importSubmission}
                   credentialSubmission={credentialSubmission}
                   stockSyncSubmission={stockSyncSubmission}
+                  plan={marketplacePlan.data}
+                  planUnavailable={marketplacePlan.isError}
+                  planLoading={marketplacePlan.isLoading}
+                  onReloadPlan={() => void marketplacePlan.refetch()}
                   notice={importNotice}
                 />
               </Suspense>

@@ -66,6 +66,7 @@ func handlerWithAuth(db *postgres.Store, a *auth, connections *connections) (htt
 	})
 	registerMerchantRoutes(mux, a)
 	registerPlatformAdmin(mux, a.merchant, db)
+	registerMarketplacePlan(mux, a.merchant, db)
 	mux.HandleFunc("POST /api/imports", a.authorized(a.connectionMutation(imports.create)))
 	mux.HandleFunc("GET /api/imports", a.authorized(imports.list))
 	mux.HandleFunc("GET /api/imports/{id}", a.authorized(imports.get))

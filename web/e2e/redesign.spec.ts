@@ -1,6 +1,107 @@
 import { test, expect, type Page } from "@playwright/test";
 import { auditButtonHovers } from "./hover-contrast";
 
+test("administrator upgrades a company and its marketplace quota refreshes", async ({
+  page,
+}) => {
+  await fixtures(page);
+  let admin = true;
+  let upgraded = false;
+  const plans = [
+    { code: "plan_1", total_limit: 1, provider_limit: 1 },
+    { code: "plan_2", total_limit: 2, provider_limit: 1 },
+    { code: "plan_3", total_limit: 5, provider_limit: 5 },
+    { code: "plan_4", total_limit: 20, provider_limit: 20 },
+  ];
+  const snapshot = () => ({
+    ...plans[upgraded ? 2 : 0],
+    revision: upgraded ? 2 : 1,
+    used: 1,
+    providers: { ozon: 1 },
+    exceeded: false,
+    blocked: upgraded ? {} : { ozon: "PLAN_TOTAL_LIMIT" },
+  });
+  await page.route("**/api/session", (route) =>
+    route.fulfill({
+      json: {
+        user: { id: "visual-user", email: "seller@example.test" },
+        account_id: scope.tenant,
+        platform_admin: admin,
+        csrf: "visual-only",
+        expires_at: "2099-01-01T00:00:00Z",
+      },
+    }),
+  );
+  await page.route("**/api/admin/overview?*", (route) =>
+    route.fulfill({
+      json: {
+        companies: 1,
+        connections: 1,
+        success: 0,
+        errors: 0,
+        providers: { ozon: 1 },
+        issues: [],
+      },
+    }),
+  );
+  await page.route("**/api/admin/plans?*", (route) =>
+    route.fulfill({
+      json: {
+        total: 1,
+        plans,
+        companies: [
+          {
+            id: scope.tenant,
+            name: "Магазин проверки",
+            email: "seller@example.test",
+            code: snapshot().code,
+            revision: snapshot().revision,
+            providers: { ozon: 1 },
+            used: 1,
+            exceeded_plans: [],
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/admin/plans/" + scope.tenant, (route) => {
+    expect(route.request().method()).toBe("POST");
+    expect(route.request().postDataJSON()).toEqual({
+      code: "plan_3",
+      expected_revision: 1,
+    });
+    upgraded = true;
+    return route.fulfill({ json: snapshot() });
+  });
+  await page.route("**/api/marketplace-plan?*", (route) =>
+    route.fulfill({ json: snapshot() }),
+  );
+  await page.goto(origin + "/integrations");
+  const add = page
+    .getByRole("region", { name: "Ozon: аккаунты" })
+    .getByRole("button", { name: "Добавить аккаунт" });
+  await expect(
+    page.getByRole("region", { name: "Лимит аккаунтов" }),
+  ).toContainText("1 из 1");
+  await expect(add).toBeDisabled();
+  await page.goto(origin + "/admin?section=plans");
+  await page
+    .getByLabel("Тариф компании Магазин проверки", { exact: true })
+    .selectOption("plan_3");
+  await page
+    .getByRole("button", { name: "Сохранить тариф компании Магазин проверки" })
+    .click();
+  await expect(
+    page.getByRole("row", { name: /Магазин проверки/ }),
+  ).toContainText("1 из 5");
+  admin = false;
+  await page.goto(origin + "/integrations");
+  await expect(
+    page.getByRole("region", { name: "Лимит аккаунтов" }),
+  ).toContainText("1 из 5");
+  await expect(add).toBeEnabled();
+});
+
 test("new merchant imports all eligible Ozon products with one confirmation", async ({
   page,
 }) => {
@@ -209,6 +310,17 @@ async function fixtures(page: Page, signedIn = true) {
     if (path === "/api/auth-mode") value = { mode: "merchant" };
     else if (path === "/api/registrations")
       value = { accounts, truncated: false };
+    else if (path === "/api/marketplace-plan")
+      value = {
+        code: "plan_3",
+        total_limit: 5,
+        provider_limit: 5,
+        used: 2,
+        providers: { ozon: 2 },
+        exceeded: false,
+        blocked: {},
+        revision: 1,
+      };
     else if (path === "/api/diagnostics") value = report;
     else if (path === "/api/products")
       value = {

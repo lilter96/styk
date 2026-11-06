@@ -100,6 +100,9 @@ func (c *connections) resolveMoy(ctx context.Context, tenant, account string) (*
 }
 
 func credentialError(w http.ResponseWriter, err error) {
+	if writeMarketplaceQuotaError(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, credentials.ErrConflict):
 		writeError(w, 409, "IDEMPOTENCY_CONFLICT")
@@ -255,7 +258,7 @@ func (a *credentialAPI) disconnect(w http.ResponseWriter, r *http.Request) {
 	d.DisallowUnknownFields()
 	provider := r.PathValue("provider")
 	scope := credentials.Scope{Provider: provider}
-	if d.Decode(&in) != nil || d.Decode(&struct{}{}) != io.EOF || !in.Acknowledge || in.ExpectedRevision < 1 || !importIdempotencyPattern.MatchString(in.RequestID) {
+	if d.Decode(&in) != nil || d.Decode(&struct{}{}) != io.EOF || !in.Acknowledge || (in.ExpectedRevision < 0 || in.ExpectedRevision == 0 && provider != "ozon") || !importIdempotencyPattern.MatchString(in.RequestID) {
 		writeError(w, 400, "INVALID_REQUEST")
 		return
 	}

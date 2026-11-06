@@ -22,12 +22,14 @@ export function IntegrationProviderSection({
   items: allItems,
   onAdd,
   addingDisabled = false,
+  quotaReason,
   unavailable = false,
 }: {
   provider: ProviderName;
   items: { id: string; name?: string; content: ReactNode }[];
   onAdd?: () => void;
   addingDisabled?: boolean;
+  quotaReason?: string;
   unavailable?: boolean;
 }) {
   const viewport = useRef<HTMLDivElement>(null);
@@ -118,7 +120,7 @@ export function IntegrationProviderSection({
         <div className="provider-group-controls">
           <button
             className="secondary provider-add"
-            disabled={unavailable || addingDisabled || !onAdd}
+            disabled={unavailable || addingDisabled || !!quotaReason || !onAdd}
             onClick={onAdd}
             title={
               unavailable ? "Подключение пока не поддерживается" : undefined
@@ -155,6 +157,7 @@ export function IntegrationProviderSection({
           )}
         </div>
       </header>
+      {quotaReason && <p className="provider-quota-note">{quotaReason}</p>}
       {allItems.length >= 8 && (
         <label className="provider-account-search">
           <input
@@ -201,7 +204,9 @@ export function IntegrationProviderSection({
           <p>
             {unavailable
               ? "Интеграция пока недоступна. Подключённых аккаунтов нет."
-              : filter ? "Аккаунтов с таким названием не найдено." : "Подключённых аккаунтов пока нет. Добавьте аккаунт, чтобы загружать данные."}
+              : filter
+                ? "Аккаунтов с таким названием не найдено."
+                : "Подключённых аккаунтов пока нет. Добавьте аккаунт, чтобы загружать данные."}
           </p>
         </div>
       )}

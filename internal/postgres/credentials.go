@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -124,6 +125,11 @@ func (s *Store) changeCredential(ctx context.Context, scope credentials.Scope, n
 		return zero, false, credentials.ErrUnavailable
 	}
 	defer rollbackTransaction(tx)
+	if domain.CountsTowardMarketplacePlan(scope.Provider) {
+		if err = lockMarketplacePlan(ctx, tx, scope.Tenant); err != nil {
+			return zero, false, err
+		}
+	}
 	if err = requireMerchantActor(ctx, tx, scope.Tenant, principal, true); err != nil {
 		return zero, false, credentials.ErrUnavailable
 	}
@@ -139,36 +145,15 @@ func (s *Store) changeCredential(ctx context.Context, scope credentials.Scope, n
 	} else if !errors.Is(e, credentials.ErrNotFound) {
 		return zero, false, e
 	}
-	if enable {
-		if err = ensureConnectionWorkspace(ctx, tx, scope.Tenant, principal); err != nil {
-			return zero, false, credentials.ErrUnavailable
-		}
-		if _, err = tx.Exec(ctx, `INSERT INTO stock_connections(tenant_id,source,account_id,provenance,include_import_history) VALUES($1,$2,$3,$4,false) ON CONFLICT(source,account_id) DO NOTHING`, scope.Tenant, scope.Provider, scope.Account, principal); err != nil {
-			return zero, false, credentials.ErrUnavailable
-		}
-	}
-	var owner string
-	err = tx.QueryRow(ctx, `SELECT tenant_id FROM stock_connections WHERE source=$1 AND account_id=$2 FOR UPDATE`, scope.Provider, scope.Account).Scan(&owner)
-	if errors.Is(err, pgx.ErrNoRows) || owner != "" && owner != scope.Tenant {
-		return zero, false, credentials.ErrOwnership
-	}
+	current, registeredAt, err := prepareCredentialChange(ctx, tx, scope, principal, expected, enable)
 	if err != nil {
-		return zero, false, credentials.ErrUnavailable
-	}
-	var current credentials.Metadata
-	current, err = scanCredential(tx.QueryRow(ctx, `SELECT `+credentialColumns+` FROM connection_credentials WHERE tenant_id=$1 AND provider=$2 AND account_id=$3 FOR UPDATE`, scope.Tenant, scope.Provider, scope.Account))
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return zero, false, credentials.ErrUnavailable
-	}
-	if current.Revision != expected {
-		return zero, false, credentials.ErrVersion
-	}
-	if !enable && current.Revision == 0 {
-		return zero, false, credentials.ErrNotFound
+		return zero, false, err
 	}
 	if !enable {
-		name = current.Name
-		checked = current.CheckedAt
+		name, checked = current.Name, current.CheckedAt
+		if current.Revision == 0 {
+			name, checked = "Ozon", registeredAt
+		}
 	}
 	m, err := scanCredential(tx.QueryRow(ctx, `INSERT INTO connection_credentials(tenant_id,provider,account_id,name,revision,enabled,ciphertext,checked_at,last_request_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(tenant_id,provider,account_id) DO UPDATE SET name=EXCLUDED.name,revision=EXCLUDED.revision,enabled=EXCLUDED.enabled,ciphertext=EXCLUDED.ciphertext,checked_at=EXCLUDED.checked_at,last_request_id=EXCLUDED.last_request_id,updated_at=clock_timestamp() RETURNING `+credentialColumns, scope.Tenant, scope.Provider, scope.Account, name, expected+1, enable, ciphertext, checked, requestID))
 	if err != nil {
@@ -185,4 +170,49 @@ func (s *Store) changeCredential(ctx context.Context, scope credentials.Scope, n
 		return zero, false, credentials.ErrUnavailable
 	}
 	return m, false, nil
+}
+
+func prepareCredentialChange(ctx context.Context, tx pgx.Tx, scope credentials.Scope, principal string, expected int64, enable bool) (credentials.Metadata, time.Time, error) {
+	var current credentials.Metadata
+	var owner string
+	var registeredAt time.Time
+	err := tx.QueryRow(ctx, `SELECT tenant_id,registered_at FROM stock_connections WHERE source=$1 AND account_id=$2 FOR UPDATE`, scope.Provider, scope.Account).Scan(&owner, &registeredAt)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return current, registeredAt, credentials.ErrUnavailable
+	}
+	if owner != "" && owner != scope.Tenant || !enable && owner == "" {
+		return current, registeredAt, credentials.ErrOwnership
+	}
+	if owner != "" {
+		current, err = scanCredential(tx.QueryRow(ctx, `SELECT `+credentialColumns+` FROM connection_credentials WHERE tenant_id=$1 AND provider=$2 AND account_id=$3 FOR UPDATE`, scope.Tenant, scope.Provider, scope.Account))
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return current, registeredAt, credentials.ErrUnavailable
+		}
+	}
+	if current.Revision != expected {
+		return current, registeredAt, credentials.ErrVersion
+	}
+	if !enable && current.Revision == 0 && (scope.Provider != "ozon" || !strings.HasPrefix(principal, "MERCHANT_SESSION:")) {
+		return current, registeredAt, credentials.ErrNotFound
+	}
+	if owner == "" {
+		return current, registeredAt, registerCredentialConnection(ctx, tx, scope, principal)
+	}
+	if enable && current.Revision != 0 && !current.Enabled {
+		return current, registeredAt, admitMarketplaceAccount(ctx, tx, scope.Tenant, scope.Provider)
+	}
+	return current, registeredAt, nil
+}
+
+func registerCredentialConnection(ctx context.Context, tx pgx.Tx, scope credentials.Scope, principal string) error {
+	if err := ensureConnectionWorkspace(ctx, tx, scope.Tenant, principal); err != nil {
+		return credentials.ErrUnavailable
+	}
+	if err := admitMarketplaceAccount(ctx, tx, scope.Tenant, scope.Provider); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO stock_connections(tenant_id,source,account_id,provenance,include_import_history) VALUES($1,$2,$3,$4,false)`, scope.Tenant, scope.Provider, scope.Account, principal); err != nil {
+		return credentials.ErrUnavailable
+	}
+	return nil
 }

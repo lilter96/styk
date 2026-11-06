@@ -15,14 +15,16 @@ const adminCompaniesSQL = `WITH companies AS (
  WHERE k.enabled AND NOT COALESCE(s.archived,false)
 )`
 
-const adminUsersSQL = adminCompaniesSQL + `, filtered AS (
+const adminCompanyPageSQL = `, filtered AS (
  SELECT * FROM companies
  WHERE ($2='' OR status=$2)
  AND ($1='' OR strpos(lower(name),lower($1))>0 OR strpos(lower(email),lower($1))>0
       OR strpos(lower(user_id),lower($1))>0 OR strpos(lower(tenant_id),lower($1))>0)
 ), page AS (
  SELECT * FROM filtered ORDER BY lower(name), tenant_id LIMIT $3 OFFSET $4
-), counts AS (
+)`
+
+const adminUsersSQL = adminCompaniesSQL + adminCompanyPageSQL + `, counts AS (
  SELECT k.tenant_id, k.provider, count(*) AS total FROM connected k JOIN page p USING(tenant_id)
  GROUP BY k.tenant_id,k.provider
 ), totals AS (

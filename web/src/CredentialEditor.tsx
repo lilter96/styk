@@ -48,6 +48,14 @@ export function CredentialEditor({
     retry: false,
   });
   const metadata = scope.account ? query.data?.credential : null;
+  const legacyDisconnect =
+    scope.provider === "ozon" &&
+    !!scope.account &&
+    !!query.data?.storage_available &&
+    metadata === null &&
+    accounts.some(
+      (item) => item.source === "ozon" && item.account === scope.account,
+    );
   const samePending =
     !!submission.pending &&
     sameCredentialScope(submission.pending.scope, { ...scope, account });
@@ -264,7 +272,7 @@ export function CredentialEditor({
           Отмена
         </button>
       </div>
-      {metadata?.enabled && (
+      {(metadata?.enabled || legacyDisconnect) && (
         <div className="settings-disconnect">
           {!disconnecting ? (
             <button
@@ -292,7 +300,9 @@ export function CredentialEditor({
                 disabled={
                   !disconnectAck || !!submission.pending || submission.busy
                 }
-                onClick={() => submission.disconnect(scope, metadata.revision)}
+                onClick={() =>
+                  submission.disconnect(scope, metadata?.revision ?? 0)
+                }
               >
                 Подтвердить отключение
               </button>

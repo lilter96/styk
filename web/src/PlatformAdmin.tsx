@@ -1,10 +1,17 @@
 import { Fragment, useState, type SelectHTMLAttributes } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, ApiError, post } from "./api";
 import { BrandLogo } from "./BrandLogo";
 import { Icon, type IconName } from "./UI";
 import "./platform-admin.css";
+
+import {
+  marketplacePlanKey,
+  marketplacePlanName,
+  type MarketplacePlan,
+  type MarketplacePlanLimits,
+} from "./marketplacePlan";
 
 type Counts = Record<string, number>;
 type Overview = {
@@ -94,6 +101,10 @@ function AdminSelect({
 }
 
 const sections = {
+  plans: {
+    title: "Тарифы и доступ",
+    description: "Лимиты аккаунтов маркетплейсов для компаний STYK",
+  },
   overview: {
     title: "Обзор платформы",
     description: "Компании, подключения и импорт данных в STYK",
@@ -115,7 +126,7 @@ const adminNavigation: {
 }[] = [
   { label: "Обзор", icon: "overview", section: "overview" },
   { label: "Пользователи", icon: "users", section: "users" },
-  { label: "Тарифы и доступ", icon: "layers" },
+  { label: "Тарифы и доступ", icon: "layers", section: "plans" },
   { label: "Интеграции", icon: "integrations", section: "integrations" },
   { label: "Фоновые задачи", icon: "calendar" },
   { label: "Логи и события", icon: "catalog" },
@@ -196,7 +207,9 @@ export function PlatformAdmin({
   const [params] = useSearchParams();
   const requested = params.get("section");
   const section =
-    requested === "users" || requested === "integrations"
+    requested === "users" ||
+    requested === "integrations" ||
+    requested === "plans"
       ? requested
       : "overview";
   const [days, setDays] = useState("30");
@@ -222,7 +235,7 @@ export function PlatformAdmin({
             <h1>{sections[section].title}</h1>
             <p>{sections[section].description}</p>
           </div>
-          {section !== "users" && (
+          {(section === "overview" || section === "integrations") && (
             <AdminSelect
               icon="calendar"
               aria-label="Период импорта"
@@ -254,6 +267,9 @@ export function PlatformAdmin({
               </button>
             )}
           </p>
+        )}
+        {data && !blocked && section === "plans" && (
+          <AdminPlans sessionKey={sessionKey} />
         )}
         {data && !blocked && section === "users" && (
           <CompanyTable sessionKey={sessionKey} accountID={accountID} />
@@ -597,7 +613,7 @@ function CompanyPager({
   onPageChange,
   onLimitChange,
 }: {
-  data: Users;
+  data: { total: number; users: readonly unknown[] };
   page: number;
   limit: number;
   onPageChange: (page: number) => void;
@@ -672,5 +688,230 @@ function CompanyPager({
         </AdminSelect>
       </label>
     </div>
+  );
+}
+
+type PlanCompany = {
+  id: string;
+  name: string;
+  email: string;
+  code: string;
+  revision: number;
+  providers: Counts;
+  used: number;
+  exceeded_plans: string[];
+};
+
+type PlanCompanies = {
+  total: number;
+  companies: PlanCompany[];
+  plans: MarketplacePlanLimits[];
+};
+
+function AdminPlans({ sessionKey }: { sessionKey: string }) {
+  const client = useQueryClient();
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
+  const queryKey = ["platform-admin", sessionKey, "plans"];
+  const query = useQuery({
+    queryKey: [...queryKey, search, page, limit],
+    queryFn: ({ signal }) =>
+      api<PlanCompanies>(
+        "/api/admin/plans?" +
+          new URLSearchParams({
+            q: search,
+            page: String(page),
+            limit: String(limit),
+          }),
+        signal,
+      ),
+    retry: false,
+  });
+  const save = useMutation({
+    mutationFn: ({ company, code }: { company: PlanCompany; code: string }) =>
+      post<MarketplacePlan>(
+        "/api/admin/plans/" + encodeURIComponent(company.id),
+        {
+          code,
+          expected_revision: company.revision,
+        },
+      ),
+    onSettled: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey }),
+        client.invalidateQueries({ queryKey: [marketplacePlanKey] }),
+      ]);
+    },
+  });
+  const data = query.data;
+  return (
+    <section
+      className="admin-card admin-companies"
+      aria-label="Тарифы компаний"
+    >
+      <h2>Тарифы компаний</h2>
+      <div className="admin-filters">
+        <label className="admin-search">
+          <Icon name="search" size="button" className="admin-control-leading" />
+          <input
+            className="admin-control"
+            type="search"
+            aria-label="Поиск компании"
+            placeholder="Поиск по названию, email или ID…"
+            maxLength={128}
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setPage(1);
+            }}
+          />
+        </label>
+      </div>
+      {query.isPending && (
+        <p className="admin-state" role="status">
+          Загружаем тарифы…
+        </p>
+      )}
+      {query.isError && (
+        <p className="admin-state" role="alert">
+          Не удалось загрузить тарифы.{" "}
+          <button
+            type="button"
+            className="admin-button"
+            onClick={() => void query.refetch()}
+          >
+            Повторить
+          </button>
+        </p>
+      )}
+      {save.isError && (
+        <p className="admin-state" role="alert">
+          {save.error instanceof ApiError &&
+          save.error.code === "PLAN_REVISION_CONFLICT"
+            ? "Тариф уже изменился. Проверьте актуальное назначение и выберите тариф заново."
+            : "Не удалось подтвердить сохранение. Проверьте текущий тариф перед повторной попыткой."}
+        </p>
+      )}
+      {save.isSuccess && (
+        <p className="admin-state" role="status">
+          Тариф сохранён.
+        </p>
+      )}
+      {data &&
+        (data.companies.length > 0 ? (
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th scope="col">Компания</th>
+                  <th scope="col">Занято мест</th>
+                  <th scope="col">Тариф и доступ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.companies.map((company) => (
+                  <PlanCompanyRow
+                    key={company.id + ":" + company.revision}
+                    company={company}
+                    plans={data.plans}
+                    pending={
+                      save.isPending || query.isFetching || query.isError
+                    }
+                    onSave={(code) => save.mutate({ company, code })}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="admin-state">Компании не найдены.</p>
+        ))}
+      {data && (
+        <CompanyPager
+          data={{ total: data.total, users: data.companies }}
+          page={page}
+          limit={limit}
+          onPageChange={setPage}
+          onLimitChange={(next) => {
+            setPage(1);
+            setLimit(next);
+          }}
+        />
+      )}
+    </section>
+  );
+}
+
+function PlanCompanyRow({
+  company,
+  plans,
+  pending,
+  onSave,
+}: {
+  company: PlanCompany;
+  plans: MarketplacePlanLimits[];
+  pending: boolean;
+  onSave: (code: string) => void;
+}) {
+  const [selected, setSelected] = useState(company.code);
+  const current = plans.find((plan) => plan.code === company.code);
+  const currentExceeded = company.exceeded_plans.includes(company.code);
+  const willExceed =
+    selected !== company.code && company.exceeded_plans.includes(selected);
+  return (
+    <tr>
+      <th scope="row">
+        <strong>{company.name}</strong>
+        <small>{company.email}</small>
+      </th>
+      <td>
+        <strong>
+          {company.used} из {current?.total_limit}
+        </strong>
+        {Object.entries(company.providers).map(([provider, count]) => (
+          <small key={provider}>
+            {providerNames[provider] ?? provider} · {count}
+          </small>
+        ))}
+        {currentExceeded && (
+          <small className="admin-plan-warning">Лимит превышен</small>
+        )}
+      </td>
+      <td>
+        <div className="admin-plan-editor">
+          <AdminSelect
+            aria-label={"Тариф компании " + company.name}
+            value={selected}
+            disabled={pending}
+            onChange={(event) => setSelected(event.target.value)}
+          >
+            {plans.map((plan) => (
+              <option key={plan.code} value={plan.code}>
+                {marketplacePlanName(plan.code)} · {plan.total_limit}
+                {plan.provider_limit < plan.total_limit
+                  ? " (по одному на площадку)"
+                  : ""}
+              </option>
+            ))}
+          </AdminSelect>
+          <button
+            className="admin-button"
+            type="button"
+            disabled={pending || selected === company.code}
+            onClick={() => onSave(selected)}
+            aria-label={"Сохранить тариф компании " + company.name}
+          >
+            Сохранить
+          </button>
+        </div>
+        {willExceed && (
+          <small className="admin-plan-warning" role="status">
+            Подключения сохранятся. Новые будут недоступны до устранения
+            превышения.
+          </small>
+        )}
+      </td>
+    </tr>
   );
 }
