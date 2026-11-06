@@ -7,7 +7,7 @@ Based on `master` at `cab972a`. The two supplied STYK references guide the layou
 - The shipment table provides server search by posting number, commercial order ID and the observed order number; status and attention filters; page selection; cursor navigation; and the existing bulk mirror preview.
 - Opening a posting shows a 640px right drawer with Overview, Products, Actions and History. The table retains its filters, cursor and selection. Related/parent/child links open the related posting, fetching a scoped search page if necessary.
 - Action forms mount only after visiting Actions and remain mounted across drawer tab changes. They reset on source revision or successful approval as before. Closing the drawer discards that drawer's draft and invalidates its preview.
-- The header's Settings button exposes the existing complete `OrdersConfig`. Closing settings or switching the page tab preserves unsaved settings. Dirty settings continue to block previews.
+- The header's Settings link opens the separate `/orders/settings` workspace described below; the shipment table contains no embedded configuration form.
 - Checking the source schedules the existing Ozon read. Refreshing the list reads stored observations. These controls have separate loading states and feedback.
 - Global history stays subscribed while hidden so its latest outcomes and account-scoped links continue to protect operations. Drawer history uses the existing exact-posting `search` parameter and its own cursor; other targets in a shared operation are excluded from that view.
 
@@ -91,3 +91,110 @@ Use `make check-plan` and the lanes in `docs/testing-policy.md`. `make check` se
 Real React/Chromium captures are reproducible under `.local/orders-history`: `01-history-1600.png`, `02-attention.png`, `03-success.png`, `04-unknown.png`, `05-technical.png`, `06-recovery.png`, `history-mobile-full.png`, and history/drawer images at 1440×900, 1280×800, 768×1024 and 390×844. The presentation runner has no application API proxy; all scenario data and downloads are isolated fixtures. Live services and production-scale query latency are outside this verification.
 
 Recorded results for the transfer-history change: TypeScript, ESLint, all 355 frontend tests and the production build passed through the scoped web runner. The selected Go lane passed golangci-lint (0 issues), unit tests with `-race` and build for all 18 planned packages. All three selected PostgreSQL contract tests passed with `-race` against disposable PostgreSQL. All 32 selected orders/shared-shell Playwright scenarios passed; after adjusting only capture scroll positions, the 20 orders scenarios passed again and the unchanged shared-shell results were reused. Visual review covered both references, all five requested viewport sizes, the attention filter, success, unknown, expanded diagnostics, recovery and mobile. Full regression, process-backed end-to-end acceptance and live-provider validation were not run for this scoped change. No changes were pushed, merged or deployed.
+
+## Order settings workspace (2026-11-06)
+
+The five approved settings references now guide `/orders/settings`. This replaces
+embedded settings below the shipment table. The six sections use the `section`
+search parameter, preserve one draft, and share a sticky save/cancel bar. Scope
+changes and navigation guard unsaved work. Loading, missing mappings, unavailable
+metadata, saved state and revision conflicts use the actual scoped API results.
+Ozon observation and document transmission have independent switches, including
+when a legacy configuration has no separate read-permission record.
+
+The primary fields and status rules have dedicated compact layouts. Existing
+address/PII retention, extra source fields, service-attribute setup and its
+unknown-outcome reconciliation, native documents, reservation/posting choices and
+technical intervals remain available. Reverse status rules remain suggestions;
+saving settings never approves Ozon operations or warehouse events.
+
+### Warehouse routing
+
+`orders.ReviewContext.PostingWarehouse` resolves exactly one confirmed canonical
+mapping for the posting and account pair. Normal mirrors, split reserve paths,
+native movement planning and dispatch validation use this evidence. Native target
+reference comparison still rejects silently moving an existing order to another
+store. Missing, foreign, ambiguous or changed mapping evidence fails closed for
+that posting. No fallback store is used.
+
+`Config.StoreID` remains in JSON for legacy round trips and audit history, but is
+neither required nor consulted for routing. There is no destructive backfill or
+second mapping subsystem. `GET /api/orders/warehouses` provides a scoped, keyset
+paginated local read of warehouses, mapping confirmation and actual counts;
+opening settings does not call providers per warehouse. Editing links remains in
+`/warehouses`. Review-confirmed canonical links remain immutable; adversarial
+unreviewed-link drift is checked before dispatch.
+
+### Permanent mirror authorization and migration 69
+
+A permanent grant explicitly stores `perpetual: true` and a SQL NULL expiry.
+Legacy grants retain their original expiry and are never upgraded by reading or
+resaving unrelated settings. Opt-in and expansions require `automation_consent`
+from the authenticated owner. Account scope, owner membership, current config and
+grant revisions, action/field allowlists, credential locks, mapping evidence and
+the final dispatch fence still apply. Removing the grant in an atomic config save
+revokes queued work by changing the current head; immutable grant history is not
+rewritten. An already dispatched unknown outcome remains a readback operation.
+
+Permanent policies only admit mirror create/update. Update includes an exact,
+ownership-proven patch of existing positions with the selected field allowlist;
+it does not authorize structural replacement, Ozon writes or native documents.
+Legacy grants retain their exact-action meaning. Native document confirmations
+keep their existing lifetime and explicit event approval model.
+
+Migration `00069_orders_perpetual_automation.sql` is additive and preserves all
+legacy records. Apply it before starting this binary; readiness requires schema
+69 and the lifetime constraint. Its rollback succeeds before permanent history
+exists. Once used, rollback explicitly refuses to rewrite immutable audit data,
+even after automation is disabled; retain the schema and use a reviewed forward
+fix. This is an intentional deployment limitation.
+
+### Verification entry points
+
+Use `make check-plan`, `make check`, `make check-ui` and the full high-risk lane.
+The scoped integration runner deliberately refuses a partial result for this
+schema/security impact; `make check-full` supplies the required integration and
+process/browser coverage. The test runner also removes alternate
+`*_TEST_DATABASE_URL` overrides, and selection fixtures honor the supplied
+disposable database before considering a legacy local test-DSN file. The Docker
+runner prepares the companion native-point database; when supplying a dedicated
+DSN manually, prepare `styk_orders_point_test` on that same test server.
+
+The settings scenario in `web/e2e/orders-console.spec.ts` captures all five
+sections at 1440, 1024, 768 and 390 pixels, exercises save/reload, draft retention,
+consent, disable, deep links, keyboard interaction and navigation. Captures are
+under `web/test-results/**/settings-{section}-{width}.png`; the reviewed copies
+are preserved in `.local/orders-settings/screenshots/`.
+Additional contracts cover multi-warehouse provider dispatch/readback, unmapped
+posting isolation, mapping drift, scoped pagination, legacy opt-in, permanent
+policy persistence, claimed-work revocation and immutable-history rollback.
+
+
+### Recorded verification and local rollout
+
+The scoped fast lane passed Go lint, race-enabled unit tests/build and frontend
+checks. The final frontend lane passed all 371 tests, typecheck, lint and build.
+The browser lane passed 34 scenarios; the settings scenario passed again after
+its final layout adjustment. Seven focused PostgreSQL contracts passed on the
+owned disposable server. The partial integration target refused this high-risk
+impact as designed. Full regression was stopped at the owner's explicit request
+after Go package checks, including `internal/postgres`, passed; the remaining
+integration/process lane and the full gate are **not passed**.
+
+| Regression | Recorded evidence |
+| --- | --- |
+| Multiple warehouses | PASS: normal provider dispatch/readback created two orders on distinct mapped stores; one unmapped posting stayed blocked |
+| Legacy expiry to permanent opt-in | PASS: domain and PostgreSQL consent/persistence contracts |
+| Revoke queued/claimed work | PASS: current head prevents new dispatch and no write intent is created |
+| Mapping drift | PASS: queued work is blocked when canonical confirmation no longer matches |
+| Scope isolation | PASS: foreign scope rejection and scoped pagination contracts |
+| Split and native documents | Go unit/PostgreSQL package checks passed; full integration/process regression stopped and remains unverified as a whole |
+
+At the owner's explicit request the local application database was backed up,
+then upgraded from schema 68 to 69. The new API was warmed up, promoted to
+`127.0.0.1:8080` and passed readiness. Its console origin is the current UI at
+`http://127.0.0.1:5175`. Stored order settings and source permissions were verified
+unchanged. Browser verification read the actual warehouse list successfully;
+no settings were submitted. Deployment metadata, the verified backup and the
+migration log are in `.local/orders-settings/live/`. No commit, push or merge was
+performed.

@@ -13,8 +13,12 @@ import (
 
 func mirrorWrite(ctx context.Context, posting orders.Posting, review orders.ReviewContext, positions []orders.PositionWrite, customerReader orders.CustomerReader) (orders.CustomerOrderWrite, []orders.Validation) {
 	config := review.Config
+	warehouse, invalid := postingWarehouse(posting, review)
+	if invalid.Code != "" {
+		return orders.CustomerOrderWrite{}, []orders.Validation{invalid}
+	}
 	write := orders.CustomerOrderWrite{CurrencyID: config.CurrencyID, OrganizationID: config.OrganizationID, AgentID: config.AgentID,
-		StoreID: config.StoreID, StateID: postingState(posting, config), SalesChannelID: config.SalesChannelID, Positions: positions}
+		StoreID: warehouse.MoyskladStoreID, StateID: postingState(posting, config), SalesChannelID: config.SalesChannelID, Positions: positions}
 	validations := make([]orders.Validation, 0)
 	for _, mapping := range config.FieldMappings {
 		if validation := applyMirrorMapping(&write, posting, review, mapping, customerReader); validation.Code != "" {

@@ -62,12 +62,12 @@ func (config Config) validBounds() bool {
 }
 
 func (config Config) validateReferences() error {
-	for _, id := range []string{config.OrganizationID, config.AgentID, config.StoreID, config.StateID, config.SalesChannelID} {
+	for _, id := range []string{config.OrganizationID, config.AgentID, config.StateID, config.SalesChannelID} {
 		if id == "" && !config.Enabled && !config.TestEnabled {
 			continue
 		}
 		if !validID(id) {
-			return fmt.Errorf("explicit organization, agent, store, state and sales channel are required: %w", ErrInvalid)
+			return fmt.Errorf("explicit organization, agent, state and sales channel are required: %w", ErrInvalid)
 		}
 	}
 	return nil
@@ -176,15 +176,15 @@ func (grant AutomationGrant) Validate() error {
 	if grant.Scope.Validate() != nil || !validID(grant.ID) || !validID(grant.OwnerID) || grant.Revision < 1 || grant.ConfigRevision < 1 {
 		return ErrInvalid
 	}
-	if grant.SourceAccount != grant.Scope.OzonAccount || grant.GrantedAt.IsZero() || !grant.ExpiresAt.After(grant.GrantedAt) {
+	if grant.SourceAccount != grant.Scope.OzonAccount || grant.GrantedAt.IsZero() || !grant.validLifetime() {
 		return ErrInvalid
 	}
-	if grant.ExpiresAt.Sub(grant.GrantedAt) > MaxAutomationGrantTTL || len(grant.Actions) == 0 {
+	if len(grant.Actions) == 0 {
 		return ErrInvalid
 	}
 	seen := make(map[Action]bool, len(grant.Actions))
 	for _, action := range grant.Actions {
-		if !action.Valid() || seen[action] {
+		if !action.Valid() || seen[action] || grant.Perpetual && action != ActionMirrorCreate && action != ActionMirrorUpdate {
 			return ErrInvalid
 		}
 		seen[action] = true
@@ -197,9 +197,16 @@ func (grant AutomationGrant) Validate() error {
 	return nil
 }
 
+func (grant AutomationGrant) validLifetime() bool {
+	if grant.Perpetual {
+		return grant.ExpiresAt.IsZero()
+	}
+	return grant.ExpiresAt.After(grant.GrantedAt) && grant.ExpiresAt.Sub(grant.GrantedAt) <= MaxAutomationGrantTTL
+}
+
 func (grant AutomationGrant) Active(now time.Time, scope Scope, revision int64) bool {
 	return grant.Validate() == nil && grant.Scope == scope && grant.ConfigRevision == revision &&
-		grant.RevokedAt == nil && !now.Before(grant.GrantedAt) && now.Before(grant.ExpiresAt)
+		grant.RevokedAt == nil && !now.Before(grant.GrantedAt) && (grant.Perpetual || now.Before(grant.ExpiresAt))
 }
 
 func (customer ProtectedCustomer) Validate() error {

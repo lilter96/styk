@@ -122,7 +122,7 @@ test("composition replacement has explicit preview and separate destructive appr
 test("reserve policy is explicit and separate from document posting on desktop and mobile", async ({
   page,
 }, testInfo) => {
-  const { errors } = await openOrders(page);
+  const { errors } = await openOrders(page, false, false, true);
   const saved: { config: typeof config }[] = [];
   await page.route("**/api/orders/config", (route) => {
     if (route.request().method() !== "POST") return route.fallback();
@@ -130,7 +130,10 @@ test("reserve policy is explicit and separate from document posting on desktop a
     saved.push(body);
     return fulfill(route, { ...body.config, scope, revision: 2 });
   });
-  await page.getByRole("button", { name: "Настройки", exact: true }).click();
+  await page.getByRole("link", { name: "Настройки", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Данные заказа", exact: true })
+    .click();
   await expect(page.getByLabel("Резерв в МойСклад")).toHaveValue("");
   await expect(page.getByLabel("Проведение заказа МойСклад")).toHaveValue("");
   await page
@@ -157,7 +160,7 @@ test("reserve policy is explicit and separate from document posting on desktop a
     path: testInfo.outputPath("reservation-settings-mobile.png"),
   });
   await page
-    .getByRole("button", { name: "Сохранить настройки заказов", exact: true })
+    .getByRole("button", { name: "Сохранить настройки", exact: true })
     .click();
   await expect.poll(() => saved.length).toBe(1);
   expect(saved[0].config.field_mappings).toContainEqual({
@@ -572,6 +575,35 @@ async function openOrders(
     const request = route.request();
     const url = new URL(request.url());
     if (url.pathname.endsWith("/config")) return fulfill(route, config);
+    if (url.pathname.endsWith("/warehouses"))
+      return fulfill(route, {
+        scope,
+        confirmed: 3,
+        total: 3,
+        items: [
+          {
+            ozon_id: "warehouse-1",
+            ozon_name: "Склад Ozon Москва",
+            store_id: "store-1",
+            store_name: "Основной склад",
+            status: "confirmed",
+          },
+          {
+            ozon_id: "warehouse-2",
+            ozon_name: "Склад Ozon Санкт-Петербург",
+            store_id: "store-2",
+            store_name: "Склад СПБ",
+            status: "confirmed",
+          },
+          {
+            ozon_id: "warehouse-3",
+            ozon_name: "Склад Ozon Казань",
+            store_id: "store-3",
+            store_name: "Склад Казань",
+            status: "confirmed",
+          },
+        ],
+      });
     if (url.pathname.endsWith("/metadata")) return fulfill(route, metadata);
     if (url.pathname.endsWith("/metadata/registry"))
       return fulfill(route, { scope, revision: 0, attributes: [] });
@@ -1836,12 +1868,15 @@ test("hover keeps labels readable across orders tabs, table, drawer, settings an
     results[name] = await auditButtonHovers(page, `drawer ${name}`);
   }
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "Настройки", exact: true }).click();
+  await page.getByRole("link", { name: "Настройки", exact: true }).click();
   await expect(
     page.getByRole("option", { name: "Тестовая организация" }),
   ).toBeAttached();
   results.settings = await auditButtonHovers(page, "settings");
-  await page.getByRole("button", { name: "Настройки", exact: true }).click();
+  await page.getByRole("link", { name: "К заказам", exact: true }).click();
+  await page
+    .getByLabel("Выбрать отправление SYNTHETIC-1", { exact: true })
+    .check();
   await page
     .getByRole("button", {
       name: "Проверить выбранные отправления",
@@ -2261,4 +2296,199 @@ test("history account switching clears filters, cursors, details and cached rows
       .getByRole("navigation", { name: "Страницы истории" })
       .getByText("Страница 1", { exact: true }),
   ).toBeVisible();
+});
+
+test("order settings references, persistent draft, permanent consent and scoped save", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  test.setTimeout(120_000);
+  const { errors, approvals } = await openOrders(page, false, false, true);
+  const initial = {
+    ...config,
+    field_mappings: [
+      ...config.field_mappings,
+      { source: "times.created_at", target: "moment" },
+      { source: "positions.price", target: "positions.price" },
+    ],
+    status_mappings: [
+      {
+        status: "awaiting_packaging",
+        substatus: { presence: "missing" },
+        state_id: "state",
+      },
+      {
+        status: "awaiting_deliver",
+        substatus: { presence: "missing" },
+        state_id: "working",
+      },
+      {
+        status: "delivered",
+        substatus: { presence: "missing" },
+        state_id: "done",
+      },
+    ],
+    reverse_status_mappings: [{ state_id: "working", action: "posting_pack" }],
+    automation: {
+      perpetual: true,
+      actions: ["mirror_create", "mirror_update"],
+      fields: ["name", "moment", "positions.quantity", "positions.price"],
+    },
+  };
+  let saved = initial;
+  const requests: Record<string, unknown>[] = [];
+  await page.route("**/api/orders/config*", (route) => {
+    if (route.request().method() === "POST") {
+      const body = route.request().postDataJSON();
+      requests.push(body);
+      saved = { ...body.config, revision: saved.revision + 1 };
+      return fulfill(route, { ...saved, publication_available: true });
+    }
+    return fulfill(route, { ...saved, publication_available: true });
+  });
+  await page.route("**/api/orders/metadata?*", (route) =>
+    fulfill(route, {
+      ...metadata,
+      states: [
+        ...metadata.states,
+        reference("working", "В работе"),
+        reference("done", "Выполнен"),
+      ],
+    }),
+  );
+  await page.getByRole("link", { name: "Настройки", exact: true }).click();
+  await expect(page).toHaveURL(/\/orders\/settings$/);
+  await expect(
+    page.getByRole("heading", { name: "Настройки заказов", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Склад МойСклад", { exact: true })).toHaveCount(
+    0,
+  );
+  const sections = [
+    { id: "general", label: "Общие" },
+    { id: "warehouses", label: "Куда передавать" },
+    { id: "fields", label: "Данные заказа" },
+    { id: "statuses", label: "Статусы и действия" },
+    { id: "automation", label: "Автоматизация" },
+  ];
+  for (const width of [1440, 1024, 768, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    for (const section of sections) {
+      if (width <= 780)
+        await page
+          .getByRole("combobox", { name: "Раздел настроек" })
+          .selectOption(section.id);
+      else
+        await page
+          .getByRole("button", { name: section.label, exact: true })
+          .click();
+      await expect(
+        page.locator(
+          `.settings-content section[aria-labelledby="settings-${section.id}"]`,
+        ),
+      ).toBeVisible();
+      await expect(page.locator(".settings-footer")).toBeInViewport();
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth),
+      ).toBeLessThanOrEqual(width);
+      await page.screenshot({
+        path: testInfo.outputPath(`settings-${section.id}-${width}.png`),
+        animations: "disabled",
+        fullPage: true,
+      });
+    }
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByRole("button", { name: "Общие", exact: true }).click();
+  await page
+    .getByRole("checkbox", {
+      name: "Получать отправления из Ozon",
+      exact: true,
+    })
+    .uncheck();
+  await page
+    .getByRole("button", { name: "Автоматизация", exact: true })
+    .click();
+  await expect(
+    page.getByText("Есть несохранённые изменения", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Общие", exact: true }).click();
+  await expect(
+    page.getByRole("checkbox", {
+      name: "Получать отправления из Ozon",
+      exact: true,
+    }),
+  ).not.toBeChecked();
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.getByRole("link", { name: "К заказам", exact: true }).click();
+  await expect(page).toHaveURL(/orders\/settings/);
+  await page
+    .getByRole("button", { name: "Сохранить настройки", exact: true })
+    .click();
+  await expect.poll(() => requests.length).toBe(1);
+  expect(requests[0].automation_consent).toBe(false);
+  expect((requests[0].config as typeof initial).automation.perpetual).toBe(
+    true,
+  );
+  expect((requests[0].config as typeof initial).store_id).toBe("store");
+  await expect(
+    page.getByText("Настройки сохранены", { exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await page
+    .getByRole("button", { name: "Автоматизация", exact: true })
+    .click();
+  await expect(
+    page.getByRole("checkbox", {
+      name: "Автоматическая передача",
+      exact: true,
+    }),
+  ).toBeChecked();
+  await page
+    .getByRole("checkbox", { name: "Автоматическая передача", exact: true })
+    .uncheck();
+  await page
+    .getByRole("button", { name: "Сохранить настройки", exact: true })
+    .click();
+  await expect.poll(() => requests.length).toBe(2);
+  expect((requests[1].config as Record<string, unknown>).automation).toBeNull();
+  await expect(
+    page.getByText("Настройки сохранены", { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("checkbox", { name: "Автоматическая передача", exact: true })
+    .check();
+  await expect(
+    page.getByRole("button", { name: "Сохранить настройки", exact: true }),
+  ).toBeDisabled();
+  await page
+    .getByRole("checkbox", {
+      name: "Номер отправления → название заказа",
+      exact: true,
+    })
+    .check();
+  await page
+    .getByRole("checkbox", { name: /Разрешаю автоматическое выполнение/ })
+    .check();
+  await page
+    .getByRole("button", { name: "Сохранить настройки", exact: true })
+    .click();
+  await expect.poll(() => requests.length).toBe(3);
+  expect(requests[2].automation_consent).toBe(true);
+  await expect(
+    page.getByText("Настройки сохранены", { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Дополнительно", exact: true })
+    .focus();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/section=advanced/);
+  await page.goBack();
+  await expect(page).toHaveURL(/section=automation/);
+  await page.getByRole("link", { name: "К заказам", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Заказы", exact: true }),
+  ).toBeVisible();
+  expect(approvals).toEqual([]);
+  expect(errors).toEqual([]);
 });

@@ -130,7 +130,7 @@ func (i *Ingestor) currentConfig(ctx context.Context, scope orders.Scope) (order
 
 func ingestionContext(ctx context.Context, config orders.Config, lease orders.IngestionLease) (context.Context, context.CancelFunc) {
 	deadline := lease.LeaseUntil
-	if grant := config.Automation; !config.ReadEnabled && grant != nil && grant.ExpiresAt.Before(deadline) {
+	if grant := config.Automation; !config.ReadEnabled && grant != nil && !grant.Perpetual && grant.ExpiresAt.Before(deadline) {
 		deadline = grant.ExpiresAt
 	}
 	return context.WithDeadline(ctx, deadline)

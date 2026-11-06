@@ -50,6 +50,7 @@ func registerOrdersRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c *co
 		handler  http.HandlerFunc
 		mutation bool
 	}{
+		{"GET /api/orders/warehouses", api.warehouses, false},
 		{"GET /api/orders/config", api.config, false}, {"POST /api/orders/config", api.saveConfig, true},
 		{"GET /api/orders/postings", api.postings, false}, {"GET /api/orders/operations", api.history, false},
 		{"GET /api/orders/action-options", api.actionOptions, false},
