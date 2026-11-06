@@ -676,3 +676,12 @@
     animation: none;
   }
 }
+/* Keep the active page legible when the shared footer hover rule loads later. */
+.reference-shell
+  .product-mapping-page
+  .mapping-table-footer
+  button[aria-current]:hover:not(:disabled) {
+  background: #5930e8;
+  border-color: #5930e8;
+  color: #fff;
+}

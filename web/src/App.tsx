@@ -18,7 +18,8 @@ import {
   useImportSubmission,
 } from "./ImportSubmission";
 import { ProductMappingPage } from "./ProductMappingPage";
-import { WarehouseReview } from "./WarehouseReview";
+import { WarehouseOverview } from "./WarehouseOverview";
+import { WarehouseStockDetail } from "./WarehouseStockDetail";
 import { hasAuthLink, MerchantAuth } from "./MerchantAuth";
 import {
   ConfirmationNotice,
@@ -45,7 +46,6 @@ import {
   type Page,
   type Report,
   type Stock,
-  type Warehouse,
 } from "./api";
 
 type Scope = { tenant: string; moy: string; ozon: string };
@@ -370,193 +370,6 @@ export function StockRows({
     </>
   );
 }
-function WarehouseList({
-  scope,
-  source,
-  account,
-  other,
-  selectWarehouse,
-  chosen,
-}: {
-  scope: Scope;
-  source: string;
-  account: string;
-  other: string;
-  selectWarehouse: (id: string) => void;
-  chosen?: string;
-}) {
-  const [offset, setOffset] = useState(0),
-    [selected, setSelected] = useState("");
-  const q = useQuery({
-    queryKey: ["warehouses", scope.tenant, source, account, other, offset],
-    queryFn: ({ signal }) =>
-      api<Page<Warehouse>>(
-        "/api/warehouses?" +
-          params({
-            tenant: scope.tenant,
-            source,
-            account,
-            other_account: other,
-            offset,
-          }),
-        signal,
-      ),
-    enabled: !!scope.tenant && !!account,
-  });
-  return (
-    <section className="warehouse-panel read-warehouse-list">
-      <h2>{source === "moysklad" ? "МойСклад" : "Ozon"}</h2>
-      {!account ? (
-        <Notice>Аккаунт не выбран.</Notice>
-      ) : q.isLoading ? (
-        <Loading />
-      ) : q.error ? (
-        <Failure error={q.error} />
-      ) : !q.data?.items.length ? (
-        <Notice>Склады ещё не загружены.</Notice>
-      ) : (
-        <>
-          {q.data.items.map((w) => (
-            <div className="warehouse-row" key={w.id}>
-              <div>
-                <strong>{w.name || "Склад без названия"}</strong>
-                <details className="read-details">
-                  <summary>Данные склада</summary>
-                  <p>
-                    ID: <code>{w.id}</code>
-                  </p>
-                  <p>Записей об остатках: {w.stock_rows}</p>
-                </details>
-                <button
-                  className="link-button"
-                  onClick={() => setSelected(selected === w.id ? "" : w.id)}
-                >
-                  {selected === w.id ? "Скрыть остатки" : "Посмотреть остатки"}
-                </button>
-                <button
-                  className="link-button"
-                  aria-pressed={chosen === w.id}
-                  onClick={() => selectWarehouse(w.id)}
-                >
-                  {chosen === w.id
-                    ? "Выбран для сопоставления"
-                    : "Выбрать для сопоставления"}
-                </button>
-                {selected === w.id && (
-                  <StockRows
-                    key={w.id}
-                    scope={scope}
-                    source={source}
-                    account={account}
-                    warehouse={w.id}
-                  />
-                )}
-              </div>
-              <div className="warehouse-meta">
-                <span>
-                  {source === "ozon"
-                    ? w.is_rfbs === null
-                      ? "Тип неизвестен"
-                      : w.is_rfbs
-                        ? "rFBS"
-                        : "FBS"
-                    : "Склад МойСклад"}
-                </span>
-                <small>
-                  {w.mapped === null
-                    ? "Соответствие не проверено"
-                    : w.mapped
-                      ? "Соответствие подтверждено"
-                      : "Соответствие не задано"}
-                </small>
-                <small>
-                  {w.stock_rows === 0
-                    ? "Остатки неизвестны"
-                    : "Данные об остатках получены"}
-                </small>
-              </div>
-            </div>
-          ))}
-          <div className="pagination">
-            <button
-              className="secondary"
-              disabled={offset === 0}
-              onClick={() => {
-                setOffset(Math.max(0, offset - 50));
-                setSelected("");
-              }}
-            >
-              Назад
-            </button>
-            <button
-              className="secondary"
-              disabled={!q.data.has_next}
-              onClick={() => {
-                setOffset(offset + 50);
-                setSelected("");
-              }}
-            >
-              Далее
-            </button>
-          </div>
-        </>
-      )}
-    </section>
-  );
-}
-export function Warehouses({
-  scope,
-  confirmation,
-}: {
-  scope: Scope;
-  confirmation?: Confirmation;
-}) {
-  const [moyWarehouse, setMoyWarehouse] = useState("");
-  const [ozonWarehouse, setOzonWarehouse] = useState("");
-  return (
-    <div className="read-page warehouse-mapping-page">
-      <PageHeader
-        title="Сопоставление складов"
-        description="Выберите склад МойСклад и соответствующий ему склад Ozon."
-      />
-      <Notice>
-        Отсутствие данных об остатках не означает нулевой остаток. Совпадение
-        названий складов само по себе не подтверждает соответствие.
-      </Notice>
-      <div className="warehouse-grid">
-        <WarehouseList
-          scope={scope}
-          source="moysklad"
-          account={scope.moy}
-          other={scope.ozon}
-          selectWarehouse={setMoyWarehouse}
-          chosen={moyWarehouse}
-        />
-        <WarehouseList
-          scope={scope}
-          source="ozon"
-          account={scope.ozon}
-          other={scope.moy}
-          selectWarehouse={setOzonWarehouse}
-          chosen={ozonWarehouse}
-        />
-      </div>
-      {moyWarehouse && ozonWarehouse && (
-        <WarehouseReview
-          key={`${moyWarehouse}:${ozonWarehouse}`}
-          scope={scope}
-          moy={moyWarehouse}
-          ozon={ozonWarehouse}
-          confirmation={confirmation}
-          close={() => {
-            setMoyWarehouse("");
-            setOzonWarehouse("");
-          }}
-        />
-      )}
-    </div>
-  );
-}
 const checkTitles: Record<string, string> = {
   ACCOUNT_REGISTRATION: "Аккаунты сервисов",
   MOYSKLAD_REGISTRATION: "Аккаунт МойСклад",
@@ -729,7 +542,8 @@ export function App() {
   const credentialSubmission = useCredentialSubmission();
   const stockSyncSubmission = useStockSyncSubmission();
   const navigate = useNavigate();
-  const pathname = useLocation().pathname;
+  const location = useLocation();
+  const pathname = location.pathname;
   const integrationPage = pathname === "/integrations";
   useEffect(() => {
     if (
@@ -865,6 +679,18 @@ export function App() {
     enabled: session.isSuccess && !!chosen && identityReady,
   });
   const scope = { tenant: chosen, moy, ozon };
+  const warehouseScope = JSON.stringify(scope);
+  const previousWarehouseScope = useRef<string | null>(null);
+  useEffect(() => {
+    if (!scope.tenant || !scope.moy || !scope.ozon) return;
+    if (
+      previousWarehouseScope.current !== null &&
+      previousWarehouseScope.current !== warehouseScope &&
+      pathname.startsWith("/warehouses")
+    )
+      navigate("/warehouses", { replace: true });
+    previousWarehouseScope.current = warehouseScope;
+  }, [warehouseScope, pathname, navigate, scope.tenant, scope.moy, scope.ozon]);
   const moyConnection = useQuery({
     queryKey: ["integrations", chosen, "moysklad", moy],
     queryFn: ({ signal }) =>
@@ -1157,45 +983,6 @@ export function App() {
       )}
     >
       {support && <SupportBanner support={support} />}
-      <ConfirmationNotice
-        compact={pathname === "/products"}
-        confirmation={confirmation}
-        scope={scope}
-        restore={(original) => {
-          if (original.tenant !== chosen) return;
-          setMarketplace("ozon");
-          setMoy(original.moy);
-          setOzon(original.ozon);
-        }}
-      />
-      <StockSyncNotice
-        submission={stockSyncSubmission}
-        scope={{
-          tenant: chosen,
-          moysklad_account: moy,
-          ozon_account: ozon,
-        }}
-        onIntegrations={integrationPage}
-        restore={(original) => {
-          if (original.tenant !== chosen) return;
-          setMarketplace("ozon");
-          setMoy(original.moysklad_account);
-          setOzon(original.ozon_account);
-          navigate("/integrations");
-        }}
-      />
-      <CredentialNotice
-        submission={credentialSubmission}
-        tenant={chosen}
-        restore={(original) => {
-          if (original.tenant !== chosen) return;
-          setMarketplace("ozon");
-          if (original.provider === "moysklad") setMoy(original.account);
-          else setOzon(original.account);
-          navigate("/integrations");
-        }}
-      />
-      {!integrationPage && importNotice}
       {pathname === "/integrations/moysklad/settings" ? (
         <Suspense fallback={<Loading />}>
           <MoySkladAccountSettingsPage
@@ -1306,8 +1093,19 @@ export function App() {
           <Route
             path="/warehouses"
             element={
-              <Warehouses
+              <WarehouseOverview
                 key={`${scope.tenant}:${scope.moy}:${scope.ozon}`}
+                scope={scope}
+                confirmation={confirmation}
+                accounts={accounts.data?.accounts ?? []}
+              />
+            }
+          />
+          <Route
+            path="/warehouses/:warehouseId"
+            element={
+              <WarehouseStockDetail
+                key={`${scope.tenant}:${scope.moy}:${scope.ozon}:${location.pathname}`}
                 scope={scope}
                 confirmation={confirmation}
               />
@@ -1335,6 +1133,51 @@ export function App() {
           </div>
         </StatePanel>
       )}
+      <div
+        className="app-feedback"
+        role="region"
+        aria-label="Результаты операций"
+      >
+        <ConfirmationNotice
+          compact={pathname === "/products"}
+          confirmation={confirmation}
+          scope={scope}
+          restore={(original) => {
+            if (original.tenant !== chosen) return;
+            setMarketplace("ozon");
+            setMoy(original.moy);
+            setOzon(original.ozon);
+          }}
+        />
+        <StockSyncNotice
+          submission={stockSyncSubmission}
+          scope={{
+            tenant: chosen,
+            moysklad_account: moy,
+            ozon_account: ozon,
+          }}
+          onIntegrations={integrationPage}
+          restore={(original) => {
+            if (original.tenant !== chosen) return;
+            setMarketplace("ozon");
+            setMoy(original.moysklad_account);
+            setOzon(original.ozon_account);
+            navigate("/integrations");
+          }}
+        />
+        <CredentialNotice
+          submission={credentialSubmission}
+          tenant={chosen}
+          restore={(original) => {
+            if (original.tenant !== chosen) return;
+            setMarketplace("ozon");
+            if (original.provider === "moysklad") setMoy(original.account);
+            else setOzon(original.account);
+            navigate("/integrations");
+          }}
+        />
+        {!integrationPage && importNotice}
+      </div>
     </AppShell>
   );
 }

@@ -429,8 +429,6 @@ export function Integrations({
           Настройка синхронизации
         </button>
       </PageHeader>
-      {notice}
-      {!settingsProvider && settingsFeedback}
       {query.isLoading && <p role="status">Загружаем интеграции…</p>}
       {query.error && (
         <p className="integration-feedback" role="alert">
@@ -808,6 +806,8 @@ export function Integrations({
           onClose={() => setDiagnosticsOpen(false)}
         />
       )}
+      {notice}
+      {!settingsProvider && settingsFeedback}
     </div>
   );
 }

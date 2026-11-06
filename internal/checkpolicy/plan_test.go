@@ -21,6 +21,8 @@ func TestChangeClassification(t *testing.T) {
 		{"style", "web/src/imports.css", true, false, false, 0},
 		{"component", "web/src/OrdersPostings.tsx", true, false, false, 0},
 		{"frontend test", "web/src/Orders.test.tsx", true, false, false, 0},
+		{"warehouse browser", "web/e2e/warehouse-review.spec.ts", true, false, false, 1},
+		{"warehouse confirmation browser", "web/e2e/warehouse-confirmation.spec.ts", true, false, false, 1},
 		{"browser runner", "web/e2e/run-ui.mjs", true, false, true, 0},
 		{"browser auth transport", "web/src/api.ts", true, true, false, 0},
 		{"orders query", "internal/postgres/orders_query.go", false, false, false, 1},

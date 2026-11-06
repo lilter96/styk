@@ -240,19 +240,56 @@ async function fixtures(page: Page, signedIn = true) {
     else if (path === "/api/moysklad-products")
       value = { items: [], has_next: false, offset: 0 };
     else if (path === "/api/warehouses")
-      value = {
-        items: [
-          {
-            id: `warehouse-${url.searchParams.get("source")}`,
-            name: "Основной склад · Москва",
-            stock_rows: 128,
-            mapped: true,
-            is_rfbs: false,
-          },
-        ],
-        has_next: false,
-        offset: 0,
-      };
+      value =
+        url.searchParams.get("view") === "candidates"
+          ? {
+              items: [
+                { id: "m-free", name: "Склад Екатеринбург", available: true },
+                { id: "m-busy", name: "Основной склад", available: false },
+              ],
+              total: 2,
+              offset: 0,
+              has_next: false,
+            }
+          : {
+              items: Array.from({ length: 6 }, (_, i) => ({
+                id: `warehouse-${i}`,
+                name: [
+                  "Склад Ozon Москва",
+                  "Склад Ozon Санкт-Петербург",
+                  "Склад Ozon Казань",
+                  "Склад Ozon Екатеринбург",
+                  "Склад Ozon Новосибирск",
+                  "Склад Ozon Воронеж",
+                ][i],
+                is_rfbs: i === 4,
+                warehouse_type: i === 4 ? "rfbs" : "fbs",
+                store_id: i < 3 ? `m-${i}` : "",
+                store_name:
+                  i < 3
+                    ? [
+                        "STYK-IT-20261028-61ce4a31cbdd-warehouse-a",
+                        "Склад СПб",
+                        "STYK-IT-20261028-61ce4a31cbdd-warehouse-b",
+                      ][i]
+                    : "",
+                state: i < 3 ? "mapped" : i === 4 ? "unsupported" : "unmapped",
+                stock_rows: i < 2 ? 128 : 0,
+                observed_at: i < 2 ? new Date().toISOString() : null,
+                mapping_id: i < 3 ? i + 1 : null,
+                confirmed_at: i < 3 ? new Date().toISOString() : null,
+              })).filter(
+                (row) =>
+                  !url.searchParams.get("warehouse") ||
+                  row.id === url.searchParams.get("warehouse"),
+              ),
+              counts: { total: 6, mapped: 3, unmapped: 2, attention: 1 },
+              total: 6,
+              offset: 0,
+              has_next: false,
+              ozon_imported: true,
+              moy_imported: true,
+            };
     else if (path === "/api/stock")
       value = {
         items: [
@@ -334,6 +371,19 @@ async function fixtures(page: Page, signedIn = true) {
       });
       return;
     }
+    if (
+      path === "/api/warehouses" &&
+      url.searchParams.get("ozon_account") === "visual-ozon-2"
+    )
+      value = {
+        items: [],
+        counts: { total: 0, mapped: 0, unmapped: 0, attention: 0 },
+        total: 0,
+        offset: 0,
+        has_next: false,
+        ozon_imported: false,
+        moy_imported: true,
+      };
     await route.fulfill({ json: value });
   });
 }
@@ -342,10 +392,75 @@ const routes = [
   ["/products", "Сопоставление товаров"],
   ["/catalog-sync", "Синхронизация каталога"],
   ["/orders", "Заказы"],
-  ["/warehouses", "Сопоставление складов"],
+  ["/warehouses", "Склады"],
   ["/integrations", "Интеграции"],
   ["/diagnostics", "Диагностика"],
 ];
+for (const width of [1275, 1051, 1050, 390]) {
+  test(`orders header controls align before and after visiting settings at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 932 });
+    await fixtures(page);
+    await page.goto(origin + "/orders");
+    const settings = page.getByRole("link", { name: "Настройки", exact: true });
+    for (const visit of ["direct", "return"]) {
+      await expect(settings).toBeVisible();
+      await page.evaluate(() => document.fonts.ready);
+      const layout = await page
+        .locator(".orders-heading")
+        .evaluate((heading) => {
+          const settings = heading.querySelector(".orders-settings-link")!;
+          const action = heading.querySelector("button")!;
+          const box = (element: Element) => {
+            const { top, bottom, left, right, height } =
+              element.getBoundingClientRect();
+            return { top, bottom, left, right, height };
+          };
+          return {
+            settings: box(settings),
+            action: box(action),
+            title: box(heading.querySelector("h1")!),
+            context: box(heading.querySelector(".orders-account-context")!),
+            pageWidth: document.documentElement.scrollWidth,
+            viewport: innerWidth,
+          };
+        });
+      expect(layout.settings.height).toBeGreaterThanOrEqual(42);
+      expect(
+        Math.abs(layout.settings.height - layout.action.height),
+      ).toBeLessThan(1);
+      expect(Math.abs(layout.settings.top - layout.action.top)).toBeLessThan(1);
+      expect(layout.settings.right).toBeLessThan(layout.action.left);
+      expect(layout.action.right).toBeLessThanOrEqual(width);
+      expect(layout.pageWidth).toBeLessThanOrEqual(layout.viewport);
+      if (width > 1050) {
+        expect(Math.abs(layout.settings.top - layout.title.top)).toBeLessThan(
+          1,
+        );
+      } else {
+        expect(layout.settings.top).toBeGreaterThan(layout.context.bottom);
+        expect(Math.abs(layout.settings.left - layout.title.left)).toBeLessThan(
+          1,
+        );
+      }
+      await settings.focus();
+      await expect(settings).toBeFocused();
+      await page.screenshot({
+        path: `test-results/orders-header/${width}-${visit}.png`,
+      });
+      if (visit === "direct") {
+        await settings.press("Enter");
+        await expect(
+          page.getByRole("heading", { name: "Настройки заказов" }),
+        ).toBeVisible();
+        await page
+          .getByRole("link", { name: "К заказам", exact: true })
+          .click();
+      }
+    }
+  });
+}
 for (const [width, height] of [
   [1920, 1080],
   [1440, 900],
@@ -641,4 +756,241 @@ test("hover preserves button labels across all workspace pages", async ({
     body: JSON.stringify(results, null, 2),
     contentType: "application/json",
   });
+});
+
+test("warehouse account change resets search and closes old selection without leaking old rows", async ({
+  page,
+}) => {
+  await fixtures(page);
+  await page.goto(origin + "/warehouses");
+  await page.getByLabel("Поиск склада").fill("Екатеринбург");
+  await page
+    .locator(".wh-table tbody tr")
+    .filter({ hasText: "Склад Ozon Екатеринбург" })
+    .getByRole("button", { name: "Сопоставить", exact: true })
+    .click();
+  await expect(
+    page.getByRole("dialog", { name: "Сопоставить склады", exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page
+    .getByRole("combobox", { name: "Ozon", exact: true })
+    .selectOption("visual-ozon-2");
+  await expect(page.getByLabel("Поиск склада")).toHaveValue("");
+  await expect(page.locator(".wh-table tbody tr")).toHaveCount(0);
+  await expect(
+    page.getByRole("dialog", { name: "Сопоставить склады", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText("Склад Ozon Екатеринбург", { exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Все (0)" })).toBeVisible();
+});
+
+for (const width of [1864, 1543, 1280, 1101, 1100, 1024, 901, 801, 768, 390]) {
+  test(`warehouse table contains long store names at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 932 });
+    await fixtures(page);
+    await page.goto(origin + "/warehouses");
+    await expect(page.locator(".wh-table tbody tr")).toHaveCount(6);
+    await page.evaluate(() => document.fonts.ready);
+    const geometry = await page.locator(".wh-table").evaluate((table) => {
+      const surface = table.closest(".wh-surface")!;
+      const padding = parseFloat(getComputedStyle(surface).paddingRight);
+      return {
+        pageWidth: document.documentElement.scrollWidth,
+        viewport: innerWidth,
+        tableRight: table.getBoundingClientRect().right,
+        contentRight: surface.getBoundingClientRect().right - padding,
+        overflowingCells: Array.from(table.querySelectorAll("td"))
+          .filter((cell) => cell.scrollWidth > cell.clientWidth + 1)
+          .map((cell) => cell.textContent),
+      };
+    });
+    expect(geometry.pageWidth).toBeLessThanOrEqual(geometry.viewport);
+    expect(geometry.tableRight).toBeLessThanOrEqual(geometry.contentRight + 1);
+    expect(geometry.overflowingCells).toEqual([]);
+    const mappedStatusHeights = await page
+      .locator('.wh-status[data-state="mapped"]')
+      .evaluateAll((statuses) =>
+        statuses.map((status) => status.getBoundingClientRect().height),
+      );
+    expect(mappedStatusHeights.every((height) => height <= 32)).toBe(true);
+    await page.screenshot({
+      path: `test-results/warehouse-comments/table-${width}.png`,
+      fullPage: true,
+    });
+  });
+}
+for (const width of [1543, 390]) {
+  test(`warehouse search has one focus ring and source card spacing at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 932 });
+    await fixtures(page);
+    await page.goto(origin + "/warehouses");
+    await page
+      .locator(".wh-table tbody tr")
+      .filter({ hasText: "Склад Ozon Екатеринбург" })
+      .getByRole("button", { name: "Сопоставить", exact: true })
+      .click();
+    const input = page.getByRole("textbox", { name: "Найти склад МойСклад" });
+    await expect(input).toBeFocused();
+    await expect(
+      page.getByRole("radio", { name: /Склад Екатеринбург/ }),
+    ).toBeVisible();
+    const styles = await input.evaluate((element) => {
+      const label = element.closest("label")!,
+        source = document.querySelector(".wh-source")!,
+        subtitle = document.querySelector(".wh-selection > .wh-subtitle")!;
+      return {
+        outline: getComputedStyle(element).outlineStyle,
+        border: getComputedStyle(element).borderWidth,
+        shadow: getComputedStyle(element).boxShadow,
+        outerOutline: getComputedStyle(label).outlineStyle,
+        outerShadow: getComputedStyle(label).boxShadow,
+        gap:
+          source.getBoundingClientRect().top -
+          subtitle.getBoundingClientRect().bottom,
+        inputRight: element.getBoundingClientRect().right,
+        labelRight: label.getBoundingClientRect().right,
+      };
+    });
+    expect(styles.outline).toBe("none");
+    expect(styles.border).toBe("0px");
+    expect(styles.shadow).toBe("none");
+    expect(styles.outerOutline).toBe("none");
+    expect(styles.outerShadow).not.toBe("none");
+    expect(styles.gap).toBeGreaterThanOrEqual(16);
+    expect(styles.inputRight).toBeLessThan(styles.labelRight);
+    await page.screenshot({
+      path: `test-results/warehouse-comments/search-${width}.png`,
+    });
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Shift+Tab");
+    await expect(input).toBeFocused();
+    expect(
+      await input.evaluate((element) => getComputedStyle(element).outlineStyle),
+    ).toBe("none");
+  });
+}
+
+test("confirmation feedback follows warehouse, order and overview content", async ({
+  page,
+}) => {
+  await fixtures(page);
+  const id = "a".repeat(32);
+  let saved = false;
+  const reviewed = {
+    review: {
+      id,
+      tenant: scope.tenant,
+      moysklad_account: scope.moysklad_account,
+      ozon_account: scope.ozon_account,
+      moysklad_warehouse_id: "m-free",
+      ozon_warehouse_id: "warehouse-3",
+      moysklad_import_id: 1,
+      ozon_import_id: 2,
+      existing_mapping_id: null,
+      existing_mapping_version: null,
+      created_at: new Date().toISOString(),
+      expires_at: "2099-01-01T00:00:00Z",
+    },
+    status: "CURRENT",
+    principal_type: "MERCHANT_SESSION",
+  };
+  await page.route("**/api/warehouse-mapping-review?**", (route) =>
+    route.fulfill({
+      json: {
+        status: saved ? "ALREADY_MAPPED" : "ELIGIBLE_FOR_REVIEW",
+        moysklad: {
+          id: "m-free",
+          name: "Склад Екатеринбург",
+          account: scope.moysklad_account,
+        },
+        ozon: {
+          id: "warehouse-3",
+          name: "Склад Ozon Екатеринбург",
+          account: scope.ozon_account,
+          is_rfbs: false,
+        },
+        mappings: [],
+        history: [],
+        has_next: false,
+        offset: 0,
+      },
+    }),
+  );
+  await page.route("**/api/warehouse-mapping-reviews**", (route) => {
+    if (route.request().url().endsWith("/confirm")) {
+      saved = true;
+      return route.fulfill({
+        json: {
+          review_id: id,
+          mapping_id: 9,
+          mapping_version: 1,
+          evidence_class: "OPERATOR_ATTESTED",
+          confirmed_at: new Date().toISOString(),
+          idempotent_replay: false,
+        },
+      });
+    }
+    return route.fulfill({ json: reviewed });
+  });
+  await page.goto(origin + "/warehouses");
+  await page
+    .locator(".wh-table tbody tr")
+    .filter({ hasText: "Склад Ozon Екатеринбург" })
+    .getByRole("button", { name: "Сопоставить", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "Сопоставить склады",
+    exact: true,
+  });
+  await dialog.getByRole("radio", { name: /Склад Екатеринбург/ }).check();
+  await dialog.getByRole("button", { name: "Проверить соответствие" }).click();
+  await expect(
+    dialog.getByText("Можно сопоставить", { exact: true }),
+  ).toBeVisible();
+  await dialog
+    .getByRole("checkbox", {
+      name: "Подтверждаю, что эти склады соответствуют друг другу",
+    })
+    .check();
+  await dialog
+    .getByRole("button", { name: "Подтвердить сопоставление", exact: true })
+    .click();
+  await expect(
+    dialog.getByText("Соответствие складов сохранено.", { exact: true }),
+  ).toBeVisible();
+  await dialog.getByRole("button", { name: "Готово" }).click();
+  for (const [label, selector] of [
+    ["Склады", ".wh-page"],
+    ["Заказы", ".orders-console"],
+    ["Обзор", ".overview-page"],
+  ]) {
+    if (label !== "Склады")
+      await page
+        .locator(".app-tabs")
+        .getByRole("link", { name: label, exact: true })
+        .click();
+    const feedback = page.getByRole("region", { name: "Результаты операций" });
+    await expect(feedback.getByText(/Соответствие подтверждено/)).toBeVisible();
+    expect(
+      await page
+        .locator(".content")
+        .evaluate((element) =>
+          element.lastElementChild?.classList.contains("app-feedback"),
+        ),
+    ).toBe(true);
+    const bounds = await page.locator(selector).evaluate((element) => ({
+      bottom: element.getBoundingClientRect().bottom,
+      feedbackTop: document
+        .querySelector(".app-feedback")!
+        .getBoundingClientRect().top,
+    }));
+    expect(bounds.feedbackTop).toBeGreaterThanOrEqual(bounds.bottom);
+  }
 });

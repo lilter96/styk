@@ -11,6 +11,10 @@ import (
 
 func warehouses(db *postgres.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Has("view") {
+			warehouseView(db, w, r)
+			return
+		}
 		q := r.URL.Query()
 		tenant := strings.TrimSpace(q.Get("tenant"))
 		source := q.Get("source")

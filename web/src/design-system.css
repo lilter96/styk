@@ -1207,3 +1207,17 @@
   font: inherit;
   font-size: 11px;
 }
+
+/* Operation feedback follows the current page content in the shared shell. */
+.reference-shell .app-feedback {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+  min-width: 0;
+}
+.reference-shell .app-feedback:empty {
+  display: none;
+}
+.reference-shell .app-feedback > * {
+  margin: 0;
+}

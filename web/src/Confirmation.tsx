@@ -39,6 +39,16 @@ export function useConfirmation() {
         p.intent,
         AbortSignal.timeout(30000),
       );
+      if (
+        p.intent.kind === "warehouse" &&
+        (value.review_id !== p.intent.reviewId ||
+          !Number.isSafeInteger(value.mapping_id) ||
+          value.mapping_id < 1 ||
+          !Number.isSafeInteger(value.mapping_version) ||
+          value.mapping_version < 1 ||
+          !Number.isFinite(Date.parse(value.confirmed_at)))
+      )
+        throw new Error("Invalid warehouse confirmation response");
       setResult(value);
       setResultContext(p);
       setPending(null);
@@ -50,6 +60,10 @@ export function useConfirmation() {
           "review-targets",
           "warehouses",
           "warehouse-review",
+          "warehouse-overview",
+          "warehouse-candidates",
+          "orders-warehouses",
+          "stock",
           "diagnostics",
         ].map((key) => client.invalidateQueries({ queryKey: [key] })),
       );

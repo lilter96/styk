@@ -2,9 +2,7 @@ package postgres
 
 import (
 	"context"
-	"strconv"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/lilter96/styk/internal/orders"
 )
 
@@ -24,8 +22,8 @@ type OrderWarehousePage struct {
 	Total      int                 `json:"total"`
 }
 
-// OrderWarehouses reads only canonical local import and mapping evidence. It
-// performs no provider requests, and paginates in one consistent scope snapshot.
+// OrderWarehouses adapts the shared warehouse read model for order settings.
+// Order authorization/configuration remains an independent precondition.
 func (s *Store) OrderWarehouses(ctx context.Context, scope orders.Scope, page orders.PageRequest) (OrderWarehousePage, error) {
 	result := OrderWarehousePage{Scope: scope, Items: []OrderWarehouseRow{}}
 	if scope.Validate() != nil || page.Limit < 1 || page.Limit > 100 || len(page.Cursor) > 256 {
@@ -34,68 +32,27 @@ func (s *Store) OrderWarehouses(ctx context.Context, scope orders.Scope, page or
 	result.Items = make([]OrderWarehouseRow, 0, page.Limit)
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
-	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
-	if err != nil {
-		return result, ordersError("begin order warehouse read", err)
-	}
-	defer rollbackMerchantMutation(tx)
-	if _, err = readOrderConfig(ctx, tx, scope); err != nil {
+	if _, err := readOrderConfig(ctx, s.Pool, scope); err != nil {
 		return result, err
 	}
-	mappings, err := readOrderWarehouseMappings(ctx, tx, scope)
+	overview, err := s.WarehouseOverview(ctx, MatchScope{Tenant: scope.Tenant, MoyskladAccount: scope.MoyskladAccount, OzonAccount: scope.OzonAccount}, WarehouseReadRequest{Limit: page.Limit, Cursor: page.Cursor})
 	if err != nil {
-		return result, err
+		return result, ordersError("read order warehouse overview", err)
 	}
-	result.Confirmed = len(mappings)
-	rows, err := tx.Query(ctx, orderWarehousePageSQL, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, page.Cursor, page.Limit+1)
-	if err != nil {
-		return result, ordersError("read order warehouse page", err)
-	}
-	result, err = scanOrderWarehousePage(rows, result, mappings, page.Limit)
-	if err != nil {
-		return result, err
-	}
-	return result, ordersRowsError("commit order warehouse read", tx.Commit(ctx))
-}
-
-func scanOrderWarehousePage(rows pgx.Rows, result OrderWarehousePage, mappings []orders.WarehouseMappingRef, limit int) (OrderWarehousePage, error) {
-	defer rows.Close()
-	valid := make(map[string]orders.WarehouseMappingRef, len(mappings))
-	for _, mapping := range mappings {
-		valid[mapping.ID] = mapping
-	}
-	for rows.Next() {
-		var row OrderWarehouseRow
-		var id int64
-		if err := rows.Scan(&row.OzonID, &row.OzonName, &row.StoreID, &row.StoreName, &id, &result.Total); err != nil {
-			return result, ordersError("scan order warehouse page", err)
+	result.Total = overview.Counts.Total
+	result.Confirmed = overview.Counts.Mapped
+	for _, row := range overview.Items {
+		status := "unconfirmed"
+		if row.State == "mapped" {
+			status = "confirmed"
 		}
-		row.Status = "missing"
-		if id != 0 {
-			row.Status = "unconfirmed"
-			if _, found := valid[strconv.FormatInt(id, 10)]; found {
-				row.Status = "confirmed"
-			}
+		if row.State == "unmapped" {
+			status = "missing"
 		}
-		result.Items = append(result.Items, row)
+		result.Items = append(result.Items, OrderWarehouseRow{OzonID: row.ID, OzonName: row.Name, StoreID: row.StoreID, StoreName: row.StoreName, Status: status})
 	}
-	if len(result.Items) > limit {
-		result.Items = result.Items[:limit]
-		result.NextCursor = result.Items[limit-1].OzonID
+	if overview.HasNext && len(overview.Items) > 0 {
+		result.NextCursor = overview.Items[len(overview.Items)-1].ID
 	}
-	return result, ordersRowsError("read order warehouse rows", rows.Err())
+	return result, nil
 }
-
-const orderWarehousePageSQL = `WITH oi AS (
- SELECT i.id FROM source_imports i JOIN ozon_import_batches b ON b.import_id=i.id AND b.traversal_status='completed'
- JOIN stock_connections c ON c.tenant_id=$1 AND c.source='ozon' AND c.account_id=i.account_id
- WHERE i.source='ozon' AND i.account_id=$3 AND (c.include_import_history OR i.started_at>=c.registered_at) ORDER BY i.id DESC LIMIT 1
-), mi AS (
- SELECT i.id FROM source_imports i JOIN stock_connections c ON c.tenant_id=$1 AND c.source='moysklad' AND c.account_id=i.account_id
- WHERE i.source='moysklad' AND i.account_id=$2 AND (c.include_import_history OR i.started_at>=c.registered_at) ORDER BY i.id DESC LIMIT 1
-), ow AS (SELECT w.* FROM ozon_warehouse_observations w JOIN oi ON oi.id=w.import_id),
- mw AS (SELECT e.* FROM source_entities e JOIN mi ON mi.id=e.import_id WHERE e.kind='store'),
- m AS (SELECT * FROM warehouse_mappings WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND status='active'),
- ids AS (SELECT warehouse_id AS id FROM ow UNION SELECT ozon_warehouse_id FROM m),
- all_rows AS (SELECT ids.id,COALESCE(ow.name,'') AS ozon_name,COALESCE(m.moysklad_warehouse_id,'') AS store_id,COALESCE(mw.name,'') AS store_name,COALESCE(m.id,0) AS mapping_id FROM ids LEFT JOIN ow ON ow.warehouse_id=ids.id LEFT JOIN m ON m.ozon_warehouse_id=ids.id LEFT JOIN mw ON mw.external_id=m.moysklad_warehouse_id)
- SELECT *, (SELECT count(*) FROM all_rows) FROM all_rows WHERE id>$4 ORDER BY id LIMIT $5`

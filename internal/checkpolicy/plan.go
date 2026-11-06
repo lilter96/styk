@@ -94,6 +94,11 @@ func (p *Plan) webFile(file string) {
 	if strings.HasSuffix(file, ".test.tsx") || strings.HasSuffix(file, ".test.ts") {
 		return
 	}
+	if file == "web/e2e/warehouse-review.spec.ts" || file == "web/e2e/warehouse-confirmation.spec.ts" {
+		p.integration = append(p.integration, "tests/integration/warehouse_overview_test.go")
+		p.reason(file, "warehouse browser scenarios: scoped read and confirmation contracts")
+		return
+	}
 	if strings.HasPrefix(file, "web/e2e/") && !presentationFile(file) {
 		p.requireFull(file, "process-backed browser harness changed")
 		return

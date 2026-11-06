@@ -2,134 +2,26 @@ import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WarehouseReview } from "./WarehouseReview";
+const scope = { tenant: "tenant", moy: "moy", ozon: "ozon" };
+const evidence = {
+  name: "Склад",
+  status: "created",
+  is_rfbs: false,
+  stock_rows: 0,
+  observed_at: new Date().toISOString(),
+};
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
-const scope = { tenant: "tenant", moy: "moy", ozon: "ozon" };
-const e = {
-  id: "warehouse",
-  name: "Synthetic warehouse",
-  account: "account",
-  status: "enabled",
-  is_rfbs: false,
-  observed_at: "2020-01-01T00:00:00Z",
-  stock_rows: 0,
-};
-function mount(status: string) {
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(
-    new Response(
-      JSON.stringify({
-        status,
-        moysklad: e,
-        ozon: { ...e, is_rfbs: status === "UNSUPPORTED_WAREHOUSE" },
-        mappings:
-          status === "MAPPING_CONFLICT"
-            ? [
-                {
-                  mapping_id: 1,
-                  version: 1,
-                  moysklad_warehouse_id: "one",
-                  ozon_warehouse_id: "other",
-                  provenance: "test",
-                  confirmed_at: "2020-01-01T00:00:00Z",
-                },
-              ]
-            : [],
-        history:
-          status === "ALREADY_MAPPED"
-            ? [
-                {
-                  mapping_id: 1,
-                  version: 1,
-                  moysklad_warehouse_id: "one",
-                  ozon_warehouse_id: "two",
-                  provenance: "test",
-                  confirmed_at: "2020-01-01T00:00:00Z",
-                },
-              ]
-            : [],
-        has_next: false,
-        offset: 0,
-      }),
-      { status: 200 },
-    ),
-  );
-  render(
-    <QueryClientProvider
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
-    >
-      <WarehouseReview scope={scope} moy="one" ozon="two" />
-    </QueryClientProvider>,
-  );
-}
-for (const status of [
-  "ELIGIBLE_FOR_REVIEW",
-  "ALREADY_MAPPED",
-  "MAPPING_CONFLICT",
-  "UNSUPPORTED_WAREHOUSE",
-  "MISSING_SOURCE_EVIDENCE",
-])
-  it(`renders ${status} without a confirmation action`, async () => {
-    mount(status);
-    expect(await screen.findByText(status)).toBeTruthy();
-    expect(
-      screen.queryByRole("button", {
-        name: /Подтвердить соответствие складов/,
-      }),
-    ).toBeNull();
-    expect(
-      screen.getAllByText(/Данных об остатках нет. Количество неизвестно./),
-    ).toHaveLength(2);
-    if (status === "UNSUPPORTED_WAREHOUSE")
-      expect(screen.getByText(/Тип склада: rFBS/)).toBeTruthy();
-    if (status === "ALREADY_MAPPED")
-      expect(screen.getByText(/Происхождение: test/)).toBeTruthy();
-  });
-it("reports a failed read", async () => {
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(
-    new Response("", { status: 503 }),
-  );
-  render(
-    <QueryClientProvider
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
-    >
-      <WarehouseReview scope={scope} moy="one" ozon="two" />
-    </QueryClientProvider>,
-  );
-  expect(await screen.findByRole("alert")).toBeTruthy();
-});
-it("explains an already confirmed pair without offering another review", async () => {
-  mount("ALREADY_MAPPED");
-  expect(
-    await screen.findByText(/Повторное сопоставление не требуется/),
-  ).toBeTruthy();
-  expect(
-    screen.queryByRole("button", { name: "Проверить пару складов" }),
-  ).toBeNull();
-  expect(
-    screen.queryByText(/Подтвердите, что склады соответствуют друг другу/),
-  ).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Готово" }));
-  expect(screen.queryByRole("dialog")).toBeNull();
-  expect(
-    vi
-      .mocked(globalThis.fetch)
-      .mock.calls.every(([, init]) => !init?.method || init.method === "GET"),
-  ).toBe(true);
-});
-it("shows missing evidence and refetches for a different account", async () => {
-  const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(
+function mount(status: string, rfbs: boolean | null = false) {
+  const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(
     async () =>
       new Response(
         JSON.stringify({
-          status: "MISSING_SOURCE_EVIDENCE",
-          moysklad: null,
-          ozon: null,
+          status,
+          moysklad: { ...evidence, id: "m", account: scope.moy },
+          ozon: { ...evidence, id: "o", account: scope.ozon, is_rfbs: rfbs },
           mappings: [],
           history: [],
           has_next: false,
@@ -141,79 +33,96 @@ it("shows missing evidence and refetches for a different account", async () => {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  const component = render(
+  const view = render(
     <QueryClientProvider client={client}>
-      <WarehouseReview scope={scope} moy="one" ozon="two" />
+      <WarehouseReview scope={scope} moy="m" ozon="o" />
     </QueryClientProvider>,
   );
+  return { fetcher, view, client };
+}
+for (const [status, text] of [
+  ["ELIGIBLE_FOR_REVIEW", "Проверьте сопоставление"],
+  ["ALREADY_MAPPED", "Склады уже сопоставлены"],
+  ["MAPPING_CONFLICT", "Обнаружен конфликт сопоставлений"],
+  ["UNSUPPORTED_WAREHOUSE", "Возможность сопоставления не подтверждена"],
+  ["MISSING_SOURCE_EVIDENCE", "Не хватает данных о складах"],
+])
+  it(`reads ${status} without creating a review or mapping`, async () => {
+    const { fetcher } = mount(status);
+    await screen.findByText(status);
+    expect(screen.getByRole("heading", { name: text })).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Подтвердить сопоставление" }),
+    ).toBeNull();
+    expect(
+      fetcher.mock.calls.every(
+        ([, init]) => !init?.method || init.method === "GET",
+      ),
+    ).toBe(true);
+  });
+it("explains an existing pair and closes without repeat confirmation", async () => {
+  mount("ALREADY_MAPPED");
+  await screen.findByText(/Повторное сопоставление не требуется/);
   expect(
-    await screen.findByText(/МойСклад: в последней загрузке нет/),
+    screen.queryByRole("button", { name: "Повторить проверку" }),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Готово" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+it("uses backend capability for rFBS and never enables publication", async () => {
+  mount("ELIGIBLE_FOR_REVIEW", true);
+  const button = await screen.findByRole("button", {
+    name: "Повторить проверку",
+  });
+  expect((button as HTMLButtonElement).disabled).toBe(false);
+  expect(
+    screen.getByText(/Само по себе оно не включает синхронизацию остатков/),
   ).toBeTruthy();
-  component.rerender(
+});
+it("does not accept unknown warehouse classification", async () => {
+  mount("ELIGIBLE_FOR_REVIEW", null);
+  const button = await screen.findByRole("button", {
+    name: "Повторить проверку",
+  });
+  expect((button as HTMLButtonElement).disabled).toBe(true);
+});
+it("refetches pair evidence after an account changes", async () => {
+  const { fetcher, view, client } = mount("MISSING_SOURCE_EVIDENCE");
+  await screen.findByText("MISSING_SOURCE_EVIDENCE");
+  view.rerender(
     <QueryClientProvider client={client}>
       <WarehouseReview
         scope={{ ...scope, ozon: "different" }}
-        moy="one"
-        ozon="two"
+        moy="m"
+        ozon="o"
       />
     </QueryClientProvider>,
   );
-  await screen.findByText(/Ozon: в последней загрузке нет/);
+  await screen.findByText("MISSING_SOURCE_EVIDENCE");
   expect(
-    fetchMock.mock.calls.some(([url]) =>
+    fetcher.mock.calls.some(([url]) =>
       String(url).includes("ozon_account=different"),
     ),
   ).toBe(true);
 });
-it("shows a loading state while the review is requested", () => {
-  vi.spyOn(globalThis, "fetch").mockImplementation(() => new Promise(() => {}));
-  render(
-    <QueryClientProvider
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
-    >
-      <WarehouseReview scope={scope} moy="one" ozon="two" />
-    </QueryClientProvider>,
-  );
-  expect(screen.getByRole("status").textContent).toContain("Проверяем склады");
-});
-it("permits server-validated controlled rFBS review without enabling stock publication", async () => {
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(
-    new Response(
-      JSON.stringify({
-        status: "ELIGIBLE_FOR_REVIEW",
-        moysklad: { ...e, id: "m", account: scope.moy },
-        ozon: {
-          ...e,
-          id: "o",
-          account: scope.ozon,
-          is_rfbs: true,
-          warehouse_type: "rfbs_express",
-        },
-        mappings: [],
-        history: [],
-        has_next: false,
-        offset: 0,
-      }),
-      { headers: { "Content-Type": "application/json" } },
-    ),
+it("reports a failed read with a retry", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(
+    async () => new Response("", { status: 503 }),
   );
   render(
-    <QueryClientProvider
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
-    >
+    <QueryClientProvider client={new QueryClient()}>
       <WarehouseReview scope={scope} moy="m" ozon="o" />
     </QueryClientProvider>,
   );
-  const button = await screen.findByRole("button", {
-    name: "Проверить пару складов",
-  });
-  expect((button as HTMLButtonElement).disabled).toBe(false);
-  expect(screen.queryByText("Склады rFBS не поддерживаются.")).toBeNull();
-  expect(
-    screen.getByText(/Подтверждение связи не включает синхронизацию остатков/),
-  ).toBeTruthy();
+  expect(await screen.findByRole("alert")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Повторить запрос" })).toBeTruthy();
+});
+it("shows loading while reading a pair", () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(() => new Promise(() => {}));
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <WarehouseReview scope={scope} moy="m" ozon="o" />
+    </QueryClientProvider>,
+  );
+  expect(screen.getByRole("status").textContent).toContain("Проверяем склады");
 });

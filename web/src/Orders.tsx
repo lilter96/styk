@@ -407,7 +407,7 @@ function OrdersAccount({
   return (
     <div className="orders-console">
       <OrdersHeader moyLabel={moyLabel} ozonLabel={ozonLabel}>
-        <a className="settings-outline-link" href="/orders/settings">
+        <a className="orders-settings-link" href="/orders/settings">
           <Icon name="settings" size="button" />
           Настройки
         </a>

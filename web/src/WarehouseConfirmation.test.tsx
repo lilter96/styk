@@ -43,6 +43,8 @@ function setup(
   loseResponse = false,
   rejection = "",
   principal = "LOCAL_OPERATOR_SESSION",
+  reviewOverrides: Record<string, unknown> = {},
+  resultReviewID = id,
 ) {
   let confirmed = false;
   let count = 0;
@@ -62,7 +64,7 @@ function setup(
           JSON.stringify({
             mapping_id: 7,
             mapping_version: 1,
-            review_id: id,
+            review_id: resultReviewID,
             evidence_class: "OPERATOR_ATTESTED",
             confirmed_at: "2026-01-01T00:00:00Z",
             idempotent_replay: loseResponse,
@@ -86,6 +88,7 @@ function setup(
               expires_at: "2099-01-01T00:00:00Z",
               existing_mapping_id: null,
               existing_mapping_version: null,
+              ...reviewOverrides,
             },
             status,
             principal_type: principal,
@@ -132,10 +135,12 @@ it("permits an authenticated merchant review", async () => {
   const mock = setup("CURRENT", false, "", "MERCHANT_SESSION");
   await create();
   fireEvent.click(
-    screen.getByLabelText(/Подтверждаю соответствие выбранных складов/),
+    screen.getByLabelText(
+      /Подтверждаю, что эти склады соответствуют друг другу/,
+    ),
   );
   const button = screen.getByRole("button", {
-    name: "Подтвердить соответствие складов",
+    name: "Подтвердить сопоставление",
   }) as HTMLButtonElement;
   expect(button.disabled).toBe(false);
   fireEvent.click(button);
@@ -148,34 +153,38 @@ it("does not confirm a review with an unknown principal", async () => {
   setup("CURRENT", false, "", "UNEXPECTED");
   await create();
   fireEvent.click(
-    screen.getByLabelText(/Подтверждаю соответствие выбранных складов/),
+    screen.getByLabelText(
+      /Подтверждаю, что эти склады соответствуют друг другу/,
+    ),
   );
   expect(
     (
       screen.getByRole("button", {
-        name: "Подтвердить соответствие складов",
+        name: "Подтвердить сопоставление",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
 });
 async function create() {
   fireEvent.click(
-    await screen.findByRole("button", { name: "Проверить пару складов" }),
+    await screen.findByRole("button", { name: "Повторить проверку" }),
   );
-  await screen.findByText("Проверка складов готова к подтверждению");
+  await screen.findByText(/Действует до:/);
 }
 it("requires explicit acknowledgement and retries the exact warehouse request after account switch", async () => {
   const mock = setup("CURRENT", true);
   await create();
   const button = screen.getByRole("button", {
-    name: "Подтвердить соответствие складов",
+    name: "Подтвердить сопоставление",
   }) as HTMLButtonElement;
   expect(button.disabled).toBe(true);
   expect(
     mock.mock.calls.filter(([p]) => String(p).endsWith("/confirm")),
   ).toHaveLength(0);
   fireEvent.click(
-    screen.getByLabelText(/Подтверждаю соответствие выбранных складов/),
+    screen.getByLabelText(
+      /Подтверждаю, что эти склады соответствуют друг другу/,
+    ),
   );
   fireEvent.click(button);
   fireEvent.click(button);
@@ -194,10 +203,12 @@ it("a session loss directs the operator to history and prevents replay from a ne
   const mock = setup("CURRENT", false, "UNAUTHORIZED");
   await create();
   fireEvent.click(
-    screen.getByLabelText(/Подтверждаю соответствие выбранных складов/),
+    screen.getByLabelText(
+      /Подтверждаю, что эти склады соответствуют друг другу/,
+    ),
   );
   fireEvent.click(
-    screen.getByRole("button", { name: "Подтвердить соответствие складов" }),
+    screen.getByRole("button", { name: "Подтвердить сопоставление" }),
   );
   await screen.findAllByText(/Сессия завершилась/);
   expect(screen.queryByText("Повторить то же подтверждение")).toBeNull();
@@ -209,26 +220,36 @@ it("a rejected stale review cannot be confirmed again", async () => {
   setup("CURRENT", false, "REVIEW_STALE");
   await create();
   fireEvent.click(
-    screen.getByLabelText(/Подтверждаю соответствие выбранных складов/),
+    screen.getByLabelText(
+      /Подтверждаю, что эти склады соответствуют друг другу/,
+    ),
   );
   const button = screen.getByRole("button", {
-    name: "Подтвердить соответствие складов",
+    name: "Подтвердить сопоставление",
   }) as HTMLButtonElement;
   fireEvent.click(button);
   await screen.findByText(/Подтверждение отклонено/);
-  expect(button.disabled).toBe(true);
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Подтвердить сопоставление",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
 });
 for (const status of ["EXPIRED", "STALE_SOURCE", "STALE_MAPPING"])
   it(`${status} review cannot start confirmation`, async () => {
     setup(status);
     await create();
     fireEvent.click(
-      screen.getByLabelText(/Подтверждаю соответствие выбранных складов/),
+      screen.getByLabelText(
+        /Подтверждаю, что эти склады соответствуют друг другу/,
+      ),
     );
     expect(
       (
         screen.getByRole("button", {
-          name: "Подтвердить соответствие складов",
+          name: "Подтвердить сопоставление",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
@@ -257,7 +278,7 @@ it("does not trust an eligible status when the FBS classification is missing", a
   expect(
     (
       (await screen.findByRole("button", {
-        name: "Проверить пару складов",
+        name: "Повторить проверку",
       })) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
@@ -288,10 +309,50 @@ it("blocks a hidden mapping conflict without revealing restricted history", asyn
     await screen.findByText(/история за пределами доступных аккаунтов/),
   ).toBeTruthy();
   expect(
+    screen.queryByRole("button", { name: "Подтвердить сопоставление" }),
+  ).toBeNull();
+});
+
+it("rejects a current review for another account even when the pair preview is eligible", async () => {
+  setup("CURRENT", false, "", "LOCAL_OPERATOR_SESSION", {
+    ozon_account: "foreign",
+  });
+  await create();
+  fireEvent.click(screen.getByLabelText(/Подтверждаю, что эти склады/));
+  expect(
     (
       screen.getByRole("button", {
-        name: "Проверить пару складов",
+        name: "Подтвердить сопоставление",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
+});
+it("treats a mismatched confirmation result as unknown instead of announcing success", async () => {
+  setup("CURRENT", false, "", "LOCAL_OPERATOR_SESSION", {}, "b".repeat(32));
+  await create();
+  fireEvent.click(screen.getByLabelText(/Подтверждаю, что эти склады/));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Подтвердить сопоставление" }),
+  );
+  await screen.findByText(/Результат подтверждения неизвестен/);
+  expect(screen.queryByText("Соответствие складов сохранено.")).toBeNull();
+});
+it("invalidates the shared overview, stock detail and order warehouse consumers after server success", async () => {
+  const invalidate = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+  setup();
+  await create();
+  fireEvent.click(screen.getByLabelText(/Подтверждаю, что эти склады/));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Подтвердить сопоставление" }),
+  );
+  await screen.findByText("Соответствие складов сохранено.");
+  for (const key of [
+    "warehouse-overview",
+    "warehouse-candidates",
+    "orders-warehouses",
+    "stock",
+  ])
+    expect(
+      invalidate.mock.calls.some(([filters]) => filters?.queryKey?.[0] === key),
+    ).toBe(true);
 });
