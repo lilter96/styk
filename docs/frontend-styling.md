@@ -109,3 +109,11 @@ Inspect actual component screenshots, not only the whole page scaled to fit.
 6. Choose executable checks with `make check-plan`. Builds and type/lint checks
    complement visual inspection. Follow the user's current test restrictions;
    do not launch broad regression to validate a spacing change.
+
+## Shared application theme
+
+Product pages inherit the shared STYK shell, sidebar, active navigation and brand
+tokens from `design-system.css`. Page CSS must not redefine `--styk-primary`,
+`--styk-gradient` or the outer application background through route selectors.
+Compare computed shell/sidebar/active-link styles against a sibling route when
+reviewing a page redesign; the shared navigation must not change color by route.

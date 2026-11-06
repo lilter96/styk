@@ -1,28 +1,4 @@
-/* Approved Products v3: one operational surface, restrained violet hierarchy. */
-body:has(.products-workspace) {
-  background: #f5f4ff;
-}
-.reference-shell:has(.products-workspace) {
-  --styk-primary: #6500ff;
-  --products-muted: #6a5e7b;
-  --styk-primary-hover: #5200d8;
-  --styk-primary-soft: #eee7ff;
-  --styk-control-line: #ded8fb;
-  --styk-line: #e9e4fc;
-  --styk-gradient: linear-gradient(
-    180deg,
-    #980aff 0%,
-    #6500ff 75%,
-    #5100fa 100%
-  );
-  background: linear-gradient(120deg, #faf9ff, #f0efff);
-}
-.reference-shell:has(.products-workspace) .app-sidebar {
-  background: linear-gradient(150deg, #fbfaff, #f1efff);
-}
-.reference-shell:has(.products-workspace) .app-tabs a.active {
-  background: var(--styk-gradient);
-}
+/* Products layout inherits the shared STYK shell and brand tokens. */
 .reference-shell .products-workspace .products-sr {
   position: absolute !important;
   width: 1px !important;
@@ -35,6 +11,7 @@ body:has(.products-workspace) {
   border: 0 !important;
 }
 .reference-shell .products-workspace {
+  --products-muted: #6a5e7b;
   --products-panel: rgba(255, 255, 255, 0.67);
   --products-border: #ddd7ff;
   font-size: 14px;
@@ -194,7 +171,7 @@ body:has(.products-workspace) {
   min-height: 36px;
   border: 1px solid #a57bff;
   background: transparent;
-  color: #6500ff;
+  color: var(--styk-primary);
   border-radius: 9px;
 }
 .reference-shell .products-workspace .matching-page-action.secondary {
@@ -768,7 +745,7 @@ body:has(.products-workspace) {
   border-bottom: 1px solid var(--styk-line);
 }
 .reference-shell .products-workspace .products-import-list article.is-selected {
-  background: #eee6ff !important;
+  background: var(--styk-primary-soft) !important;
 }
 .reference-shell .products-workspace .products-match-section {
   position: relative;
@@ -1235,8 +1212,8 @@ body:has(.products-workspace) {
   font-size: 14px;
 }
 .reference-shell .products-workspace .products-detail-tabs button.active {
-  color: #6500ff;
-  border-bottom-color: #6500ff;
+  color: var(--styk-primary);
+  border-bottom-color: var(--styk-primary);
 }
 .reference-shell .products-workspace .products-detail-diffs {
   border: 1px solid #ddd5fa;
@@ -2401,12 +2378,12 @@ body:has(.products-workspace) {
 }
 .reference-shell .products-detail-dialog .products-detail-tabs button.active {
   background: transparent;
-  border-bottom-color: #6500ff;
-  color: #6500ff;
+  border-bottom-color: var(--styk-primary);
+  color: var(--styk-primary);
 }
 .reference-shell .products-detail-dialog .products-detail-tabs button:hover {
   background: #eee7ff;
-  color: #6500ff;
+  color: var(--styk-primary);
 }
 .reference-shell .products-detail-dialog :is(h3, .products-detail-card h3) {
   font-size: 18px;
@@ -2594,7 +2571,7 @@ body:has(.products-workspace) {
     align-items: center;
     justify-content: space-around;
     padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
-    background: #faf8fff5;
+    background: var(--styk-background);
     border: 1px solid #e3dcff;
     border-radius: 22px 22px 0 0;
     box-shadow: 0 -3px 18px #3c246d0b;
@@ -2614,8 +2591,8 @@ body:has(.products-workspace) {
     min-height: 52px;
   }
   .reference-shell:has(.products-workspace) .products-mobile-bottom a.active {
-    background: #eee6ff !important;
-    color: #6500ff;
+    background: var(--styk-primary-soft) !important;
+    color: var(--styk-primary);
   }
   .reference-shell:has(.products-workspace) .products-mobile-bottom svg {
     width: 22px;
@@ -2846,7 +2823,7 @@ body:has(.products-workspace) {
   .products-workspace
   .products-creation-steps
   li[aria-current="step"] {
-  color: #6500ff;
+  color: var(--styk-primary);
   font-weight: 600;
 }
 .reference-shell
@@ -3300,7 +3277,7 @@ body:has(.products-workspace) {
     box-shadow: none;
   }
   .reference-shell .products-mobile-bottom a.active {
-    color: #6500ff;
+    color: var(--styk-primary);
   }
 }
 
@@ -3395,7 +3372,7 @@ body:has(.products-workspace) {
     .products-mobile-header
     .app-brand
     b {
-    color: #6500ff;
+    color: var(--styk-primary);
   }
   .reference-shell:has(.products-workspace)
     .products-mobile-header
@@ -3642,8 +3619,8 @@ body:has(.products-workspace) {
     min-height: 52px;
   }
   .reference-shell .products-mobile-bottom a.active {
-    color: #6500ff;
-    background: #eee6ff !important;
+    color: var(--styk-primary);
+    background: var(--styk-primary-soft) !important;
   }
 }
 
@@ -3661,6 +3638,6 @@ body:has(.products-workspace) {
   color: #352152;
 }
 .reference-shell:has(.products-workspace) .products-mobile-pages a.active {
-  background: #eee6ff;
-  color: #6500ff;
+  background: var(--styk-primary-soft);
+  color: var(--styk-primary);
 }
