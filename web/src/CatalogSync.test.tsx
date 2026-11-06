@@ -410,12 +410,12 @@ it("saves mixed authority settings with expected revision and invalidates the pr
   fireEvent.change(screen.getByLabelText("Название", { exact: true }), {
     target: { value: "OZON_AUTHORITATIVE" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Сохранить настройки" }));
+  fireEvent.click(screen.getByRole("button", { name: "Сохранить правила" }));
   await waitFor(() =>
     expect(
       (
         screen.getByRole("button", {
-          name: "Сохранить настройки",
+          name: "Сохранить правила",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true),
@@ -840,15 +840,13 @@ it("direction presets keep unsupported fields excluded instead of blocking other
     );
   });
   mount();
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Ozon → МойСклад" }),
-  );
-  fireEvent.click(screen.getByRole("button", { name: "Сохранить настройки" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Из Ozon" }));
+  fireEvent.click(screen.getByRole("button", { name: "Сохранить правила" }));
   await waitFor(() =>
     expect(
       (
         screen.getByRole("button", {
-          name: "Сохранить настройки",
+          name: "Сохранить правила",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true),
@@ -879,20 +877,17 @@ it("requires explicit product, field and consent before saving automatic changes
         )
       : undefined,
   );
-  mount();
+  mount(<CatalogSync scope={scope} view="automation" />);
   const automatic = await screen.findByLabelText(
     "Автоматически передавать изменения товара source-1",
   );
   expect((automatic as HTMLInputElement).checked).toBe(false);
-  fireEvent.click(
-    screen.getByText("Автоматическая передача для связанных товаров"),
-  );
   fireEvent.click(automatic);
   const save = screen.getByRole("button", {
-    name: "Сохранить настройки",
+    name: "Сохранить разрешения",
   }) as HTMLButtonElement;
   expect(save.disabled).toBe(true);
-  fireEvent.click(screen.getByLabelText("Название · из МойСклад"));
+  fireEvent.click(screen.getByLabelText("Название: source-1"));
   expect(save.disabled).toBe(true);
   expect(
     fetcher.mock.calls.filter(([, init]) => init?.method === "POST"),
@@ -932,19 +927,16 @@ it("lets an operator disable saved automation even when publication is unavailab
         )
       : undefined,
   );
-  mount();
+  mount(<CatalogSync scope={scope} view="automation" />);
   const automatic = await screen.findByLabelText(
     "Автоматически передавать изменения товара source-1",
-  );
-  fireEvent.click(
-    screen.getByText("Автоматическая передача для связанных товаров"),
   );
   expect((automatic as HTMLInputElement).disabled).toBe(false);
   fireEvent.click(automatic);
   expect(
     screen.queryByLabelText(/Разрешаю автоматическую передачу/),
   ).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Сохранить настройки" }));
+  fireEvent.click(screen.getByRole("button", { name: "Сохранить разрешения" }));
   await waitFor(() =>
     expect(
       fetcher.mock.calls.filter(([, init]) => init?.method === "POST"),
@@ -956,6 +948,38 @@ it("lets an operator disable saved automation even when publication is unavailab
     automatic: false,
     automatic_fields: ["name"],
   });
+});
+
+it("shows unpaired products without allowing their automatic permissions or bulk selection", async () => {
+  const fetcher = mockAPI((url) =>
+    url.pathname.endsWith("/products")
+      ? json({
+          products: [product("unpaired", "Товар без пары")],
+          enrollments: [],
+        })
+      : undefined,
+  );
+  mount(<CatalogSync scope={scope} view="automation" />);
+  const unpaired = (await screen.findByLabelText(
+    "Нет пары: Товар без пары",
+  )) as HTMLInputElement;
+  expect(unpaired.disabled).toBe(true);
+  expect(
+    (
+      screen.getByLabelText(
+        "Автопередача недоступна: Товар без пары",
+      ) as HTMLInputElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.click(screen.getByLabelText("Выбрать все доступные разрешения"));
+  expect(
+    (screen.getByLabelText("Выбрать разрешения source-1") as HTMLInputElement)
+      .checked,
+  ).toBe(true);
+  expect(unpaired.checked).toBe(false);
+  expect(
+    fetcher.mock.calls.filter(([, init]) => init?.method === "POST"),
+  ).toHaveLength(0);
 });
 
 it("never offers automation for creation and requires fresh consent after expanding fields", async () => {
@@ -972,12 +996,9 @@ it("never offers automation for creation and requires fresh consent after expand
   mockAPI((url) =>
     url.pathname.endsWith("/config") ? json(configured) : undefined,
   );
-  mount();
+  mount(<CatalogSync scope={scope} view="automation" />);
   await screen.findByLabelText(
     "Автоматически передавать изменения товара source-1",
-  );
-  fireEvent.click(
-    screen.getByText("Автоматическая передача для связанных товаров"),
   );
   expect(
     screen.queryByLabelText("Автоматически передавать изменения товара new"),
@@ -985,15 +1006,13 @@ it("never offers automation for creation and requires fresh consent after expand
   expect(
     screen.queryByLabelText(/Разрешаю автоматическую передачу/),
   ).toBeNull();
-  fireEvent.click(screen.getByLabelText("Описание · из Ozon"));
+  fireEvent.click(screen.getByLabelText("Описание: source-1"));
   fireEvent.click(screen.getByLabelText(/Разрешаю автоматическую передачу/));
   const save = screen.getByRole("button", {
-    name: "Сохранить настройки",
+    name: "Сохранить разрешения",
   }) as HTMLButtonElement;
   expect(save.disabled).toBe(false);
-  fireEvent.change(screen.getByLabelText("Описание"), {
-    target: { value: "MOYSKLAD_AUTHORITATIVE" },
-  });
+  fireEvent.click(screen.getByLabelText("Название: source-1"));
   expect(
     (
       screen.getByLabelText(
@@ -1031,7 +1050,7 @@ it("keeps unavailable policies collapsed and preserves their values when saving"
   fireEvent.change(screen.getByLabelText("Название"), {
     target: { value: "OZON_AUTHORITATIVE" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Сохранить настройки" }));
+  fireEvent.click(screen.getByRole("button", { name: "Сохранить правила" }));
   await waitFor(() =>
     expect(
       fetcher.mock.calls.filter(([, init]) => init?.method === "POST"),
@@ -1058,7 +1077,7 @@ it.each([false, true])(
           )
         : undefined,
     );
-    mount();
+    mount(<CatalogSync scope={scope} view="automation" />);
     const checkbox = (await screen.findByLabelText(
       "Автоматически передавать изменения товара source-1",
     )) as HTMLInputElement;
@@ -1090,7 +1109,7 @@ it("requires consent when re-enabling the master switch with previously authoriz
   expect(
     (
       screen.getByRole("button", {
-        name: "Сохранить настройки",
+        name: "Сохранить правила",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
@@ -1100,7 +1119,7 @@ it("requires consent when re-enabling the master switch with previously authoriz
   expect(
     (
       screen.getByRole("button", {
-        name: "Сохранить настройки",
+        name: "Сохранить правила",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(false);

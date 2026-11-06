@@ -101,16 +101,18 @@ async function prepare() {
     screen.getByRole("button", { name: "Проверить выбранные (2)" }),
   );
   await screen.findByRole("heading", {
+    name: "Готовность карточек к созданию",
+  });
+  fireEvent.click(screen.getByLabelText("Выбрать Товар A"));
+  fireEvent.click(screen.getByLabelText("Выбрать Товар B"));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Продолжить с 2 товарами →" }),
+  );
+  await screen.findByRole("heading", {
     name: "Проверьте изменения перед отправкой",
   });
 }
 async function confirm() {
-  fireEvent.click(
-    screen.getByLabelText("Подтвердить изменения товара Товар A"),
-  );
-  fireEvent.click(
-    screen.getByLabelText("Подтвердить изменения товара Товар B"),
-  );
   fireEvent.click(
     screen.getByLabelText(/Я проверил изменения выбранных товаров/),
   );
@@ -130,7 +132,7 @@ it("keeps selection across pages and uses one server plan and one explicit appro
   expect(
     (
       screen.getByRole("button", {
-        name: "Отправить изменения (0)",
+        name: "Отправить изменения (2)",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);

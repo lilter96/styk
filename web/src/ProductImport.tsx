@@ -4,8 +4,8 @@ import { Link } from "react-router-dom";
 import { api, ApiError, post } from "./api";
 import { BrandLogo } from "./BrandLogo";
 import { IntegrationDialog } from "./IntegrationDialog";
-import { CatalogSyncCreation, newCatalogCreation } from "./CatalogSyncCreation";
-import { CatalogSyncFacts } from "./CatalogSyncFacts";
+import { newCatalogCreation } from "./CatalogSyncCreation";
+import { ProductCreationEditor } from "./ProductCreationEditor";
 import { CatalogSyncPreview } from "./CatalogSyncPreview";
 import {
   catalogURL,
@@ -13,6 +13,7 @@ import {
   productName,
   requestError,
   normalizePreview,
+  issueLabel,
   type CatalogProduct,
   type CatalogPreview,
   type CatalogOperation,
@@ -48,6 +49,9 @@ export function ProductImport({
   provider: Provider;
 }) {
   const client = useQueryClient();
+  const [confirming, setConfirming] = useState(false);
+  const [readySelection, setReadySelection] = useState<string[]>([]);
+  const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
   const [cursor, setCursor] = useState("");
   const [pages, setPages] = useState<string[]>([]);
@@ -125,6 +129,8 @@ export function ProductImport({
       )
         throw new Error("scope mismatch");
       setPreview(normalizePreview(result));
+      setConfirming(false);
+      setReadySelection([]);
       approvalKey.current = crypto.randomUUID();
       await client.invalidateQueries({ queryKey: ["catalog-config", scope] });
     } catch (error) {
@@ -190,11 +196,16 @@ export function ProductImport({
   const eligible = items.filter(
     (p) => !linked(p, products.data) && p.lifecycle === "active" && !p.variant,
   );
+  const decisions = new Map(
+    preview?.decisions.map((d) => [d.source.identity.id, d]),
+  );
   const edit = editing ? selected[editing] : undefined;
   return (
     <div className="catalog-sync products-import-flow">
       <ol className="products-steps">
-        <li>Выбор товаров</li>
+        <li aria-current={!preview && !operation ? "step" : undefined}>
+          Выбор товаров
+        </li>
         <li aria-current={preview ? "step" : undefined}>Проверка данных</li>
         <li aria-current={operation ? "step" : undefined}>
           Подтверждение и сверка
@@ -217,181 +228,304 @@ export function ProductImport({
         </section>
       ) : (
         <>
-          <section className="catalog-section">
-            <div className="catalog-section-heading">
-              <h2>Выберите товары для создания</h2>
-              <span>До 20 товаров за одно подтверждение</span>
-            </div>
-            {products.data?.summary && (
-              <div className="products-import-summary">
-                <p>
-                  Найдено: <b>{products.data.summary.total}</b> · К проверке:{" "}
-                  <b>{products.data.summary.to_review}</b> · Уже связаны:{" "}
-                  <b>{products.data.summary.linked}</b> · Исключены:{" "}
-                  <b>{products.data.summary.excluded}</b>
-                </p>
-                <small>
-                  {products.data.summary.observed_at
-                    ? `Полная загрузка: ${new Date(products.data.summary.observed_at).toLocaleString("ru-RU")}`
-                    : "Загруженного каталога пока нет"}
-                  . Готовность к созданию проверим перед отправкой.
-                </small>
+          {!confirming && (
+            <section className="catalog-section products-import-catalog">
+              <div className="catalog-section-heading">
+                <h2>
+                  {preview
+                    ? "Готовность карточек к созданию"
+                    : "Выберите товары для создания"}
+                </h2>
+                <span>До 20 товаров за одно подтверждение</span>
               </div>
-            )}
-            <label className="products-import-search">
-              Поиск по названию или артикулу
-              <input
-                type="search"
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setCursor("");
-                  setPages([]);
-                }}
-              />
-            </label>
-            {products.isFetching && <p role="status">Загружаем товары…</p>}
-            {products.isError && (
-              <p role="alert" className="catalog-error">
-                {requestError(products.error)}{" "}
+              {preview && (
+                <div className="products-import-preflight-counts">
+                  <div className="ready">
+                    <b>{preview.decisions.filter((d) => d.ready).length}</b>
+                    готовы к созданию
+                  </div>
+                  <div className="warning">
+                    <b>{preview.decisions.filter((d) => !d.ready).length}</b>
+                    требуют данных
+                  </div>
+                  <div>
+                    <b>{products.data?.summary?.linked ?? "—"}</b>уже связаны
+                  </div>
+                  <div>
+                    <b>{products.data?.summary?.excluded ?? "—"}</b>исключены
+                  </div>
+                </div>
+              )}
+              {products.data?.summary && !preview && (
+                <div className="products-import-summary">
+                  <p>
+                    Найдено: <b>{products.data.summary.total}</b> · К проверке:{" "}
+                    <b>{products.data.summary.to_review}</b> · Уже связаны:{" "}
+                    <b>{products.data.summary.linked}</b> · Исключены:{" "}
+                    <b>{products.data.summary.excluded}</b>
+                  </p>
+                  <small>
+                    {products.data.summary.observed_at
+                      ? `Полная загрузка: ${new Date(products.data.summary.observed_at).toLocaleString("ru-RU")}`
+                      : "Загруженного каталога пока нет"}
+                    . Готовность к созданию проверим перед отправкой.
+                  </small>
+                </div>
+              )}
+              <label className="products-import-search">
+                Поиск по названию или артикулу
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setCursor("");
+                    setPages([]);
+                  }}
+                />
+              </label>
+              {products.isFetching && <p role="status">Загружаем товары…</p>}
+              {products.isError && (
+                <p role="alert" className="catalog-error">
+                  {requestError(products.error)}{" "}
+                  <button
+                    className="secondary"
+                    onClick={() => void products.refetch()}
+                  >
+                    Повторить
+                  </button>
+                </p>
+              )}
+              <div className="products-import-selection">
                 <button
                   className="secondary"
-                  onClick={() => void products.refetch()}
+                  disabled={busy || !eligible.length || uncertain}
+                  onClick={() => {
+                    setPreview(null);
+                    setSelected({
+                      ...selected,
+                      ...Object.fromEntries(
+                        eligible
+                          .filter((p) => !selected[identityKey(p)])
+                          .slice(0, 20 - Object.keys(selected).length)
+                          .map((p) => [identityKey(p), add(p)]),
+                      ),
+                    });
+                  }}
                 >
-                  Повторить
+                  Выбрать доступные на странице
                 </button>
-              </p>
-            )}
-            <div className="products-import-selection">
-              <button
-                className="secondary"
-                disabled={busy || !eligible.length || uncertain}
-                onClick={() => {
-                  setPreview(null);
-                  setSelected({
-                    ...selected,
-                    ...Object.fromEntries(
-                      eligible
-                        .filter((p) => !selected[identityKey(p)])
-                        .slice(0, 20 - Object.keys(selected).length)
-                        .map((p) => [identityKey(p), add(p)]),
-                    ),
-                  });
-                }}
-              >
-                Выбрать доступные на странице
-              </button>
-              <span>Выбрано: {Object.keys(selected).length}</span>
-            </div>
-            <div className="products-import-list">
-              {items.map((product) => {
-                const key = identityKey(product),
-                  paired = linked(product, products.data),
-                  chosen = selected[key];
-                return (
-                  <article key={key} className={chosen ? "is-selected" : ""}>
-                    <label className="products-select-control">
-                      <input
-                        type="checkbox"
-                        aria-label={`Выбрать ${productName(product)}`}
-                        checked={!!chosen}
-                        disabled={
-                          busy ||
-                          uncertain ||
-                          paired ||
-                          product.lifecycle !== "active" ||
-                          product.variant ||
-                          (!chosen && Object.keys(selected).length >= 20)
-                        }
-                        onChange={() => toggle(product)}
-                      />
-                    </label>
-                    <BrandLogo provider={provider} decorative />
-                    <div>
-                      <strong>{productName(product)}</strong>
-                      <small>
-                        {product.identity.offer_id ||
-                          (product.fields.article?.state === "known"
-                            ? String(product.fields.article.data)
-                            : "Артикул не указан")}
-                        {product.variant ? " · Вариант товара" : ""}
-                      </small>
-                    </div>
-                    <span
-                      className={`products-import-state ${paired ? "linked" : ""}`}
+                <span>Выбрано: {Object.keys(selected).length}</span>
+              </div>
+              {preview && (
+                <div className="products-filter-pills">
+                  {[
+                    ["", "Все"],
+                    ["ready", "Готовы"],
+                    ["blocked", "Нужны данные"],
+                  ].map(([value, label]) => (
+                    <button
+                      key={value}
+                      className={
+                        statusFilter === value ? "active" : "secondary"
+                      }
+                      onClick={() => setStatusFilter(value)}
                     >
-                      {paired
-                        ? "Уже связан"
-                        : product.variant
-                          ? "Модификация: требуется отдельная проверка"
-                          : product.lifecycle === "unknown"
-                            ? "Активность неизвестна: обновите каталог"
-                            : product.lifecycle === "archived"
-                              ? "В архиве"
-                              : provider === "moysklad"
-                                ? "Нужно проверить поля Ozon"
-                                : "Нужна проверка перед созданием"}
-                    </span>
-                    {chosen && (
-                      <button
-                        className="secondary"
-                        disabled={busy || uncertain}
-                        onClick={() => setEditing(key)}
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="products-import-table-heading">
+                <span />
+                <b>Товар в {provider === "ozon" ? "Ozon" : "МойСклад"}</b>
+                <b>
+                  Готовность карточки{" "}
+                  {provider === "ozon" ? "МойСклад" : "Ozon"}
+                </b>
+                <b>Действие</b>
+              </div>
+              <div className="products-import-list">
+                {(preview
+                  ? Object.values(selected).map((s) => s.product)
+                  : items
+                )
+                  .filter(
+                    (p) =>
+                      !preview ||
+                      !statusFilter ||
+                      (statusFilter === "ready"
+                        ? decisions.get(p.identity.id)?.ready
+                        : !decisions.get(p.identity.id)?.ready),
+                  )
+                  .map((product) => {
+                    const key = identityKey(product),
+                      paired = linked(product, products.data),
+                      chosen = selected[key],
+                      decision = decisions.get(product.identity.id);
+                    return (
+                      <article
+                        key={key}
+                        className={chosen ? "is-selected" : ""}
                       >
-                        Заполнить данные
-                      </button>
-                    )}
-                  </article>
-                );
-              })}
-            </div>
-            {!products.isFetching && !products.isError && !items.length && (
-              <p className="catalog-empty">
-                Товары не найдены. Измените поиск или обновите каталог в
-                интеграциях.
-              </p>
-            )}
-            <div className="catalog-actions">
-              <button
-                className="secondary"
-                disabled={!pages.length || products.isFetching}
-                onClick={() => {
-                  setCursor(pages.at(-1) || "");
-                  setPages(pages.slice(0, -1));
-                }}
-              >
-                Назад
-              </button>
-              <span>Страница {pages.length + 1}</span>
-              <button
-                className="secondary"
-                disabled={!products.data?.next_cursor || products.isFetching}
-                onClick={() => {
-                  setPages([...pages, cursor]);
-                  setCursor(products.data!.next_cursor!);
-                }}
-              >
-                Далее
-              </button>
-            </div>
-            <div className="products-import-footer">
-              <p>
-                Проверка прочитает актуальные данные и требования сервиса.
-                Отправки ещё не будет.
-              </p>
-              <button
-                disabled={busy || uncertain || !Object.keys(selected).length}
-                onClick={() => void prepare()}
-              >
-                {busy
-                  ? "Проверяем…"
-                  : `Проверить выбранные (${Object.keys(selected).length})`}
-              </button>
-            </div>
-          </section>
-          {preview && (
+                        <label className="products-select-control">
+                          <input
+                            type="checkbox"
+                            aria-label={`Выбрать ${productName(product)}`}
+                            checked={
+                              preview
+                                ? !!decision &&
+                                  readySelection.includes(
+                                    decision.enrollment_id,
+                                  )
+                                : !!chosen
+                            }
+                            disabled={
+                              busy ||
+                              uncertain ||
+                              (preview ? !decision?.ready : paired) ||
+                              product.lifecycle !== "active" ||
+                              product.variant ||
+                              (!chosen && Object.keys(selected).length >= 20)
+                            }
+                            onChange={() => {
+                              if (preview && decision) {
+                                setReadySelection(
+                                  readySelection.includes(
+                                    decision.enrollment_id,
+                                  )
+                                    ? readySelection.filter(
+                                        (id) => id !== decision.enrollment_id,
+                                      )
+                                    : [
+                                        ...readySelection,
+                                        decision.enrollment_id,
+                                      ],
+                                );
+                                return;
+                              }
+                              toggle(product);
+                            }}
+                          />
+                        </label>
+                        <BrandLogo provider={provider} decorative />
+                        <div>
+                          <strong>{productName(product)}</strong>
+                          <small>
+                            {product.identity.offer_id ||
+                              (product.fields.article?.state === "known"
+                                ? String(product.fields.article.data)
+                                : "Артикул не указан")}
+                            {product.variant ? " · Вариант товара" : ""}
+                          </small>
+                        </div>
+                        <span
+                          className={`products-import-state ${paired ? "linked" : ""} ${decision?.ready ? "is-ready" : ""}`}
+                        >
+                          {decision
+                            ? decision.ready
+                              ? "Все поля проверены"
+                              : decision.validation
+                                  .map((i) => issueLabel(i.code))
+                                  .join(" · ") || "Нужно уточнить данные"
+                            : paired
+                              ? "Уже связан"
+                              : product.variant
+                                ? "Модификация: требуется отдельная проверка"
+                                : product.lifecycle === "unknown"
+                                  ? "Активность неизвестна: обновите каталог"
+                                  : product.lifecycle === "archived"
+                                    ? "В архиве"
+                                    : provider === "moysklad"
+                                      ? "Нужно проверить поля Ozon"
+                                      : "Нужна проверка перед созданием"}
+                        </span>
+                        {(chosen ||
+                          (!paired &&
+                            product.lifecycle === "active" &&
+                            !product.variant)) && (
+                          <button
+                            className="secondary"
+                            disabled={
+                              busy ||
+                              uncertain ||
+                              (!chosen && Object.keys(selected).length >= 20)
+                            }
+                            onClick={() => {
+                              if (!chosen)
+                                setSelected({
+                                  ...selected,
+                                  [key]: add(product),
+                                });
+                              setEditing(key);
+                            }}
+                          >
+                            Заполнить данные
+                          </button>
+                        )}
+                      </article>
+                    );
+                  })}
+              </div>
+              {!products.isFetching && !products.isError && !items.length && (
+                <p className="catalog-empty">
+                  Товары не найдены. Измените поиск или обновите каталог в
+                  интеграциях.
+                </p>
+              )}
+              <div className="catalog-actions">
+                <button
+                  className="secondary"
+                  disabled={!pages.length || products.isFetching}
+                  onClick={() => {
+                    setCursor(pages.at(-1) || "");
+                    setPages(pages.slice(0, -1));
+                  }}
+                >
+                  Назад
+                </button>
+                <span>Страница {pages.length + 1}</span>
+                <button
+                  className="secondary"
+                  disabled={!products.data?.next_cursor || products.isFetching}
+                  onClick={() => {
+                    setPages([...pages, cursor]);
+                    setCursor(products.data!.next_cursor!);
+                  }}
+                >
+                  Далее
+                </button>
+              </div>
+              <div className="products-import-footer">
+                <p>
+                  Проверка прочитает актуальные данные и требования сервиса.
+                  Отправки ещё не будет.
+                </p>
+                <button
+                  disabled={
+                    busy ||
+                    uncertain ||
+                    (preview
+                      ? !readySelection.length
+                      : !Object.keys(selected).length)
+                  }
+                  onClick={() =>
+                    preview ? setConfirming(true) : void prepare()
+                  }
+                >
+                  {busy
+                    ? "Проверяем…"
+                    : preview
+                      ? `Продолжить с ${readySelection.length} товарами →`
+                      : `Проверить выбранные (${Object.keys(selected).length})`}
+                </button>
+              </div>
+            </section>
+          )}
+          {preview && confirming && (
             <CatalogSyncPreview
               key={preview.id}
+              initialSelected={readySelection}
               preview={preview}
               busy={busy}
               blocked={uncertain}
@@ -399,6 +533,19 @@ export function ProductImport({
             />
           )}
         </>
+      )}
+      {preview && (
+        <button
+          className="secondary products-import-back"
+          disabled={busy || uncertain}
+          onClick={() => {
+            if (confirming) setConfirming(false);
+            else setPreview(null);
+          }}
+        >
+          ←{" "}
+          {confirming ? "Вернуться к готовности товаров" : "Вернуться к выбору"}
+        </button>
       )}
       {error && (
         <p role="alert" className="catalog-error">
@@ -412,43 +559,37 @@ export function ProductImport({
           className="products-create-dialog"
           onClose={() => setEditing(null)}
         >
-          <CatalogSyncCreation
+          <ProductCreationEditor
+            scope={scope}
+            facts={edit.facts}
+            onClose={() => setEditing(null)}
             enrollment={edit.enrollment}
             onChange={(enrollment) => {
               setSelected({ ...selected, [editing]: { ...edit, enrollment } });
               setPreview(null);
             }}
-          />
-          {provider === "moysklad" && (
-            <CatalogSyncFacts
-              scope={scope}
-              facts={edit.facts}
-              onChange={(facts) => {
-                const create = edit.enrollment.create!;
-                const values = { ...create.values };
-                delete values.category;
-                delete values.attributes;
-                setSelected({
-                  ...selected,
-                  [editing]: {
-                    ...edit,
-                    facts,
-                    enrollment: {
-                      ...edit.enrollment,
-                      create: {
-                        ...create,
-                        values: { ...values, ...facts.values },
-                      },
+            onFacts={(facts) => {
+              const create = edit.enrollment.create!;
+              const values = { ...create.values };
+              delete values.category;
+              delete values.attributes;
+              setSelected({
+                ...selected,
+                [editing]: {
+                  ...edit,
+                  facts,
+                  enrollment: {
+                    ...edit.enrollment,
+                    create: {
+                      ...create,
+                      values: { ...values, ...facts.values },
                     },
                   },
-                });
-                setPreview(null);
-              }}
-            />
-          )}
-          <button onClick={() => setEditing(null)}>
-            Сохранить данные для проверки
-          </button>
+                },
+              });
+              setPreview(null);
+            }}
+          />
         </IntegrationDialog>
       )}
     </div>

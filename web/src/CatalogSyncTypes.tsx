@@ -182,6 +182,7 @@ export type CatalogOperation = {
   created_at: string;
 };
 export type OperationPage = {
+  summary?: Record<string, number>;
   operations: CatalogOperation[];
   next_cursor?: string;
 };

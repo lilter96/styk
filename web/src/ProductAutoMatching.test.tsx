@@ -117,7 +117,7 @@ it("suggests by default without saving a policy or allowing a name match to conf
   const calls = mount();
   fireEvent.click(
     await screen.findByRole("button", {
-      name: "Сохранить настройки и посмотреть результат",
+      name: "Посмотреть предварительный результат",
     }),
   );
   expect(
@@ -139,7 +139,7 @@ it("requires opt-in, exact selection and acknowledgement, and recovers a lost re
   );
   fireEvent.click(
     screen.getByRole("button", {
-      name: "Сохранить настройки и посмотреть результат",
+      name: "Посмотреть предварительный результат",
     }),
   );
   fireEvent.click(await screen.findByLabelText("Выбрать пару A"));

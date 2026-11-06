@@ -1,5 +1,8 @@
 # Products workspace
 
+> Follow-up: see [reference completion](products-reference-completion.md) for the
+> current design changes, API filters and validation limits after `00ff2cf`.
+
 Baseline: `3f94c439bb6a60f5eb4587ed32fd4bc623137ebd`, fetched from
 `origin/master` on 2026-11-06. Work starts on
 `codex/products-unified-workspace` with a clean working tree.

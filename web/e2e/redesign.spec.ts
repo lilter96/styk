@@ -97,13 +97,12 @@ test("new merchant imports all eligible Ozon products with one confirmation", as
     page.getByLabel("Выбрать Товар 1003", { exact: true }),
   ).toBeDisabled();
   await page.getByRole("button", { name: "Проверить выбранные (2)" }).click();
+  await page.getByLabel("Выбрать Товар 1001", { exact: true }).check();
+  await page.getByLabel("Выбрать Товар 1002", { exact: true }).check();
+  await page.getByRole("button", { name: "Продолжить с 2 товарами →" }).click();
   await expect(
-    page.getByRole("button", { name: "Отправить изменения (0)" }),
+    page.getByRole("button", { name: "Отправить изменения (2)" }),
   ).toBeDisabled();
-  for (const id of ["1001", "1002"])
-    await page
-      .getByLabel(`Подтвердить изменения товара Товар ${id}`, { exact: true })
-      .check();
   await page.getByLabel(/Я проверил изменения выбранных товаров/).check();
   await page.getByRole("button", { name: "Отправить изменения (2)" }).click();
   await expect(
@@ -1113,7 +1112,7 @@ for (const width of [1440, 768, 390])
       .check();
     await page
       .getByRole("button", {
-        name: "Сохранить настройки и посмотреть результат",
+        name: "Посмотреть предварительный результат",
       })
       .click();
     await expect(

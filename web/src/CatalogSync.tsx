@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, post } from "./api";
 import { CatalogSyncConfig } from "./CatalogSyncConfig";
@@ -20,12 +20,16 @@ import {
   type CatalogPreview,
   type CatalogValue,
   type Scope,
+  type ProductPage,
 } from "./CatalogSyncTypes";
 import "./catalog-sync.css";
 
 export type CatalogSyncProps = {
   scope: Scope;
-  view: "rules" | "transfer";
+  view: "rules" | "transfer" | "automation";
+  operationID?: string;
+  onApproved?: (id: string) => void;
+  initialProducts?: { id: string; offer: string }[];
 };
 const sameScope = (value: CatalogConfig["scope"], scope: Scope) =>
   value?.tenant === scope.tenant &&
@@ -47,7 +51,13 @@ export function CatalogSync(props: CatalogSyncProps) {
   return <CatalogSyncAccount key={JSON.stringify(scope)} {...props} />;
 }
 
-function CatalogSyncAccount({ scope, view }: CatalogSyncProps) {
+function CatalogSyncAccount({
+  scope,
+  view,
+  initialProducts,
+  operationID,
+  onApproved,
+}: CatalogSyncProps) {
   const client = useQueryClient();
   const configKey = ["catalog-config", scope];
   const config = useQuery({
@@ -70,6 +80,54 @@ function CatalogSyncAccount({ scope, view }: CatalogSyncProps) {
   const [error, setError] = useState("");
   const [uncertain, setUncertain] = useState<string[]>([]);
   const lock = useRef(false);
+  const selectionLoaded = useRef(false);
+  useEffect(() => {
+    const requested = initialProducts;
+    if (view !== "transfer" || !requested?.length || selectionLoaded.current)
+      return;
+    const controller = new AbortController();
+    setBusy("preview");
+    void Promise.all(
+      requested.slice(0, 20).map(async (item) => {
+        const page = await api<ProductPage>(
+          catalogURL("products", scope, {
+            provider: "ozon",
+            search: item.offer || item.id,
+            limit: "100",
+          }),
+          controller.signal,
+        );
+        const product = page.products.find((p) => p.identity.id === item.id);
+        const enrollment = page.enrollments?.find((e) =>
+          [e.source, e.target].some(
+            (i) => i.account.provider === "ozon" && i.id === item.id,
+          ),
+        );
+        if (!product || !enrollment)
+          throw new Error("selected product unavailable");
+        return [
+          enrollment.id,
+          { product, enrollment, manual_values: {} },
+        ] as const;
+      }),
+    )
+      .then((entries) => {
+        if (!controller.signal.aborted) {
+          setSelected(Object.fromEntries(entries));
+          selectionLoaded.current = true;
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted)
+          setError(
+            "Не удалось загрузить выбранные связи. Выберите товары повторно.",
+          );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setBusy(null);
+      });
+    return () => controller.abort();
+  }, [initialProducts, scope, view]);
   const uncertainSelection = Object.keys(selected).some((id) =>
     uncertain.includes(id),
   );
@@ -198,6 +256,7 @@ function CatalogSyncAccount({ scope, view }: CatalogSyncProps) {
         throw new Error("invalid approval acknowledgement");
       setPreview(null);
       setSelected({});
+      onApproved?.(operation.id);
       setMessage(
         "Подтверждение записано. Ход отправки и результат сверки показаны ниже.",
       );
@@ -244,11 +303,12 @@ function CatalogSyncAccount({ scope, view }: CatalogSyncProps) {
       )}
       {config.data && sameScope(config.data.scope, scope) && (
         <>
-          {view === "rules" && (
+          {(view === "rules" || view === "automation") && (
             <fieldset>
               <CatalogSyncConfig
                 key={config.data.revision}
                 scope={scope}
+                automationOnly={view === "automation"}
                 config={config.data}
                 onSaved={saved}
                 onDirty={(value) => {
@@ -258,38 +318,42 @@ function CatalogSyncAccount({ scope, view }: CatalogSyncProps) {
               />
             </fieldset>
           )}
-          {view === "transfer" && (
+          {view === "transfer" && !operationID && (
             <>
-              <CatalogSyncProducts
-                scope={scope}
-                config={config.data}
-                selected={selected}
-                disabled={busy !== null}
-                onChange={(next) => {
-                  setSelected(next);
-                  setPreview(null);
-                  setMessage("");
-                }}
-              />
-              <div className="catalog-review-action">
-                <button
-                  disabled={
-                    busy !== null ||
-                    dirty ||
-                    uncertainSelection ||
-                    !Object.keys(selected).length
-                  }
-                  onClick={() => void review()}
-                >
-                  {busy === "preview"
-                    ? "Проверяем изменения…"
-                    : "Проверить выбранные товары"}
-                </button>
-                <p>
-                  Выбор товаров сохранится для этой пары аккаунтов. Проверка не
-                  отправляет изменения в сервисы.
-                </p>
-              </div>
+              {!preview && (
+                <CatalogSyncProducts
+                  scope={scope}
+                  config={config.data}
+                  selected={selected}
+                  disabled={busy !== null}
+                  onChange={(next) => {
+                    setSelected(next);
+                    setPreview(null);
+                    setMessage("");
+                  }}
+                />
+              )}
+              {!preview && (
+                <div className="catalog-review-action">
+                  <button
+                    disabled={
+                      busy !== null ||
+                      dirty ||
+                      uncertainSelection ||
+                      !Object.keys(selected).length
+                    }
+                    onClick={() => void review()}
+                  >
+                    {busy === "preview"
+                      ? "Проверяем изменения…"
+                      : "Проверить выбранные товары"}
+                  </button>
+                  <p>
+                    Выбор товаров сохранится для этой пары аккаунтов. Проверка
+                    не отправляет изменения в сервисы.
+                  </p>
+                </div>
+              )}
               {(!config.data.enabled || !config.data.test_enabled) && (
                 <p className="catalog-warning">
                   Перед отправкой включите синхронизацию каталога и сохраните
@@ -339,7 +403,9 @@ function CatalogSyncAccount({ scope, view }: CatalogSyncProps) {
           {message}
         </p>
       )}
-      {view !== "rules" && <CatalogSyncOperations scope={scope} />}
+      {view === "transfer" && (
+        <CatalogSyncOperations scope={scope} operationID={operationID} />
+      )}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { api, ApiError, params, post, type Product } from "./api";
 import { useConfirmation, type Confirmation, type Scope } from "./Confirmation";
 import { ProductReview } from "./ProductReview";
+import { Icon } from "./UI";
 import { BrandLogo } from "./BrandLogo";
 import { scopeBody } from "./CatalogSyncTypes";
 
@@ -242,7 +243,10 @@ export function ProductAutoMatching({
       {!preview && draft && (
         <>
           <section className="products-match-section">
-            <h2>Как искать совпадения</h2>
+            <h2>
+              <span className="products-step-number">1</span>Как искать
+              совпадения
+            </h2>
             <label className="products-rule">
               <input
                 type="checkbox"
@@ -257,6 +261,9 @@ export function ProductAutoMatching({
                   })
                 }
               />
+              <span className="products-signal-icon">
+                <Icon name="products" />
+              </span>
               <div>
                 <b>По артикулу и коду</b>
                 <p>
@@ -272,6 +279,7 @@ export function ProductAutoMatching({
                 disabled
                 aria-label="По штрихкоду: данные пока недоступны"
               />
+              <span className="products-signal-icon">▥</span>
               <div>
                 <b>По штрихкоду</b>
                 <p>
@@ -290,6 +298,7 @@ export function ProductAutoMatching({
                   setPolicy({ ...draft, names: e.target.checked })
                 }
               />
+              <span className="products-signal-icon">Aa</span>
               <div>
                 <b>По названию</b>
                 <p>
@@ -300,7 +309,10 @@ export function ProductAutoMatching({
             </label>
           </section>
           <section className="products-match-section">
-            <h2>Кто подтверждает соответствия</h2>
+            <h2>
+              <span className="products-step-number">2</span>Кто подтверждает
+              соответствия
+            </h2>
             <label
               className={`products-rule ${!draft.auto_confirm ? "is-selected" : ""}`}
             >
@@ -340,6 +352,15 @@ export function ProductAutoMatching({
                 </p>
               </div>
             </label>
+            <p className="catalog-warning">
+              Дубли, варианты товара и похожие названия останутся на ручной
+              проверке.
+            </p>
+          </section>
+          <section className="products-match-section products-after-import">
+            <h2>
+              <span className="products-step-number">3</span>После импорта
+            </h2>
             <label className="products-rule">
               <input
                 type="checkbox"
@@ -358,10 +379,6 @@ export function ProductAutoMatching({
                 </p>
               </div>
             </label>
-            <p className="catalog-warning">
-              Дубли, варианты товара и похожие названия останутся на ручной
-              проверке.
-            </p>
           </section>
           <div className="products-match-footer">
             <Link className="secondary" to="/products">
@@ -373,7 +390,7 @@ export function ProductAutoMatching({
             >
               {busy
                 ? "Проверяем каталоги…"
-                : "Сохранить настройки и посмотреть результат"}
+                : "Посмотреть предварительный результат"}
             </button>
           </div>
         </>
@@ -412,6 +429,13 @@ export function ProductAutoMatching({
               Срок предпросмотра истёк. Выполните новую проверку.
             </p>
           )}
+          <div className="products-match-table-heading">
+            <span />
+            <b>Товар Ozon</b>
+            <b>Предложено в МойСклад</b>
+            <b>Основание</b>
+            <b>Решение</b>
+          </div>
           <div className="products-match-list">
             {items
               .filter((i) => !filter || i.status === filter)

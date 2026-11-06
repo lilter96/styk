@@ -8,8 +8,8 @@ export const eligibleForQueue = (p: Product) =>
   p.provider !== "moysklad" &&
   p.observed !== false &&
   p.archived === false &&
-  p.target_id === null &&
-  p.candidates.length > 0 &&
+  (p.match_status === "CONFIRMED" ||
+    (p.target_id === null && p.candidates.length > 0)) &&
   !p.candidates_truncated;
 
 function Thumbnail() {
@@ -99,11 +99,7 @@ function MappingRow({
           <span
             className={`matching-page-badge ${confirmed ? "confirmed" : conflict ? "conflict" : "unmatched"}`}
           >
-            {confirmed
-              ? "Подтверждено"
-              : conflict
-                ? "Конфликт"
-                : "Не сопоставлен"}
+            {confirmed ? "Связан" : conflict ? "Конфликт" : "Нет пары"}
           </span>
           {p.observed === false && <small>Нет в последней загрузке</small>}
           {p.shared_inventory && (
@@ -188,7 +184,7 @@ export function ProductMappingTable({
       className="mapping-table-card"
       aria-label="Товары для сопоставления"
     >
-      <div className="matching-page-bulk">
+      <div className="matching-page-bulk products-table-selection">
         <label>
           <input
             ref={checkbox}
@@ -200,7 +196,7 @@ export function ProductMappingTable({
           />
           Выбрать все на странице
         </label>
-        <span>Очередь до 100 товаров</span>
+        <span>Проверка ничего не отправляет</span>
         <div>
           <span>Выбрано: {selected.length}</span>
           <button

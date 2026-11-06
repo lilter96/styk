@@ -181,45 +181,6 @@ func scanCatalogProduct(row pgx.Row, scope catalog.Scope) (catalog.Product, erro
 	return p, nil
 }
 
-func (s *Store) CatalogHistory(ctx context.Context, scope catalog.Scope, page catalogsync.PageRequest) (catalogsync.HistoryPage, error) {
-	result := catalogsync.HistoryPage{Operations: make([]catalogsync.Operation, 0)}
-	if scope.Validate() != nil || page.Limit < 1 || page.Limit > 100 || page.Search != "" {
-		return result, catalogsync.ErrInvalid
-	}
-	cursor, err := decodeCatalogCursor(scope, page)
-	if err != nil {
-		return result, err
-	}
-	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
-	defer cancel()
-	args := append(catalogScopeArgs(scope), cursor.ID, cursor.At, page.Limit+1)
-	rows, err := s.Pool.Query(ctx, `SELECT o.id,o.preview_id,o.created_at,COALESCE(jsonb_agg(w.work || jsonb_build_object('mapping_state',COALESCE(l.state,'')) ORDER BY w.id) FILTER(WHERE w.id IS NOT NULL),'[]'::jsonb) FROM (SELECT * FROM catalog_sync_operations WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND ($4='' OR (created_at,id)<($5,$4)) ORDER BY created_at DESC,id DESC LIMIT $6) o LEFT JOIN catalog_sync_work w ON w.operation_id=o.id LEFT JOIN catalog_created_links l ON l.work_id=w.id GROUP BY o.id,o.preview_id,o.created_at ORDER BY o.created_at DESC,o.id DESC`, args...)
-	if err != nil {
-		return result, fmt.Errorf("list catalog operation history: %w", err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		op, err := scanCatalogOperation(rows, scope)
-		if err != nil {
-			return result, err
-		}
-		if len(result.Operations) == page.Limit {
-			result.NextCursor, err = encodeCatalogCursor(cursor)
-			if err != nil {
-				return result, err
-			}
-			break
-		}
-		result.Operations = append(result.Operations, op)
-		cursor.ID = op.ID
-		cursor.At = op.CreatedAt
-	}
-	if err = rows.Err(); err != nil {
-		return result, fmt.Errorf("read catalog history: %w", err)
-	}
-	return result, nil
-}
-
 func readCatalogOperation(ctx context.Context, q catalogQuerier, scope catalog.Scope, id string) (catalogsync.Operation, error) {
 	args := append(catalogScopeArgs(scope), id)
 	return scanCatalogOperation(q.QueryRow(ctx, `SELECT o.id,o.preview_id,o.created_at,COALESCE(jsonb_agg(w.work || jsonb_build_object('mapping_state',COALESCE(l.state,'')) ORDER BY w.id) FILTER(WHERE w.id IS NOT NULL),'[]'::jsonb) FROM catalog_sync_operations o LEFT JOIN catalog_sync_work w ON w.operation_id=o.id LEFT JOIN catalog_created_links l ON l.work_id=w.id WHERE o.tenant_id=$1 AND o.moysklad_account=$2 AND o.ozon_account=$3 AND o.id=$4 GROUP BY o.id,o.preview_id,o.created_at`, args...), scope)

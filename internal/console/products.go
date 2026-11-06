@@ -54,7 +54,7 @@ func products(db *postgres.Store) http.HandlerFunc {
 			return
 		}
 		mappingFilter := q.Get("mapping")
-		if mappingFilter != "" && mappingFilter != "confirmed" && mappingFilter != "unconfirmed" {
+		if mappingFilter != "" && mappingFilter != "confirmed" && mappingFilter != "unconfirmed" && mappingFilter != "conflict" {
 			writeError(w, 400, "INVALID_FILTER")
 			return
 		}
@@ -206,14 +206,14 @@ WITH latest AS (
   SELECT COALESCE(p.product_id,m.ozon_product_id) AS product_id,COALESCE(p.offer_id,m.ozon_offer_id) AS offer_id,p.sku,p.archived,
     CASE WHEN m.moysklad_account=$3 THEN m.target_kind END AS target_kind,
     CASE WHEN m.moysklad_account=$3 THEN m.target_id END AS target_id,NULLIF(p.name,'') AS name,
-    'ozon'::text AS provider,'product'::text AS kind,p.product_id IS NOT NULL AS observed
+    'ozon'::text AS provider,'product'::text AS kind,p.product_id IS NOT NULL AS observed,COALESCE(m.moysklad_account<>$3,false) AS mapping_conflict
   FROM (SELECT p.* FROM ozon_product_observations p JOIN latest l ON l.id=p.import_id) p
   FULL JOIN (SELECT * FROM product_mappings WHERE tenant_id=$1 AND ozon_account=$2) m ON m.ozon_product_id=p.product_id
 ), combined AS (
   SELECT * FROM ozon_rows
   UNION ALL
   SELECT e.external_id,COALESCE(NULLIF(e.article,''),e.code),NULL::text,e.archived,NULL::text,NULL::text,NULLIF(e.name,''),
-    'moysklad',e.kind,true
+    'moysklad',e.kind,true,false
   FROM source_entities e JOIN source_latest l ON l.id=e.import_id
   WHERE e.kind IN ('product','variant') AND NOT EXISTS(SELECT 1 FROM product_mappings m
     WHERE m.tenant_id=$1 AND m.moysklad_account=$3 AND m.ozon_account=$2 AND m.target_kind=e.kind AND m.target_id=e.external_id)
@@ -224,7 +224,7 @@ WITH latest AS (
     OR (p.target_kind,p.target_id) IN (SELECT kind,external_id FROM searched_targets)
     OR (p.provider='ozon' AND btrim(p.offer_id,$8)<>'' AND (btrim(p.offer_id,$8) IN (SELECT article FROM searched_targets) OR btrim(p.offer_id,$8) IN (SELECT code FROM searched_targets))))
  AND ($5='' OR p.archived::text=$5)
- AND ($7='' OR ($7='confirmed' AND p.target_id IS NOT NULL) OR ($7='unconfirmed' AND p.target_id IS NULL))
+ AND ($7='' OR ($7='confirmed' AND p.target_id IS NOT NULL) OR ($7='unconfirmed' AND p.target_id IS NULL) OR ($7='conflict' AND p.mapping_conflict))
 )`
 const productCountQuery = productFilterQuery + ` SELECT count(*) FROM filtered WHERE $6::int>=0 AND $9::int>0`
 const productPageQuery = productFilterQuery + `, page AS (SELECT * FROM filtered ORDER BY provider,kind,product_id LIMIT $9 OFFSET $6)

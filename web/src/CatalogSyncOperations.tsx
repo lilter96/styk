@@ -1,5 +1,6 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { BrandLogo } from "./BrandLogo";
 import { IntegrationDialog } from "./IntegrationDialog";
 import { api, post } from "./api";
 import {
@@ -240,6 +241,13 @@ function WorkResult({
         </p>
       )}
       {uncertain && (
+        <ol className="products-work-timeline">
+          <li className="done">Запрос записан</li>
+          <li className="uncertain">Ответ не подтверждён</li>
+          <li>Проверить результат</li>
+        </ol>
+      )}
+      {uncertain && (
         <p className="catalog-warning">
           Запрос мог выполниться. Повторная отправка недоступна до сверки
           результата. Обновление статуса только читает данные.
@@ -283,15 +291,48 @@ function WorkResult({
   );
 }
 
-export function CatalogSyncOperations({ scope }: { scope: Scope }) {
+export function CatalogSyncOperations({
+  scope,
+  identity,
+  operationID,
+}: {
+  scope: Scope;
+  identity?: { provider: string; id: string };
+  operationID?: string;
+}) {
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchQuery(search), 250);
+    return () => clearTimeout(timer);
+  }, [search]);
   const [selected, setSelected] = useState<string | null>(null);
   const [cursor, setCursor] = useState("");
   const [history, setHistory] = useState<string[]>([]);
+  const effectiveSearch = operationID || searchQuery;
   const query = useQuery({
-    queryKey: ["catalog-operations", scope, cursor],
+    queryKey:
+      effectiveSearch || status || identity
+        ? [
+            "catalog-operations",
+            scope,
+            cursor,
+            effectiveSearch,
+            status,
+            identity,
+          ]
+        : ["catalog-operations", scope, cursor],
     queryFn: async ({ signal }) => {
       const value = await api<OperationPage>(
-        catalogURL("operations", scope, { cursor, limit: "20" }),
+        catalogURL("operations", scope, {
+          cursor,
+          limit: "20",
+          search: effectiveSearch,
+          state: status,
+          product_provider: identity?.provider || "",
+          product_id: identity?.id || "",
+        }),
         signal,
       );
       return {
@@ -316,13 +357,47 @@ export function CatalogSyncOperations({ scope }: { scope: Scope }) {
         ? 5000
         : false,
   });
+  const operations = (query.data?.operations || []).filter(
+    (operation) => !operationID || operation.id === operationID,
+  );
+  const works = operations.flatMap((o) => o.targets);
+  const operationProvider =
+    works.length &&
+    works.every(
+      (work) =>
+        work.command.target.account.provider ===
+        works[0].command.target.account.provider,
+    )
+      ? works[0].command.target.account.provider
+      : "styk";
+  const countFor = (state: string) =>
+    !query.data
+      ? "—"
+      : query.data.summary
+        ? state === "active"
+          ? [...activeStates].reduce(
+              (n, s) => n + (query.data!.summary?.[s] || 0),
+              0,
+            )
+          : query.data.summary[state] || 0
+        : works.filter((w) =>
+            state === "active" ? activeStates.has(w.state) : w.state === state,
+          ).length;
+  function filterState(value: string) {
+    setStatus(value);
+    setCursor("");
+    setHistory([]);
+    setSelected(null);
+  }
   return (
     <section
-      className="catalog-section"
+      className="catalog-section products-history"
       aria-labelledby="catalog-operations-title"
     >
       <div className="catalog-section-heading">
-        <h2 id="catalog-operations-title">Отправка и сверка результатов</h2>
+        <h2 id="catalog-operations-title">
+          {operationID ? "Товары в этой отправке" : "История изменений товаров"}
+        </h2>
         <button
           className="secondary"
           disabled={query.isFetching}
@@ -332,6 +407,95 @@ export function CatalogSyncOperations({ scope }: { scope: Scope }) {
           Обновить статусы
         </button>
       </div>
+      {!operationID && (
+        <>
+          <p>Показываем, что действительно произошло после передачи</p>
+          <div className="products-history-summary">
+            {[
+              ["active", "В работе"],
+              ["RECONCILED", "Проверено"],
+              ["UNKNOWN", "Нужна проверка"],
+              ["REJECTED", "Отклонено"],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                className={`products-history-count ${value}`}
+                aria-pressed={status === value}
+                onClick={() => filterState(status === value ? "" : value)}
+              >
+                {label} <b>{countFor(value)}</b>
+              </button>
+            ))}
+          </div>
+          <p className="products-muted products-history-scope">
+            {identity
+              ? "Поиск и состояния в истории этого товара"
+              : "Поиск и состояния во всей истории выбранных аккаунтов"}
+          </p>
+          <div className="products-history-filters">
+            <input
+              aria-label="Найти товар или операцию"
+              placeholder="Найти товар или операцию"
+              type="search"
+              value={search}
+              maxLength={200}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setCursor("");
+                setHistory([]);
+                setSelected(null);
+              }}
+            />
+            <select
+              aria-label="Статус отправки"
+              value={status}
+              onChange={(e) => filterState(e.target.value)}
+            >
+              <option value="">Все статусы</option>
+              {Object.entries(stateLabels).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+              <option value="active">В работе</option>
+            </select>
+          </div>
+        </>
+      )}
+      {operationID && (
+        <>
+          <ol className="products-steps">
+            <li>Выбор товаров</li>
+            <li>Проверка</li>
+            <li aria-current="step">Передача</li>
+          </ol>
+          <div
+            className={`products-transfer-banner ${works.some((w) => w.state === "UNKNOWN") ? "uncertain" : ""}`}
+          >
+            <BrandLogo provider={operationProvider} decorative />
+            <div>
+              <h3>
+                {works.some((w) => w.state === "UNKNOWN")
+                  ? "Нужно проверить результат"
+                  : works.length && works.every((w) => w.state === "RECONCILED")
+                    ? "Изменения проверены"
+                    : works.some((w) => activeStates.has(w.state))
+                      ? `${works.length} изменений в обработке`
+                      : works.length
+                        ? "Передача требует внимания"
+                        : query.data
+                          ? "Отправка не найдена"
+                          : "Читаем состояние отправки"}
+              </h3>
+              <p>
+                {works.some((w) => w.state === "UNKNOWN")
+                  ? "Ответ не получен. Изменения могли сохраниться; повторная отправка заблокирована."
+                  : "STYK показывает фактический результат и сверяет данные в сервисах."}
+              </p>
+            </div>
+          </div>
+        </>
+      )}
       {query.isFetching && <p role="status">Читаем статусы операций…</p>}
       {query.isError && (
         <p className="catalog-error" role="alert">
@@ -340,66 +504,116 @@ export function CatalogSyncOperations({ scope }: { scope: Scope }) {
       )}
       {query.data && (
         <>
-          {!query.data.operations.length && (
+          {!operations.length && (
             <p className="catalog-empty">
-              Отправок пока нет. Сначала проверьте изменения и подтвердите
-              выбранные товары.
+              {operationID
+                ? "Отправка не найдена в выбранных аккаунтах."
+                : searchQuery || status || identity
+                  ? "По этим условиям отправки не найдены."
+                  : "Отправок пока нет. Сначала проверьте изменения и подтвердите выбранные товары."}
             </p>
           )}
-          {!!query.data.operations.length && (
+          {!!operations.length && (
             <div className="catalog-table-scroll products-history-table">
               <table className="catalog-table">
                 <thead>
                   <tr>
+                    <th>Товар</th>
+                    <th>Направление</th>
                     <th>Когда</th>
-                    <th>Товары и направление</th>
-                    <th>Результат</th>
-                    <th />
+                    <th>Состояние</th>
+                    <th>Что дальше</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {query.data.operations.map((operation) => (
-                    <tr key={operation.id}>
-                      <td>
-                        {new Date(operation.created_at).toLocaleString("ru-RU")}
-                      </td>
-                      <td>
-                        <strong>
-                          {operation.targets.length === 1
-                            ? productName(operation.targets[0].decision.source)
-                            : `${operation.targets.length} изменений`}
-                        </strong>
-                        <small>
-                          {[
-                            ...new Set(
-                              operation.targets.map((w) =>
-                                providerLabel(
-                                  w.command.target.account.provider,
-                                ),
-                              ),
-                            ),
-                          ]
-                            .map((name) => `В ${name}`)
-                            .join(", ")}
-                        </small>
-                      </td>
-                      <td>
-                        <span
-                          className={`catalog-state ${operation.state === "RECONCILED" ? "success" : operation.state === "UNKNOWN" || operation.state === "REJECTED" || operation.state === "BLOCKED" ? "warning" : ""}`}
-                        >
-                          {stateLabel(operation.state)}
-                        </span>
-                      </td>
-                      <td>
-                        <button
-                          className="secondary"
-                          onClick={() => setSelected(operation.id)}
-                        >
-                          Подробнее
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {operations.flatMap((operation) =>
+                    operation.targets
+                      .filter(
+                        (work) =>
+                          !identity ||
+                          [
+                            work.decision.source.identity,
+                            work.command.target,
+                            work.created_target,
+                          ].some(
+                            (i) =>
+                              i?.account.provider === identity.provider &&
+                              i.id === identity.id,
+                          ),
+                      )
+                      .map((work) => (
+                        <tr key={`${operation.id}:${work.id}`}>
+                          <td>
+                            <div className="products-identity">
+                              <span className="products-image-placeholder">
+                                <BrandLogo
+                                  provider={
+                                    work.decision.source.identity.account
+                                      .provider
+                                  }
+                                  decorative
+                                />
+                              </span>
+                              <div>
+                                <strong>
+                                  {productName(work.decision.source)}
+                                </strong>
+                                <small>
+                                  {work.decision.source.identity.offer_id || ""}
+                                </small>
+                              </div>
+                            </div>
+                          </td>
+                          <td>
+                            <span className="products-history-direction">
+                              <BrandLogo
+                                provider={
+                                  work.decision.source.identity.account.provider
+                                }
+                                decorative
+                              />
+                              {providerLabel(
+                                work.decision.source.identity.account.provider,
+                              )}{" "}
+                              <span>→</span>
+                              <BrandLogo
+                                provider={work.command.target.account.provider}
+                                decorative
+                              />
+                              {providerLabel(
+                                work.command.target.account.provider,
+                              )}
+                            </span>
+                          </td>
+                          <td>
+                            {new Date(operation.created_at).toLocaleString(
+                              "ru-RU",
+                              {
+                                day: "numeric",
+                                month: "short",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              },
+                            )}
+                          </td>
+                          <td>
+                            <span
+                              className={`catalog-state ${work.state === "RECONCILED" ? "success" : ["UNKNOWN", "REJECTED", "BLOCKED"].includes(work.state) ? "warning" : ""}`}
+                            >
+                              {stateLabel(work.state)}
+                            </span>
+                          </td>
+                          <td>
+                            <button
+                              className="secondary"
+                              onClick={() => setSelected(operation.id)}
+                            >
+                              Подробнее
+                            </button>
+                          </td>
+                        </tr>
+                      )),
+                  )}
                 </tbody>
               </table>
             </div>
@@ -410,7 +624,11 @@ export function CatalogSyncOperations({ scope }: { scope: Scope }) {
               .map((operation) => (
                 <IntegrationDialog
                   key={operation.id}
-                  title="Детали отправки"
+                  title={
+                    operation.targets.some((w) => w.state === "UNKNOWN")
+                      ? "Проверить результат отправки"
+                      : "Детали отправки"
+                  }
                   className="products-history-dialog catalog-sync"
                   onClose={() => setSelected(null)}
                 >
@@ -418,14 +636,28 @@ export function CatalogSyncOperations({ scope }: { scope: Scope }) {
                     Отправка от{" "}
                     {new Date(operation.created_at).toLocaleString("ru-RU")}
                   </p>
-                  {operation.targets.map((work) => (
-                    <WorkResult
-                      key={work.id}
-                      work={work}
-                      scope={scope}
-                      onRefresh={() => void query.refetch()}
-                    />
-                  ))}
+                  {operation.targets
+                    .filter(
+                      (work) =>
+                        !identity ||
+                        [
+                          work.decision.source.identity,
+                          work.command.target,
+                          work.created_target,
+                        ].some(
+                          (i) =>
+                            i?.account.provider === identity.provider &&
+                            i.id === identity.id,
+                        ),
+                    )
+                    .map((work) => (
+                      <WorkResult
+                        key={work.id}
+                        work={work}
+                        scope={scope}
+                        onRefresh={() => void query.refetch()}
+                      />
+                    ))}
                   {!operation.targets.length && (
                     <p>Данные по товарам пока не получены. Обновите статусы.</p>
                   )}
@@ -442,29 +674,37 @@ export function CatalogSyncOperations({ scope }: { scope: Scope }) {
                   </details>
                 </IntegrationDialog>
               ))}
-          <div className="catalog-actions">
-            <button
-              className="secondary"
-              disabled={!history.length || query.isFetching}
-              onClick={() => {
-                setCursor(history[history.length - 1]);
-                setHistory(history.slice(0, -1));
-              }}
-            >
-              Предыдущие отправки
-            </button>
-            <button
-              className="secondary"
-              disabled={!query.data.next_cursor || query.isFetching}
-              onClick={() => {
-                setHistory([...history, cursor]);
-                setCursor(query.data!.next_cursor!);
-              }}
-            >
-              Следующие отправки
-            </button>
-          </div>
+          {!operationID && (
+            <div className="catalog-actions">
+              <button
+                className="secondary"
+                disabled={!history.length || query.isFetching}
+                onClick={() => {
+                  setCursor(history[history.length - 1]);
+                  setHistory(history.slice(0, -1));
+                }}
+              >
+                Предыдущие отправки
+              </button>
+              <button
+                className="secondary"
+                disabled={!query.data.next_cursor || query.isFetching}
+                onClick={() => {
+                  setHistory([...history, cursor]);
+                  setCursor(query.data!.next_cursor!);
+                }}
+              >
+                Следующие отправки
+              </button>
+            </div>
+          )}
         </>
+      )}
+      {operationID && (
+        <p className="products-notice">
+          Принятие сервисом ещё не означает, что изменения проверены.{" "}
+          <a href="/products/history">История отправок</a>
+        </p>
       )}
     </section>
   );

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { BrandLogo } from "./BrandLogo";
 import { CatalogSyncValue } from "./CatalogSyncValue";
 import {
   displayValue,
@@ -149,13 +150,15 @@ export function CatalogSyncPreview({
   busy,
   blocked,
   onApprove,
+  initialSelected = [],
 }: {
   preview: CatalogPreview;
   busy: boolean;
   blocked: boolean;
   onApprove: (enrollmentIDs: string[]) => void;
+  initialSelected?: string[];
 }) {
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selected, setSelected] = useState<string[]>(initialSelected);
   const [acknowledged, setAcknowledged] = useState(false);
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -172,7 +175,7 @@ export function CatalogSyncPreview({
   const disabled = busy || blocked || expired;
   return (
     <section
-      className="catalog-section"
+      className="catalog-section products-preview"
       aria-labelledby="catalog-preview-title"
     >
       <h2 id="catalog-preview-title">Проверьте изменения перед отправкой</h2>
@@ -195,58 +198,118 @@ export function CatalogSyncPreview({
           В проверке нет товаров. Выберите товары и повторите проверку.
         </p>
       )}
-      {preview.decisions.map((decision) => (
-        <article className="catalog-decision" key={decision.enrollment_id}>
-          <header>
-            <h3>{productName(decision.source)}</h3>
-            {decision.target_absent && (
-              <span className="catalog-warning">Будет создан новый товар</span>
-            )}
-          </header>
-          <DecisionDiff decision={decision} />
+      <div className="products-preview-layout">
+        <div className="products-preview-items">
+          <div className="products-preview-summary">
+            <span>
+              <b>{preview.decisions.length}</b> выбраны
+            </span>
+            <span>
+              <b>{preview.decisions.filter(canApprove).length}</b> готовы
+            </span>
+            <span>
+              <b>
+                {
+                  preview.decisions.filter(
+                    (d) => !canApprove(d) && !d.plan.noop,
+                  ).length
+                }
+              </b>{" "}
+              требуют проверки
+            </span>
+          </div>
+          {preview.decisions.map((decision) => (
+            <article className="catalog-decision" key={decision.enrollment_id}>
+              <header>
+                <span className="products-image-placeholder">
+                  <BrandLogo
+                    provider={decision.source.identity.account.provider}
+                    decorative
+                  />
+                </span>
+                <h3>{productName(decision.source)}</h3>
+                <span
+                  className={`mapping-chip ${canApprove(decision) ? "ok" : "warning"}`}
+                >
+                  {canApprove(decision)
+                    ? "Готов к передаче"
+                    : decision.plan.noop
+                      ? "Без изменений"
+                      : "Нужна проверка"}
+                </span>
+                {decision.target_absent && (
+                  <span className="catalog-warning">
+                    Будет создан новый товар
+                  </span>
+                )}
+              </header>
+              <DecisionDiff decision={decision} />
+              <label className="catalog-check">
+                <input
+                  type="checkbox"
+                  checked={selected.includes(decision.enrollment_id)}
+                  disabled={disabled || !canApprove(decision)}
+                  onChange={(event) => {
+                    setSelected(
+                      event.target.checked
+                        ? [...selected, decision.enrollment_id]
+                        : selected.filter(
+                            (id) => id !== decision.enrollment_id,
+                          ),
+                    );
+                    setAcknowledged(false);
+                  }}
+                />
+                Подтвердить изменения товара {productName(decision.source)}
+              </label>
+            </article>
+          ))}
+        </div>
+        <aside className="products-preview-approval">
+          <h3>Перед отправкой</h3>
+          <p className="catalog-success">
+            <b>{preview.decisions.filter(canApprove).length}</b> готовы к
+            передаче
+          </p>
+          <p className="catalog-warning">
+            <b>
+              {
+                preview.decisions.filter((d) => !canApprove(d) && !d.plan.noop)
+                  .length
+              }
+            </b>{" "}
+            требуют проверки
+          </p>
           <label className="catalog-check">
             <input
               type="checkbox"
-              checked={selected.includes(decision.enrollment_id)}
-              disabled={disabled || !canApprove(decision)}
-              onChange={(event) => {
-                setSelected(
-                  event.target.checked
-                    ? [...selected, decision.enrollment_id]
-                    : selected.filter((id) => id !== decision.enrollment_id),
-                );
-                setAcknowledged(false);
-              }}
+              checked={acknowledged}
+              disabled={disabled || !chosen.length}
+              onChange={(event) => setAcknowledged(event.target.checked)}
             />
-            Подтвердить изменения товара {productName(decision.source)}
+            Я проверил изменения выбранных товаров и разрешаю отправить их в
+            указанные сервисы
           </label>
-        </article>
-      ))}
-      <label className="catalog-check">
-        <input
-          type="checkbox"
-          checked={acknowledged}
-          disabled={disabled || !chosen.length}
-          onChange={(event) => setAcknowledged(event.target.checked)}
-        />
-        Я проверил изменения выбранных товаров и разрешаю отправить их в
-        указанные сервисы
-      </label>
-      <button
-        disabled={disabled || !acknowledged || !chosen.length}
-        onClick={() => {
-          if (
-            Date.parse(preview.expires_at) > Date.now() &&
-            acknowledged &&
-            chosen.length
-          )
-            onApprove(chosen);
-        }}
-      >
-        {busy
-          ? "Записываем подтверждение…"
-          : `Отправить изменения (${chosen.length})`}
-      </button>
+          <button
+            disabled={disabled || !acknowledged || !chosen.length}
+            onClick={() => {
+              if (
+                Date.parse(preview.expires_at) > Date.now() &&
+                acknowledged &&
+                chosen.length
+              )
+                onApprove(chosen);
+            }}
+          >
+            {busy
+              ? "Записываем подтверждение…"
+              : `Отправить изменения (${chosen.length})`}
+          </button>
+          <a className="products-back-link" href="/products">
+            ← Вернуться к товарам
+          </a>
+        </aside>
+      </div>
     </section>
   );
 }

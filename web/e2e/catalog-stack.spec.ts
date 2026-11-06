@@ -259,6 +259,8 @@ async function creationFlow(page: Page) {
     },
   });
   expect(await providerState(page)).toMatchObject({ moy_creates: 0 });
+  await page.getByLabel(`Выбрать ${unmappedName}`, { exact: true }).check();
+  await page.getByRole("button", { name: "Продолжить с 1 товарами →" }).click();
   await expect(
     page.getByText("Будет создан новый товар", { exact: true }),
   ).toBeVisible();
@@ -334,7 +336,7 @@ async function configureMixedFields(page: Page) {
       response.request().method() === "POST",
   );
   await page
-    .getByRole("button", { name: "Сохранить настройки", exact: true })
+    .getByRole("button", { name: "Сохранить правила", exact: true })
     .click();
   const response = await saved;
   expect(response.status(), await response.text()).toBe(200);
@@ -347,7 +349,7 @@ async function configureMixedFields(page: Page) {
     },
   });
   await expect(
-    page.getByRole("button", { name: "Сохранить настройки", exact: true }),
+    page.getByRole("button", { name: "Сохранить правила", exact: true }),
   ).toBeDisabled();
 }
 

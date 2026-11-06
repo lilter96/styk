@@ -54,12 +54,14 @@ export function ProductReview({
   close,
   confirmation,
   next,
+  initialTarget,
 }: {
   product: Product;
   scope: Scope;
   close: () => void;
   confirmation: Confirmation;
   next?: () => void;
+  initialTarget?: MappingTarget;
 }) {
   const client = useQueryClient();
   const [search, setSearch] = useState("");
@@ -78,7 +80,9 @@ export function ProductReview({
     return () => clearTimeout(timer);
   }, [search]);
   const [historyOffset, setHistoryOffset] = useState(0);
-  const [selected, setSelected] = useState<MappingTarget | null>(null);
+  const [selected, setSelected] = useState<MappingTarget | null>(
+    initialTarget || null,
+  );
   const [evidence, setEvidence] = useState("OPERATOR_ATTESTED");
   const [reviewID, setReviewID] = useState("");
   const [creating, setCreating] = useState(false);
@@ -193,7 +197,7 @@ export function ProductReview({
       title="Сопоставить товар"
       onClose={close}
       closeLabel="Закрыть сопоставление"
-      className="product-matching-dialog"
+      className="product-matching-dialog products-product-matching"
       initialFocus=".matching-search-line input"
     >
       <section className="mapping-review" aria-label="Проверка соответствия">
@@ -203,6 +207,48 @@ export function ProductReview({
         <div className="matching-workspace">
           <OzonProductPanel product={product} />
           <div className="matching-right">
+            {!!product.candidates.length && (
+              <section className="products-match-suggestions">
+                <h3>Предложенные соответствия</h3>
+                <p>
+                  Похожие названия не связываем автоматически. Проверьте
+                  конкретную пару.
+                </p>
+                {product.candidates.map((c) => (
+                  <button
+                    key={`${c.kind}:${c.id}`}
+                    className={`products-suggestion ${selected?.id === c.id && selected.kind === c.kind ? "selected" : ""}`}
+                    aria-pressed={
+                      selected?.id === c.id && selected.kind === c.kind
+                    }
+                    onClick={() => {
+                      setSelected({
+                        id: c.id,
+                        kind: c.kind,
+                        name: c.name || undefined,
+                        article: c.article || "",
+                        code: c.code || "",
+                        parent_id: c.parent_id || undefined,
+                      });
+                      setReviewID("");
+                      setAcknowledge(false);
+                      setReviewError("");
+                    }}
+                  >
+                    <span className="matching-radio" />
+                    <span>
+                      <b>{c.name || c.id}</b>
+                      <small>Артикул: {c.article || "Не указан"}</small>
+                    </span>
+                    <span className="mapping-chip warning">
+                      {c.evidence.some((e) => e === "article" || e === "code")
+                        ? "Артикул или код совпал"
+                        : "Предложение"}
+                    </span>
+                  </button>
+                ))}
+              </section>
+            )}
             <TargetSearchPanel
               search={search}
               setSearch={setSearch}
@@ -320,6 +366,39 @@ export function ProductReview({
             </details>
           </div>
         </div>
+        {selected && (
+          <section className="products-match-comparison">
+            <h3>Сравнение выбранных данных</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th />
+                  <th>Ozon</th>
+                  <th>МойСклад</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th>Название</th>
+                  <td>{product.name || "Не указано"}</td>
+                  <td>{selected.name || "Не указано"}</td>
+                </tr>
+                <tr>
+                  <th>Артикул</th>
+                  <td>{product.offer_id || "Не указан"}</td>
+                  <td>{selected.article || selected.code || "Не указан"}</td>
+                </tr>
+              </tbody>
+            </table>
+            {product.offer_id !== selected.article &&
+              product.offer_id !== selected.code && (
+                <p className="catalog-warning">
+                  Артикулы отличаются. Убедитесь, что это один и тот же товар:
+                  модель, характеристики и комплектация.
+                </p>
+              )}
+          </section>
+        )}
         {selected && (
           <ProductMatchingConfirmation
             selected={selected}

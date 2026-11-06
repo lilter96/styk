@@ -51,9 +51,11 @@ function observedText(value?: CatalogValue) {
 export function CatalogSyncCreation({
   enrollment,
   onChange,
+  step = "all",
 }: {
   enrollment: Enrollment;
   onChange: (enrollment: Enrollment) => void;
+  step?: "all" | "basic" | "commercial";
 }) {
   const creation = enrollment.create!;
   const ozon = enrollment.target.account.provider === "ozon";
@@ -77,25 +79,29 @@ export function CatalogSyncCreation({
         проверит отсутствие такого товара. Название и описание взяты из
         выбранного товара — проверьте их.
       </p>
-      <label>
-        Название нового товара
-        <input
-          value={observedText(creation.values.name)}
-          onChange={(event) => setValue("name", event.target.value)}
-        />
-      </label>
-      {!observedText(creation.values.name).trim() && (
-        <p className="catalog-warning">Укажите название товара.</p>
+      {step !== "commercial" && (
+        <>
+          <label>
+            Название нового товара
+            <input
+              value={observedText(creation.values.name)}
+              onChange={(event) => setValue("name", event.target.value)}
+            />
+          </label>
+          {!observedText(creation.values.name).trim() && (
+            <p className="catalog-warning">Укажите название товара.</p>
+          )}
+          <label>
+            Описание нового товара
+            <textarea
+              rows={3}
+              value={observedText(creation.values.description)}
+              onChange={(event) => setValue("description", event.target.value)}
+            />
+          </label>
+        </>
       )}
-      <label>
-        Описание нового товара
-        <textarea
-          rows={3}
-          value={observedText(creation.values.description)}
-          onChange={(event) => setValue("description", event.target.value)}
-        />
-      </label>
-      {ozon && (
+      {ozon && step !== "basic" && (
         <>
           <label>
             Артикул нового товара в Ozon
@@ -190,14 +196,6 @@ export function CatalogSyncCreation({
           </label>
         </>
       )}
-      <details>
-        <summary>Идентификатор создания</summary>
-        <p>
-          Этот идентификатор сохранится с запросом и позволит сверить результат
-          без повторного создания.
-        </p>
-        <p>{creation.external_code}</p>
-      </details>
     </div>
   );
 }

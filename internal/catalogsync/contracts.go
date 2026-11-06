@@ -206,10 +206,13 @@ type Completion struct {
 }
 
 type PageRequest struct {
-	Provider catalog.Provider `json:"provider,omitempty"`
-	Limit    int              `json:"limit,omitempty"`
-	Cursor   string           `json:"cursor,omitempty"`
-	Search   string           `json:"search,omitempty"`
+	State           string           `json:"state,omitempty"`
+	ProductProvider catalog.Provider `json:"product_provider,omitempty"`
+	ProductID       string           `json:"product_id,omitempty"`
+	Provider        catalog.Provider `json:"provider,omitempty"`
+	Limit           int              `json:"limit,omitempty"`
+	Cursor          string           `json:"cursor,omitempty"`
+	Search          string           `json:"search,omitempty"`
 }
 
 type ProductSummary struct {
@@ -227,8 +230,9 @@ type ProductPage struct {
 }
 
 type HistoryPage struct {
-	Operations []Operation `json:"operations"`
-	NextCursor string      `json:"next_cursor,omitempty"`
+	Summary    map[string]int64 `json:"summary,omitempty"`
+	Operations []Operation      `json:"operations"`
+	NextCursor string           `json:"next_cursor,omitempty"`
 }
 
 type Configurer interface {

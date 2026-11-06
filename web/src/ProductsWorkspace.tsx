@@ -1,10 +1,10 @@
-import { useRef, useState } from "react";
-import { Link, NavLink, useLocation } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, params, type Report } from "./api";
 import type { Confirmation, Scope } from "./Confirmation";
 import { ProductMappingPage } from "./ProductMappingPage";
 import { ProductAutoMatching } from "./ProductAutoMatching";
+import { ProductImportMenu } from "./ProductImportMenu";
 import { ProductImport } from "./ProductImport";
 import { CatalogSync } from "./CatalogSync";
 import { CatalogSyncOperations } from "./CatalogSyncOperations";
@@ -17,6 +17,7 @@ import {
   type CatalogConfig,
 } from "./CatalogSyncTypes";
 import "./products-workspace.css";
+import "./products-reference.css";
 
 export function ProductsWorkspace({
   scope,
@@ -29,7 +30,19 @@ export function ProductsWorkspace({
   moyLabel?: string;
   ozonLabel?: string;
 }) {
-  const { pathname } = useLocation();
+  const { pathname, state, search } = useLocation();
+  const navigate = useNavigate();
+  const operationID = new URLSearchParams(search).get("operation") || undefined;
+  const requested = state as {
+    scope?: Scope;
+    products?: { id: string; offer: string }[];
+  } | null;
+  const initialProducts =
+    requested?.scope?.tenant === scope.tenant &&
+    requested.scope.moy === scope.moy &&
+    requested.scope.ozon === scope.ozon
+      ? requested.products
+      : undefined;
   const ready = Boolean(scope.tenant && scope.moy && scope.ozon);
   const report = useQuery({
     queryKey: ["diagnostics", scope],
@@ -53,6 +66,7 @@ export function ProductsWorkspace({
     ![
       "",
       "rules",
+      "rules/automation",
       "history",
       "transfer",
       "import",
@@ -69,60 +83,80 @@ export function ProductsWorkspace({
     );
   const importPage = route.startsWith("import");
   const matchingPage = route === "matching";
-  const title = matchingPage
-    ? "Автосопоставление товаров"
-    : route === "import"
-      ? "Импорт товаров"
-      : route === "import/ozon-to-moysklad"
-        ? "Из Ozon в МойСклад"
-        : route === "import/moysklad-to-ozon"
-          ? "Из МойСклад в Ozon"
-          : "Товары";
+  const automationPage = route === "rules/automation";
+  const primaryPage = ["", "rules", "history"].includes(route);
+  const title = automationPage
+    ? "Автоматическая передача"
+    : route === "transfer"
+      ? operationID
+        ? "Передача изменений"
+        : "Проверьте изменения перед отправкой"
+      : matchingPage
+        ? "Автосопоставление товаров"
+        : route === "import"
+          ? "Импорт товаров"
+          : route === "import/ozon-to-moysklad"
+            ? "Выберите товары для создания в МойСклад"
+            : route === "import/moysklad-to-ozon"
+              ? "Проверьте товары перед созданием в Ozon"
+              : "Товары";
   return (
     <div className="products-workspace">
-      {route && (
+      {!primaryPage && (
         <nav className="products-breadcrumb" aria-label="Путь к разделу">
           <Link to="/products">Товары</Link>
           <span>/</span>
           <span>
-            {matchingPage
-              ? "Автосопоставление"
-              : importPage
-                ? "Импорт"
-                : route === "rules"
-                  ? "Правила синхронизации"
-                  : route === "history"
-                    ? "История отправок"
-                    : "Проверка изменений"}
+            {automationPage
+              ? "Правила синхронизации / Автоматизация"
+              : matchingPage
+                ? "Автосопоставление"
+                : importPage
+                  ? "Импорт"
+                  : route === "rules"
+                    ? "Правила синхронизации"
+                    : route === "history"
+                      ? "История отправок"
+                      : "Проверка изменений"}
           </span>
         </nav>
       )}
       <header className="products-heading">
         <h1>{title}</h1>
         <p>
-          {importPage
-            ? "Переносите товары между сервисами. Перед созданием проверим соответствия и обязательные поля."
-            : "Управляйте соответствиями и изменениями товаров в одном месте"}
+          {automationPage
+            ? "Разрешите обновлять конкретные поля у выбранных связанных товаров"
+            : matchingPage
+              ? "STYK найдёт совпадения, а неоднозначные варианты предложит проверить."
+              : route === "rules"
+                ? "Правила синхронизации"
+                : route === "transfer"
+                  ? operationID
+                    ? "Запросы поставлены в обработку. Проверим результат в каждом сервисе."
+                    : "До подтверждения товары не изменятся ни в Ozon, ни в МойСклад"
+                  : importPage
+                    ? "Переносите товары между сервисами. Перед созданием проверим соответствия и обязательные поля."
+                    : "Управляйте соответствиями и изменениями товаров в одном месте"}
         </p>
       </header>
       <div className="products-account-pair">
-        <span>
+        <span title={moyLabel ? `МойСклад: ${moyLabel}` : "МойСклад"}>
           <BrandLogo provider="moysklad" decorative />
           МойСклад
           {moyLabel && (
-            <>
+            <span className="products-account-name">
               : <b>{moyLabel}</b>
-            </>
+            </span>
           )}
         </span>
         <span aria-hidden="true">↔</span>
-        <span>
+        <span title={ozonLabel ? `Ozon: ${ozonLabel}` : "Ozon"}>
           <BrandLogo provider="ozon" decorative />
           Ozon
           {ozonLabel && (
-            <>
+            <span className="products-account-name">
               : <b>{ozonLabel}</b>
-            </>
+            </span>
           )}
         </span>
       </div>
@@ -133,10 +167,10 @@ export function ProductsWorkspace({
         </StatePanel>
       ) : (
         <>
-          {!importPage && !matchingPage && (
+          {primaryPage && route !== "rules" && (
             <ProductsSummary report={report.data} config={config.data} />
           )}
-          {!importPage && !matchingPage && (
+          {primaryPage && (
             <div className="products-toolbar">
               <nav className="products-tabs" aria-label="Товары">
                 <NavLink end to="/products">
@@ -145,16 +179,22 @@ export function ProductsWorkspace({
                 <NavLink to="/products/rules">Правила синхронизации</NavLink>
                 <NavLink to="/products/history">История отправок</NavLink>
               </nav>
-              <div className="products-actions">
-                <Link className="secondary" to="/products/matching">
-                  <Icon name="search" size="button" />
-                  Автосопоставление
-                </Link>
-                <ImportMenu />
-                <Link className="text-action" to="/products/transfer">
-                  Проверить изменения
-                </Link>
-              </div>
+              {route === "" && (
+                <div className="products-actions">
+                  <Link className="secondary" to="/products/matching">
+                    <Icon name="search" size="button" />
+                    Автосопоставление
+                  </Link>
+                  <ProductImportMenu />
+                  <Link
+                    className="secondary products-settings-link"
+                    aria-label="Настройки передачи"
+                    to="/products/rules/automation"
+                  >
+                    <Icon name="settings" size="button" />
+                  </Link>
+                </div>
+              )}
             </div>
           )}
           {route === "" && (
@@ -168,15 +208,26 @@ export function ProductsWorkspace({
             <ProductAutoMatching scope={scope} confirmation={confirmation} />
           )}
           {route === "rules" && <CatalogSync scope={scope} view="rules" />}
+          {automationPage && <CatalogSync scope={scope} view="automation" />}
           {route === "history" && (
             <div className="catalog-sync">
               <CatalogSyncOperations scope={scope} />
             </div>
           )}
           {route === "transfer" && (
-            <CatalogSync scope={scope} view="transfer" />
+            <CatalogSync
+              scope={scope}
+              view="transfer"
+              operationID={operationID}
+              onApproved={(id) =>
+                navigate(
+                  `/products/transfer?operation=${encodeURIComponent(id)}`,
+                )
+              }
+              initialProducts={initialProducts}
+            />
           )}
-          {route === "import" && <ProductImportHub />}
+          {route === "import" && <ProductImportHub scope={scope} />}
           {route === "import/ozon-to-moysklad" && (
             <ProductImport
               key={JSON.stringify([scope, "ozon"])}
@@ -219,77 +270,35 @@ function ProductsSummary({
     <div className="products-summary" aria-label="Состояние товаров">
       <span>
         <i className="products-dot success" />
-        <b>{valid ? confirmed : "—"}</b> сопоставлено в Ozon
+        <span className="products-summary-value">
+          <b>{valid ? confirmed : "—"}</b>
+          <span>связано в Ozon</span>
+        </span>
       </span>
       <span>
         <i className="products-dot warning" />
-        <b>{valid ? total - confirmed : "—"}</b> без подтверждённой пары
+        <span className="products-summary-value">
+          <b>{valid ? total - confirmed : "—"}</b>
+          <span>в Ozon без пары</span>
+        </span>
       </span>
-      <span>
+      <span className="products-summary-mode">
         <Icon name="catalog" size="button" />
-        {!config
-          ? "Настройки передачи загружаются"
-          : automatic
-            ? "Автопередача для выбранных товаров"
-            : !config.enabled || !config.test_enabled
-              ? "Передача выключена"
-              : "Передача по подтверждению"}
+        <span>
+          {!config
+            ? "Настройки передачи загружаются"
+            : automatic
+              ? "Автопередача включена"
+              : !config.enabled || !config.test_enabled
+                ? "Передача выключена"
+                : "Передача по подтверждению"}
+        </span>
       </span>
     </div>
   );
 }
 
-function ImportMenu() {
-  const [open, setOpen] = useState(false);
-  const trigger = useRef<HTMLButtonElement>(null);
-  return (
-    <div
-      className="products-import-menu"
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
-      }}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          setOpen(false);
-          trigger.current?.focus();
-        }
-      }}
-    >
-      <button
-        ref={trigger}
-        className="primary-button"
-        aria-expanded={open}
-        aria-controls="products-import-directions"
-        onClick={() => setOpen(!open)}
-      >
-        Импорт товаров <Icon name="chevron-down" size="button" />
-      </button>
-      {open && (
-        <nav id="products-import-directions" aria-label="Направление импорта">
-          <Link
-            to="/products/import/ozon-to-moysklad"
-            onClick={() => setOpen(false)}
-          >
-            <BrandLogo provider="ozon" decorative />
-            Ozon → МойСклад
-          </Link>
-          <Link
-            to="/products/import/moysklad-to-ozon"
-            onClick={() => setOpen(false)}
-          >
-            <BrandLogo provider="moysklad" decorative />
-            МойСклад → Ozon
-          </Link>
-          <Link to="/products/import" onClick={() => setOpen(false)}>
-            Об импорте товаров
-          </Link>
-        </nav>
-      )}
-    </div>
-  );
-}
-
-function ProductImportHub() {
+function ProductImportHub({ scope }: { scope: Scope }) {
   return (
     <>
       <div className="products-import-hub">
@@ -313,6 +322,7 @@ function ProductImportHub() {
                 ? "Создайте отсутствующие товары в МойСклад. Проверим существующие связи и результат предыдущих отправок."
                 : "Подготовьте карточки Ozon: категорию, цену, НДС, габариты и обязательные характеристики."}
             </p>
+            <ImportDirectionSummary scope={scope} provider={provider} />
             <Link
               className="primary-button"
               to={`/products/import/${provider === "ozon" ? "ozon-to-moysklad" : "moysklad-to-ozon"}`}
@@ -333,5 +343,38 @@ function ProductImportHub() {
         подтверждения.<Link to="/products/history">История отправок</Link>
       </p>
     </>
+  );
+}
+
+function ImportDirectionSummary({
+  scope,
+  provider,
+}: {
+  scope: Scope;
+  provider: "ozon" | "moysklad";
+}) {
+  const query = useQuery({
+    queryKey: ["import-summary", scope, provider],
+    queryFn: ({ signal }) =>
+      api<import("./CatalogSyncTypes").ProductPage>(
+        catalogURL("products", scope, { provider, limit: "1" }),
+        signal,
+      ),
+    retry: false,
+  });
+  const summary = query.data?.summary;
+  return (
+    <div className={`products-hub-summary ${provider}`} aria-live="polite">
+      {summary ? (
+        <>
+          <b>{summary.linked}</b> уже связаны <span>·</span>
+          <b>{summary.to_review}</b> к проверке
+        </>
+      ) : query.isError ? (
+        "Сводка недоступна — откройте список товаров"
+      ) : (
+        "Загружаем состояние каталога…"
+      )}
+    </div>
   );
 }

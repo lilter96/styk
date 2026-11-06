@@ -1,4 +1,7 @@
 import { useRef, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
+import { BrandLogo } from "./BrandLogo";
+import { Icon } from "./UI";
 import { post } from "./api";
 import {
   CatalogSyncAutomation,
@@ -28,12 +31,15 @@ export function CatalogSyncConfig({
   config,
   onSaved,
   onDirty,
+  automationOnly = false,
 }: {
   scope: Scope;
   config: CatalogConfig;
   onSaved: (config: CatalogConfig) => void;
   onDirty: (dirty: boolean) => void;
+  automationOnly?: boolean;
 }) {
+  const [preset, setPreset] = useState<string | null>(null);
   const [policies, setPolicies] = useState(config.rules);
   const [enabled, setEnabled] = useState(config.enabled);
   const [targets, setTargets] = useState(config.targets);
@@ -76,6 +82,7 @@ export function CatalogSyncConfig({
   );
   function change(next: Record<string, Authority>) {
     setAutomaticConsent(false);
+    setPreset("fields");
     setPolicies(next);
     onDirty(isDirty(next));
   }
@@ -91,6 +98,7 @@ export function CatalogSyncConfig({
       ...policies,
       ...Object.fromEntries(writable.map((field) => [field, authority])),
     });
+    setPreset(authority === "MOYSKLAD_AUTHORITATIVE" ? "moy" : "ozon");
   }
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -144,164 +152,324 @@ export function CatalogSyncConfig({
       ? capability.writable
       : ["name", "description"].includes(field);
   }
+  function reset() {
+    setPreset(null);
+    setPolicies(config.rules);
+    setEnabled(config.enabled);
+    setTargets(config.targets);
+    setInterval(config.interval_seconds);
+    setAutomaticConsent(false);
+    onDirty(false);
+  }
+  const mode =
+    preset ||
+    (fields
+      .filter(visibleField)
+      .every((f) => policies[f] === "MOYSKLAD_AUTHORITATIVE")
+      ? "moy"
+      : fields
+            .filter(visibleField)
+            .every((f) => policies[f] === "OZON_AUTHORITATIVE")
+        ? "ozon"
+        : "fields");
   function renderPolicy(field: string) {
-    const capability = config.fields?.find((item) => item.field === field);
+    const authority = policies[field] || "IGNORE";
+    const destination =
+      authority === "MOYSKLAD_AUTHORITATIVE"
+        ? "ozon"
+        : authority === "OZON_AUTHORITATIVE"
+          ? "moysklad"
+          : null;
     return (
-      <div className="catalog-policy" key={field}>
-        <label htmlFor={`catalog-policy-${field}`}>{fieldLabel(field)}</label>
-        <select
-          id={`catalog-policy-${field}`}
-          value={policies[field] || "IGNORE"}
-          disabled={busy || !visibleField(field)}
-          onChange={(event) =>
-            change({ ...policies, [field]: event.target.value as Authority })
-          }
-        >
-          {authorities.map((authority) => (
-            <option key={authority.value} value={authority.value}>
-              {authority.label}
-            </option>
-          ))}
-        </select>
-        {capability && !capability.writable && (
-          <small>
-            Только для просмотра. Передача этого поля пока не поддерживается.
-          </small>
-        )}
-        {policies[field] === "MANUAL" && (
-          <small>
-            Фактическое значение нужно указать для выбранного товара.
-          </small>
-        )}
-      </div>
+      <tr key={field}>
+        <th scope="row">
+          <span className="products-field-icon">
+            {field === "name" ? "T" : "≡"}
+          </span>
+          {fieldLabel(field)}
+        </th>
+        <td>
+          <label className="products-authority">
+            <span className="products-sr">Источник: {fieldLabel(field)}</span>
+            {destination && (
+              <BrandLogo
+                provider={destination === "ozon" ? "moysklad" : "ozon"}
+                decorative
+              />
+            )}
+            <select
+              id={`catalog-policy-${field}`}
+              aria-label={fieldLabel(field)}
+              value={authority}
+              disabled={busy || !visibleField(field)}
+              onChange={(e) =>
+                change({ ...policies, [field]: e.target.value as Authority })
+              }
+            >
+              {authorities.map((a) => (
+                <option key={a.value} value={a.value}>
+                  {a.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </td>
+        <td>
+          <span className="products-direction-arrow">→</span>
+        </td>
+        <td>
+          {destination ? (
+            <span className="products-destination">
+              <BrandLogo provider={destination} decorative />
+              {destination === "ozon" ? "Ozon" : "МойСклад"}
+            </span>
+          ) : (
+            <span className="products-muted">
+              {authority === "IGNORE" ? "Не передавать" : "По выбору оператора"}
+            </span>
+          )}
+        </td>
+        <td>
+          <span className={`mapping-chip ${destination ? "ok" : ""}`}>
+            {destination
+              ? "После подтверждения"
+              : authority === "MANUAL"
+                ? "Вручную"
+                : "Выключено"}
+          </span>
+        </td>
+      </tr>
     );
   }
-  return (
-    <section className="catalog-section" aria-labelledby="catalog-config-title">
-      <h2 id="catalog-config-title">Источник данных для каждого поля</h2>
-      <p>
-        Изменение в выбранном источнике передаётся во второй сервис после
-        проверки и подтверждения.
-      </p>
-      <form onSubmit={(event) => void save(event)}>
-        <label className="catalog-check">
+  const saveControls = (
+    <>
+      {needsConsent && (
+        <label className="catalog-check catalog-warning">
           <input
             type="checkbox"
-            checked={enabled}
+            checked={automaticConsent}
             disabled={busy}
-            onChange={(event) => {
-              setAutomaticConsent(false);
-              setEnabled(event.target.checked);
-              onDirty(isDirty(policies, event.target.checked));
-            }}
+            onChange={(e) => setAutomaticConsent(e.target.checked)}
           />
-          Разрешить синхронизацию каталога для выбранных аккаунтов
+          Разрешаю автоматическую передачу выбранных полей указанных товаров без
+          отдельного подтверждения каждой отправки
         </label>
-        <p>
-          Настройка не подтверждает изменения товаров. Возможность отправки
-          зависит от подключения и разрешений аккаунта.
+      )}
+      {automaticInvalid && (
+        <p className="catalog-error" role="alert">
+          Выберите хотя бы одно поле для каждого товара с автоматической
+          передачей.
         </p>
-        <CatalogSyncAutomation
-          config={config}
-          targets={targets}
-          policies={policies}
-          enabled={enabled}
-          busy={busy}
-          onChange={(next) => {
-            setAutomaticConsent(false);
-            setTargets(next);
-            onDirty(isDirty(policies, enabled, interval, next));
-          }}
-        />
-        <label>
-          Интервал автоматических проверок, секунд
-          <input
-            type="number"
-            min={30}
-            max={86400}
-            step={1}
-            required
-            value={Number.isNaN(interval) ? "" : interval}
-            disabled={busy}
-            onChange={(event) => {
-              const next = event.target.valueAsNumber;
-              setInterval(next);
-              onDirty(isDirty(policies, enabled, next));
+      )}
+      <div className="products-save-bar">
+        <span role="status">
+          <Icon name={dirty ? "diagnostics" : "check"} size="button" />
+          {dirty ? "Есть несохранённые изменения" : "Изменения сохранены"}
+        </span>
+        <button
+          type="button"
+          className="secondary"
+          disabled={busy || !dirty}
+          onClick={reset}
+        >
+          Отменить
+        </button>
+        <button
+          disabled={
+            busy ||
+            !dirty ||
+            automaticInvalid ||
+            (needsConsent && !automaticConsent)
+          }
+        >
+          {busy
+            ? "Сохраняем…"
+            : automationOnly
+              ? "Сохранить разрешения"
+              : "Сохранить правила"}
+        </button>
+      </div>
+      {error && (
+        <p className="catalog-error" role="alert">
+          {error}
+        </p>
+      )}
+    </>
+  );
+  return (
+    <section
+      className={`catalog-section products-rules ${automationOnly ? "products-automation-page" : ""}`}
+      aria-labelledby="catalog-config-title"
+    >
+      <form onSubmit={(event) => void save(event)}>
+        {!automationOnly && (
+          <>
+            <h2 id="catalog-config-title">Откуда брать данные о товарах</h2>
+            <p>Выберите, какие значения считать правильными в каждом сервисе</p>
+            <div className="products-rules-enable">
+              <label className="products-switch">
+                <input
+                  type="checkbox"
+                  aria-label="Разрешить синхронизацию каталога для выбранных аккаунтов"
+                  checked={enabled}
+                  disabled={busy}
+                  onChange={(e) => {
+                    setAutomaticConsent(false);
+                    setEnabled(e.target.checked);
+                    onDirty(isDirty(policies, e.target.checked));
+                  }}
+                />
+                <span aria-hidden="true" />
+                <b>Синхронизация товаров</b>
+              </label>
+              <label className="products-interval">
+                <span className="products-sr">
+                  Интервал автоматических проверок, секунд
+                </span>
+                <select
+                  aria-label="Интервал автоматических проверок, секунд"
+                  value={interval}
+                  disabled={busy}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    setInterval(n);
+                    onDirty(isDirty(policies, enabled, n));
+                  }}
+                >
+                  {[...new Set([60, 300, 900, 1800, 3600, interval])]
+                    .sort((a, b) => a - b)
+                    .map((n) => (
+                      <option key={n} value={n}>
+                        Проверять каждые{" "}
+                        {n < 60 ? `${n} секунд` : `${n / 60} минут`}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            </div>
+            <div
+              className="products-rule-presets"
+              aria-label="Направление синхронизации"
+            >
+              <button
+                type="button"
+                className={mode === "moy" ? "active" : "secondary"}
+                disabled={busy}
+                onClick={() => direction("MOYSKLAD_AUTHORITATIVE")}
+              >
+                Из МойСклад
+              </button>
+              <button
+                type="button"
+                className={mode === "ozon" ? "active" : "secondary"}
+                disabled={busy}
+                onClick={() => direction("OZON_AUTHORITATIVE")}
+              >
+                Из Ozon
+              </button>
+              <button
+                type="button"
+                className={mode === "fields" ? "active" : "secondary"}
+                disabled={busy}
+                onClick={() => setPreset("fields")}
+              >
+                По полям
+              </button>
+            </div>
+            <div className="products-rules-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Поле товара</th>
+                    <th>Источник правильных данных</th>
+                    <th />
+                    <th>Куда передавать</th>
+                    <th>Режим</th>
+                  </tr>
+                </thead>
+                <tbody>{fields.filter(visibleField).map(renderPolicy)}</tbody>
+              </table>
+            </div>
+            <details className="products-field-limits">
+              <summary>
+                Другие поля и ограничения{" "}
+                <span>Настроены на уровне системы</span>
+              </summary>
+              <div className="products-limits-list">
+                {fields
+                  .filter((f) => !visibleField(f))
+                  .map((f) => (
+                    <p key={f}>
+                      <b>{fieldLabel(f)}</b>
+                      <select
+                        aria-label={fieldLabel(f)}
+                        value={policies[f] || "IGNORE"}
+                        disabled
+                      >
+                        <option value={policies[f] || "IGNORE"}>
+                          Передача пока не поддерживается
+                        </option>
+                      </select>
+                    </p>
+                  ))}
+              </div>
+            </details>
+            <div className="products-rules-bottom">
+              <section>
+                <header>
+                  <h3>Автоматизация</h3>
+                  <span className="mapping-chip ok">
+                    {targets.filter((t) => t.automatic).length} товаров
+                    настроено
+                  </span>
+                </header>
+                <p>
+                  Синхронизация будет применяться только к выбранным товарам.
+                  Можно добавить или изменить список в любой момент.
+                </p>
+                <Link className="secondary" to="/products/rules/automation">
+                  Выбрать товары <Icon name="arrow" size="button" />
+                </Link>
+              </section>
+              <section>
+                <h3>Как это работает</h3>
+                <ol>
+                  <li>
+                    Выберите, в каком сервисе значения считать правильными для
+                    каждого поля.
+                  </li>
+                  <li>
+                    После подтверждения данные передаются в выбранный сервис.
+                  </li>
+                  <li>
+                    Разрешённые поля выбранных товаров проверяются по
+                    расписанию.
+                  </li>
+                </ol>
+                <p className="products-inline-note">
+                  Смена правил сама не отправляет товары.
+                </p>
+              </section>
+            </div>
+          </>
+        )}
+        {automationOnly && (
+          <CatalogSyncAutomation
+            scope={scope}
+            config={config}
+            targets={targets}
+            policies={policies}
+            enabled={enabled}
+            busy={busy}
+            actions={saveControls}
+            onChange={(next) => {
+              setAutomaticConsent(false);
+              setTargets(next);
+              onDirty(isDirty(policies, enabled, interval, next));
             }}
           />
-          <small>
-            От 30 до 86400 секунд. Новые выбранные товары добавляются без
-            автоматической отправки.
-          </small>
-        </label>
-        <div className="catalog-presets" aria-label="Направление синхронизации">
-          <button
-            type="button"
-            className="secondary"
-            disabled={busy}
-            onClick={() => direction("MOYSKLAD_AUTHORITATIVE")}
-          >
-            МойСклад → Ozon
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            disabled={busy}
-            onClick={() => direction("OZON_AUTHORITATIVE")}
-          >
-            Ozon → МойСклад
-          </button>
-          <span>Для смешанного направления выберите источники по полям.</span>
-        </div>
-        <div className="catalog-policies">
-          {fields.filter((field) => visibleField(field)).map(renderPolicy)}
-        </div>
-        <details className="catalog-facts">
-          <summary>Другие поля и ограничения</summary>
-          <div className="catalog-policies">
-            {fields.filter((field) => !visibleField(field)).map(renderPolicy)}
-          </div>
-        </details>
-        {needsConsent && (
-          <label className="catalog-check catalog-warning">
-            <input
-              type="checkbox"
-              checked={automaticConsent}
-              disabled={busy}
-              onChange={(event) => setAutomaticConsent(event.target.checked)}
-            />
-            Разрешаю автоматическую передачу выбранных полей указанных товаров
-            без отдельного подтверждения каждой отправки
-          </label>
         )}
-        {automaticInvalid && (
-          <p className="catalog-error" role="alert">
-            Выберите хотя бы одно поле для каждого товара с автоматической
-            передачей.
-          </p>
-        )}
-        <div className="catalog-actions">
-          <button
-            disabled={
-              busy ||
-              !dirty ||
-              automaticInvalid ||
-              (needsConsent && !automaticConsent)
-            }
-          >
-            {busy ? "Сохраняем…" : "Сохранить настройки"}
-          </button>
-          <span role="status">
-            {dirty
-              ? "Есть несохранённые настройки. Сначала сохраните их."
-              : "Настройки сохранены"}
-          </span>
-        </div>
-        {error && (
-          <p className="catalog-error" role="alert">
-            {error}
-          </p>
-        )}
+        {!automationOnly && saveControls}
       </form>
     </section>
   );

@@ -11,7 +11,9 @@ import { useQuery } from "@tanstack/react-query";
 import { api, params, type Page, type Product } from "./api";
 import { useConfirmation, type Confirmation, type Scope } from "./Confirmation";
 import { Link } from "react-router-dom";
-import { IntegrationDialog } from "./IntegrationDialog";
+import { ProductReverseMatching } from "./ProductReverseMatching";
+import { ProductImportMenu } from "./ProductImportMenu";
+import { ProductDetail } from "./ProductDetail";
 import { ProductReview } from "./ProductReview";
 
 export function ProductMappingPage({
@@ -29,6 +31,7 @@ export function ProductMappingPage({
   const [queueMessage, setQueueMessage] = useState("");
   const queueLock = useRef(false);
   const queueRequest = useRef<AbortController | null>(null);
+  const [detail, setDetail] = useState<Product | null>(null);
   const [review, setReview] = useState<Product | null>(null);
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
@@ -41,6 +44,7 @@ export function ProductMappingPage({
     }, 350);
     return () => clearTimeout(timer);
   }, [search, query]);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [archived, setArchived] = useState("");
   const [provider, setProvider] = useState("");
   const [mapping, setMapping] = useState("");
@@ -88,6 +92,7 @@ export function ProductMappingPage({
     setSelectedProducts([]);
     setCompleted([]);
     setReview(null);
+    setDetail(null);
     setOffset(0);
     return () => {
       queueRequest.current?.abort();
@@ -168,7 +173,10 @@ export function ProductMappingPage({
   }
   return (
     <div className="product-mapping-page">
-      <div className="mapping-filters">
+      <div className={`mapping-filters ${filtersOpen ? "is-filtering" : ""}`}>
+        <div className="products-mobile-import">
+          <ProductImportMenu />
+        </div>
         <label>
           Источник
           <select
@@ -226,28 +234,50 @@ export function ProductMappingPage({
             <option value="true">Архивные</option>
           </select>
         </label>
-        <label>
-          Соответствия
-          <select
-            value={mapping}
-            onChange={(e) => {
-              setMapping(e.target.value);
-              reset();
-            }}
-          >
-            <option value="">Все соответствия</option>
-            <option value="confirmed">Подтверждено</option>
-            <option value="unconfirmed">Не сопоставлено</option>
-          </select>
-        </label>
+        <Link
+          className="secondary products-mobile-matching"
+          to="/products/matching"
+        >
+          Автосопоставление
+        </Link>
+        <div className="products-overview-pills" aria-label="Фильтр связей">
+          {[
+            ["", "Все"],
+            ["confirmed", "Связанные"],
+            ["unconfirmed", "Без пары"],
+            ["conflict", "Конфликты"],
+          ].map(([value, label]) => (
+            <button
+              key={value}
+              className={mapping === value ? "active" : "secondary"}
+              aria-pressed={mapping === value}
+              onClick={() => {
+                setMapping(value);
+                reset();
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <button
+          className="secondary products-mobile-filters"
+          aria-label="Фильтры"
+          aria-expanded={filtersOpen}
+          onClick={() => setFiltersOpen(!filtersOpen)}
+        >
+          <Icon name="settings" size="button" />
+          <span>Фильтры</span>
+        </button>
         <button
           className="matching-page-reset"
-          disabled={!search && !archived && !mapping}
+          disabled={!search && !archived && !mapping && !provider}
           onClick={() => {
             setSearch("");
             setQuery("");
             setArchived("");
             setMapping("");
+            setProvider("");
             reset();
           }}
         >
@@ -355,7 +385,9 @@ export function ProductMappingPage({
           config={config}
           selected={selectedProducts}
           pending={!!activeConfirmation.pending}
-          open={setReview}
+          open={(p) =>
+            p.match_status === "CONFIRMED" ? setDetail(p) : setReview(p)
+          }
           toggle={(product, checked) => {
             setSelectedProducts((items) =>
               checked
@@ -395,12 +427,17 @@ export function ProductMappingPage({
           }}
           startQueue={() => {
             const product = selectedProducts.find(
-              (p) => !completed.includes(p.product_id),
+              (p) =>
+                p.match_status !== "CONFIRMED" &&
+                !completed.includes(p.product_id),
             );
-            if (product) setReview(product);
+            if (product && product.match_status !== "CONFIRMED")
+              setReview(product);
           }}
           canStartQueue={selectedProducts.some(
-            (p) => !completed.includes(p.product_id),
+            (p) =>
+              p.match_status !== "CONFIRMED" &&
+              !completed.includes(p.product_id),
           )}
         >
           <MappingPagination
@@ -418,25 +455,48 @@ export function ProductMappingPage({
           />
         </ProductMappingTable>
       )}
-      {queueMessage && <p role="status">{queueMessage}</p>}
-      {review?.provider === "moysklad" && (
-        <IntegrationDialog
-          title={review.name || "Товар МойСклад"}
-          onClose={() => setReview(null)}
-        >
-          <p>Артикул: {review.offer_id || "не указан"}</p>
-          <p>
-            В этой паре аккаунтов нет подтверждённого предложения Ozon. Для
-            существующей карточки откройте сопоставление со стороны Ozon. Для
-            новой — подготовьте импорт.
-          </p>
+      {selectedProducts.some((p) => p.match_status === "CONFIRMED") && (
+        <div className="products-selection-footer">
+          <span>
+            <b>Выбрано {selectedProducts.length} товаров</b> · Проверка ничего
+            не отправляет
+          </span>
           <Link
             className="primary-button"
-            to="/products/import/moysklad-to-ozon"
+            to="/products/transfer"
+            state={{
+              scope,
+              products: selectedProducts
+                .filter((p) => p.match_status === "CONFIRMED")
+                .map((p) => ({ id: p.product_id, offer: p.offer_id || "" })),
+            }}
           >
-            Подготовить карточку Ozon
+            Проверить изменения →
           </Link>
-        </IntegrationDialog>
+        </div>
+      )}
+      {detail && (
+        <ProductDetail
+          key={`${detail.provider}:${detail.product_id}`}
+          product={detail}
+          scope={scope}
+          config={config}
+          onClose={() => setDetail(null)}
+          onMatch={() => {
+            setReview(detail);
+            setDetail(null);
+          }}
+        />
+      )}
+      {queueMessage && <p role="status">{queueMessage}</p>}
+      {review?.provider === "moysklad" && (
+        <ProductReverseMatching
+          key={review.product_id}
+          product={review}
+          scope={scope}
+          confirmation={activeConfirmation}
+          close={() => setReview(null)}
+        />
       )}
       {review && review.provider !== "moysklad" && (
         <ProductReview

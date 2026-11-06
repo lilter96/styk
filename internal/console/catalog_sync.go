@@ -218,7 +218,11 @@ func (a *catalogAPI) operations(w http.ResponseWriter, r *http.Request) {
 		catalogHTTPError(w, err)
 		return
 	}
-	page, err := a.service.History(r.Context(), scope, catalogPage(r))
+	request := catalogPage(r)
+	request.State = r.URL.Query().Get("state")
+	request.ProductProvider = catalog.Provider(r.URL.Query().Get("product_provider"))
+	request.ProductID = r.URL.Query().Get("product_id")
+	page, err := a.service.History(r.Context(), scope, request)
 	if err != nil {
 		catalogHTTPError(w, err)
 		return
