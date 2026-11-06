@@ -826,3 +826,15 @@
     display: block;
   }
 }
+
+.admin-plan-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.admin-plan-warning {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--warning-text, #925300);
+}

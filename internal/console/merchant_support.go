@@ -73,7 +73,7 @@ func supportReadAllowed(r *http.Request) bool {
 		return false
 	}
 	switch r.Pattern {
-	case "GET /api/session", "GET /api/registrations", "GET /api/integrations",
+	case "GET /api/session", "GET /api/registrations", "GET /api/integrations", "GET /api/marketplace-plan",
 		"GET /api/diagnostics", "GET /api/imports", "GET /api/imports/{id}",
 		"GET /api/products", "GET /api/moysklad-products", "GET /api/product-mapping-history",
 		"GET /api/warehouses", "GET /api/stock", "GET /api/orders/config",

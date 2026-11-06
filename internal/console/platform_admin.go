@@ -35,6 +35,8 @@ func registerPlatformAdmin(mux *http.ServeMux, auth *merchantAuth, db *postgres.
 	api := platformAdmin{db}
 	mux.HandleFunc("GET /api/admin/overview", auth.withSession(platformAdminOnly(id, api.overview)))
 	mux.HandleFunc("GET /api/admin/users", auth.withSession(platformAdminOnly(id, api.users)))
+	mux.HandleFunc("GET /api/admin/plans", auth.withSession(platformAdminOnly(id, api.plans)))
+	mux.HandleFunc("POST /api/admin/plans/{tenant}", auth.withSession(platformAdminOnly(id, api.changePlan)))
 	mux.HandleFunc("POST /api/admin/support", auth.withSession(platformAdminOnly(id, auth.startSupport)))
 	mux.HandleFunc("DELETE /api/admin/support", auth.withSession(platformAdminOnly(id, auth.endSupport)))
 }
@@ -63,15 +65,21 @@ func (a platformAdmin) overview(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a platformAdmin) users(w http.ResponseWriter, r *http.Request) {
+	search, status, limit, offset, ok := adminCompanyPage(r)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "INVALID_ADMIN_QUERY")
+		return
+	}
+	a.query(w, r, adminUsersSQL, search, status, limit, offset)
+}
+
+func adminCompanyPage(r *http.Request) (string, string, int, int, bool) {
 	q := r.URL.Query()
 	page, pageOK := adminInt(q.Get("page"), 1, 1, 100000)
 	limit, limitOK := adminInt(q.Get("limit"), 20, 1, 50)
 	search, status := strings.TrimSpace(q.Get("q")), q.Get("status")
-	if !pageOK || !limitOK || len(search) > 256 || !slices.Contains([]string{"", "active", "unverified", "disabled"}, status) {
-		writeError(w, http.StatusBadRequest, "INVALID_ADMIN_QUERY")
-		return
-	}
-	a.query(w, r, adminUsersSQL, search, status, limit, (page-1)*limit)
+	ok := pageOK && limitOK && len(search) <= 256 && slices.Contains([]string{"", "active", "unverified", "disabled"}, status)
+	return search, status, limit, (page - 1) * limit, ok
 }
 
 func adminInt(raw string, fallback, min, max int) (int, bool) {

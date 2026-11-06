@@ -30,6 +30,7 @@ export function WorkspaceSwitcher({
   loading,
   error,
   addDisabled,
+  quotaReason,
 }: {
   marketplace: Marketplace;
   onMarketplaceChange: (marketplace: Marketplace) => void;
@@ -45,6 +46,7 @@ export function WorkspaceSwitcher({
   loading: boolean;
   error: boolean;
   addDisabled: boolean;
+  quotaReason?: string;
 }) {
   const supported = marketplace === "ozon";
   const available = accounts.filter((item) => item.source === marketplace);
@@ -138,11 +140,16 @@ export function WorkspaceSwitcher({
       <button
         className="add-marketplace-account secondary"
         type="button"
-        disabled={!supported || loading || error || addDisabled}
+        disabled={
+          !supported || loading || error || addDisabled || !!quotaReason
+        }
         onClick={onAdd}
       >
         <Icon name="plus" size="button" /> Добавить аккаунт
       </button>
+      {supported && quotaReason && (
+        <p className="marketplace-unavailable">{quotaReason}</p>
+      )}
       {!supported && (
         <p className="marketplace-unavailable">
           Подключение {marketplaceNames[marketplace]} пока недоступно.

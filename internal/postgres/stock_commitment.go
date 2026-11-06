@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/lilter96/styk/internal/commitment"
+	"github.com/lilter96/styk/internal/credentials"
 	"github.com/lilter96/styk/internal/domain"
 )
 
@@ -27,10 +28,18 @@ func (s *Store) RegisterStockConnection(ctx context.Context, tenant, source, acc
 		return fmt.Errorf("begin connection registration: %w", err)
 	}
 	defer rollbackTransaction(tx)
+	if domain.CountsTowardMarketplacePlan(source) {
+		if err = lockMarketplacePlan(ctx, tx, tenant); err != nil {
+			return err
+		}
+	}
 	if err = requireMerchantActor(ctx, tx, tenant, provenance, true); err != nil {
 		return err
 	}
 	if err = ensureConnectionWorkspace(ctx, tx, tenant, provenance); err != nil {
+		return err
+	}
+	if err = lockRegisteredAccount(ctx, tx, tenant, source, account); err != nil {
 		return err
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO stock_connections(tenant_id,source,account_id,provenance,include_import_history) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source,account_id) DO NOTHING`, tenant, source, account, provenance, includeImportHistory)
@@ -52,6 +61,21 @@ func (s *Store) RegisterStockConnection(ctx context.Context, tenant, source, acc
 		return fmt.Errorf("commit connection registration: %w", err)
 	}
 	return nil
+}
+
+func lockRegisteredAccount(ctx context.Context, tx pgx.Tx, tenant, source, account string) error {
+	key := credentials.ScopeKey(credentials.Scope{Provider: source, Account: account})
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, key); err != nil {
+		return fmt.Errorf("lock registration account: %w", err)
+	}
+	var registered bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM stock_connections WHERE source=$1 AND account_id=$2)`, source, account).Scan(&registered); err != nil {
+		return fmt.Errorf("check existing registration: %w", err)
+	}
+	if registered {
+		return nil
+	}
+	return admitMarketplaceAccount(ctx, tx, tenant, source)
 }
 
 func validateStockRequest(r domain.StockCalculationRequest) error {

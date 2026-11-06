@@ -2,6 +2,11 @@ import { useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ApiError, api, authFetch, params, type ImportProvider } from "./api";
 
+import {
+  marketplacePlanKey,
+  marketplaceQuotaMessages,
+} from "./marketplacePlan";
+
 export type CredentialScope = {
   tenant: string;
   provider: ImportProvider;
@@ -28,6 +33,7 @@ type Intent = {
 };
 const labels = { moysklad: "МойСклад", ozon: "Ozon" };
 const rejected: Record<string, string> = {
+  ...marketplaceQuotaMessages,
   INVALID_REQUEST: "Проверьте название подключения и данные доступа.",
   CREDENTIAL_STORAGE_UNAVAILABLE:
     "Сохранение ключей пока не настроено на сервере. Обратитесь к администратору.",
@@ -89,6 +95,7 @@ export function useCredentialSubmission() {
       "integrations",
       "credentials",
       "accounts",
+      marketplacePlanKey,
       "diagnostics",
     ])
       await client.invalidateQueries({ queryKey: [key] });
@@ -138,6 +145,10 @@ export function useCredentialSubmission() {
     } catch (error) {
       const value = error instanceof ApiError ? error.code || "" : "";
       setCode(value);
+      if (marketplaceQuotaMessages[value])
+        void client.invalidateQueries({
+          queryKey: [marketplacePlanKey, intent.scope.tenant],
+        });
       if (!intent.uncertain && value && rejected[value]) {
         current.current = null;
         setPending(null);

@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-const child = spawn("./bin/styk-worker", [], {
+const extension = process.platform === "win32" ? ".exe" : "";
+const child = spawn("./bin/styk-worker" + extension, [], {
   env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL }, stdio: "inherit",
 });
 for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => child.kill(signal));

@@ -229,6 +229,9 @@ func assertMerchantObjects(t *testing.T, db *postgres.Store, a, b *merchantBrows
 			t.Fatal(err)
 		}
 	}
+	if _, err := db.Pool.Exec(ctx, `UPDATE saas_workspaces SET marketplace_plan='plan_3' WHERE id=$1`, wb); err != nil {
+		t.Fatal(err)
+	}
 	if err := db.RegisterStockConnection(ctx, wb, "ozon", "merchant-b-second-ozon", "synthetic", false); err != nil {
 		t.Fatal(err)
 	}

@@ -12,4 +12,5 @@ func registerMerchantRoutes(mux *http.ServeMux, a *auth) {
 	mux.HandleFunc("POST /api/session", m.login)
 	mux.HandleFunc("GET /api/session", a.authorized(m.session))
 	mux.HandleFunc("DELETE /api/session", a.authorized(m.logout))
+	mux.HandleFunc("POST /api/profile/password", a.authorized(a.connectionMutation(m.changePassword)))
 }

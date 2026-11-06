@@ -395,6 +395,9 @@ func (c *connections) register(w http.ResponseWriter, r *http.Request) {
 	}
 	err = c.db.RegisterStockConnection(ctx, body.Tenant, provider, account, actorProvenance(r), false)
 	if err != nil {
+		if writeMarketplaceQuotaError(w, err) {
+			return
+		}
 		// A fresh scoped read reconciles an ambiguous commit without retrying a write.
 		reconcile, cancelRead := context.WithTimeout(r.Context(), c.db.Timeout)
 		defer cancelRead()

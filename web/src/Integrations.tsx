@@ -83,6 +83,14 @@ const date = (value: string) =>
     minute: "2-digit",
   });
 
+import {
+  marketplacePlanKey,
+  marketplacePlanName,
+  marketplaceQuotaMessages,
+  marketplaceQuotaReason,
+  type MarketplacePlan,
+} from "./marketplacePlan";
+
 export function Integrations({
   tenant,
   accounts,
@@ -93,6 +101,10 @@ export function Integrations({
   notice,
   credentialSubmission,
   stockSyncSubmission,
+  plan,
+  planUnavailable,
+  planLoading,
+  onReloadPlan,
 }: {
   tenant: string;
   accounts: Account[];
@@ -103,6 +115,10 @@ export function Integrations({
   notice?: ReactNode;
   credentialSubmission?: CredentialSubmissionState;
   stockSyncSubmission?: StockSyncSubmissionState;
+  plan?: MarketplacePlan;
+  planUnavailable?: boolean;
+  planLoading?: boolean;
+  onReloadPlan?: () => void;
 }) {
   const localSubmission = useImportSubmission();
   const imports = submission ?? localSubmission;
@@ -290,6 +306,14 @@ export function Integrations({
         client.invalidateQueries({ queryKey: ["diagnostics"] }),
       ]);
     } catch (error) {
+      if (
+        error instanceof ApiError &&
+        error.code &&
+        marketplaceQuotaMessages[error.code]
+      ) {
+        setMessage(marketplaceQuotaMessages[error.code]);
+        return;
+      }
       if (error instanceof ApiError && error.status === 401) {
         setUncertain(provider);
         setMessage(
@@ -323,6 +347,7 @@ export function Integrations({
         );
       }
     } finally {
+      void client.invalidateQueries({ queryKey: [marketplacePlanKey, tenant] });
       requestLock.current = false;
       setBusy("");
     }
@@ -429,6 +454,43 @@ export function Integrations({
           Настройка синхронизации
         </button>
       </PageHeader>
+      {(plan || planLoading || planUnavailable) && (
+        <section className="integration-plan" aria-label="Лимит аккаунтов">
+          {planUnavailable ? (
+            <p role="status">
+              Не удалось обновить данные тарифа.{" "}
+              <button
+                type="button"
+                className="text-action"
+                onClick={onReloadPlan}
+              >
+                Повторить
+              </button>
+            </p>
+          ) : plan ? (
+            <>
+              <strong>{marketplacePlanName(plan.code)}</strong>
+              <span>
+                Аккаунты маркетплейсов · {plan.used} из {plan.total_limit}
+              </span>
+              {plan.exceeded && (
+                <small>{marketplaceQuotaMessages.PLAN_OVER_LIMIT}</small>
+              )}
+              {Object.keys(plan.blocked).length > 0 && (
+                <button
+                  type="button"
+                  className="text-action"
+                  onClick={onReloadPlan}
+                >
+                  Обновить лимит
+                </button>
+              )}
+            </>
+          ) : (
+            <span role="status">Загружаем тариф…</span>
+          )}
+        </section>
+      )}
       {query.isLoading && <p role="status">Загружаем интеграции…</p>}
       {query.error && (
         <p className="integration-feedback" role="alert">
@@ -463,7 +525,11 @@ export function Integrations({
               className={`step-symbol ${connected.length === 2 ? "done" : "warning"}`}
               aria-hidden="true"
             >
-              {connected.length === 2 ? <Icon name="check" size="button" /> : <Icon name="error" size="button" />}
+              {connected.length === 2 ? (
+                <Icon name="check" size="button" />
+              ) : (
+                <Icon name="error" size="button" />
+              )}
             </span>
             <div>
               <strong>Подключить магазины</strong>
@@ -497,7 +563,11 @@ export function Integrations({
               className={`step-symbol ${productsMapped && warehousesMapped ? "done" : setupStep === 3 ? "current" : ""}`}
               aria-hidden="true"
             >
-              {productsMapped && warehousesMapped ? <Icon name="check" size="button" /> : "3"}
+              {productsMapped && warehousesMapped ? (
+                <Icon name="check" size="button" />
+              ) : (
+                "3"
+              )}
             </span>
             <div>
               <strong>
@@ -586,6 +656,9 @@ export function Integrations({
                 provider={provider}
                 unavailable={!supported}
                 addingDisabled={!!credentials.pending}
+                quotaReason={
+                  supported ? marketplaceQuotaReason(plan, provider) : undefined
+                }
                 onAdd={() => {
                   if (provider === "moysklad")
                     navigate("/integrations/moysklad/settings?connect=new");
@@ -655,7 +728,7 @@ export function Integrations({
             Date.now() - Date.parse(p.check.checked_at) <= 300000;
           return (
             <IntegrationDialog
-                className="integration-settings-drawer"
+              className="integration-settings-drawer"
               title={`Подключение ${names[p.provider]}`}
               brand={p.provider}
               closeLabel="Закрыть настройки"
@@ -735,7 +808,8 @@ export function Integrations({
                             !!busy ||
                             !!uncertain ||
                             !acks[p.provider] ||
-                            !recentProbe
+                            !recentProbe ||
+                            !!marketplaceQuotaReason(plan, p.provider)
                           }
                           onClick={() => void register(p.provider)}
                         >

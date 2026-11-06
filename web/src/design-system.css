@@ -349,7 +349,14 @@
   overflow-wrap: anywhere;
   font-size: 12px;
   color: var(--styk-muted);
+  margin-bottom: 6px !important;
+}
+.signed-in-plan {
+  overflow-wrap: anywhere;
   margin-bottom: 16px !important;
+  color: var(--styk-primary);
+  font-size: 12px;
+  font-weight: 600;
 }
 .workspace-switcher {
   margin-bottom: 20px;

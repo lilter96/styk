@@ -536,3 +536,21 @@
     gap: 16px;
   }
 }
+
+.integration-plan {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--line, #dce2ec);
+  border-radius: 0.75rem;
+}
+.integration-plan p,
+.provider-quota-note {
+  margin: 0;
+  font-size: 0.8125rem;
+}
+.provider-quota-note {
+  padding: 0 0 0.5rem;
+}
