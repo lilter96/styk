@@ -20,9 +20,11 @@ export function OrdersReservationMapping({
   mappings,
   disabled,
   onChange,
+  compact = false,
 }: {
   mappings: OrderMapping[];
   disabled: boolean;
+  compact?: boolean;
   onChange: (mappings: OrderMapping[]) => void;
 }) {
   const source = (target: string) =>
@@ -34,33 +36,48 @@ export function OrdersReservationMapping({
     ]);
   return (
     <fieldset disabled={disabled}>
-      <legend>Резервы и проведение</legend>
-      <p className="orders-note">
-        Проведение заказа — учётное действие МойСклад, а не отправка товара или
-        подтверждение доставки в Ozon. STYK изменяет только свои подтверждённые
-        позиции и резервы; ручные изменения требуют проверки.
-      </p>
-      {selectors.map(([target, label, choices]) => {
-        const current = source(target);
-        return (
-          <label key={target}>
-            {label}
-            <select
-              value={current}
-              onChange={(event) => change(target, event.target.value)}
-            >
-              {!choices.some(([value]) => value === current) && (
-                <option value={current}>Сохранённое правило</option>
-              )}
-              {choices.map(([value, title]) => (
-                <option key={value} value={value}>
-                  {title}
-                </option>
-              ))}
-            </select>
-          </label>
-        );
-      })}
+      <legend className={compact ? "sr-only" : undefined}>
+        Резервы и проведение
+      </legend>
+      {compact ? (
+        <details className="settings-reservation-note">
+          <summary>Как работают резерв и проведение</summary>{" "}
+          <p className="orders-note">
+            Проведение заказа — учётное действие МойСклад, а не отправка товара
+            или подтверждение доставки в Ozon. STYK изменяет только свои
+            подтверждённые позиции и резервы; ручные изменения требуют проверки.
+          </p>
+        </details>
+      ) : (
+        <p className="orders-note">
+          Проведение заказа — учётное действие МойСклад, а не отправка товара
+          или подтверждение доставки в Ozon. STYK изменяет только свои
+          подтверждённые позиции и резервы; ручные изменения требуют проверки.
+        </p>
+      )}
+      <div className={compact ? "settings-reservation-controls" : undefined}>
+        {selectors.map(([target, label, choices]) => {
+          const current = source(target);
+          return (
+            <label key={target}>
+              {label}
+              <select
+                value={current}
+                onChange={(event) => change(target, event.target.value)}
+              >
+                {!choices.some(([value]) => value === current) && (
+                  <option value={current}>Сохранённое правило</option>
+                )}
+                {choices.map(([value, title]) => (
+                  <option key={value} value={value}>
+                    {title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          );
+        })}
+      </div>
       {source("positions.reserve") === "posting.open_quantity" && (
         <p className="orders-warning">
           Резерв будет равен количеству только для подтверждённых ожидающих

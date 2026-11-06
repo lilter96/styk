@@ -3,6 +3,7 @@ import "./icons.css";
 import { BrandLogo } from "./BrandLogo";
 
 export type IconName =
+  | "bolt"
   | "overview"
   | "products"
   | "orders"
@@ -33,6 +34,7 @@ export type IconName =
   | "variants"
   | "check";
 const paths: Record<IconName, ReactNode> = {
+  bolt: <path d="m13 2-9 12h7l-1 8 10-13h-7l1-7Z" />,
   copy: (
     <>
       <rect x="8" y="8" width="12" height="12" rx="2" />

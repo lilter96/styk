@@ -26,7 +26,7 @@ func validateNativeMovementCurrent(command orders.Command, current orders.Review
 		return orders.ErrStale
 	}
 	config := current.Config
-	if movement.OrganizationID != config.OrganizationID || movement.AgentID != config.AgentID || movement.StoreID != config.StoreID || config.CurrencyID != "" && movement.CurrencyID != config.CurrencyID {
+	if movement.OrganizationID != config.OrganizationID || movement.AgentID != config.AgentID || movement.StoreID != command.Warehouse.MoyskladStoreID || config.CurrencyID != "" && movement.CurrencyID != config.CurrencyID {
 		return orders.ErrStale
 	}
 	for _, line := range movement.Lines {

@@ -9,6 +9,7 @@ import (
 
 func planNativeValues(review orders.ReviewContext, posting orders.Posting, proposal orders.NativeMovementProposal, parent orders.TargetObservation, baseline orders.PositionBaseline, basis *orders.NativeDocumentObservation) (orders.NativeMovement, []orders.Validation) {
 	fields := parent.Fields
+	warehouse, warehouseIssue := postingWarehouse(posting, review)
 	moment := proposal.EventOccurredAt
 	if !*proposal.Applicable.Value {
 		moment = proposal.PlannedMoment
@@ -30,7 +31,7 @@ func planNativeValues(review orders.ReviewContext, posting orders.Posting, propo
 	if proposal.Action == orders.ActionDemandCreate && *proposal.Applicable.Value && posting.Status.IsKnown() && *posting.Status.Value == "cancelled" {
 		return movement, []orders.Validation{{Field: "posting.status", Code: "cancelled_posting_cannot_create_new_shipment"}}
 	}
-	if baseline.Scope != posting.Scope || baseline.Correlation != parent.Correlation || parent.Fields.StoreID != review.Config.StoreID || parent.Fields.OrganizationID != review.Config.OrganizationID || parent.Fields.AgentID != review.Config.AgentID {
+	if baseline.Scope != posting.Scope || baseline.Correlation != parent.Correlation || warehouseIssue.Code != "" || parent.Fields.StoreID != warehouse.MoyskladStoreID || parent.Fields.OrganizationID != review.Config.OrganizationID || parent.Fields.AgentID != review.Config.AgentID {
 		return movement, []orders.Validation{{Field: "customer_order", Code: "native_parent_scope_or_references_changed"}}
 	}
 	seen := make(map[string]bool, len(proposal.Lines))

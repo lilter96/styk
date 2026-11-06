@@ -75,7 +75,22 @@ func disposableDatabase(ctx context.Context) ([]string, func(), error) {
 		cleanup()
 		return nil, nil, err
 	}
+	if err = prepareDisposablePointDatabase(ctx, name); err != nil {
+		cleanup()
+		return nil, nil, err
+	}
 	return databaseEnvironment(dsn), cleanup, nil
+}
+
+// Native-point contracts deliberately use a second dedicated database on the
+// same disposable server; they must never fall back to a developer database.
+func prepareDisposablePointDatabase(ctx context.Context, name string) error {
+	cmd := exec.CommandContext(ctx, "docker", "exec", name, "createdb", "-U", "styk", "styk_orders_point_test")
+	cmd.Env = cleanEnvironment()
+	if err := cmd.Run(); err != nil {
+		return errors.New("cannot prepare disposable native-point test database")
+	}
+	return nil
 }
 
 func databaseAddress(ctx context.Context, name, password string) (string, error) {

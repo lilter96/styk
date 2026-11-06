@@ -126,6 +126,9 @@ func insertOrderConfig(ctx context.Context, tx pgx.Tx, req orders.SaveConfigRequ
 	if err != nil {
 		return orders.Config{}, err
 	}
+	if err = validateOrderGrantChange(req, current, owner, now); err != nil {
+		return orders.Config{}, err
+	}
 	config, err := finalizedOrderConfig(req.Config, current, owner, now)
 	if err != nil {
 		return orders.Config{}, err
@@ -149,6 +152,9 @@ func finalizedOrderConfig(config, previous orders.Config, owner string, now time
 		grant := *config.Automation
 		grant.Scope, grant.OwnerID, grant.SourceAccount = config.Scope, owner, config.Scope.OzonAccount
 		grant.ConfigRevision, grant.Revision, grant.GrantedAt = config.Revision, config.Revision, now
+		if previous.Automation != nil && !previous.Automation.Perpetual && !grant.Perpetual {
+			grant.GrantedAt = previous.Automation.GrantedAt
+		}
 		grant.ID = ""
 		if previous.Automation != nil {
 			grant.ID = previous.Automation.ID
@@ -194,7 +200,7 @@ func insertOrderGrant(ctx context.Context, tx pgx.Tx, config orders.Config) erro
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO orders_automation_grants(id,revision,tenant_id,moysklad_account,ozon_account,config_revision,owner_user_id,grant_record,granted_at,expires_at,revoked_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, grant.ID, grant.Revision, config.Scope.Tenant, config.Scope.MoyskladAccount, config.Scope.OzonAccount, config.Revision, grant.OwnerID, raw, grant.GrantedAt, grant.ExpiresAt, grant.RevokedAt)
+	_, err = tx.Exec(ctx, `INSERT INTO orders_automation_grants(id,revision,tenant_id,moysklad_account,ozon_account,config_revision,owner_user_id,grant_record,granted_at,expires_at,revoked_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, grant.ID, grant.Revision, config.Scope.Tenant, config.Scope.MoyskladAccount, config.Scope.OzonAccount, config.Revision, grant.OwnerID, raw, grant.GrantedAt, orderGrantExpiry(*grant), grant.RevokedAt)
 	if err != nil {
 		return ordersError("save order automation grant", err)
 	}

@@ -6,11 +6,12 @@ import (
 )
 
 type SaveConfigRequest struct {
-	ReadEnabled      *bool  `json:"read_enabled,omitempty"`
-	Config           Config `json:"config"`
-	ExpectedRevision int64  `json:"expected_revision"`
-	Actor            string `json:"-"`
-	IdempotencyKey   string `json:"idempotency_key"`
+	AutomationConsent bool   `json:"automation_consent,omitempty"`
+	ReadEnabled       *bool  `json:"read_enabled,omitempty"`
+	Config            Config `json:"config"`
+	ExpectedRevision  int64  `json:"expected_revision"`
+	Actor             string `json:"-"`
+	IdempotencyKey    string `json:"idempotency_key"`
 }
 
 type ReviewContext struct {

@@ -268,7 +268,7 @@ const (
 )
 
 // AutomationGrant is scoped to the source account and a stable authenticated
-// user ID. Its revision and expiry must be checked again under dispatch locks.
+// user ID. Its revision, revocation and legacy expiry are checked under dispatch locks.
 type AutomationGrant struct {
 	ID             string     `json:"id"`
 	Scope          Scope      `json:"scope"`
@@ -279,7 +279,8 @@ type AutomationGrant struct {
 	Actions        []Action   `json:"actions"`
 	Fields         []string   `json:"fields"`
 	GrantedAt      time.Time  `json:"granted_at"`
-	ExpiresAt      time.Time  `json:"expires_at"`
+	Perpetual      bool       `json:"perpetual,omitempty"`
+	ExpiresAt      time.Time  `json:"expires_at,omitzero"`
 	RevokedAt      *time.Time `json:"revoked_at,omitempty"`
 }
 
@@ -299,7 +300,7 @@ type Config struct {
 	CurrencyID             string                 `json:"currency_id,omitempty"`
 	OrganizationID         string                 `json:"organization_id"`
 	AgentID                string                 `json:"agent_id"`
-	StoreID                string                 `json:"store_id"`
+	StoreID                string                 `json:"store_id"` // Deprecated: retained for legacy round trips; routing uses WarehouseMappingRef.
 	StateID                string                 `json:"state_id"`
 	SalesChannelID         string                 `json:"sales_channel_id"`
 	FieldMappings          []FieldMapping         `json:"field_mappings"`

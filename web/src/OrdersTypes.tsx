@@ -99,7 +99,8 @@ export type OrderReverseSuggestion = {
   ready: boolean;
 };
 export type OrderAutomation = {
-  expires_at: string;
+  perpetual?: boolean;
+  expires_at?: string;
   actions: string[];
   fields: string[];
   revoked_at?: string;

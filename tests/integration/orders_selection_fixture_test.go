@@ -17,11 +17,15 @@ import (
 
 func selectionOrdersFixture(t testing.TB) ordersStoreFixture {
 	t.Helper()
-	raw, err := os.ReadFile("../../.local/v7/test-db-dsn")
-	if err != nil {
-		t.Fatal("dedicated selection test database unavailable")
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		raw, err := os.ReadFile("../../.local/v7/test-db-dsn")
+		if err != nil {
+			t.Fatal("dedicated selection test database unavailable")
+		}
+		dsn = strings.TrimSpace(string(raw))
 	}
-	u, err := url.Parse(strings.TrimSpace(string(raw)))
+	u, err := url.Parse(dsn)
 	if err != nil || u.Scheme != "postgres" || (u.Hostname() != "127.0.0.1" && u.Hostname() != "localhost") || u.Path != "/styk_orders_store_test" {
 		t.Fatal("selection tests require the dedicated localhost orders test database")
 	}

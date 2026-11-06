@@ -187,7 +187,7 @@ func cleanEnvironment() []string {
 	result := make([]string, 0, len(os.Environ()))
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
-		if strings.HasPrefix(key, "MOYSKLAD_") || strings.HasPrefix(key, "OZON_") || strings.HasPrefix(key, "STYK_") || strings.HasPrefix(key, "PG") || key == "DATABASE_URL" || key == "TEST_DATABASE_URL" {
+		if strings.HasPrefix(key, "MOYSKLAD_") || strings.HasPrefix(key, "OZON_") || strings.HasPrefix(key, "STYK_") || strings.HasPrefix(key, "PG") || key == "DATABASE_URL" || key == "TEST_DATABASE_URL" || strings.HasSuffix(key, "_TEST_DATABASE_URL") {
 			continue
 		}
 		result = append(result, entry)

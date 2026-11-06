@@ -18,7 +18,7 @@ func (grant AutomationGrant) Allows(command Command, now time.Time) bool {
 	if !grant.Active(now, command.Scope, command.ConfigRevision) || command.Validate() != nil || command.AutomationGrantRevision != grant.Revision {
 		return false
 	}
-	if !slices.Contains(grant.Actions, command.Action) {
+	if !grant.authorizesAction(command.Action) {
 		return false
 	}
 	for _, field := range command.Fields() {
@@ -79,4 +79,14 @@ func (write CustomerOrderWrite) collectFields(fields map[string]bool) {
 		fields["positions.price"] = fields["positions.price"] || position.Price.IsSpecified()
 		fields["positions.vat"] = fields["positions.vat"] || position.VAT.IsSpecified()
 	}
+}
+
+// In permanent mirror policies, updating includes an ownership-proven patch of
+// existing positions. Structural replacement and provider events stay excluded.
+// Legacy grants retain their original exact-action meaning.
+func (grant AutomationGrant) authorizesAction(action Action) bool {
+	if grant.Perpetual && action == ActionMirrorPositionUpdate {
+		action = ActionMirrorUpdate
+	}
+	return slices.Contains(grant.Actions, action)
 }

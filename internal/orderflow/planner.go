@@ -184,14 +184,8 @@ func postingWarehouse(posting orders.Posting, review orders.ReviewContext) (orde
 	if !posting.WarehouseID.IsKnown() {
 		return orders.WarehouseMappingRef{}, orders.Validation{Field: "warehouse_id", Code: "warehouse_unknown"}
 	}
-	var result orders.WarehouseMappingRef
-	count := 0
-	for _, mapping := range review.WarehouseMappings {
-		if mapping.Scope == posting.Scope && mapping.OzonWarehouseID == *posting.WarehouseID.Value && mapping.Validate() == nil {
-			result, count = mapping, count+1
-		}
-	}
-	if count != 1 || result.MoyskladStoreID != review.Config.StoreID {
+	result, err := review.PostingWarehouse(posting)
+	if err != nil {
 		return result, orders.Validation{Field: "warehouse_id", Code: "confirmed_warehouse_mapping_required"}
 	}
 	return result, orders.Validation{}

@@ -49,6 +49,11 @@ import {
 } from "./api";
 
 type Scope = { tenant: string; moy: string; ozon: string };
+const OrdersSettingsPage = lazy(() =>
+  import("./OrdersSettingsPage").then((module) => ({
+    default: module.OrdersSettingsPage,
+  })),
+);
 const Orders = lazy(() =>
   import("./Orders").then((module) => ({ default: module.Orders })),
 );
@@ -1035,11 +1040,32 @@ export function App() {
       workspace={(onNavigate) => (
         <WorkspaceSwitcher
           marketplace={marketplace}
-          onMarketplaceChange={setMarketplace}
+          onMarketplaceChange={(value) => {
+            if (
+              window.dispatchEvent(
+                new Event("styk-before-scope-change", { cancelable: true }),
+              )
+            )
+              setMarketplace(value);
+          }}
           accounts={accounts.data?.accounts || []}
           account={ozon}
-          onAccountChange={setOzon}
-          onMoyAccountChange={setMoy}
+          onAccountChange={(value) => {
+            if (
+              window.dispatchEvent(
+                new Event("styk-before-scope-change", { cancelable: true }),
+              )
+            )
+              setOzon(value);
+          }}
+          onMoyAccountChange={(value) => {
+            if (
+              window.dispatchEvent(
+                new Event("styk-before-scope-change", { cancelable: true }),
+              )
+            )
+              setMoy(value);
+          }}
           onAdd={() => {
             navigate("/integrations?connect=ozon");
             onNavigate?.();
@@ -1188,6 +1214,28 @@ export function App() {
             element={
               <Suspense fallback={<Loading />}>
                 <Orders
+                  key={JSON.stringify(scope)}
+                  scope={scope}
+                  moyLabel={
+                    accounts.data?.accounts.find(
+                      (item) =>
+                        item.source === "moysklad" && item.account === moy,
+                    )?.name
+                  }
+                  ozonLabel={
+                    accounts.data?.accounts.find(
+                      (item) => item.source === "ozon" && item.account === ozon,
+                    )?.name
+                  }
+                />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/orders/settings"
+            element={
+              <Suspense fallback={<Loading />}>
+                <OrdersSettingsPage
                   key={JSON.stringify(scope)}
                   scope={scope}
                   moyLabel={

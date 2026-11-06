@@ -1,14 +1,8 @@
 import { StrictMode } from "react";
 import { afterEach, expect, it, vi } from "vitest";
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Orders } from "./Orders";
 import { OrdersConfig } from "./OrdersConfig";
 import { useOrdersMetadata } from "./useOrdersMetadata";
 import {
@@ -98,13 +92,6 @@ function fixture(revision = 1) {
   return { attempts, client, content };
 }
 
-function openSettings() {
-  const details = screen
-    .getByText("Настройки передачи в МойСклад")
-    .closest("details")!;
-  details.open = true;
-  fireEvent(details, new Event("toggle"));
-}
 function MetadataProbe({
   currentScope = scope,
   enabled = true,
@@ -121,28 +108,25 @@ function MetadataProbe({
   );
 }
 
-it("does not read provider metadata for closed existing settings, including StrictMode and remount", async () => {
+it("does not read provider metadata from the orders table, including remount", async () => {
   const f = fixture();
-  const mounted = render(<StrictMode>{f.content}</StrictMode>);
+  const table = (
+    <QueryClientProvider client={f.client}>
+      <Orders scope={scope} />
+    </QueryClientProvider>
+  );
+  const mounted = render(<StrictMode>{table}</StrictMode>);
   await act(async () => {});
   expect(f.attempts).toHaveLength(0);
-  expect(
-    (
-      screen
-        .getByText("Настройки передачи в МойСклад")
-        .closest("details") as HTMLDetailsElement
-    ).open,
-  ).toBe(false);
   mounted.unmount();
-  render(f.content);
+  render(table);
   await act(async () => {});
   expect(f.attempts).toHaveLength(0);
 });
 
-it("reads on explicit opening once and reuses the fresh scoped result after remount", async () => {
+it("reads when the settings workspace mounts once and reuses the fresh scoped result after remount", async () => {
   const f = fixture();
-  const mounted = render(<StrictMode>{f.content}</StrictMode>);
-  openSettings();
+  const mounted = render(f.content);
   await waitFor(() => expect(f.attempts).toHaveLength(1));
   await act(async () => {
     f.attempts[0].resolve(json(metadata));
@@ -152,7 +136,6 @@ it("reads on explicit opening once and reuses the fresh scoped result after remo
   );
   mounted.unmount();
   render(f.content);
-  openSettings();
   await act(async () => {});
   expect(f.attempts).toHaveLength(1);
 });
@@ -163,13 +146,6 @@ it("keeps first setup open and preserves cancellable StrictMode subscription beh
   await waitFor(() => expect(f.attempts).toHaveLength(2));
   expect(f.attempts[0].signal?.aborted).toBe(true);
   expect(f.attempts[1].signal?.aborted).toBe(false);
-  expect(
-    (
-      screen
-        .getByText("Настройки передачи в МойСклад")
-        .closest("details") as HTMLDetailsElement
-    ).open,
-  ).toBe(true);
   await act(async () => {
     f.attempts[1].resolve(json(metadata));
   });
@@ -182,7 +158,6 @@ it("keeps first setup open and preserves cancellable StrictMode subscription beh
 it("cancels an in-flight metadata read on actual navigation away", async () => {
   const f = fixture();
   const mounted = render(f.content);
-  openSettings();
   await waitFor(() => expect(f.attempts).toHaveLength(1));
   mounted.unmount();
   expect(f.attempts[0].signal?.aborted).toBe(true);
@@ -202,7 +177,6 @@ it("shares one scoped read between an on-demand preview and opened settings", as
     </QueryClientProvider>,
   );
   await waitFor(() => expect(f.attempts).toHaveLength(1));
-  openSettings();
   expect(f.attempts).toHaveLength(1);
   await act(async () => {
     f.attempts[0].resolve(json(metadata));

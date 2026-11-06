@@ -91,7 +91,7 @@ func applyOrderSplitTransferProofs(result *orders.ReviewContext, parents orders.
 		}
 		permit := parents.SplitRetainedReserves[facts.Parent.PostingNumber]
 		facts.Before, facts.OriginalCorrelation = permit.Before, permit.Correlation
-		if permit.SplitWorkID != facts.Split.ID || facts.ParentTarget.Fields.StoreID != result.Config.StoreID || facts.ParentTarget.Fields.OrganizationID != result.Config.OrganizationID {
+		if permit.SplitWorkID != facts.Split.ID || !orderPostingStoreCurrent(facts.Parent, facts.ParentTarget.Fields.StoreID, result.WarehouseMappings) || facts.ParentTarget.Fields.OrganizationID != result.Config.OrganizationID {
 			continue
 		}
 		if proof, e := orders.NewSplitReserveTransfer(facts); e == nil {
@@ -103,7 +103,7 @@ func applyOrderSplitTransferProofs(result *orders.ReviewContext, parents orders.
 
 func applySupersededSplitTransfer(result *orders.ReviewContext, parents orders.ReviewContext, facts orders.SplitReserveTransferFacts) {
 	retirement, found := parents.SplitSupersededReserves[facts.Parent.PostingNumber]
-	if !found || retirement.Split.ID != facts.Split.ID || facts.ParentTarget.Fields.StoreID != result.Config.StoreID || facts.ParentTarget.Fields.OrganizationID != result.Config.OrganizationID {
+	if !found || retirement.Split.ID != facts.Split.ID || !orderPostingStoreCurrent(facts.Parent, facts.ParentTarget.Fields.StoreID, result.WarehouseMappings) || facts.ParentTarget.Fields.OrganizationID != result.Config.OrganizationID {
 		return
 	}
 	facts.Before, facts.OriginalCorrelation = retirement.Before, retirement.OriginalCorrelation

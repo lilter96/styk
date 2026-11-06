@@ -52,7 +52,8 @@ Change, failure or unresolved risk in a lane justifies rerunning that lane.
 the effective pgx host, fallback hosts and database against the two dedicated
 loopback test databases. Application databases and query overrides are rejected.
 Otherwise it starts PostgreSQL 17.6 in an owned disposable Docker container on a
-random loopback port, applies migrations there and removes it after success,
+random loopback port, prepares the companion `styk_orders_point_test` database
+for native-point contracts, applies migrations there and removes it after success,
 failure or cancellation. It never migrates the application's `.env` database.
 
 Install frontend dependencies with `npm ci` in `web` and Chromium with

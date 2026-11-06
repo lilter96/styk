@@ -60,7 +60,7 @@ func finishSupersededReservePlan(review orders.ReviewContext, decision orders.De
 }
 
 func supersededReserveWrite(config orders.Config, target orders.TargetObservation, baseline orders.PositionBaseline) orders.CustomerOrderWrite {
-	write := orders.CustomerOrderWrite{OrganizationID: config.OrganizationID, AgentID: config.AgentID, StoreID: config.StoreID,
+	write := orders.CustomerOrderWrite{OrganizationID: config.OrganizationID, AgentID: config.AgentID, StoreID: target.Fields.StoreID,
 		StateID: target.Fields.StateID, SalesChannelID: config.SalesChannelID, CurrencyID: config.CurrencyID,
 		Applicable: orders.Present(true), Positions: make([]orders.PositionWrite, 0, len(baseline.Bindings))}
 	for _, binding := range baseline.Bindings {

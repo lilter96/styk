@@ -4,7 +4,6 @@ import type { OrderCompositionProposal } from "./OrdersComposition";
 import { useCallback, useId, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, post } from "./api";
-import { OrdersConfig } from "./OrdersConfig";
 import { useOrdersMetadata } from "./useOrdersMetadata";
 import { OrdersPostings } from "./OrdersPostings";
 import { OrdersPreview } from "./OrdersPreview";
@@ -57,7 +56,6 @@ function OrdersAccount({
   const client = useQueryClient();
   const tabsID = useId();
   const [tab, setTab] = useState<"postings" | "history">("postings");
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [previewOrigin, setPreviewOrigin] = useState<"bulk" | "detail">("bulk");
   const generation = useRef(0);
@@ -128,7 +126,7 @@ function OrdersAccount({
   const [busy, setBusy] = useState<"preview" | "approve" | "check" | null>(
     null,
   );
-  const [dirty, setDirty] = useState(false);
+  const dirty = false;
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [links, setLinks] = useState<Record<string, string>>({});
@@ -192,17 +190,13 @@ function OrdersAccount({
     ]);
   }, []);
   const lock = useRef(false);
-  const canReadSource = config.data?.read_configured ? config.data.read_enabled === true : !!(config.data?.enabled || config.data?.read_enabled);
+  const canReadSource = config.data?.read_configured
+    ? config.data.read_enabled === true
+    : !!(config.data?.enabled || config.data?.read_enabled);
   const canPublish =
     config.data?.enabled &&
     config.data.test_enabled &&
     config.data.publication_available === true;
-  function saved(value: OrdersConfigData) {
-    client.setQueryData(configKey, value);
-    setDirty(false);
-    invalidatePreview();
-    setMessage("Настройки заказов сохранены.");
-  }
   async function review(
     proposal?:
       OrderActionProposal | OrderNativeProposal | OrderCompositionProposal,
@@ -413,22 +407,10 @@ function OrdersAccount({
   return (
     <div className="orders-console">
       <OrdersHeader moyLabel={moyLabel} ozonLabel={ozonLabel}>
-        <button
-          type="button"
-          className="secondary"
-          aria-expanded={settingsOpen}
-          aria-controls="orders-settings-panel"
-          onClick={() => setSettingsOpen(!settingsOpen)}
-        >
+        <a className="settings-outline-link" href="/orders/settings">
           <Icon name="settings" size="button" />
           Настройки
-          {dirty && (
-            <span
-              className="orders-unsaved-dot"
-              aria-label="Есть несохранённые изменения"
-            />
-          )}
-        </button>
+        </a>
         <button
           type="button"
           disabled={busy !== null || dirty || !canReadSource}
@@ -474,23 +456,7 @@ function OrdersAccount({
                 : "Загрузка отправлений выключена. Включите её в настройках или обновите аккаунт Ozon в разделе «Интеграции»."}
             </p>
           )}
-          <div
-            id="orders-settings-panel"
-            hidden={!settingsOpen && config.data.revision > 0}
-          >
-            <OrdersConfig
-              key={config.data.revision}
-              scope={scope}
-              moyLabel={moyLabel}
-              config={config.data}
-              expanded={settingsOpen || !config.data.revision}
-              onSaved={saved}
-              onDirty={(value) => {
-                setDirty(value);
-                invalidatePreview();
-              }}
-            />
-          </div>
+
           <div
             role="tabpanel"
             id={`${tabsID}-postings-panel`}

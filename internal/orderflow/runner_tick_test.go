@@ -150,3 +150,27 @@ func TestRunnerTickExplicitSourceRevocationStopsEnabledTargetPolicy(t *testing.T
 		t.Fatal("revoked source permission allowed background reads or writes")
 	}
 }
+
+func TestRunnerPermanentPolicySurvivesRestartAfterTwoDays(t *testing.T) {
+	t.Parallel()
+	review := flowReview(t, "permanent-posting")
+	attachFlowGrant(&review)
+	review.Config.Automation.Perpetual = true
+	review.Config.Automation.ExpiresAt = time.Time{}
+	later := flowTestNow.Add(48 * time.Hour)
+	review.Postings[0].Evidence.CheckedAt = later
+	store := &flowStore{review: review, due: []orders.Config{review.Config}}
+	service := flowService(t, store, flowResolver{})
+	service.options.Now = func() time.Time { return later }
+	// A newly constructed worker reloads the same persisted policy; no renewal
+	// or replacement timer is needed to authorize the next bounded review.
+	restarted := flowRunner(t, store, flowResolver{}, service)
+	restarted.options.Now = func() time.Time { return later }
+	restarted.options.Collector = &flowCollector{}
+	if err := restarted.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !store.approval.Automatic || len(store.approval.PostingNumbers) != 1 || store.approval.PostingNumbers[0] != "permanent-posting" {
+		t.Fatal("restarted worker lost permanent authority")
+	}
+}

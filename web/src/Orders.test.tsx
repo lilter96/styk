@@ -8,6 +8,8 @@ import {
   within,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
+import { OrdersSettingsPage } from "./OrdersSettingsPage";
 import { Orders } from "./Orders";
 import { OrdersPreview } from "./OrdersPreview";
 import { OrdersPostings, orderQuantity } from "./OrdersPostings";
@@ -291,7 +293,7 @@ it("requires separate explicit approval, selects only ready decisions, and never
   });
 });
 
-it("clears selected orders, preview and unsaved settings when either account changes", async () => {
+it("clears selected orders and preview when either account changes", async () => {
   const next = { ...scope, ozon: "ozon-other-synthetic" };
   mockAPI((url) => {
     if (url.searchParams.get("ozon_account") !== next.ozon) return;
@@ -310,10 +312,6 @@ it("clears selected orders, preview and unsaved settings when either account cha
     screen.getByRole("button", { name: "Проверить выбранные отправления" }),
   );
   await screen.findByRole("heading", { name: "Проверка перед передачей" });
-  await openOrderSettings();
-  fireEvent.change(screen.getByLabelText("Интервал проверки, секунд"), {
-    target: { value: "120" },
-  });
   mounted.changeScope(next);
   await screen.findByLabelText("Выбрать отправление OTHER-1");
   expect(screen.queryByLabelText("Выбрать отправление SYNTHETIC-1")).toBeNull();
@@ -321,10 +319,10 @@ it("clears selected orders, preview and unsaved settings when either account cha
     screen.queryByRole("heading", { name: "Проверка перед передачей" }),
   ).toBeNull();
   expect(screen.getByText("Выбрано отправлений: 0")).toBeTruthy();
+  expect(screen.queryByLabelText("Интервал проверки, секунд")).toBeNull();
   expect(
-    (screen.getByLabelText("Интервал проверки, секунд") as HTMLInputElement)
-      .value,
-  ).toBe("300");
+    screen.getByRole("link", { name: "Настройки" }).getAttribute("href"),
+  ).toBe("/orders/settings");
 });
 
 it("does not retry or reapprove an unknown outcome and exposes read-only history refresh", async () => {
@@ -381,16 +379,18 @@ it.each([true, false])(
           )
         : undefined,
     );
-    mount();
+    mount(
+      <MemoryRouter>
+        <OrdersSettingsPage scope={scope} />
+      </MemoryRouter>,
+    );
     await openOrderSettings();
     await screen.findByRole("option", { name: "Тестовая организация" });
-    fireEvent.click(
-      screen.getByLabelText("Разрешить передачу заказов в МойСклад"),
-    );
+    fireEvent.click(screen.getByLabelText("Передавать заказы в МойСклад"));
     expect(
       (
         screen.getByRole("button", {
-          name: "Сохранить настройки заказов",
+          name: "Сохранить настройки",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
@@ -398,9 +398,13 @@ it.each([true, false])(
       screen.getByLabelText(/Разрешаю создание и обновление заказов/),
     );
     fireEvent.click(
-      screen.getByRole("button", { name: "Сохранить настройки заказов" }),
+      screen.getByRole("button", { name: "Сохранить настройки" }),
     );
-    await screen.findByText("Настройки заказов сохранены.");
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Сохранить настройки" }),
+      ).toBeTruthy(),
+    );
     const body = JSON.parse(
       fetcher.mock.calls.find(([, init]) => init?.method === "POST")![1]!
         .body as string,
@@ -494,23 +498,28 @@ it("keeps native controls focusable and expires a preview without sending an app
   expect(approve).not.toHaveBeenCalled();
 });
 
-it("requires a bounded action and field grant plus explicit consent for automation", async () => {
+it("requires a permanent action and field grant plus explicit consent for automation", async () => {
   const fetcher = mockAPI((url, init) =>
     url.pathname.endsWith("/config") && init?.method === "POST"
       ? json({ ...JSON.parse(init.body as string).config, revision: 2 })
       : undefined,
   );
-  mount();
+  mount(
+    <MemoryRouter>
+      <OrdersSettingsPage scope={scope} />
+    </MemoryRouter>,
+  );
   await openOrderSettings();
   await screen.findByRole("option", { name: "Тестовая организация" });
+  fireEvent.click(screen.getByRole("button", { name: "Автоматизация" }));
   fireEvent.click(
-    screen.getByLabelText("Автоматически передавать выбранные поля"),
+    screen.getByRole("checkbox", { name: "Автоматическая передача" }),
   );
   const save = screen.getByRole("button", {
-    name: "Сохранить настройки заказов",
+    name: "Сохранить настройки",
   }) as HTMLButtonElement;
   expect(save.disabled).toBe(true);
-  const fields = screen.getByRole("group", { name: "Разрешённые поля" });
+  const fields = screen.getByRole("group", { name: "Данные" });
   fireEvent.click(
     within(fields).getByLabelText("Номер отправления → название заказа"),
   );
@@ -518,7 +527,11 @@ it("requires a bounded action and field grant plus explicit consent for automati
   expect(save.disabled).toBe(true);
   fireEvent.click(screen.getByLabelText(/Разрешаю автоматическое выполнение/));
   fireEvent.click(save);
-  await screen.findByText("Настройки заказов сохранены.");
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Сохранить настройки" }),
+    ).toBeTruthy(),
+  );
   const body = JSON.parse(
     fetcher.mock.calls.find(([, init]) => init?.method === "POST")![1]!
       .body as string,
@@ -528,12 +541,9 @@ it("requires a bounded action and field grant plus explicit consent for automati
     "mirror_update",
   ]);
   expect(body.config.automation.fields).toEqual(["name", "state"]);
-  expect(
-    Date.parse(body.config.automation.expires_at) - Date.now(),
-  ).toBeLessThanOrEqual(3600000);
-  expect(
-    Date.parse(body.config.automation.expires_at) - Date.now(),
-  ).toBeGreaterThan(3500000);
+  expect(body.config.automation.perpetual).toBe(true);
+  expect(body.config.automation.expires_at).toBeUndefined();
+  expect(body.automation_consent).toBe(true);
   expect(
     fetcher.mock.calls.filter(([path]) => path.includes("/approve")),
   ).toHaveLength(0);
@@ -592,11 +602,7 @@ it("blocks a previously unknown posting from the paginated history and shows its
 });
 
 async function openOrderSettings() {
-  fireEvent.click(await screen.findByRole("button", { name: "Настройки" }));
-  const summary = await screen.findByText("Настройки передачи в МойСклад");
-  const details = summary.closest("details")!;
-  details.open = true;
-  fireEvent(details, new Event("toggle"));
+  await screen.findByRole("heading", { name: "Настройки заказов" });
 }
 
 it("selects only unfenced rows on the current page without opening or writing", async () => {
@@ -840,16 +846,33 @@ it("loads only the requested posting history and keeps other targets out of its 
 it.each([
   ["source only", false, true, true],
   ["source revoked with target enabled", true, false, false],
-])("source check respects independent polling consent: %s", async (_name, enabled, readEnabled, expected) => {
-  const fetcher = mockAPI((url) => {
-    if (url.pathname.endsWith("/config")) return json(configuration({ enabled, read_enabled: readEnabled, read_configured: true }));
-    if (url.pathname.endsWith("/check")) return json({ scheduled: true });
-  });
-  mount();
-  const button = await screen.findByRole("button", { name: "Проверить источник сейчас" });
-  await screen.findByText("SYNTHETIC-1");
-  expect((button as HTMLButtonElement).disabled).toBe(!expected);
-  fireEvent.click(button);
-  if (expected) await screen.findByText(/Проверка источника запланирована/);
-  expect(fetcher.mock.calls.some(([url, init]) => url.includes("/api/orders/check") && init?.method === "POST")).toBe(expected);
-});
+])(
+  "source check respects independent polling consent: %s",
+  async (_name, enabled, readEnabled, expected) => {
+    const fetcher = mockAPI((url) => {
+      if (url.pathname.endsWith("/config"))
+        return json(
+          configuration({
+            enabled,
+            read_enabled: readEnabled,
+            read_configured: true,
+          }),
+        );
+      if (url.pathname.endsWith("/check")) return json({ scheduled: true });
+    });
+    mount();
+    const button = await screen.findByRole("button", {
+      name: "Проверить источник сейчас",
+    });
+    await screen.findByText("SYNTHETIC-1");
+    expect((button as HTMLButtonElement).disabled).toBe(!expected);
+    fireEvent.click(button);
+    if (expected) await screen.findByText(/Проверка источника запланирована/);
+    expect(
+      fetcher.mock.calls.some(
+        ([url, init]) =>
+          url.includes("/api/orders/check") && init?.method === "POST",
+      ),
+    ).toBe(expected);
+  },
+);

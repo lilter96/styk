@@ -26,7 +26,7 @@ func ordersGrantOwner(ctx context.Context, tx pgx.Tx, config orders.Config, acto
 		return "", orders.ErrBlocked
 	}
 	var recorded bool
-	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM orders_automation_grants WHERE id=$1 AND revision=$2 AND tenant_id=$3 AND moysklad_account=$4 AND ozon_account=$5 AND config_revision=$6 AND owner_user_id=$7 AND revoked_at IS NULL AND expires_at>clock_timestamp())`, grant.ID, grant.Revision, config.Scope.Tenant, config.Scope.MoyskladAccount, config.Scope.OzonAccount, config.Revision, grant.OwnerID).Scan(&recorded)
+	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM orders_automation_grants WHERE id=$1 AND revision=$2 AND tenant_id=$3 AND moysklad_account=$4 AND ozon_account=$5 AND config_revision=$6 AND owner_user_id=$7 AND revoked_at IS NULL AND (expires_at>clock_timestamp() OR (expires_at IS NULL AND grant_record->>'perpetual'='true')))`, grant.ID, grant.Revision, config.Scope.Tenant, config.Scope.MoyskladAccount, config.Scope.OzonAccount, config.Revision, grant.OwnerID).Scan(&recorded)
 	if err != nil {
 		return "", ordersError("check recorded order grant", err)
 	}
@@ -97,6 +97,10 @@ func validateOrderCommandCurrent(command orders.Command, posting orders.Posting,
 	}
 	if err := validateOrderCorrelationCurrent(command, current.Correlations); err != nil {
 		return err
+	}
+	warehouse, err := current.PostingWarehouse(posting)
+	if err != nil || !orderWarehouseMappingSame(command.Warehouse, warehouse) {
+		return orders.ErrStale
 	}
 	if err := validateOrderCommandMappings(command, current); err != nil {
 		return err
@@ -283,7 +287,7 @@ func orderWarehouseMappingSame(expected, actual orders.WarehouseMappingRef) bool
 
 func validateOrderNativeWrite(write orders.CustomerOrderWrite, current orders.ReviewContext) error {
 	config := current.Config
-	if write.OrganizationID != config.OrganizationID || write.AgentID != config.AgentID || write.StoreID != config.StoreID || write.SalesChannelID != config.SalesChannelID {
+	if write.OrganizationID != config.OrganizationID || write.AgentID != config.AgentID || write.SalesChannelID != config.SalesChannelID {
 		return orders.ErrStale
 	}
 	allowedState := write.StateID == config.StateID

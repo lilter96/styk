@@ -153,6 +153,7 @@ function mount(currentScope = scope, available = true) {
     <QueryClientProvider client={client}>
       <OrdersConfig
         key={JSON.stringify(currentScope)}
+        section="advanced"
         scope={currentScope}
         config={configuration(currentScope, available)}
         moyLabel="Тестовый аккаунт"
@@ -161,11 +162,6 @@ function mount(currentScope = scope, available = true) {
       />
     </QueryClientProvider>,
   );
-  const settings = screen
-    .getByText("Настройки передачи в МойСклад")
-    .closest("details")!;
-  settings.open = true;
-  fireEvent(settings, new Event("toggle"));
   return { ...rendered, onSaved };
 }
 const creationPosts = (fetcher: ReturnType<typeof mockAPI>["fetcher"]) =>
@@ -356,9 +352,7 @@ it("adds only reconciled registry UUIDs after explicit mapping selection and sep
   expect(
     fetcher.mock.calls.filter(([, init]) => init?.method === "POST"),
   ).toHaveLength(0);
-  fireEvent.click(
-    screen.getByRole("button", { name: "Сохранить настройки заказов" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Сохранить настройки" }));
   await waitFor(() =>
     expect(
       fetcher.mock.calls.filter(([path]) => path.endsWith("/config")),

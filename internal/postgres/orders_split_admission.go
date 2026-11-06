@@ -111,7 +111,7 @@ func enrichRetainedSplitAdmissions(ctx context.Context, q ordersQuerier, result 
 
 func retainedAdmissionMappingsCurrent(f orders.RetainedSplitAdmissionFacts, current *orders.ReviewContext) bool {
 	c := f.Admission.Command
-	if c.CustomerOrder == nil || c.CustomerOrder.OrganizationID != current.Config.OrganizationID || c.CustomerOrder.StoreID != current.Config.StoreID {
+	if c.CustomerOrder == nil || c.CustomerOrder.OrganizationID != current.Config.OrganizationID || c.CustomerOrder.StoreID != c.Warehouse.MoyskladStoreID {
 		return false
 	}
 	if !slices.ContainsFunc(current.WarehouseMappings, func(actual orders.WarehouseMappingRef) bool { return orderWarehouseMappingSame(c.Warehouse, actual) }) {
