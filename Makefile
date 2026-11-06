@@ -4,6 +4,7 @@ export GOTOOLCHAIN := go1.27.3
 # Test/build entry points must never implicitly load provider credentials.
 ifneq ($(filter up down migrate,$(or $(MAKECMDGOALS),up)),)
 -include .env
+-include .env.local
 export
 endif
 GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
@@ -34,7 +35,7 @@ up:
 down:
 	docker compose down
 migrate:
-	@$(GOOSE) -dir migrations postgres "$(DATABASE_URL)" up
+	@$(GOOSE) -dir migrations postgres "$(or $(DATABASE_URL_UNPOOLED),$(DATABASE_URL))" up
 test:
 	go test ./...
 test-integration:

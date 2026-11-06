@@ -68,3 +68,8 @@ type LabelArtifactReader interface {
 type LabelPDFReader interface {
 	DownloadOrderLabel(context.Context, Scope, string) ([]byte, error)
 }
+
+// LabelStorer externalizes encrypted bytes before the completion transaction.
+type LabelStorer interface {
+	StoreOrderLabel(context.Context, LabelArtifact) (LabelArtifact, error)
+}

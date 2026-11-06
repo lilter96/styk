@@ -61,7 +61,7 @@ The console uses the design from PRs #2 and #3 with the current order workflows,
 
 Open `/catalog-sync` after connecting both providers and importing their catalogs. Existing confirmed product mappings are reused. Choose the source for each supported field, select products with server-side search, review the diff and explicitly confirm the changes. Unsupported updates remain visible as limitations rather than erasing destination data.
 
-Apply all migrations (currently 69) and upgrade API and worker together. All connected accounts owned by the authenticated merchant support catalog, order and stock workflows without activation flags or account allowlists. Configure and approve writes in the UI, or enroll an explicit automation policy. Credential binding, tenant ownership, idempotency and unknown-outcome fences remain enforced. `STYK_STOCK_PUBLICATION_TEST_ENDPOINT` selects an explicit loopback simulator for isolated development; leave it empty for real providers. `STYK_CATALOG_REQUEST_AUDIT=true` enables bounded HTTP attempt metadata without bodies or credentials.
+Apply all migrations (currently 70) and upgrade API and worker together. All connected accounts owned by the authenticated merchant support catalog, order and stock workflows without activation flags or account allowlists. Configure and approve writes in the UI, or enroll an explicit automation policy. Credential binding, tenant ownership, idempotency and unknown-outcome fences remain enforced. `STYK_STOCK_PUBLICATION_TEST_ENDPOINT` selects an explicit loopback simulator for isolated development; leave it empty for real providers. `STYK_CATALOG_REQUEST_AUDIT=true` enables bounded HTTP attempt metadata without bodies or credentials.
 
 Product creation is separately approved. MoySklad creation uses a durable unique marker and returns the actual provider ID; import the created product and confirm its correspondence before enrolling it for ordinary updates. Ozon creation requires actual category/type, mandatory attributes, VAT, dimensions and other factual declarations; STYK does not invent them. An Ozon task ID means acceptance, not completion.
 
@@ -252,3 +252,52 @@ Migrations 67–68 remove the stock account constraint and generalize audited re
 The Integrations page can explicitly enable a time-limited automatic policy for any account pair owned by the merchant and selected confirmed product–FBS warehouse mappings. Leave `STYK_STOCK_PUBLICATION_TEST_ENDPOINT` empty, migrate through the current schema, and configure the targets in the UI. Each account-level cycle uses one pair of durable imports, evaluates enrolled targets independently, and creates one fenced publication per changed target. The worker dispatches each once through the outbox and records per-target acknowledgment and readback. The policy expires unless reauthorized, and an uncertain write remains fenced for operator review. Disable the policy to stop new cycles; an already dispatched request may still complete.
 
 All connected scopes use a single-attempt writer; transport uncertainty still requires readback and an audited recovery decision. The [controlled lab report](docs/controlled-live-integration-lab-2026-10.md) records the observed sequence and limitations; the [safety audit](docs/stock-publication-safety-audit.md) describes the historical baseline and remaining evidence requirements.
+
+## Neon development environment
+
+The linked Neon project's `production` branch is the main **development** database.
+It contains the imported STYK development accounts, catalog and orders. The latest
+migration on `origin/master` is `00070_product_matching_workspace.sql`; it has been
+applied to this branch. Use the direct connection: STYK uses session advisory locks,
+which are incompatible with transaction pooling. `pgx` remains the database driver.
+
+From the project root (Node 22.20+ recommended):
+
+```sh
+npm ci
+npm --prefix web ci
+neon deploy
+npm run db:status
+npm run db:migrate
+npm run build
+npm run dev
+```
+
+`neon deploy` updates the ignored `.env.local`. Preserve the original imported
+`STYK_CREDENTIAL_ENCRYPTION_KEY`, and configure `STYK_SMTP_ADDRESS` and
+`STYK_SMTP_FROM` for the existing STYK login. `npm run dev` starts the API and
+frontend at `http://127.0.0.1:5173`; `npm run dev:worker` separately runs the worker
+against the same `DATABASE_URL_UNPOOLED`. Publication still requires the existing
+explicit application controls. Automated tests use disposable local PostgreSQL.
+
+Set `STYK_LABEL_BUCKET=assets` to externalize new encrypted PDF labels into the
+private Neon bucket. Uploads run before the completion transaction; a failed or
+unknown upload cannot reconcile a label. Content-addressed objects permit safe
+retries, and ambiguous responses are checked by reading the expected bytes. The
+worker's bounded retention sweep removes expired objects, including abandoned
+uploads, while downloads enforce database ownership and expiry. Run a scheduling
+worker for cleanup. Older inline encrypted artifacts remain readable. Database
+metadata and the encryption key must be backed up with the object storage.
+
+The history UI subscribes to scoped `orders_work` version signals through Neon
+Realtime, then rereads the normal authorized API projection. Go authenticates
+capability requests; `scripts/seal-history.mjs` uses the official Neon SDK through
+a bounded Node subprocess. Keep Node, the root dependencies, and `scripts/` with
+the API runtime. Capabilities renew through the same session check, and the live
+query joins the session and merchant owner, so revocation removes its results.
+Only the public Realtime URL enters the frontend bundle. The existing history
+refresh button remains available when Realtime is unavailable.
+
+Neon Auth is provisioned in `neon.ts`; the current STYK identity and account
+ownership remain in use. Moving login to Neon Auth requires a separate account
+migration decision.

@@ -94,3 +94,43 @@ func prepareLabelReadback(t *testing.T, store *flowStore, source *flowProvider, 
 	runner.resolver = labelResolverFixture{inner: runner.resolver, source: reader}
 	return reader
 }
+
+type labelStorageFixture struct {
+	err     error
+	expires time.Duration
+	calls   int
+}
+
+func (s *labelStorageFixture) StoreOrderLabel(_ context.Context, a orders.LabelArtifact) (orders.LabelArtifact, error) {
+	s.calls++
+	s.expires = a.ExpiresAt.Sub(a.CreatedAt)
+	return a, s.err
+}
+
+func TestExternalLabelFailureCannotReconcileOrReplayWrite(t *testing.T) {
+	t.Parallel()
+	store, source, _, runner := dispatchedFlow(t)
+	reader := prepareLabelReadback(t, store, source, runner)
+	store.review.Config.PIIRetentionSeconds = 3600
+	vault, err := credentials.New(bytes.Repeat([]byte{7}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.options.LabelSealer = orderprivacy.LabelProtector{Vault: vault}
+	runner.options.LabelDownloader = func(context.Context, string) ([]byte, error) { return []byte("%PDF-1.7\nLABEL\n%%EOF"), nil }
+	storage := &labelStorageFixture{err: orders.ErrBlocked}
+	runner.options.LabelStorage = storage
+	runFlow(t, runner)
+	last := store.completions[len(store.completions)-1]
+	if store.work.State == orders.StateReconciled || last.LabelArtifact != nil {
+		t.Fatal("failed upload reconciled")
+	}
+	if storage.expires != time.Hour {
+		t.Fatal("upload preceded retention policy")
+	}
+	storage.err = nil
+	runFlow(t, runner)
+	if store.work.State != orders.StateReconciled || storage.calls != 2 || reader.writes != 0 {
+		t.Fatal("retry did not reconcile without replaying provider write")
+	}
+}

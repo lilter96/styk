@@ -1,3 +1,4 @@
+import { OrdersLiveStatus } from "./OrdersLiveStatus";
 import { useEffect, useState } from "react";
 import { OrdersPostingHistory } from "./OrdersPostingHistory";
 import { useOrdersHistory } from "./useOrdersHistory";
@@ -34,7 +35,7 @@ function OrdersHistory(props: Props) {
   const [search, setSearch] = useState("");
   const [cursors, setCursors] = useState([""]);
   const [opened, setOpened] = useState<string>();
-  const { latest, page } = useOrdersHistory(
+  const { latest, page, liveStatus } = useOrdersHistory(
     props.scope,
     cursors.at(-1)!,
     search,
@@ -86,6 +87,7 @@ function OrdersHistory(props: Props) {
           Обновить статусы
         </button>
       </div>
+      <OrdersLiveStatus status={liveStatus} />
       <OrdersHistoryToolbar filters={filters} onChange={changeFilters} />
       <HistoryFeedback
         loading={page.isLoading}

@@ -1,3 +1,4 @@
+import { OrdersLiveStatus } from "./OrdersLiveStatus";
 import { OrdersNativeSummary, nativeDocumentURL } from "./OrdersNativeSummary";
 import { OrdersRecovery } from "./OrdersRecovery";
 import { Icon } from "./UI";
@@ -39,11 +40,11 @@ export function OrdersPostingHistory({
 }) {
   const [cursors, setCursors] = useState([""]);
   const cursor = cursors[cursors.length - 1];
-  const { latest, page: history } = useOrdersHistory(
-    scope,
-    cursor,
-    postingNumber,
-  );
+  const {
+    latest,
+    page: history,
+    liveStatus,
+  } = useOrdersHistory(scope, cursor, postingNumber);
   const labelNow = useLabelExpiryClock(history.data);
   useEffect(() => {
     const links: Record<string, string> = {};
@@ -90,6 +91,7 @@ export function OrdersPostingHistory({
           Обновить статусы заказов
         </button>
       </div>
+      <OrdersLiveStatus status={liveStatus} />
       <p className="orders-note">
         Принятие запроса ещё не подтверждает изменения в сервисах. Итог —
         «Подтверждено сверкой» для каждого отправления.

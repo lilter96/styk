@@ -12,6 +12,9 @@ type orderSecretExpirer interface {
 // Retention remains active when publication is disabled. PostgreSQL decides
 // expiry and uses SKIP LOCKED, so independent schedulers can safely share work.
 type ordersRetentionWork struct {
+	blobs interface {
+		DeleteExpired(context.Context, time.Time, int) (int, error)
+	}
 	store orderSecretExpirer
 	next  time.Time
 	now   func() time.Time
@@ -28,5 +31,11 @@ func (w *ordersRetentionWork) RunNext(ctx context.Context) (bool, error) {
 	}
 	w.next = now.Add(time.Minute)
 	_, err := w.store.DeleteExpiredOrderSecrets(ctx, now, 100)
+	if err != nil {
+		return false, err
+	}
+	if w.blobs != nil {
+		_, err = w.blobs.DeleteExpired(ctx, now, 100)
+	}
 	return false, err
 }

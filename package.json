@@ -1,0 +1,18 @@
+{
+  "dependencies": {
+    "@neon/config": "^1.11.3",
+    "@neon/env": "^1.6.15",
+    "@neon/realtime": "^0.2.0",
+    "ws": "^8.22.1"
+  },
+  "name": "styk",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node --env-file-if-exists=.env.local scripts/build.mjs",
+    "dev": "node --env-file=.env.local scripts/dev.mjs",
+    "db:status": "node --env-file=.env.local scripts/migrate.mjs status",
+    "db:migrate": "node --env-file=.env.local scripts/migrate.mjs up",
+    "dev:worker": "node --env-file=.env.local scripts/worker.mjs"
+  }
+}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/lilter96/styk/internal/credentials"
 	"github.com/lilter96/styk/internal/infrastructure/moysklad"
+	"github.com/lilter96/styk/internal/labelstore"
 	"github.com/lilter96/styk/internal/orderflow"
 	"github.com/lilter96/styk/internal/orderprivacy"
 	"github.com/lilter96/styk/internal/orderprovider"
@@ -24,6 +25,7 @@ type ordersAPI struct {
 	factory     orderprovider.Factory
 	simulated   bool
 	labels      orderprivacy.LabelProtector
+	blobs       *labelstore.Store
 }
 
 func registerOrdersRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c *connections) error {
@@ -36,7 +38,11 @@ func registerOrdersRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c *co
 		factory.NewMoysklad = func(_, secret string) (*moysklad.Client, error) { return c.moyFactory(secret) }
 	}
 	factory.NewOzon = c.ozonFactory
-	api := &ordersAPI{db: db, factory: factory, simulated: c.catalogSimulator, labels: orderprivacy.LabelProtector{Vault: c.vault}}
+	blobs, err := labelstore.FromEnvironment()
+	if err != nil {
+		return err
+	}
+	api := &ordersAPI{db: db, factory: factory, simulated: c.catalogSimulator, blobs: blobs, labels: orderprivacy.LabelProtector{Vault: c.vault}}
 	api.service, err = orderflow.NewService(db, factory, orderflow.ServiceOptions{AllowScope: api.allowed, CustomerReader: orderprivacy.Protector{Vault: c.vault, Store: db}, ActionProtector: orderprivacy.ActionProtector{Vault: c.vault, Store: db}, ExemplarReader: orderprivacy.ExemplarProtector{Vault: c.vault, Store: db}, RecoverySealer: orderprivacy.RecoveryProtector{Vault: c.vault}})
 	if err != nil {
 		return err
@@ -53,6 +59,7 @@ func registerOrdersRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c *co
 		{"GET /api/orders/warehouses", api.warehouses, false},
 		{"GET /api/orders/config", api.config, false}, {"POST /api/orders/config", api.saveConfig, true},
 		{"GET /api/orders/postings", api.postings, false}, {"GET /api/orders/operations", api.history, false},
+		{"GET /api/orders/history-live", api.liveHistory, false},
 		{"GET /api/orders/action-options", api.actionOptions, false},
 		{"GET /api/orders/exemplars", api.exemplarSnapshot, false},
 		{"GET /api/orders/countries", api.countries, false},

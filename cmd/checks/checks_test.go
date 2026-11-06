@@ -38,7 +38,7 @@ func TestDatabaseRejectsApplicationRemoteAndOverrideDSNs(t *testing.T) {
 }
 
 func TestEnvironmentExcludesLiveCredentialsFlagsAndPGDefaults(t *testing.T) {
-	for _, key := range []string{"MOYSKLAD_TOKEN", "OZON_API_KEY", "STYK_LIVE_ORDER_FLOW_TEST", "STYK_TEST_ACCOUNT_ORDERS", "PGSERVICE", "DATABASE_URL", "TEST_DATABASE_URL", "ORDERS_POINT_TEST_DATABASE_URL"} {
+	for _, key := range []string{"MOYSKLAD_TOKEN", "OZON_API_KEY", "STYK_LIVE_ORDER_FLOW_TEST", "STYK_TEST_ACCOUNT_ORDERS", "PGSERVICE", "DATABASE_URL", "DATABASE_URL_UNPOOLED", "NEON_REALTIME_SECRET", "AWS_SECRET_ACCESS_KEY", "VITE_NEON_REALTIME_URL", "TEST_DATABASE_URL", "ORDERS_POINT_TEST_DATABASE_URL"} {
 		t.Setenv(key, "must-not-reach-tests")
 	}
 	for _, entry := range cleanEnvironment() {

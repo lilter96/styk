@@ -29,6 +29,7 @@ type RunnerOptions struct {
 	CustomerReader orders.CustomerReader
 	ActionReader   orders.ActionInputReader
 	LabelSealer    orders.LabelSealer
+	LabelStorage   orders.LabelStorer
 	// LabelDownloader supplies deterministic transports for test providers.
 	// Real adapters implement LabelPDFReader using account-coordinated HTTP.
 	// LabelSealer and the completion transaction persist every returned PDF.

@@ -62,6 +62,13 @@ func (r *Runner) saveCompletedLabel(ctx context.Context, work orders.Work, task 
 		return r.deferReadback(ctx, work, "LABEL_POLICY_CHANGED")
 	}
 
+	if r.options.LabelStorage != nil {
+		artifact, err = r.options.LabelStorage.StoreOrderLabel(ctx, artifact)
+		if err != nil {
+			return r.deferReadback(ctx, work, "LABEL_STORAGE_UNAVAILABLE")
+		}
+	}
+
 	receipt := work.Receipt
 	receipt.State, receipt.LabelTask = orders.StateReconciled, &task
 	receipt.Artifact = &orders.OrderArtifact{Available: true, DownloadURL: orders.LabelArtifactURL(work.ID), LabelType: labelType, ExpiresAt: artifact.ExpiresAt}

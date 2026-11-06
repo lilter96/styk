@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./api";
+import { useOrdersLiveHistory } from "./useOrdersLiveHistory";
 import {
   ordersURL,
   sameOrderScope,
@@ -14,6 +15,7 @@ function useHistoryPage(
   search = "",
   status = "",
   attention = false,
+  fallbackPolling = false,
 ) {
   return useQuery({
     queryKey:
@@ -49,6 +51,7 @@ function useHistoryPage(
     retry: false,
     refetchOnWindowFocus: false,
     refetchInterval: (query) =>
+      fallbackPolling ||
       (query.state.data?.operations ?? []).some((operation) =>
         (operation.targets ?? []).some((work) =>
           [
@@ -77,7 +80,16 @@ export function useOrdersHistory(
 ) {
   // Latest outcomes protect posting actions even while a filtered/older page
   // is displayed. Never replace this subscription with a filtered result.
-  const latest = useHistoryPage(scope, "");
+  const liveStatus = useOrdersLiveHistory(scope);
+  const latest = useHistoryPage(
+    scope,
+    "",
+    true,
+    "",
+    "",
+    false,
+    liveStatus === "error",
+  );
   const filtered = !!(cursor || search || status || attention);
   const page = useHistoryPage(
     scope,
@@ -86,6 +98,7 @@ export function useOrdersHistory(
     search,
     status,
     attention,
+    liveStatus === "error",
   );
-  return { latest, page: filtered ? page : latest };
+  return { latest, page: filtered ? page : latest, liveStatus };
 }

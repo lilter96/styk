@@ -11,6 +11,7 @@ import (
 
 	"github.com/lilter96/styk/internal/application"
 	"github.com/lilter96/styk/internal/credentials"
+	"github.com/lilter96/styk/internal/labelstore"
 	"github.com/lilter96/styk/internal/orderflow"
 	"github.com/lilter96/styk/internal/orderprivacy"
 	"github.com/lilter96/styk/internal/orderprovider"
@@ -80,7 +81,11 @@ func orderAllowed(scope orders.Scope) bool {
 	return publication.Orders(scope)
 }
 func newOrdersWork(db *postgres.Store, resolver *credentials.Resolver) (application.PublicationRunner, error) {
-	retention := &ordersRetentionWork{store: db, now: time.Now, mode: os.Getenv("STYK_WORKER_MODE")}
+	blobs, err := labelstore.FromEnvironment()
+	if err != nil {
+		return nil, err
+	}
+	retention := &ordersRetentionWork{store: db, blobs: blobs, now: time.Now, mode: os.Getenv("STYK_WORKER_MODE")}
 	var token [16]byte
 	if _, err := rand.Read(token[:]); err != nil {
 		return nil, errors.New("order worker identity unavailable")
@@ -98,7 +103,7 @@ func newOrdersWork(db *postgres.Store, resolver *credentials.Resolver) (applicat
 		return nil, err
 	}
 	collector := orderCollector{db: db, factory: factory, protector: protector, workerID: id}
-	runner, err := orderflow.NewRunner(db, factory, orderflow.RunnerOptions{WorkerID: id, AllowScope: orderAllowed, Service: service, Collector: collector, CustomerReader: protector, ActionReader: orderprivacy.ActionProtector{Vault: resolver.Vault, Store: db}, LabelSealer: orderprivacy.LabelProtector{Vault: resolver.Vault}, ExemplarReader: exemplars, ExemplarSealer: exemplars})
+	runner, err := orderflow.NewRunner(db, factory, orderflow.RunnerOptions{WorkerID: id, AllowScope: orderAllowed, Service: service, Collector: collector, CustomerReader: protector, ActionReader: orderprivacy.ActionProtector{Vault: resolver.Vault, Store: db}, LabelSealer: orderprivacy.LabelProtector{Vault: resolver.Vault}, LabelStorage: blobs, ExemplarReader: exemplars, ExemplarSealer: exemplars})
 	if err != nil {
 		return nil, err
 	}

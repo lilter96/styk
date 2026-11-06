@@ -13,6 +13,7 @@
     "test:browser": "node e2e/run-stack.mjs"
   },
   "dependencies": {
+    "@neon/realtime": "^0.2.0",
     "@tanstack/react-query": "^5.105.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",

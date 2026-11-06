@@ -12,6 +12,11 @@ func (a *ordersAPI) labelArtifact(w http.ResponseWriter, r *http.Request) {
 		ordersHTTPError(w, err)
 		return
 	}
+	artifact, err = a.blobs.LoadOrderLabel(r.Context(), artifact)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "LABEL_UNAVAILABLE")
+		return
+	}
 	data, err := a.labels.OpenOrderLabel(artifact)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "LABEL_UNAVAILABLE")
