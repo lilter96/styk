@@ -55,6 +55,23 @@ Use the executable policy in [docs/testing-policy.md](docs/testing-policy.md).
 - Use `strings.Builder` for multi-step string building.
 - Prefer standard `int64` / `float64`; do not introduce `math/big` unless explicitly required by spec.
 
+# Frontend and UI/UX
+
+For every user-visible UI change, first read and follow the project skill
+[styk-ui-workflow](.agents/skills/styk-ui-workflow/SKILL.md), even when it was not
+explicitly named in the prompt. This includes layout, CSS, copy, components,
+navigation, interaction states, responsive behavior and accessibility. Backend-only
+work and edits to workflow documentation do not trigger a UI implementation cycle.
+
+The workflow requires `frontend-design`, `design-system`, `design-critique` and
+`accessibility-review` for the affected scope. It routes to `ux-copy`,
+`user-research`, `research-synthesis` and `design-handoff` when their inputs and
+purpose apply. Read the applicable skills; do not claim to have used an unread or
+unavailable skill. Scale the work to the change, preserve approved product
+patterns, and report actual browser evidence and verification gaps. Follow the
+workflow's dependency guidance on a new machine; developer-specific plugin
+caches do not belong in Git.
+
 # Project guidance
 
 STYK is a modular monolith: domain types carry business meaning, application orchestrates work, postgres owns SQL and transactions, and transport exposes only health endpoints. Keep API and worker independent entry points; do not add generic repositories or premature services.
