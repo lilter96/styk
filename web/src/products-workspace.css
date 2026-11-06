@@ -720,6 +720,7 @@
 }
 .products-create-dialog label {
   display: grid;
+  align-content: start;
   gap: 8px;
   margin: 12px 0;
   font-size: 13px;
@@ -756,9 +757,6 @@
   .products-workspace .products-rule {
     flex-wrap: wrap;
     gap: 12px;
-  }
-  .products-rule > span {
-    margin-left: 32px;
   }
   .products-match-counts {
     display: flex;
@@ -813,12 +811,6 @@
 .products-history-dialog .catalog-work header {
   gap: 16px;
 }
-@media (max-width: 700px) {
-  .products-history-table table {
-    min-width: 590px;
-  }
-}
-
 .reference-shell .products-workspace .mapping-table-footer button {
   min-width: 44px;
   min-height: 44px;

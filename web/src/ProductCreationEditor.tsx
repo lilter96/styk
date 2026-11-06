@@ -78,7 +78,12 @@ export function ProductCreationEditor({
             />
           )}
           {step === 2 && (
-            <CatalogSyncFacts scope={scope} facts={facts} onChange={onFacts} />
+            <CatalogSyncFacts
+              scope={scope}
+              facts={facts}
+              onChange={onFacts}
+              initiallyOpen
+            />
           )}
           {step === 3 && (
             <>
@@ -99,7 +104,7 @@ export function ProductCreationEditor({
                   </div>
                 ))}
               </dl>
-              {facts?.category_id && (
+              {facts?.category_id && values.category?.state !== "known" && (
                 <dl className="products-creation-summary">
                   <div>
                     <dt>Категория Ozon</dt>

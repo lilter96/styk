@@ -68,10 +68,12 @@ function MappingRow({
           <div className="matching-page-product">
             <Thumbnail />
             <div className="matching-page-product-copy">
-              <strong>{title}</strong>
+              <strong title={title}>{title}</strong>
               <small>
                 <BrandLogo provider={p.provider} decorative />{" "}
-                {p.offer_id || "Артикул не указан"}
+                <span title={p.offer_id || "Артикул не указан"}>
+                  {p.offer_id || "Артикул не указан"}
+                </span>
               </small>
             </div>
           </div>
@@ -83,12 +85,17 @@ function MappingRow({
               decorative
             />
             <div>
-              {p.target_name ||
-                (p.target_id
-                  ? "Товар МойСклад"
-                  : p.provider === "moysklad"
-                    ? "Нет карточки Ozon"
-                    : "Нет подтверждённой пары")}
+              <span
+                className="products-paired-name"
+                title={p.target_name || undefined}
+              >
+                {p.target_name ||
+                  (p.target_id
+                    ? "Товар МойСклад"
+                    : p.provider === "moysklad"
+                      ? "Нет карточки Ozon"
+                      : "Нет подтверждённой пары")}
+              </span>
               <small>{p.target_article}</small>
             </div>
           </div>

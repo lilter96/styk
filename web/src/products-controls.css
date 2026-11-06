@@ -1,0 +1,157 @@
+/* Native keyboard and form semantics, with the same control/picker design. */
+.reference-shell .products-workspace {
+  font-family:
+    Inter,
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.reference-shell .products-workspace .catalog-sync {
+  font-family: inherit;
+}
+.reference-shell .products-workspace :is(button, input, select, textarea) {
+  font-family: inherit;
+  letter-spacing: normal;
+}
+.reference-shell .products-workspace button:disabled:not(.matching-result) {
+  color: #9a91a5;
+  background: #f5f2f8;
+  border-color: #e8e1ef;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+.reference-shell:has(.products-workspace) select {
+  min-height: 40px;
+  border: 1px solid #dcd5ed;
+  border-radius: 10px;
+  background-color: #fff;
+  color: #241d3c;
+  font-weight: 500;
+  cursor: pointer;
+}
+.reference-shell:has(.products-workspace) select:focus-visible {
+  outline: 2px solid #7939ee;
+  outline-offset: 2px;
+}
+.reference-shell:has(.products-workspace) select:disabled {
+  cursor: not-allowed;
+  color: #827a91;
+  background-color: #f5f3f9;
+}
+.reference-shell:has(.products-workspace) select:not([multiple]):not([size]) {
+  height: 40px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.reference-shell:has(.products-workspace) .fixed-moy-account {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 32px;
+  gap: 8px;
+  align-items: center;
+}
+.reference-shell:has(.products-workspace) .fixed-moy-account > .brand-logo {
+  grid-column: 1;
+  grid-row: 1;
+  width: 24px;
+  height: 24px;
+}
+.reference-shell:has(.products-workspace) .fixed-moy-account > div {
+  display: contents;
+}
+.reference-shell:has(.products-workspace) .fixed-moy-account > div > span {
+  grid-column: 2;
+  grid-row: 1;
+}
+.reference-shell:has(.products-workspace) .moy-account-label {
+  grid-column: 1/-1;
+  grid-row: 2;
+  min-width: 0;
+}
+.reference-shell:has(.products-workspace) .fixed-moy-status {
+  grid-column: 1/-1;
+  grid-row: 3;
+}
+.reference-shell:has(.products-workspace) .moy-settings-link {
+  grid-column: 3;
+  grid-row: 1;
+}
+.reference-shell:has(.products-workspace) .app-sidebar select {
+  width: 100%;
+  padding-inline: 10px;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+@supports (appearance: base-select) {
+  .reference-shell:has(.products-workspace) select,
+  .reference-shell:has(.products-workspace) select::picker(select) {
+    appearance: base-select;
+  }
+  .reference-shell:has(.products-workspace) select {
+    align-items: center;
+    gap: 12px;
+    text-align: left;
+  }
+  .reference-shell:has(.products-workspace) select::picker-icon {
+    color: #77618c;
+    margin-left: auto;
+    flex-shrink: 0;
+    font-size: 12px;
+  }
+  .reference-shell:has(.products-workspace) select:open {
+    border-color: #9463e8;
+    box-shadow: 0 0 0 3px #7939ee12;
+  }
+  .reference-shell:has(.products-workspace) select::picker(select) {
+    margin-block: 6px;
+    padding: 6px;
+    border: 1px solid #ded6ee;
+    border-radius: 12px;
+    box-shadow: 0 12px 32px #2c16551f;
+    background: #fff;
+    color: #241d3c;
+    font:
+      400 14px/1.5 Inter,
+      system-ui,
+      -apple-system,
+      sans-serif;
+    max-block-size: min(360px, 65dvh);
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+  .reference-shell:has(.products-workspace) select option {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 40px;
+    padding: 10px 12px;
+    border: 0;
+    border-radius: 7px;
+    color: #342a48;
+    background: #fff;
+    font: inherit;
+    cursor: pointer;
+    white-space: normal;
+  }
+  .reference-shell:has(.products-workspace) select option:checked {
+    color: #6222c5;
+    background: #f1eafa;
+    font-weight: 600;
+  }
+  .reference-shell:has(.products-workspace) select option:is(:hover, :focus) {
+    background: #f5f1fb;
+    outline: 0;
+  }
+  .reference-shell:has(.products-workspace) select option:disabled {
+    color: #a09aa9;
+    cursor: not-allowed;
+  }
+  .reference-shell:has(.products-workspace) select option::checkmark {
+    color: #7131df;
+    margin-left: auto;
+    order: 2;
+  }
+}

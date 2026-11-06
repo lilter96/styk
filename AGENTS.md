@@ -72,6 +72,24 @@ patterns, and report actual browser evidence and verification gaps. Follow the
 workflow's dependency guidance on a new machine; developer-specific plugin
 caches do not belong in Git.
 
+The `styk-ui-workflow` instruction above takes precedence over the implementation
+guidance below and in [docs/frontend-styling.md](docs/frontend-styling.md).
+Within that workflow:
+- Load shared foundations before the page/component styles that specialize them.
+  Keep the order explicit in `web/src/main.tsx`; do not depend on transitive
+  component imports to win the CSS cascade.
+- Give each component one owner for its layout rules. Scope page selectors and
+  modifiers explicitly. Fix conflicting rules at their source instead of adding
+  repeated overrides or escalating `!important`.
+- Keep padding, gaps, line height and control states explicit. Never infer visual
+  correctness from TypeScript, a successful build or a full-page screenshot alone.
+- Inspect the rendered component and its computed styles. Check open dropdowns,
+  long names/IDs, empty/loading/disabled states, pagination and expanded accordions,
+  as well as desktop and mobile layouts. Scroll controls and footers must not
+  overlap list rows or other content.
+- Record the actual screens/states checked and disclose omissions. Reuse unchanged
+  checks and respect the user's current restrictions on local test execution.
+
 # Project guidance
 
 STYK is a modular monolith: domain types carry business meaning, application orchestrates work, postgres owns SQL and transactions, and transport exposes only health endpoints. Keep API and worker independent entry points; do not add generic repositories or premature services.

@@ -376,7 +376,7 @@ export function CatalogSyncConfig({
                 По полям
               </button>
             </div>
-            <div className="products-rules-table">
+            <div className="products-rules-table products-policy-table">
               <table>
                 <thead>
                   <tr>

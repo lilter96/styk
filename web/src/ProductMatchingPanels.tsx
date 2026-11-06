@@ -34,35 +34,45 @@ function CopyValue({ label, value }: { label: string; value: string }) {
 export function OzonProductPanel({ product }: { product: Product }) {
   return (
     <aside className="matching-ozon">
-      <header>
-        <BrandLogo provider="ozon" decorative />
-        <b>Товар в Ozon</b>
-        <span
-          className={`mapping-chip ${product.match_status === "CONFIRMED" ? "ok" : "warning"}`}
-        >
-          {product.match_status === "CONFIRMED"
-            ? "Подтверждён"
-            : product.match_status === "CONFLICT"
-              ? "Конфликт"
-              : "Не сопоставлен"}
-        </span>
-      </header>
-      <div className="matching-source-title">
+      <div className="matching-source-summary">
         <div className="matching-image-placeholder">
           <Icon name="products" />
         </div>
-        <h3>{product.name || product.offer_id || product.product_id}</h3>
+        <div className="matching-source-copy">
+          <header>
+            <span className="matching-source-provider">
+              <BrandLogo provider="ozon" decorative />
+              Товар в Ozon
+            </span>
+            <span
+              className={`mapping-chip ${product.match_status === "CONFIRMED" ? "ok" : "warning"}`}
+            >
+              {product.match_status === "CONFIRMED"
+                ? "Подтверждён"
+                : product.match_status === "CONFLICT"
+                  ? "Конфликт"
+                  : "Не сопоставлен"}
+            </span>
+          </header>
+          <h3>{product.name || product.offer_id || product.product_id}</h3>
+          <p>
+            Артикул: <strong>{product.offer_id || "Не указан"}</strong>
+            {product.archived !== null && (
+              <span className="matching-source-lifecycle">
+                {product.archived ? "Архивный товар" : "Активный товар"}
+              </span>
+            )}
+          </p>
+        </div>
       </div>
-      <dl>
-        <CopyValue label="Offer ID" value={product.offer_id} />
-        <CopyValue label="ID товара Ozon" value={product.product_id} />
-        {product.sku && <CopyValue label="SKU" value={product.sku} />}
-      </dl>
-      {product.archived !== null && (
-        <p className="matching-muted">
-          {product.archived ? "Архивный товар" : "Активный товар"}
-        </p>
-      )}
+      <details className="matching-source-identifiers">
+        <summary>Идентификаторы товара</summary>
+        <dl>
+          <CopyValue label="Offer ID" value={product.offer_id} />
+          <CopyValue label="ID товара Ozon" value={product.product_id} />
+          {product.sku && <CopyValue label="SKU" value={product.sku} />}
+        </dl>
+      </details>
       {product.target_id && (
         <div className="matching-current">
           <h4>Текущая связь</h4>

@@ -177,7 +177,7 @@ export function ProductMappingPage({
         <div className="products-mobile-import">
           <ProductImportMenu />
         </div>
-        <label>
+        <label className="products-source-filter">
           Источник
           <select
             aria-label="Источник товара"
@@ -197,6 +197,7 @@ export function ProductMappingPage({
           <div>
             <Icon name="search" size="button" />
             <input
+              aria-label="Поиск"
               placeholder="Поиск по названию или артикулу"
               value={search}
               onChange={(e) => {
@@ -220,7 +221,7 @@ export function ProductMappingPage({
             )}
           </div>
         </label>
-        <label>
+        <label className="products-lifecycle-filter">
           Товары
           <select
             value={archived}

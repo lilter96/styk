@@ -16,8 +16,6 @@ import {
   scopeBody,
   type CatalogConfig,
 } from "./CatalogSyncTypes";
-import "./products-workspace.css";
-import "./products-reference.css";
 
 export function ProductsWorkspace({
   scope,

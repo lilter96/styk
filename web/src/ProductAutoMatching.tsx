@@ -247,111 +247,117 @@ export function ProductAutoMatching({
               <span className="products-step-number">1</span>Как искать
               совпадения
             </h2>
-            <label className="products-rule">
-              <input
-                type="checkbox"
-                checked={draft.exact_sku}
-                disabled={busy}
-                onChange={(e) =>
-                  setPolicy({
-                    ...draft,
-                    exact_sku: e.target.checked,
-                    auto_confirm: e.target.checked && draft.auto_confirm,
-                    after_import: e.target.checked && draft.after_import,
-                  })
-                }
-              />
-              <span className="products-signal-icon">
-                <Icon name="products" />
-              </span>
-              <div>
-                <b>По артикулу и коду</b>
-                <p>
-                  Артикул Ozon совпадает с артикулом или кодом МойСклад. Регистр
-                  и значащие символы сохраняются.
-                </p>
+            <div className="products-rule-group">
+              <label className="products-rule">
+                <input
+                  type="checkbox"
+                  checked={draft.exact_sku}
+                  disabled={busy}
+                  onChange={(e) =>
+                    setPolicy({
+                      ...draft,
+                      exact_sku: e.target.checked,
+                      auto_confirm: e.target.checked && draft.auto_confirm,
+                      after_import: e.target.checked && draft.after_import,
+                    })
+                  }
+                />
+                <span className="products-signal-icon">
+                  <Icon name="products" />
+                </span>
+                <div>
+                  <b>По артикулу и коду</b>
+                  <p>
+                    Артикул Ozon совпадает с артикулом или кодом МойСклад.
+                    Регистр и значащие символы сохраняются.
+                  </p>
+                </div>
+                <span className="mapping-chip ok">Точное</span>
+              </label>
+              <div className="products-rule">
+                <input
+                  type="checkbox"
+                  disabled
+                  aria-label="По штрихкоду: данные пока недоступны"
+                />
+                <span className="products-signal-icon">▥</span>
+                <div>
+                  <b>По штрихкоду</b>
+                  <p>
+                    В загруженных каталогах пока нет проверенных штрихкодов
+                    обоих сервисов.
+                  </p>
+                </div>
+                <span className="products-muted">Недоступно</span>
               </div>
-              <span className="mapping-chip ok">Точное</span>
-            </label>
-            <div className="products-rule">
-              <input
-                type="checkbox"
-                disabled
-                aria-label="По штрихкоду: данные пока недоступны"
-              />
-              <span className="products-signal-icon">▥</span>
-              <div>
-                <b>По штрихкоду</b>
-                <p>
-                  В загруженных каталогах пока нет проверенных штрихкодов обоих
-                  сервисов.
-                </p>
-              </div>
-              <span className="products-muted">Недоступно</span>
+              <label className="products-rule">
+                <input
+                  type="checkbox"
+                  checked={draft.names}
+                  disabled={busy}
+                  onChange={(e) =>
+                    setPolicy({ ...draft, names: e.target.checked })
+                  }
+                />
+                <span className="products-signal-icon">Aa</span>
+                <div>
+                  <b>По названию</b>
+                  <p>
+                    Похожие названия покажем как подсказки для ручной проверки.
+                  </p>
+                </div>
+                <span className="mapping-chip warning">Подсказки</span>
+              </label>
             </div>
-            <label className="products-rule">
-              <input
-                type="checkbox"
-                checked={draft.names}
-                disabled={busy}
-                onChange={(e) =>
-                  setPolicy({ ...draft, names: e.target.checked })
-                }
-              />
-              <span className="products-signal-icon">Aa</span>
-              <div>
-                <b>По названию</b>
-                <p>
-                  Похожие названия покажем как подсказки для ручной проверки.
-                </p>
-              </div>
-              <span className="mapping-chip warning">Подсказки</span>
-            </label>
           </section>
           <section className="products-match-section">
             <h2>
               <span className="products-step-number">2</span>Кто подтверждает
               соответствия
             </h2>
-            <label
-              className={`products-rule ${!draft.auto_confirm ? "is-selected" : ""}`}
-            >
-              <input
-                type="radio"
-                name="matching-mode"
-                checked={!draft.auto_confirm}
-                disabled={busy}
-                onChange={() =>
-                  setPolicy({
-                    ...draft,
-                    auto_confirm: false,
-                    after_import: false,
-                  })
-                }
-              />
-              <div>
-                <b>Только предлагать — решение за мной</b>
-                <p>Покажем кандидатов. Каждую пару можно проверить отдельно.</p>
-              </div>
-            </label>
-            <label
-              className={`products-rule ${draft.auto_confirm ? "is-selected" : ""}`}
-            >
-              <input
-                type="radio"
-                name="matching-mode"
-                checked={draft.auto_confirm}
-                disabled={busy || !draft.exact_sku}
-                onChange={() => setPolicy({ ...draft, auto_confirm: true })}
-              />
-              <div>
-                <b>Разрешить подтверждение уникальных точных совпадений</b>
-                <p>
-                  После предпросмотра выберите пары. Перед записью STYK повторно
-                  проверит данные и существующие связи.
-                </p>
-              </div>
-            </label>
+            <div className="products-mode-options">
+              <label
+                className={`products-rule ${!draft.auto_confirm ? "is-selected" : ""}`}
+              >
+                <input
+                  type="radio"
+                  name="matching-mode"
+                  checked={!draft.auto_confirm}
+                  disabled={busy}
+                  onChange={() =>
+                    setPolicy({
+                      ...draft,
+                      auto_confirm: false,
+                      after_import: false,
+                    })
+                  }
+                />
+                <div>
+                  <b>Только предлагать — решение за мной</b>
+                  <p>
+                    Покажем кандидатов. Каждую пару можно проверить отдельно.
+                  </p>
+                </div>
+              </label>
+              <label
+                className={`products-rule ${draft.auto_confirm ? "is-selected" : ""}`}
+              >
+                <input
+                  type="radio"
+                  name="matching-mode"
+                  checked={draft.auto_confirm}
+                  disabled={busy || !draft.exact_sku}
+                  onChange={() => setPolicy({ ...draft, auto_confirm: true })}
+                />
+                <div>
+                  <b>Разрешить подтверждение уникальных точных совпадений</b>
+                  <p>
+                    После предпросмотра выберите пары. Перед записью STYK
+                    повторно проверит данные и существующие связи.
+                  </p>
+                </div>
+              </label>
+            </div>
             <p className="catalog-warning">
               Дубли, варианты товара и похожие названия останутся на ручной
               проверке.

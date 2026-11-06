@@ -136,6 +136,7 @@ export function CatalogSyncAutomation({
             type="button"
             key={value}
             className={filter === value ? "active" : "secondary"}
+            aria-pressed={filter === value}
             onClick={() => setFilter(value)}
           >
             {label}{" "}
@@ -152,179 +153,183 @@ export function CatalogSyncAutomation({
       </div>
       <div className="products-automation-layout">
         <div className="products-rules-table">
-          <table>
-            <thead>
-              <tr>
-                <th>
-                  <input
-                    type="checkbox"
-                    aria-label="Выбрать все доступные разрешения"
-                    checked={
-                      displayed.length > 0 &&
-                      displayed.every((target) => selected.includes(target.id))
-                    }
-                    disabled={busy || !displayed.length}
-                    onChange={(event) =>
-                      setSelected(
-                        event.target.checked
-                          ? [
-                              ...new Set([
-                                ...selected,
-                                ...displayed.map((target) => target.id),
-                              ]),
-                            ]
-                          : selected.filter(
-                              (id) =>
-                                !displayed.some((target) => target.id === id),
-                            ),
-                      )
-                    }
-                  />
-                </th>
-                <th>Товар и связь</th>
-                <th>Название</th>
-                <th>Описание</th>
-                <th>Автопередача</th>
-                <th>Состояние</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayed.map((t) => {
-                const product = query.data?.products.find((p) =>
-                  [t.source, t.target].some(
-                    (i) =>
-                      i.account.provider === p.identity.account.provider &&
-                      i.id === p.identity.id,
-                  ),
-                );
-                return (
-                  <tr
-                    key={t.id}
-                    className={selected.includes(t.id) ? "is-selected" : ""}
-                  >
-                    <td>
-                      <input
-                        type="checkbox"
-                        aria-label={`Выбрать разрешения ${t.source.offer_id || t.source.id}`}
-                        checked={selected.includes(t.id)}
-                        disabled={busy}
-                        onChange={(e) =>
-                          setSelected(
-                            e.target.checked
-                              ? [...selected, t.id]
-                              : selected.filter((id) => id !== t.id),
-                          )
-                        }
-                      />
-                    </td>
-                    <td>
-                      <div className="products-identity">
-                        <span className="products-image-placeholder">
-                          <BrandLogo provider="moysklad" decorative />
-                        </span>
-                        <div>
-                          <b>
-                            {product
-                              ? productName(product)
-                              : t.source.offer_id || t.source.id}
-                          </b>
-                          <small className="mapping-chip ok">Связан</small>
-                        </div>
-                      </div>
-                    </td>
-                    {["name", "description"].map((f) => (
-                      <td key={f}>
-                        <label className="products-field-permission">
-                          <input
-                            type="checkbox"
-                            aria-label={`${fieldLabel(f)}: ${t.source.offer_id || t.source.id}`}
-                            checked={t.automatic_fields?.includes(f) || false}
-                            disabled={
-                              busy ||
-                              (!t.automatic_fields?.includes(f) &&
-                                (!available || !allowed.includes(f)))
-                            }
-                            onChange={(e) =>
-                              patch(t, {
-                                automatic_fields: e.target.checked
-                                  ? [...(t.automatic_fields || []), f]
-                                  : (t.automatic_fields || []).filter(
-                                      (v) => v !== f,
-                                    ),
-                              })
-                            }
-                          />
-                          <span>
-                            {t.automatic_fields?.includes(f)
-                              ? "Разрешено"
-                              : "Вручную"}
-                          </span>
-                        </label>
-                      </td>
-                    ))}
-                    <td>
-                      <label className="products-switch">
+          <div className="products-automation-table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>
+                    <input
+                      type="checkbox"
+                      aria-label="Выбрать все доступные разрешения"
+                      checked={
+                        displayed.length > 0 &&
+                        displayed.every((target) =>
+                          selected.includes(target.id),
+                        )
+                      }
+                      disabled={busy || !displayed.length}
+                      onChange={(event) =>
+                        setSelected(
+                          event.target.checked
+                            ? [
+                                ...new Set([
+                                  ...selected,
+                                  ...displayed.map((target) => target.id),
+                                ]),
+                              ]
+                            : selected.filter(
+                                (id) =>
+                                  !displayed.some((target) => target.id === id),
+                              ),
+                        )
+                      }
+                    />
+                  </th>
+                  <th>Товар и связь</th>
+                  <th>Название</th>
+                  <th>Описание</th>
+                  <th>Автопередача</th>
+                  <th>Состояние</th>
+                </tr>
+              </thead>
+              <tbody>
+                {displayed.map((t) => {
+                  const product = query.data?.products.find((p) =>
+                    [t.source, t.target].some(
+                      (i) =>
+                        i.account.provider === p.identity.account.provider &&
+                        i.id === p.identity.id,
+                    ),
+                  );
+                  return (
+                    <tr
+                      key={t.id}
+                      className={selected.includes(t.id) ? "is-selected" : ""}
+                    >
+                      <td>
                         <input
                           type="checkbox"
-                          aria-label={`Автоматически передавать изменения товара ${t.source.offer_id || t.source.id}`}
-                          checked={t.automatic}
-                          disabled={
-                            busy ||
-                            (!t.automatic && (!available || !allowed.length))
-                          }
+                          aria-label={`Выбрать разрешения ${t.source.offer_id || t.source.id}`}
+                          checked={selected.includes(t.id)}
+                          disabled={busy}
                           onChange={(e) =>
-                            patch(t, { automatic: e.target.checked })
+                            setSelected(
+                              e.target.checked
+                                ? [...selected, t.id]
+                                : selected.filter((id) => id !== t.id),
+                            )
                           }
                         />
-                        <span aria-hidden="true" />
-                      </label>
-                    </td>
-                    <td>
-                      <span className="mapping-chip ok">Связан</span>
-                    </td>
-                  </tr>
-                );
-              })}
-              {filter !== "enabled" &&
-                unpaired.map((product) => (
-                  <tr key={`unpaired-${product.identity.id}`}>
-                    <td>
-                      <input
-                        type="checkbox"
-                        disabled
-                        aria-label={`Нет пары: ${productName(product)}`}
-                      />
-                    </td>
-                    <td>
-                      <div className="products-identity">
-                        <span className="products-image-placeholder">
-                          <BrandLogo provider="moysklad" decorative />
-                        </span>
-                        <div>
-                          <b>{productName(product)}</b>
-                          <small className="mapping-chip">Нет пары</small>
+                      </td>
+                      <td>
+                        <div className="products-identity">
+                          <span className="products-image-placeholder">
+                            <BrandLogo provider="moysklad" decorative />
+                          </span>
+                          <div>
+                            <b>
+                              {product
+                                ? productName(product)
+                                : t.source.offer_id || t.source.id}
+                            </b>
+                            <small className="mapping-chip ok">Связан</small>
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td>—</td>
-                    <td>—</td>
-                    <td>
-                      <label className="products-switch">
+                      </td>
+                      {["name", "description"].map((f) => (
+                        <td key={f}>
+                          <label className="products-field-permission">
+                            <input
+                              type="checkbox"
+                              aria-label={`${fieldLabel(f)}: ${t.source.offer_id || t.source.id}`}
+                              checked={t.automatic_fields?.includes(f) || false}
+                              disabled={
+                                busy ||
+                                (!t.automatic_fields?.includes(f) &&
+                                  (!available || !allowed.includes(f)))
+                              }
+                              onChange={(e) =>
+                                patch(t, {
+                                  automatic_fields: e.target.checked
+                                    ? [...(t.automatic_fields || []), f]
+                                    : (t.automatic_fields || []).filter(
+                                        (v) => v !== f,
+                                      ),
+                                })
+                              }
+                            />
+                            <span>
+                              {t.automatic_fields?.includes(f)
+                                ? "Разрешено"
+                                : "Вручную"}
+                            </span>
+                          </label>
+                        </td>
+                      ))}
+                      <td>
+                        <label className="products-switch">
+                          <input
+                            type="checkbox"
+                            aria-label={`Автоматически передавать изменения товара ${t.source.offer_id || t.source.id}`}
+                            checked={t.automatic}
+                            disabled={
+                              busy ||
+                              (!t.automatic && (!available || !allowed.length))
+                            }
+                            onChange={(e) =>
+                              patch(t, { automatic: e.target.checked })
+                            }
+                          />
+                          <span aria-hidden="true" />
+                        </label>
+                      </td>
+                      <td>
+                        <span className="mapping-chip ok">Связан</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {filter !== "enabled" &&
+                  unpaired.map((product) => (
+                    <tr key={`unpaired-${product.identity.id}`}>
+                      <td>
                         <input
                           type="checkbox"
                           disabled
-                          aria-label={`Автопередача недоступна: ${productName(product)}`}
+                          aria-label={`Нет пары: ${productName(product)}`}
                         />
-                        <span aria-hidden="true" />
-                      </label>
-                    </td>
-                    <td>
-                      <span className="products-muted">Нет пары</span>
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
+                      </td>
+                      <td>
+                        <div className="products-identity">
+                          <span className="products-image-placeholder">
+                            <BrandLogo provider="moysklad" decorative />
+                          </span>
+                          <div>
+                            <b>{productName(product)}</b>
+                            <small className="mapping-chip">Нет пары</small>
+                          </div>
+                        </div>
+                      </td>
+                      <td>—</td>
+                      <td>—</td>
+                      <td>
+                        <label className="products-switch">
+                          <input
+                            type="checkbox"
+                            disabled
+                            aria-label={`Автопередача недоступна: ${productName(product)}`}
+                          />
+                          <span aria-hidden="true" />
+                        </label>
+                      </td>
+                      <td>
+                        <span className="products-muted">Нет пары</span>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
           {query.isLoading && <p role="status">Загружаем связанные товары…</p>}
           {query.isError && (
             <p role="alert">
@@ -340,7 +345,7 @@ export function CatalogSyncAutomation({
               <Link to="/products">Сопоставить товары</Link>
             </div>
           )}
-          <div className="catalog-actions">
+          <div className="catalog-actions products-automation-pagination">
             <button
               type="button"
               className="secondary"

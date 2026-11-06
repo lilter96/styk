@@ -8,6 +8,10 @@ import "./imports.css";
 import "./mapping.css";
 import "./design-system.css";
 import "./product-matching.css";
+import "./products-workspace.css";
+import "./products-reference.css";
+import "./products-matching-layout.css";
+import "./products-controls.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {

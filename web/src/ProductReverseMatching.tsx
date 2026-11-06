@@ -6,6 +6,7 @@ import type { Confirmation, Scope } from "./Confirmation";
 import { IntegrationDialog } from "./IntegrationDialog";
 import { BrandLogo } from "./BrandLogo";
 import { ProductReview } from "./ProductReview";
+import { Icon } from "./UI";
 
 export function ProductReverseMatching({
   product,
@@ -96,7 +97,12 @@ export function ProductReverseMatching({
           }}
         />
       </label>
-      <h3>Возможные соответствия</h3>
+      <div className="products-reverse-results-heading">
+        <h3>Возможные соответствия</h3>
+        {!!result.data?.items.length && (
+          <span>{result.data.items.length} на странице</span>
+        )}
+      </div>
       {result.isFetching && <p role="status">Ищем товары Ozon…</p>}
       {result.isError && (
         <p role="alert">
@@ -134,37 +140,66 @@ export function ProductReverseMatching({
           </label>
         ))}
       </div>
-      {!result.isFetching && !result.data?.items.length && (
-        <p className="catalog-empty">
-          Совпадений нет. Измените поиск или подготовьте новую карточку Ozon.
-        </p>
+      {!result.isFetching && !result.isError && !result.data?.items.length && (
+        <div className="products-reverse-empty">
+          <span className="products-reverse-empty-icon">
+            <Icon name="search" />
+          </span>
+          <h3>Товар не найден</h3>
+          <p>
+            Попробуйте название или другой артикул. Для сопоставления нужна
+            карточка того же товара в Ozon.
+          </p>
+          {search && (
+            <button
+              className="secondary"
+              onClick={() => {
+                setSearch("");
+                setOffset(0);
+                setSelected(null);
+              }}
+            >
+              Показать все товары Ozon
+            </button>
+          )}
+        </div>
       )}
-      <div className="catalog-actions">
-        <button
-          className="secondary"
-          disabled={!offset || result.isFetching}
-          onClick={() => {
-            setOffset(Math.max(0, offset - 20));
-            setSelected(null);
-          }}
-        >
-          Назад
-        </button>
-        <button
-          className="secondary"
-          disabled={!result.data?.has_next || result.isFetching}
-          onClick={() => {
-            setOffset(offset + 20);
-            setSelected(null);
-          }}
-        >
-          Далее
-        </button>
-      </div>
+      {(offset > 0 ||
+        (!!result.data?.items.length && result.data.has_next)) && (
+        <div className="catalog-actions products-reverse-pagination">
+          <button
+            className="secondary"
+            disabled={!offset || result.isFetching}
+            onClick={() => {
+              setOffset(Math.max(0, offset - 20));
+              setSelected(null);
+            }}
+          >
+            Назад
+          </button>
+          <button
+            className="secondary"
+            disabled={!result.data?.has_next || result.isFetching}
+            onClick={() => {
+              setOffset(offset + 20);
+              setSelected(null);
+            }}
+          >
+            Далее
+          </button>
+        </div>
+      )}
       <footer className="products-reverse-footer">
-        <Link to="/products/import/moysklad-to-ozon">
-          Не нашли? Создать товар в Ozon
-        </Link>
+        <div>
+          <p>
+            {selected
+              ? `Выбран: ${selected.name || selected.offer_id}`
+              : "Выберите карточку того же товара в Ozon"}
+          </p>
+          <Link to="/products/import/moysklad-to-ozon">
+            Создать новую карточку в Ozon
+          </Link>
+        </div>
         <button
           disabled={!selected || result.isFetching || result.isError}
           onClick={() => setReviewing(true)}

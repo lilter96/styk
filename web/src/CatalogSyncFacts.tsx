@@ -17,12 +17,14 @@ export function CatalogSyncFacts({
   scope,
   facts,
   onChange,
+  initiallyOpen = false,
 }: {
   scope: Scope;
   facts?: ProductFacts;
   onChange: (facts: ProductFacts) => void;
+  initiallyOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initiallyOpen);
   const formID = useId();
   const [draft, setDraft] = useState("");
   const [search, setSearch] = useState("");

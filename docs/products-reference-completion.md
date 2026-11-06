@@ -105,3 +105,82 @@ Deliberate data/capability limits remain visible: screenshots do not supply real
 product photos, barcode matching is unavailable until verified shared observations
 exist, and unsupported provider fields stay read-only. No sample prices, category
 facts or images from the references are injected into merchant products.
+
+## Spacing and interaction audit after browser comments
+
+This audit corrects defects missed by the earlier rendering review. The user's
+13 comments exposed cascade, sizing and scroll problems; the earlier screen
+coverage list did not establish correct component geometry.
+
+Shared CSS now loads before the Products styles, explicitly in `main.tsx`.
+Products rules are scoped to the workspace, matching drawers have a single
+layout stylesheet, and controls share a styled native picker. The mandatory
+project `styk-ui-workflow` takes precedence over the implementation guidance
+added to `AGENTS.md` and `docs/frontend-styling.md`.
+
+| User comments | Correction and observed result |
+| --- | --- |
+| 1–2, detail spacing | Cards have 20 px padding and 16 px gaps; permission rows have 12×16 px padding. Mapping status and product identity form one padded group. Detail content scrolls independently of the action footer. |
+| 3, reverse matching | Structured source, useful empty state and clear-search action, conditional pagination, selected-product hint and explicit review action. Long mobile names use a full row below the icon/status. |
+| 4, source composition | Provider/status, name and offer are grouped; secondary identifiers are in a disclosure. |
+| 5–6, overlap | Bounded results cannot flex-shrink; pager and expanded supplementary information follow in normal flow. Measured list→pager and panel→disclosure gaps were 16 px. |
+| 7, 11, dropdowns | Styled native closed/open/selected/focus/disabled states; provider icons centered on control height. The additional compact-desktop report revealed a 160 px winning flex rule: the source filter now reserves 200 px. All three values had `scrollWidth === clientWidth` at 1366 px; the arrow remained visible. Mobile source/lifecycle filters each use the full available row. |
+| 8, automation | Table owns its scroll region and 12 px padding; separate pager has 16 px top spacing. Mobile permissions retain field labels and select-all. |
+| 9–10, matching rules | Explicit grid layout, padded signal groups and separate confirmation choices; after-import rule stays within the section. |
+| 12–13, rules | Padded direction presets; explicit Inter 14 px/600 switch label; mobile presets fit the parent. |
+
+Additional findings fixed during the walkthrough: stretched price inputs next
+to currency help text, category search alignment, collapsed primary category
+content, duplicate category summaries, cramped unknown-result actions, and a
+desktop minimum width left on mobile history cards. The reverse empty-state
+action also resets pagination; an empty later page retains a way back.
+The sidebar account pickers were also checked: the MoySklad picker now uses a
+full row; both supplied account names and their arrows fit without overflow.
+Table headings wrap at the default compact desktop width instead of clipping.
+Following the additional long-name comment, overview names are clamped to two
+lines with the same reserved height for short names; article codes use one line.
+Full values remain in tooltips and the product drawer. All six desktop fixture
+rows measured 92.5 px, including the long-name row; all six mobile cards measured
+157.5 px at 390 px width.
+
+Applied skills: official `frontend-design`, plus `design-system`,
+`design-critique`, `accessibility-review`, `ux-copy` and `design-handoff` for the
+affected controls, copy and documented patterns. No new user research was needed
+for these concrete corrections. This is a focused review, not a full
+accessibility certification or screen-reader test.
+
+Visible in-app browser review used the reported 1744 px width with a short
+1000 px viewport, 1366×768, 1440×900 and 390×844. Inspected routes and nested states:
+
+- `/products`: source/lifecycle filters, all source values, overview cards,
+  manual forward matching, reverse matching with long names, empty/results
+  states, pagination and expanded additional information; all four detail tabs.
+- `/products/rules` and `/products/rules/automation`: source/interval pickers,
+  direction presets, field controls, table end/pager and bulk action panel.
+- `/products/matching`: all three settings groups and preliminary results.
+- `/products/import` and both direction routes: selection, Ozon editor steps,
+  expanded category/factual fields, readiness and final confirmation.
+- `/products/history` and `/products/transfer?operation=...`: history cards,
+  processing operation and unknown-result drawer.
+
+The initial 15543 review used the actual local API and existing data. Final
+responsive/rare-state review used the separately marked in-memory demo on 15545;
+it does not prove provider or database behavior. Later, the actual local session
+expired and the stored local login returned HTTP 401. The final repeated API
+walkthrough therefore remains unverified; no credentials were reset or data
+changed to bypass it. No provider writes, workers or migrations were started.
+Screenshots are in `.local/products-spacing-review/` (ignored by Git).
+
+Keyboard observations: opening the native picker with Space and its visible
+focus outline; Escape closes the detail drawer and returns focus to the opening
+product button. Contrast was measured for the changed permission text and then
+darkened where the initial measurement was below 4.5:1. Screen-reader behavior,
+browser engines without customizable selects and a full zoom audit were not run.
+Final permission/status text measurements were 5.29:1, 5.10:1 and 5.51:1;
+the detail body ended exactly at the action footer's top edge with no overlap.
+
+Verification: `make check-plan`, frontend lint, TypeScript/build, formatting and
+`git diff --check`. The user explicitly prohibited local test suites: no unit,
+UI/E2E, integration, policy self-test or full regression suite ran for this audit.
+The planner does not require full regression for this styling follow-up. The
+earlier backend contract CI gate described above is separate and remains open.

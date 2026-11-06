@@ -85,191 +85,196 @@ export function ProductDetail({
       closeLabel="Закрыть карточку товара"
       onClose={onClose}
     >
-      <div className="products-detail-identity">
-        <span className="products-image-placeholder">
-          <Icon name="products" />
-        </span>
-        <div>
-          <p className="products-detail-name" aria-hidden="true">
-            {product.name || product.offer_id || "Карточка товара"}
-          </p>
-          <p>Артикул: {product.offer_id || "Не указан"}</p>
-          <span className={`mapping-chip ${linked ? "ok" : "warning"}`}>
-            {linked
-              ? "Связан"
-              : product.match_status === "CONFLICT"
-                ? "Конфликт"
-                : "Нет пары"}
+      <div className="products-detail-body">
+        <div className="products-detail-identity">
+          <span className="products-image-placeholder">
+            <Icon name="products" />
           </span>
-          <div className="products-detail-pair">
-            <BrandLogo provider="moysklad" decorative />
-            МойСклад ↔ <BrandLogo provider="ozon" decorative />
-            Ozon
+          <div>
+            <p className="products-detail-name" aria-hidden="true">
+              {product.name || product.offer_id || "Карточка товара"}
+            </p>
+            <p>Артикул: {product.offer_id || "Не указан"}</p>
+            <span className={`mapping-chip ${linked ? "ok" : "warning"}`}>
+              {linked
+                ? "Связан"
+                : product.match_status === "CONFLICT"
+                  ? "Конфликт"
+                  : "Нет пары"}
+            </span>
+            <div className="products-detail-pair">
+              <BrandLogo provider="moysklad" decorative />
+              МойСклад ↔ <BrandLogo provider="ozon" decorative />
+              Ozon
+            </div>
           </div>
         </div>
-      </div>
-      <nav className="products-detail-tabs" aria-label="Карточка товара">
-        {[
-          ["overview", "Обзор"],
-          ["mapping", "Сопоставление"],
-          ["transfer", "Передача данных"],
-          ["history", "История"],
-        ].map(([value, label]) => (
-          <button
-            key={value}
-            className={tab === value ? "active" : ""}
-            aria-pressed={tab === value}
-            onClick={() => setTab(value)}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
-      {(tab === "overview" || tab === "transfer") && (
-        <>
-          <h3>
-            {tab === "overview"
-              ? "Что отличается между сервисами"
-              : "Правила передачи данных"}
-          </h3>
-          {query.isLoading && <p role="status">Загружаем данные товара…</p>}
-          {query.isError && (
-            <p role="alert" className="catalog-warning">
-              Не удалось прочитать данные.{" "}
-              <button
-                className="text-action"
-                onClick={() => void query.refetch()}
-              >
-                Повторить
-              </button>
-            </p>
-          )}
-          <div className="products-detail-diffs">
-            {["name", "description"].map((field) => {
-              const left = moy?.fields[field],
-                right = ozon?.fields[field];
-              const known = left?.state === "known" && right?.state === "known";
-              const equal =
-                known &&
-                JSON.stringify(left.data) === JSON.stringify(right.data);
-              return (
-                <section key={field}>
-                  <div>
-                    <b>{fieldLabel(field)}</b>
-                    <span
-                      className={`mapping-chip ${equal ? "ok" : "warning"}`}
-                    >
-                      {equal
-                        ? "Совпадает"
-                        : known
-                          ? "Различается"
-                          : "Нет полных данных"}
-                    </span>
-                  </div>
-                  <div>
-                    {equal ? (
-                      <strong className="products-detail-equal">
-                        {displayValue(left)}
-                      </strong>
-                    ) : (
-                      <>
-                        <p>
-                          <BrandLogo provider="moysklad" decorative />
-                          <b>МойСклад</b>
-                          {left
-                            ? displayValue(left)
-                            : "Нет данных в загруженном каталоге"}
-                        </p>
-                        <p>
-                          <BrandLogo provider="ozon" decorative />
-                          <b>Ozon</b>
-                          {right
-                            ? displayValue(right)
-                            : "Нет данных в загруженном каталоге"}
-                        </p>
-                      </>
-                    )}
-                    <small>
-                      {!config
-                        ? "Правила передачи загружаются"
-                        : config.rules[field] === "MOYSKLAD_AUTHORITATIVE"
-                          ? "МойСклад → Ozon"
-                          : config?.rules[field] === "OZON_AUTHORITATIVE"
-                            ? "Ozon → МойСклад"
-                            : config?.rules[field] === "MANUAL"
-                              ? "Значение задаётся вручную"
-                              : "Передача поля выключена"}
-                    </small>
-                  </div>
-                </section>
-              );
-            })}
-          </div>
-          <section className="products-detail-card">
-            <header>
-              <h3>Автоматическая передача</h3>
-              <Link to="/products/rules/automation">Настроить</Link>
-            </header>
-            {["name", "description"].map((f) => (
-              <p
-                className={`products-permission-row ${
-                  target?.automatic && target.automatic_fields?.includes(f)
-                    ? "allowed"
-                    : "manual"
-                }`}
-                key={f}
-              >
-                <span aria-hidden="true">
-                  {target?.automatic && target.automatic_fields?.includes(f)
-                    ? "✓"
-                    : "—"}
-                </span>
-                {fieldLabel(f)} —{" "}
-                {target?.automatic && target.automatic_fields?.includes(f)
-                  ? "разрешено автоматически"
-                  : "после подтверждения"}
-              </p>
-            ))}
-          </section>
-        </>
-      )}
-      {(tab === "overview" || tab === "mapping") && (
-        <section className="products-detail-card">
-          <h3>
-            Связь с товаром {product.provider === "ozon" ? "МойСклад" : "Ozon"}
-          </h3>
-          <div className="products-detail-mapping-state">
-            <div>
-              <p className={linked ? "catalog-success" : "catalog-warning"}>
-                {linked
-                  ? "Соответствие подтверждено"
-                  : product.match_status === "CONFLICT"
-                    ? "Существующая связь требует проверки"
-                    : "Соответствие ещё не подтверждено"}
-              </p>
-              <p>
-                {product.target_name ||
-                  "Проверьте конкретную карточку во втором сервисе."}
-              </p>
-              {product.shared_inventory && (
-                <p>
-                  Общий товар МойСклад используется несколькими предложениями
-                  Ozon.
-                </p>
-              )}
-            </div>
-            <button className="secondary" onClick={onMatch}>
-              {linked ? "Проверить соответствие" : "Сопоставить товар"}
+        <nav className="products-detail-tabs" aria-label="Карточка товара">
+          {[
+            ["overview", "Обзор"],
+            ["mapping", "Сопоставление"],
+            ["transfer", "Передача данных"],
+            ["history", "История"],
+          ].map(([value, label]) => (
+            <button
+              key={value}
+              className={tab === value ? "active" : ""}
+              aria-pressed={tab === value}
+              onClick={() => setTab(value)}
+            >
+              {label}
             </button>
-          </div>
-        </section>
-      )}
-      {tab === "history" && (
-        <CatalogSyncOperations
-          scope={scope}
-          identity={{ provider: product.provider, id: product.product_id }}
-        />
-      )}
+          ))}
+        </nav>
+        {(tab === "overview" || tab === "transfer") && (
+          <>
+            <h3>
+              {tab === "overview"
+                ? "Что отличается между сервисами"
+                : "Правила передачи данных"}
+            </h3>
+            {query.isLoading && <p role="status">Загружаем данные товара…</p>}
+            {query.isError && (
+              <p role="alert" className="catalog-warning">
+                Не удалось прочитать данные.{" "}
+                <button
+                  className="text-action"
+                  onClick={() => void query.refetch()}
+                >
+                  Повторить
+                </button>
+              </p>
+            )}
+            <div className="products-detail-diffs">
+              {["name", "description"].map((field) => {
+                const left = moy?.fields[field],
+                  right = ozon?.fields[field];
+                const known =
+                  left?.state === "known" && right?.state === "known";
+                const equal =
+                  known &&
+                  JSON.stringify(left.data) === JSON.stringify(right.data);
+                return (
+                  <section key={field}>
+                    <div>
+                      <b>{fieldLabel(field)}</b>
+                      <span
+                        className={`mapping-chip ${equal ? "ok" : "warning"}`}
+                      >
+                        {equal
+                          ? "Совпадает"
+                          : known
+                            ? "Различается"
+                            : "Нет полных данных"}
+                      </span>
+                    </div>
+                    <div>
+                      {equal ? (
+                        <strong className="products-detail-equal">
+                          {displayValue(left)}
+                        </strong>
+                      ) : (
+                        <>
+                          <p>
+                            <BrandLogo provider="moysklad" decorative />
+                            <b>МойСклад</b>
+                            {left
+                              ? displayValue(left)
+                              : "Нет данных в загруженном каталоге"}
+                          </p>
+                          <p>
+                            <BrandLogo provider="ozon" decorative />
+                            <b>Ozon</b>
+                            {right
+                              ? displayValue(right)
+                              : "Нет данных в загруженном каталоге"}
+                          </p>
+                        </>
+                      )}
+                      <small>
+                        {!config
+                          ? "Правила передачи загружаются"
+                          : config.rules[field] === "MOYSKLAD_AUTHORITATIVE"
+                            ? "МойСклад → Ozon"
+                            : config?.rules[field] === "OZON_AUTHORITATIVE"
+                              ? "Ozon → МойСклад"
+                              : config?.rules[field] === "MANUAL"
+                                ? "Значение задаётся вручную"
+                                : "Передача поля выключена"}
+                      </small>
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
+            <section className="products-detail-card">
+              <header>
+                <h3>Автоматическая передача</h3>
+                <Link to="/products/rules/automation">Настроить</Link>
+              </header>
+              {["name", "description"].map((f) => (
+                <p
+                  className={`products-permission-row ${
+                    target?.automatic && target.automatic_fields?.includes(f)
+                      ? "allowed"
+                      : "manual"
+                  }`}
+                  key={f}
+                >
+                  <span className="products-permission-field">
+                    {fieldLabel(f)}
+                  </span>
+                  <span className="products-permission-state">
+                    {target?.automatic && target.automatic_fields?.includes(f)
+                      ? "Автоматически"
+                      : "По подтверждению"}
+                  </span>
+                </p>
+              ))}
+            </section>
+          </>
+        )}
+        {(tab === "overview" || tab === "mapping") && (
+          <section className="products-detail-card">
+            <h3>
+              Связь с товаром{" "}
+              {product.provider === "ozon" ? "МойСклад" : "Ozon"}
+            </h3>
+            <div className="products-detail-mapping-state">
+              <div
+                className={`products-detail-linked-copy ${linked ? "linked" : "attention"}`}
+              >
+                <strong className="products-detail-link-status">
+                  {linked
+                    ? "Соответствие подтверждено"
+                    : product.match_status === "CONFLICT"
+                      ? "Существующая связь требует проверки"
+                      : "Соответствие ещё не подтверждено"}
+                </strong>
+                <p>
+                  {product.target_name ||
+                    "Проверьте конкретную карточку во втором сервисе."}
+                </p>
+                {product.shared_inventory && (
+                  <p>
+                    Общий товар МойСклад используется несколькими предложениями
+                    Ozon.
+                  </p>
+                )}
+              </div>
+              <button className="secondary" onClick={onMatch}>
+                {linked ? "Проверить соответствие" : "Сопоставить товар"}
+              </button>
+            </div>
+          </section>
+        )}
+        {tab === "history" && (
+          <CatalogSyncOperations
+            scope={scope}
+            identity={{ provider: product.provider, id: product.product_id }}
+          />
+        )}
+      </div>
       <footer className="products-detail-footer">
         <span>
           <Icon name="diagnostics" size="button" />
