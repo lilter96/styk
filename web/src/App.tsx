@@ -17,7 +17,7 @@ import {
   ImportSubmissionNotice,
   useImportSubmission,
 } from "./ImportSubmission";
-import { ProductMappingPage } from "./ProductMappingPage";
+import { ProductsWorkspace } from "./ProductsWorkspace";
 import { WarehouseOverview } from "./WarehouseOverview";
 import { WarehouseStockDetail } from "./WarehouseStockDetail";
 import { hasAuthLink, MerchantAuth } from "./MerchantAuth";
@@ -56,9 +56,6 @@ const OrdersSettingsPage = lazy(() =>
 );
 const Orders = lazy(() =>
   import("./Orders").then((module) => ({ default: module.Orders })),
-);
-const CatalogSync = lazy(() =>
-  import("./CatalogSync").then((module) => ({ default: module.CatalogSync })),
 );
 const Integrations = lazy(() =>
   import("./Integrations").then((module) => ({ default: module.Integrations })),
@@ -293,11 +290,22 @@ export function Overview({
 export function Products({
   scope,
   confirmation,
+  moyLabel,
+  ozonLabel,
 }: {
   scope: Scope;
+  moyLabel?: string;
+  ozonLabel?: string;
   confirmation?: Confirmation;
 }) {
-  return <ProductMappingPage scope={scope} confirmation={confirmation} />;
+  return (
+    <ProductsWorkspace
+      scope={scope}
+      confirmation={confirmation}
+      moyLabel={moyLabel}
+      ozonLabel={ozonLabel}
+    />
+  );
 }
 
 export function StockRows({
@@ -862,7 +870,6 @@ export function App() {
   );
   return (
     <AppShell
-      supportMode={!!support}
       workspace={(onNavigate) => (
         <WorkspaceSwitcher
           marketplace={marketplace}
@@ -1041,14 +1048,6 @@ export function App() {
             }
           />
           <Route
-            path="/catalog-sync"
-            element={
-              <Suspense fallback={<Loading />}>
-                <CatalogSync key={JSON.stringify(scope)} scope={scope} />
-              </Suspense>
-            }
-          />
-          <Route
             path="/integrations"
             element={
               <Suspense fallback={<Loading />}>
@@ -1081,12 +1080,23 @@ export function App() {
             }
           />
           <Route
-            path="/products"
+            path="/products/*"
             element={
               <Products
                 key={`${scope.tenant}:${scope.moy}:${scope.ozon}`}
                 scope={scope}
                 confirmation={confirmation}
+                moyLabel={
+                  accounts.data?.accounts.find(
+                    (item) =>
+                      item.source === "moysklad" && item.account === moy,
+                  )?.name
+                }
+                ozonLabel={
+                  accounts.data?.accounts.find(
+                    (item) => item.source === "ozon" && item.account === ozon,
+                  )?.name
+                }
               />
             }
           />
@@ -1119,6 +1129,15 @@ export function App() {
                 loading={report.isLoading && !!chosen}
                 error={report.error}
               />
+            }
+          />
+          <Route
+            path="*"
+            element={
+              <StatePanel>
+                <h1>Страница не найдена</h1>
+                <NavLink to="/products">Открыть товары</NavLink>
+              </StatePanel>
             }
           />
         </Routes>

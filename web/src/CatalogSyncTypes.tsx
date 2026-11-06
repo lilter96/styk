@@ -59,6 +59,13 @@ export type CatalogConfig = {
 };
 // enrollments is HTTP view metadata joining canonical products to confirmed mappings.
 export type ProductPage = {
+  summary?: {
+    total: number;
+    linked: number;
+    excluded: number;
+    to_review: number;
+    observed_at: string | null;
+  };
   products: CatalogProduct[];
   enrollments?: Enrollment[];
   next_cursor?: string;
@@ -141,6 +148,7 @@ export type CatalogPreview = {
   decisions: Decision[];
 };
 export type CatalogWork = {
+  mapping_state?: string;
   id: string;
   enrollment_id: string;
   state: string;
@@ -280,6 +288,8 @@ export function displayValue(value?: CatalogValue): string {
 }
 
 const issueLabels: Record<string, string> = {
+  IMPORT_SOURCE_NOT_ELIGIBLE:
+    "Нужен активный товар из полной загрузки за последний час, без существующей связи. Модификации проверяются отдельно.",
   TARGET_OUTCOME_UNRESOLVED:
     "Результат предыдущей отправки неизвестен. Сначала требуется сверка; повторная отправка недоступна.",
   CREATED_TARGET_REQUIRES_MAPPING:

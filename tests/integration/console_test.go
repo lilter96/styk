@@ -172,7 +172,7 @@ func TestConsoleAmbiguousCandidatesAreNotConfirmed(t *testing.T) {
 	if w.Code != 204 {
 		t.Fatal("login")
 	}
-	q := url.Values{"tenant": {f.req.Pool.Tenant}, "ozon_account": {f.req.Target.OzonAccount}, "moysklad_account": {f.req.Pool.MoyskladAccount}, "mapping": {"unconfirmed"}}
+	q := url.Values{"tenant": {f.req.Pool.Tenant}, "ozon_account": {f.req.Target.OzonAccount}, "moysklad_account": {f.req.Pool.MoyskladAccount}, "mapping": {"unconfirmed"}, "provider": {"ozon"}}
 	r := httptest.NewRequest("GET", "http://127.0.0.1:8080/api/products?"+q.Encode(), nil)
 	r.RemoteAddr = "127.0.0.1:1234"
 	r.AddCookie(w.Result().Cookies()[0])
@@ -234,6 +234,7 @@ func TestConsoleProductPagination(t *testing.T) {
 		HasNext bool `json:"has_next"`
 	} {
 		q.Set("offset", offset)
+		q.Set("provider", "ozon")
 		r := httptest.NewRequest("GET", "http://127.0.0.1:8080/api/products?"+q.Encode(), nil)
 		r.RemoteAddr = "127.0.0.1:1234"
 		r.AddCookie(cookie)

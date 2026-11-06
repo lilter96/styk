@@ -94,6 +94,9 @@ func catalogDispatchCurrent(ctx context.Context, tx pgx.Tx, w catalogsync.Work, 
 	if !allowedState || hash != w.CommandFingerprint || g.Work.CommandFingerprint != w.CommandFingerprint || g.Work.ConfigRevision != w.ConfigRevision || g.Work.Credentials != w.Credentials {
 		return false, nil
 	}
+	if w.OneTimeImport {
+		return catalogImportDispatchCurrent(ctx, tx, w)
+	}
 	current, err := readCatalogReviewContext(ctx, tx, w.Scope)
 	if errors.Is(err, catalogsync.ErrStale) || errors.Is(err, catalogsync.ErrNotFound) {
 		return false, nil

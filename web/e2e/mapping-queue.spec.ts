@@ -23,6 +23,10 @@ for (const [label, width, height] of [
       archived: false,
       target_kind: null,
       target_id: null,
+      provider: "ozon" as const,
+      kind: "product",
+      observed: true,
+      shared_inventory: false,
       match_status: "ONE_CANDIDATE",
       candidate_count: 1,
       candidates: [
@@ -58,12 +62,14 @@ for (const [label, width, height] of [
         body = { items: [], offset: 0, has_next: false };
       await route.fulfill({ json: body });
     });
-    await page.goto("http://127.0.0.1:5173/products");
+    await page.goto(
+      `${process.env.STYK_UI_VISUAL_ORIGIN || "http://127.0.0.1:5173"}/products`,
+    );
     await expect(page.getByText("Товар 0", { exact: true })).toBeVisible();
-    await expect(page.getByText("Offer ID: one")).toBeVisible();
+    await expect(page.getByText("one", { exact: true })).toBeVisible();
     await page
-      .getByRole("button", { name: "Выбрать предложения на странице" })
-      .click();
+      .getByRole("checkbox", { name: "Выбрать все на странице" })
+      .check();
     await page.getByText("Выбрано для проверки: 2").click();
     await expect(
       page.getByText("Подтверждено: 0 · Осталось проверить: 2"),

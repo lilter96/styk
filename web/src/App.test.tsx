@@ -22,7 +22,7 @@ function mount(node: React.ReactNode) {
   });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter>{node}</MemoryRouter>
+      <MemoryRouter initialEntries={["/products"]}>{node}</MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -82,7 +82,7 @@ describe("read-only views", () => {
     expect(screen.getByRole("status").textContent).toContain("Загружаем");
     x.rerender(
       <QueryClientProvider client={new QueryClient()}>
-        <MemoryRouter>
+        <MemoryRouter initialEntries={["/products"]}>
           <Overview loading={false} error={null} />
         </MemoryRouter>
       </QueryClientProvider>,
@@ -141,6 +141,10 @@ describe("read-only views", () => {
             archived: false,
             target_kind: null,
             target_id: null,
+            provider: "ozon" as const,
+            kind: "product",
+            observed: true,
+            shared_inventory: false,
             match_status: "AMBIGUOUS",
             candidate_count: 2,
             candidates: [
@@ -156,7 +160,9 @@ describe("read-only views", () => {
     );
     mount(<Products scope={scope} />);
     expect(await screen.findByText("Не сопоставлен")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Сопоставить sample" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Открыть сопоставление sample" }),
+    );
     fireEvent.click(screen.getByText(/Возможные соответствия/));
     expect(
       screen.getByRole("button", { name: /Посмотреть предложение 2/ }),
@@ -184,7 +190,7 @@ describe("read-only views", () => {
     });
     const view = (ozon: string) => (
       <QueryClientProvider client={client}>
-        <MemoryRouter>
+        <MemoryRouter initialEntries={["/products"]}>
           <Products scope={{ ...scope, ozon }} />
         </MemoryRouter>
       </QueryClientProvider>
@@ -276,6 +282,10 @@ it("reviews candidates and requires a durable review before confirmation", async
           archived: false,
           target_kind: null,
           target_id: null,
+          provider: "ozon" as const,
+          kind: "product",
+          observed: true,
+          shared_inventory: false,
           match_status: "ONE_CANDIDATE",
           candidate_count: 1,
           candidates: [{ kind: "variant", id: "v", evidence: ["article"] }],
@@ -288,7 +298,7 @@ it("reviews candidates and requires a durable review before confirmation", async
   });
   mount(<Products scope={scope} />);
   fireEvent.click(
-    await screen.findByRole("button", { name: "Сопоставить shared" }),
+    await screen.findByRole("button", { name: "Открыть сопоставление shared" }),
   );
   expect(await screen.findByText(/Возможные соответствия/)).toBeTruthy();
   fireEvent.click(

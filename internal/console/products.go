@@ -39,6 +39,10 @@ func products(db *postgres.Store) http.HandlerFunc {
 			writeError(w, 400, "INVALID_PAGE")
 			return
 		}
+		if provider := q.Get("provider"); provider != "" && provider != "ozon" && provider != "moysklad" {
+			writeError(w, 400, "INVALID_FILTER")
+			return
+		}
 		search := q.Get("search")
 		if len(search) > 100 {
 			writeError(w, 400, "INVALID_SEARCH")
@@ -72,17 +76,21 @@ func products(db *postgres.Store) http.HandlerFunc {
 			return
 		}
 		var total int
-		if e := tx.QueryRow(ctx, productCountQuery, tenant, account, moy, search, archived, offset, mappingFilter, matchTrimChars, pageSize+1).Scan(&total); e != nil {
+		if e := tx.QueryRow(ctx, productCountQuery, tenant, account, moy, search, archived, offset, mappingFilter, matchTrimChars, pageSize+1, q.Get("provider")).Scan(&total); e != nil {
 			writeError(w, 503, "PRODUCTS_UNAVAILABLE")
 			return
 		}
-		rows, e := tx.Query(ctx, productPageQuery, tenant, account, moy, search, archived, offset, mappingFilter, matchTrimChars, pageSize+1)
+		rows, e := tx.Query(ctx, productPageQuery, tenant, account, moy, search, archived, offset, mappingFilter, matchTrimChars, pageSize+1, q.Get("provider"))
 		if e != nil {
 			writeError(w, 503, "PRODUCTS_UNAVAILABLE")
 			return
 		}
 		defer rows.Close()
 		type item struct {
+			Provider       string      `json:"provider"`
+			Kind           string      `json:"kind"`
+			Observed       bool        `json:"observed"`
+			Shared         bool        `json:"shared_inventory"`
 			ProductID      string      `json:"product_id"`
 			OfferID        string      `json:"offer_id"`
 			Name           *string     `json:"name,omitempty"`
@@ -100,7 +108,7 @@ func products(db *postgres.Store) http.HandlerFunc {
 		items := []item{}
 		for rows.Next() {
 			var v item
-			if rows.Scan(&v.ProductID, &v.OfferID, &v.SKU, &v.Archived, &v.TargetKind, &v.TargetID, &v.Name, &v.TargetName, &v.TargetArticle) != nil {
+			if rows.Scan(&v.ProductID, &v.OfferID, &v.SKU, &v.Archived, &v.TargetKind, &v.TargetID, &v.Name, &v.TargetName, &v.TargetArticle, &v.Provider, &v.Kind, &v.Observed, &v.Shared) != nil {
 				writeError(w, 503, "PRODUCTS_UNAVAILABLE")
 				return
 			}
@@ -117,7 +125,9 @@ func products(db *postgres.Store) http.HandlerFunc {
 		}
 		offers, productIDs := []string{}, []string{}
 		for _, item := range items {
-			offers, productIDs = append(offers, item.OfferID), append(productIDs, item.ProductID)
+			if item.Provider == "ozon" {
+				offers, productIDs = append(offers, item.OfferID), append(productIDs, item.ProductID)
+			}
 		}
 		targets, mappings, available, truncated, e := matchingData(ctx, tx, tenant, account, moy, offers, productIDs)
 		if e != nil {
@@ -132,6 +142,10 @@ func products(db *postgres.Store) http.HandlerFunc {
 		for i := range items {
 			v := &items[i]
 			v.Candidates = []candidate{}
+			if v.Provider == "moysklad" {
+				v.Status = "NO_CANDIDATE"
+				continue
+			}
 			if !available || truncated {
 				v.Status = "INSUFFICIENT_DATA"
 				v.Truncated = truncated
@@ -188,29 +202,37 @@ WITH latest AS (
   FROM source_entities s JOIN source_latest sl ON sl.id=s.import_id
   WHERE $4<>'' AND s.kind IN ('product','variant')
     AND (s.name ILIKE '%'||$4||'%' OR s.article ILIKE '%'||$4||'%' OR s.code ILIKE '%'||$4||'%')
-), filtered AS (
-  SELECT p.product_id,p.offer_id,p.sku,p.archived,
+), ozon_rows AS (
+  SELECT COALESCE(p.product_id,m.ozon_product_id) AS product_id,COALESCE(p.offer_id,m.ozon_offer_id) AS offer_id,p.sku,p.archived,
     CASE WHEN m.moysklad_account=$3 THEN m.target_kind END AS target_kind,
-    CASE WHEN m.moysklad_account=$3 THEN m.target_id END AS target_id,NULLIF(p.name,'') AS name
-  FROM ozon_product_observations p JOIN latest l ON l.id=p.import_id
-  LEFT JOIN product_mappings m ON m.tenant_id=$1 AND m.ozon_account=$2 AND m.ozon_product_id=p.product_id
-  WHERE length($3::text)>0 AND (
-    $4='' OR p.offer_id ILIKE '%'||$4||'%' OR p.product_id ILIKE '%'||$4||'%' OR p.sku ILIKE '%'||$4||'%'
-    OR p.name ILIKE '%'||$4||'%'
-    OR (m.moysklad_account=$3 AND (m.target_kind,m.target_id) IN (SELECT kind,external_id FROM searched_targets))
-    OR (btrim(p.offer_id,$8)<>'' AND (
-      btrim(p.offer_id,$8) IN (SELECT article FROM searched_targets)
-      OR btrim(p.offer_id,$8) IN (SELECT code FROM searched_targets)))
-  ) AND ($5='' OR p.archived::text=$5)
-    AND ($7='' OR ($7='confirmed' AND m.moysklad_account=$3)
-      OR ($7='unconfirmed' AND (m.ozon_product_id IS NULL OR m.moysklad_account<>$3)))
+    CASE WHEN m.moysklad_account=$3 THEN m.target_id END AS target_id,NULLIF(p.name,'') AS name,
+    'ozon'::text AS provider,'product'::text AS kind,p.product_id IS NOT NULL AS observed
+  FROM (SELECT p.* FROM ozon_product_observations p JOIN latest l ON l.id=p.import_id) p
+  FULL JOIN (SELECT * FROM product_mappings WHERE tenant_id=$1 AND ozon_account=$2) m ON m.ozon_product_id=p.product_id
+), combined AS (
+  SELECT * FROM ozon_rows
+  UNION ALL
+  SELECT e.external_id,COALESCE(NULLIF(e.article,''),e.code),NULL::text,e.archived,NULL::text,NULL::text,NULLIF(e.name,''),
+    'moysklad',e.kind,true
+  FROM source_entities e JOIN source_latest l ON l.id=e.import_id
+  WHERE e.kind IN ('product','variant') AND NOT EXISTS(SELECT 1 FROM product_mappings m
+    WHERE m.tenant_id=$1 AND m.moysklad_account=$3 AND m.ozon_account=$2 AND m.target_kind=e.kind AND m.target_id=e.external_id)
+), filtered AS (
+ SELECT p.* FROM combined p
+ WHERE ($10='' OR p.provider=$10) AND ($4='' OR p.offer_id ILIKE '%'||$4||'%' OR p.product_id ILIKE '%'||$4||'%'
+    OR p.sku ILIKE '%'||$4||'%' OR p.name ILIKE '%'||$4||'%'
+    OR (p.target_kind,p.target_id) IN (SELECT kind,external_id FROM searched_targets)
+    OR (p.provider='ozon' AND btrim(p.offer_id,$8)<>'' AND (btrim(p.offer_id,$8) IN (SELECT article FROM searched_targets) OR btrim(p.offer_id,$8) IN (SELECT code FROM searched_targets))))
+ AND ($5='' OR p.archived::text=$5)
+ AND ($7='' OR ($7='confirmed' AND p.target_id IS NOT NULL) OR ($7='unconfirmed' AND p.target_id IS NULL))
 )`
 const productCountQuery = productFilterQuery + ` SELECT count(*) FROM filtered WHERE $6::int>=0 AND $9::int>0`
-const productPageQuery = productFilterQuery + `, page AS (SELECT * FROM filtered ORDER BY product_id LIMIT $9 OFFSET $6)
-SELECT page.product_id,page.offer_id,page.sku,page.archived,page.target_kind,page.target_id,page.name,NULLIF(mapped.name,''),NULLIF(mapped.article,'')
+const productPageQuery = productFilterQuery + `, page AS (SELECT * FROM filtered ORDER BY provider,kind,product_id LIMIT $9 OFFSET $6)
+SELECT page.product_id,page.offer_id,page.sku,page.archived,page.target_kind,page.target_id,page.name,NULLIF(mapped.name,''),NULLIF(mapped.article,''),page.provider,page.kind,page.observed,
+  (SELECT count(*)>1 FROM product_mappings m WHERE m.tenant_id=$1 AND m.moysklad_account=$3 AND m.target_kind=page.target_kind AND m.target_id=page.target_id)
 FROM page LEFT JOIN source_entities mapped ON mapped.import_id=(SELECT id FROM source_latest)
   AND mapped.kind=page.target_kind AND mapped.external_id=page.target_id
-ORDER BY page.product_id`
+ORDER BY page.provider,page.kind,page.product_id`
 
 type candidate struct {
 	Kind     string   `json:"kind"`

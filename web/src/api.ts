@@ -248,6 +248,10 @@ export type Report = {
   mapping_counts: Record<string, number>;
 };
 export type Product = {
+  provider: "ozon" | "moysklad";
+  kind: string;
+  observed: boolean;
+  shared_inventory: boolean;
   name?: string;
   target_name?: string;
   target_article?: string;

@@ -1,7 +1,12 @@
 import { expect, test } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { navigate, selectWorkspace, signIn } from "./workspace";
+import {
+  navigate,
+  selectWorkspace,
+  signIn,
+  reviewStockEvidence,
+} from "./workspace";
 
 test("operator reviews and publishes a single controlled quantity through the worker", async ({
   page,
@@ -26,18 +31,27 @@ test("operator reviews and publishes a single controlled quantity through the wo
       : route.abort();
   });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await signIn(page, process.env.STYK_CONTROLLED_E2E_SECRET!, `${origin}/`);
+  await signIn(page, origin);
   await selectWorkspace(page, tenant, moy, ozon);
   await navigate(page, "Интеграции");
+  await page
+    .getByRole("button", { name: "Настройка синхронизации", exact: true })
+    .click();
   const importBoth = async () => {
     for (const [name, field, account] of [
       ["МойСклад", "moysklad_account", moy],
       ["Ozon", "ozon_account", ozon],
     ]) {
+      if (name === "Ozon")
+        await page
+          .getByRole("combobox", { name: "МойСклад", exact: true })
+          .selectOption("");
       const panel = page.getByRole("region", {
         name: `${name}: импорт данных`,
       });
-      await panel.getByRole("button", { name: "Обновить данные" }).click();
+      await panel
+        .getByRole("button", { name: "Обновить", exact: true })
+        .click();
       const confirmation = page.getByRole("dialog", {
         name: `Загрузить данные ${name}?`,
       });
@@ -49,7 +63,9 @@ test("operator reviews and publishes a single controlled quantity through the wo
       await confirmation
         .getByRole("button", { name: "Подтвердить загрузку" })
         .click();
-      const result = await (await submitted).json();
+      const response = await submitted;
+      expect(response.status(), await response.text()).toBe(201);
+      const result = await response.json();
       const query = new URLSearchParams({ tenant, [field]: account });
       await expect
         .poll(
@@ -65,19 +81,33 @@ test("operator reviews and publishes a single controlled quantity through the wo
         )
         .toBe("SUCCEEDED");
       await expect(
-        panel.getByRole("button", { name: "Обновить данные" }),
+        panel.getByRole("button", { name: "Обновить", exact: true }),
       ).toBeEnabled({ timeout: 10000 });
+      if (name === "Ozon")
+        await page
+          .getByRole("combobox", { name: "МойСклад", exact: true })
+          .selectOption(moy);
     }
   };
   await importBoth();
   await navigate(page, "Товары");
-  await page.getByRole("button", { name: /^Сопоставить / }).click();
+  await page
+    .getByRole("button", {
+      name: "Открыть сопоставление ATEST-897677",
+      exact: true,
+    })
+    .click();
   await page.getByLabel("Поиск товара МойСклад").fill("Тестовый товар");
   await page.getByRole("button", { name: "Тестовый товар, товар" }).click();
   await page.getByRole("button", { name: "Проверить соответствие" }).click();
   await expect(page.getByText("Проверка готова к подтверждению")).toBeVisible();
   await page.getByLabel("Подтверждаю, что это один и тот же товар").check();
-  await page.getByRole("button", { name: "Подтвердить соответствие" }).click();
+  await page
+    .getByRole("button", {
+      name: "Сопоставить и перейти к следующему",
+      exact: true,
+    })
+    .click();
   await expect(page.getByText(/Соответствие.*сохранено/)).toBeVisible();
   await page.getByRole("button", { name: "Закрыть сопоставление" }).click();
   await navigate(page, "Склады");
@@ -91,8 +121,8 @@ test("operator reviews and publishes a single controlled quantity through the wo
     .filter({ hasText: "Тестовый FBS" })
     .getByRole("button", { name: "Выбрать для сопоставления" })
     .click();
-  const warehouses = page.getByRole("region", {
-    name: "Проверка соответствия складов",
+  const warehouses = page.getByRole("dialog", {
+    name: "Сопоставить склады",
   });
   await warehouses
     .getByRole("button", { name: "Проверить пару складов" })
@@ -111,24 +141,24 @@ test("operator reviews and publishes a single controlled quantity through the wo
     .getByRole("button", { name: "Закрыть сопоставление складов" })
     .click();
   await navigate(page, "Интеграции");
+  await page
+    .getByRole("button", { name: "Настройка синхронизации", exact: true })
+    .click();
   await page.getByRole("button", { name: "Включить синхронизацию" }).click();
   let dialog = page.getByRole("dialog", {
     name: "Включить синхронизацию остатков?",
   });
-  await dialog.getByLabel(/Подтверждаю эти тестовые допущения/).check();
-  await dialog
-    .getByRole("button", { name: "Записать тестовые допущения" })
-    .click();
-  await expect(
-    dialog.getByText(/Допущения записаны как утверждение оператора/),
-  ).toBeVisible();
+  await reviewStockEvidence(dialog);
   await dialog.getByRole("button", { name: "Отмена" }).click();
   await importBoth();
   await page.getByRole("button", { name: "Включить синхронизацию" }).click();
   dialog = page.getByRole("dialog", {
     name: "Включить синхронизацию остатков?",
   });
-  await expect(dialog.getByText(/Условия отправки подтверждены/)).toBeVisible();
+  await expect(
+    dialog.getByText(/Условия отправки подтверждены/),
+    await dialog.innerText(),
+  ).toBeVisible();
   await dialog.getByText("Проверенные товары и склады").click();
   await expect(dialog.getByText(/к отправке 7 шт/)).toBeVisible();
   await expect(dialog.getByText(/МойСклад: 7 шт/)).toBeVisible();
@@ -141,11 +171,11 @@ test("operator reviews and publishes a single controlled quantity through the wo
     path: join(shots, "review-mobile.png"),
     fullPage: true,
   });
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBe(true);
+  await expect
+    .poll(() =>
+      page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    )
+    .toBe(true);
   await dialog
     .getByLabel("Подтверждаю изменение остатков в Ozon для выбранных аккаунтов")
     .check();

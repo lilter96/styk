@@ -37,7 +37,7 @@ func TestStockContractChangeInvalidatesFrozenEvidence(t *testing.T) {
 }
 
 func TestStockWarehouseCapabilitiesRequireExplicitScopedFacts(t *testing.T) {
-	t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", "true")
+	t.Setenv("STYK_STOCK_PUBLICATION_TEST_ENDPOINT", "")
 	tests := []struct {
 		name, kind, status string
 		rfbs               *bool
@@ -68,34 +68,39 @@ func TestStockWarehouseCapabilitiesRequireExplicitScopedFacts(t *testing.T) {
 
 func stockCapabilityBool(value bool) *bool { return &value }
 
-func TestStockWarehouseCapabilitiesNeverWidenAccounts(t *testing.T) {
-	t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", "true")
+func TestStockWarehouseCapabilitiesRequireValidScopeAndEnrollment(t *testing.T) {
+	t.Setenv("STYK_STOCK_PUBLICATION_TEST_ENDPOINT", "")
 	facts := stockWarehouseFacts{kind: "rfbs_express", status: "created", rfbs: stockCapabilityBool(true)}
-	for _, scope := range []domain.StockSyncScope{
-		{Tenant: "other", MoyskladAccount: stockfixture.MoyskladAccount, OzonAccount: stockfixture.OzonAccount},
-		{Tenant: stockfixture.Tenant, MoyskladAccount: "other", OzonAccount: stockfixture.OzonAccount},
-		{Tenant: stockfixture.Tenant, MoyskladAccount: stockfixture.MoyskladAccount, OzonAccount: "other"},
-	} {
-		if facts.policySupported(scope, true, true) {
-			t.Fatal("rFBS capability widened the authorized account pair")
+	for _, scope := range []domain.StockSyncScope{stockfixture.Scope(), {Tenant: "another-merchant", MoyskladAccount: "source", OzonAccount: "market"}} {
+		if !facts.policySupported(scope, true, true) {
+			t.Fatal("valid connected scope blocked by a fixed-account assumption")
+		}
+		if facts.policySupported(scope, false, true) {
+			t.Fatal("warehouse published without enrollment")
 		}
 	}
-	t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", "")
-	if facts.policySupported(stockfixture.Scope(), true, true) {
-		t.Fatal("rFBS capability bypassed the deployment hold")
+	for _, scope := range []domain.StockSyncScope{{}, {Tenant: "merchant", MoyskladAccount: "source"}, {Tenant: "merchant", OzonAccount: "market"}} {
+		if facts.policySupported(scope, true, true) {
+			t.Fatal("invalid scope accepted")
+		}
 	}
+	t.Setenv("STYK_STOCK_PUBLICATION_TEST_ENDPOINT", "http://127.0.0.1:1234")
+	if facts.policySupported(stockfixture.Scope(), true, true) {
+		t.Fatal("simulator authorized an ordinary tenant")
+	}
+
 }
 
 func TestMerchantWarehousePreviewSharesActualScopedReviewPolicy(t *testing.T) {
-	t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", "true")
+	t.Setenv("STYK_STOCK_PUBLICATION_TEST_ENDPOINT", "")
 	warehouse := domain.OzonWarehouse{WarehouseType: "rfbs_express", Status: "created", IsRFBS: stockCapabilityBool(true)}
 	if !WarehouseMappingStockSupported(stockfixture.Scope(), warehouse) {
 		t.Fatal("merchant preview incorrectly blocks supported controlled Express mapping")
 	}
 	other := stockfixture.Scope()
 	other.Tenant = "another-merchant"
-	if WarehouseMappingStockSupported(other, warehouse) {
-		t.Fatal("merchant preview widened controlled account eligibility")
+	if !WarehouseMappingStockSupported(other, warehouse) {
+		t.Fatal("merchant preview imposed obsolete fixed-account restriction")
 	}
 	warehouse.Status = "disabled"
 	if WarehouseMappingStockSupported(stockfixture.Scope(), warehouse) {

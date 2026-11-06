@@ -152,7 +152,7 @@ export function CatalogSyncConfig({
         <select
           id={`catalog-policy-${field}`}
           value={policies[field] || "IGNORE"}
-          disabled={busy}
+          disabled={busy || !visibleField(field)}
           onChange={(event) =>
             change({ ...policies, [field]: event.target.value as Authority })
           }
@@ -165,7 +165,7 @@ export function CatalogSyncConfig({
         </select>
         {capability && !capability.writable && (
           <small>
-            Передача пока не поддерживается. Проверка покажет пропуск.
+            Только для просмотра. Передача этого поля пока не поддерживается.
           </small>
         )}
         {policies[field] === "MANUAL" && (

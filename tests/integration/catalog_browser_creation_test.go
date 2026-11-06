@@ -40,11 +40,11 @@ func (p *catalogBrowserProvider) moyCollection(w http.ResponseWriter, r *http.Re
 
 func (p *catalogBrowserProvider) moyCreate(w http.ResponseWriter, r *http.Request) {
 	var body map[string]string
-	if json.NewDecoder(r.Body).Decode(&body) != nil || len(body) != 4 || body["name"] != catalogBrowserUnmappedName || body["description"] != catalogBrowserUnmappedDescription {
+	if json.NewDecoder(r.Body).Decode(&body) != nil || len(body) != 5 || body["article"] != catalogBrowserUnmappedOffer || body["name"] != catalogBrowserUnmappedName || body["description"] != catalogBrowserUnmappedDescription {
 		p.fail(w, "creation widened or replaced the approved source facts")
 		return
 	}
-	if p.moyCreates != 0 || body["syncId"] == "" || body["syncId"] == catalogBrowserCreatedID || body["externalCode"] != "STYK-CATALOG-"+body["syncId"] || body["externalCode"] != p.lastMarker {
+	if p.moyCreates != 0 || body["syncId"] == "" || body["syncId"] == catalogBrowserCreatedID || body["externalCode"] != "STYK-IMPORT-"+strings.ReplaceAll(body["syncId"], "-", "") || body["externalCode"] != p.lastMarker {
 		p.fail(w, "creation did not preserve a unique durable marker")
 		return
 	}
@@ -58,7 +58,7 @@ func (p *catalogBrowserProvider) createdMoyProduct(r *http.Request) map[string]a
 	return map[string]any{"id": catalogBrowserCreatedID, "accountId": stockfixture.MoyskladAccount,
 		"meta": map[string]any{"href": "http://" + r.Host + "/entity/product/" + catalogBrowserCreatedID, "type": "product", "mediaType": "application/json"},
 		"name": catalogBrowserUnmappedName, "description": catalogBrowserUnmappedDescription, "archived": false,
-		"externalCode": p.createCode, "syncId": p.createSyncID}
+		"article": catalogBrowserUnmappedOffer, "externalCode": p.createCode, "syncId": p.createSyncID}
 }
 
 type catalogBrowserOzonFact struct{ id, offer, sku, name, description string }

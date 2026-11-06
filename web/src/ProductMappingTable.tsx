@@ -1,8 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
+import type { CatalogConfig } from "./CatalogSyncTypes";
+import { BrandLogo } from "./BrandLogo";
 import type { Product } from "./api";
 import { Icon } from "./UI";
 
 export const eligibleForQueue = (p: Product) =>
+  p.provider !== "moysklad" &&
+  p.observed !== false &&
   p.archived === false &&
   p.target_id === null &&
   p.candidates.length > 0 &&
@@ -15,32 +19,6 @@ function Thumbnail() {
     </span>
   );
 }
-function CopyArticle({ value }: { value?: string }) {
-  const [message, setMessage] = useState("");
-  return (
-    <div className="matching-page-article">
-      <span title={value}>{value || "—"}</span>
-      {value && (
-        <button
-          className="matching-page-copy"
-          aria-label={`Копировать артикул ${value}`}
-          onClick={async () => {
-            try {
-              await navigator.clipboard.writeText(value);
-              setMessage("Скопировано");
-            } catch {
-              setMessage("Не удалось скопировать");
-            }
-          }}
-        >
-          <Icon name="copy" size="button" />
-        </button>
-      )}
-      <span role="status">{message}</span>
-    </div>
-  );
-}
-
 function MappingRow({
   p,
   selected,
@@ -48,8 +26,10 @@ function MappingRow({
   selectionDisabled,
   toggle,
   open,
+  config,
 }: {
   p: Product;
+  config?: CatalogConfig;
   selected: boolean;
   disabled: boolean;
   selectionDisabled: boolean;
@@ -58,65 +38,66 @@ function MappingRow({
 }) {
   const confirmed = p.match_status === "CONFIRMED";
   const conflict = p.match_status === "CONFLICT";
-  const title = p.name || p.offer_id || p.product_id;
+  const title = p.name || p.offer_id || "Товар без названия";
+  const enrollment = config?.targets.find((t) =>
+    [t.source, t.target].some(
+      (identity) =>
+        identity.account.provider === "ozon" && identity.id === p.product_id,
+    ),
+  );
+  const automatic =
+    confirmed &&
+    config?.enabled &&
+    config.test_enabled &&
+    enrollment?.automatic;
   return (
     <tr className={selected ? "is-selected" : ""}>
       <td data-label="Выбор">
-        <input
-          type="checkbox"
-          aria-label={`Выбрать ${p.offer_id || p.product_id} для проверки`}
-          checked={selected}
-          disabled={disabled || selectionDisabled || !eligibleForQueue(p)}
-          onChange={(e) => toggle(e.target.checked)}
-        />
+        <label className="products-select-control">
+          <input
+            type="checkbox"
+            aria-label={`Выбрать ${p.offer_id || p.product_id} для проверки`}
+            checked={selected}
+            disabled={disabled || selectionDisabled || !eligibleForQueue(p)}
+            onChange={(e) => toggle(e.target.checked)}
+          />
+        </label>
       </td>
-      <td data-label="Товар в МойСклад">
-        <div className="matching-page-product">
-          <Thumbnail />
-          <div className="matching-page-product-copy">
-            <button
-              className="mapping-select"
-              aria-label={`Сопоставить ${p.offer_id || p.product_id}`}
-              disabled={disabled}
-              onClick={open}
-            >
-              <span title={p.target_name || p.target_id || undefined}>
-                {p.target_name ||
-                  (p.target_id ? "Товар МойСклад" : "Выберите товар МойСклад")}
-              </span>
-              <Icon name="chevron-down" size="button" />
-            </button>
-            {p.target_id ? (
-              <small title={p.target_id}>ID: {p.target_id}</small>
-            ) : (
+      <>
+        <td data-label="Товар">
+          <div className="matching-page-product">
+            <Thumbnail />
+            <div className="matching-page-product-copy">
+              <strong>{title}</strong>
               <small>
-                {p.candidate_count
-                  ? `Предложений: ${p.candidate_count}`
-                  : "Соответствие не выбрано"}
+                <BrandLogo provider={p.provider} decorative />{" "}
+                {p.offer_id || "Артикул не указан"}
               </small>
-            )}
+            </div>
           </div>
-        </div>
-      </td>
-      <td data-label="Артикул">
-        <CopyArticle value={p.target_article} />
-      </td>
-      <td data-label="Товар в Ozon">
-        <div className="matching-page-product">
-          <Thumbnail />
-          <div className="matching-page-product-copy">
-            <strong title={title}>{title}</strong>
-            <small title={p.offer_id}>Offer ID: {p.offer_id}</small>
-            <small title={p.product_id}>ID: {p.product_id}</small>
-            {p.sku && <small title={p.sku}>SKU: {p.sku}</small>}
+        </td>
+        <td data-label="В другом сервисе">
+          <div className="products-paired">
+            <BrandLogo
+              provider={p.provider === "moysklad" ? "ozon" : "moysklad"}
+              decorative
+            />
+            <div>
+              {p.target_name ||
+                (p.target_id
+                  ? "Товар МойСклад"
+                  : p.provider === "moysklad"
+                    ? "Нет карточки Ozon"
+                    : "Нет подтверждённой пары")}
+              <small>{p.target_article}</small>
+            </div>
           </div>
-        </div>
-      </td>
+        </td>
+      </>
       <td data-label="Статус">
         <div className="matching-page-badges">
           <span
             className={`matching-page-badge ${confirmed ? "confirmed" : conflict ? "conflict" : "unmatched"}`}
-            title={p.match_status}
           >
             {confirmed
               ? "Подтверждено"
@@ -124,11 +105,29 @@ function MappingRow({
                 ? "Конфликт"
                 : "Не сопоставлен"}
           </span>
+          {p.observed === false && <small>Нет в последней загрузке</small>}
+          {p.shared_inventory && (
+            <small>Общий остаток для нескольких предложений</small>
+          )}
+          {p.kind === "variant" && <small>Модификация товара</small>}
           {p.archived === true && (
             <span className="matching-page-badge archived">Архивный</span>
           )}
           {p.archived === null && <small>Активность неизвестна</small>}
         </div>
+      </td>
+      <td data-label="Передача данных">
+        <span className={`products-transfer ${automatic ? "automatic" : ""}`}>
+          {!confirmed
+            ? "Недоступна"
+            : !config
+              ? "Нет данных о настройках"
+              : automatic
+                ? "Автоматически"
+                : !config.enabled || !config.test_enabled
+                  ? "Выключена"
+                  : "При подтверждении"}
+        </span>
       </td>
       <td data-label="Действия">
         <button
@@ -137,7 +136,13 @@ function MappingRow({
           disabled={disabled}
           onClick={open}
         >
-          {confirmed ? "Изменить" : conflict ? "Открыть" : "Сопоставить"}
+          {p.provider === "moysklad"
+            ? "Открыть"
+            : confirmed
+              ? "Открыть"
+              : conflict
+                ? "Разобраться"
+                : "Сопоставить"}
         </button>
       </td>
     </tr>
@@ -154,8 +159,10 @@ export function ProductMappingTable({
   startQueue,
   canStartQueue,
   children,
+  config,
 }: {
   items: Product[];
+  config?: CatalogConfig;
   selected: Product[];
   pending: boolean;
   toggle: (p: Product, checked: boolean) => void;
@@ -214,18 +221,19 @@ export function ProductMappingTable({
           <thead>
             <tr>
               <th aria-label="Выбор" />
-              <th>Товар в МойСклад</th>
-              <th>Артикул</th>
-              <th>Товар в Ozon</th>
-              <th>Статус</th>
+              <th>Товар</th>
+              <th>В другом сервисе</th>
+              <th>Связь</th>
+              <th>Передача данных</th>
               <th>Действия</th>
             </tr>
           </thead>
           <tbody>
             {items.map((p) => (
               <MappingRow
-                key={p.product_id}
+                key={`${p.provider}:${p.kind}:${p.product_id}`}
                 p={p}
+                config={config}
                 selected={selectedIds.has(p.product_id)}
                 disabled={pending}
                 selectionDisabled={

@@ -31,9 +31,12 @@ test("read-only stock inspection uses the real API and keeps marketplace writes 
       forbidden.push(`${request.method()} ${url.pathname}`);
   });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await signIn(page, process.env.STYK_SHADOW_E2E_SECRET!, `${origin}/`);
+  await signIn(page, origin);
   await selectWorkspace(page, tenant, moy, ozon);
   await navigate(page, "Интеграции");
+  await page
+    .getByRole("button", { name: "Настройка синхронизации", exact: true })
+    .click();
   await page.getByRole("button", { name: "Проверить остатки" }).click();
   let dialog = page.getByRole("dialog", { name: "Проверка остатков" });
   await expect(
@@ -124,14 +127,17 @@ test("read-only stock inspection uses the real API and keeps marketplace writes 
     path: join(shots, "details-mobile.png"),
     fullPage: true,
   });
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= window.innerWidth,
-    ),
-  ).toBe(true);
+  await expect
+    .poll(() =>
+      page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    )
+    .toBe(true);
   await dialog.getByRole("link", { name: "Сопоставить товары" }).click();
   await expect(page).toHaveURL(/\/products/);
   await navigate(page, "Интеграции");
+  await page
+    .getByRole("button", { name: "Настройка синхронизации", exact: true })
+    .click();
   await page.getByRole("button", { name: "Проверить остатки" }).click();
   dialog = page.getByRole("dialog", { name: "Проверка остатков" });
   await expect(
@@ -141,6 +147,9 @@ test("read-only stock inspection uses the real API and keeps marketplace writes 
   await page.reload();
   await selectWorkspace(page, tenant, moy, ozon);
   await navigate(page, "Интеграции");
+  await page
+    .getByRole("button", { name: "Настройка синхронизации", exact: true })
+    .click();
   await page.getByRole("button", { name: "Проверить остатки" }).click();
   await expect(
     page

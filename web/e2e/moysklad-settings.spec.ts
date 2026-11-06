@@ -242,7 +242,7 @@ test("MoySklad settings persist, protect credentials and work across shell route
     "/",
     "/products",
     "/orders",
-    "/catalog-sync",
+    "/products/rules",
     "/warehouses",
     "/integrations",
   ]) {

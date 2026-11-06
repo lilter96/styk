@@ -6,34 +6,25 @@ import { Brand, Icon, type IconName } from "./UI";
 const navigation: { path: string; label: string; icon: IconName }[] = [
   { path: "/", label: "Обзор", icon: "overview" },
   { path: "/products", label: "Товары", icon: "products" },
-  { path: "/catalog-sync", label: "Каталог", icon: "catalog" },
   { path: "/orders", label: "Заказы", icon: "orders" },
   { path: "/warehouses", label: "Склады", icon: "warehouse" },
   { path: "/integrations", label: "Интеграции", icon: "integrations" },
   { path: "/diagnostics", label: "Диагностика", icon: "diagnostics" },
 ];
-function Navigation({
-  onNavigate,
-  supportMode,
-}: {
-  onNavigate?: () => void;
-  supportMode: boolean;
-}) {
+function Navigation({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <nav className="app-tabs" aria-label="Разделы">
-      {navigation
-        .filter((item) => !supportMode || item.path !== "/catalog-sync")
-        .map((item) => (
-          <NavLink
-            key={item.path}
-            to={item.path}
-            end={item.path === "/"}
-            onClick={onNavigate}
-          >
-            <Icon name={item.icon} />
-            {item.label}
-          </NavLink>
-        ))}
+      {navigation.map((item) => (
+        <NavLink
+          key={item.path}
+          to={item.path}
+          end={item.path === "/"}
+          onClick={onNavigate}
+        >
+          <Icon name={item.icon} />
+          {item.label}
+        </NavLink>
+      ))}
     </nav>
   );
 }
@@ -41,12 +32,10 @@ export function AppShell({
   context,
   workspace,
   children,
-  supportMode = false,
 }: {
   context: (onNavigate?: () => void) => ReactNode;
   workspace: (onNavigate?: () => void) => ReactNode;
   children: ReactNode;
-  supportMode?: boolean;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   return (
@@ -56,7 +45,7 @@ export function AppShell({
       </a>
       <aside className="app-sidebar">
         {workspace()}
-        <Navigation supportMode={supportMode} />
+        <Navigation />
         <div className="app-sidebar-foot">
           <Brand />
           {context()}
@@ -80,10 +69,7 @@ export function AppShell({
           onClose={() => setMenuOpen(false)}
         >
           {workspace(() => setMenuOpen(false))}
-          <Navigation
-            supportMode={supportMode}
-            onNavigate={() => setMenuOpen(false)}
-          />
+          <Navigation onNavigate={() => setMenuOpen(false)} />
           <div className="app-sidebar-foot">
             <Brand />
             {context(() => setMenuOpen(false))}

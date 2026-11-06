@@ -17,6 +17,7 @@ import (
 	"github.com/lilter96/styk/internal/application"
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/infrastructure/ozon"
+	"github.com/lilter96/styk/internal/publication"
 	"github.com/lilter96/styk/internal/stockfixture"
 	"github.com/lilter96/styk/internal/stocksync"
 )
@@ -61,11 +62,11 @@ func TestControlledAutomaticEnrolledTargetsShareTraversal(t *testing.T) {
 	if _, err = db.ConfigureAutomaticStock(ctx, bad, time.Now()); err == nil {
 		t.Fatal("unmapped product was admitted")
 	}
-	bad.Targets = inputs
-	bad.Targets[0].Maximum = 11
+	bad.Targets = append([]domain.AutomaticStockTargetRequest(nil), inputs...)
+	bad.Targets[0].Maximum = publication.Maximum() + 1
 	bad.IdempotencyKey = "controlled-multi-policy-max"
 	if _, err = db.ConfigureAutomaticStock(ctx, bad, time.Now()); err == nil {
-		t.Fatal("quantity above the controlled test ceiling was admitted")
+		t.Fatal("quantity above the provider ceiling was admitted")
 	}
 	var mu sync.Mutex
 	stock := map[int64]int64{}

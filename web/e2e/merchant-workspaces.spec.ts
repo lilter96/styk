@@ -63,7 +63,12 @@ test("two merchants register, use independent accounts and stay isolated", async
   await login(a, aEmail);
   await selectAccounts(a, aMoy, aOzon);
   await a.getByRole("link", { name: "Товары", exact: true }).click();
-  await expect(a.getByText("ATEST-897677", { exact: true })).toBeVisible();
+  await expect(
+    a.getByRole("button", {
+      name: "Изменить соответствие ATEST-897677",
+      exact: true,
+    }),
+  ).toBeVisible();
 
   await b.getByRole("link", { name: "Интеграции", exact: true }).click();
   await connect(b, "МойСклад", "Склад B", "synthetic-moy-b");
@@ -78,16 +83,24 @@ test("two merchants register, use independent accounts and stay isolated", async
   await expect(
     b.getByText("Товар Ozon для проверки", { exact: true }),
   ).toBeVisible();
-  await expect(
-    b.getByText("Offer ID: B-TEST-OFFER", { exact: true }),
-  ).toBeVisible();
+  await expect(b.getByText("B-TEST-OFFER", { exact: true })).toBeVisible();
   await expect(b.getByText("ATEST-897677", { exact: true })).toHaveCount(0);
-  await b.getByRole("button", { name: /^Сопоставить / }).click();
+  await b
+    .getByRole("button", {
+      name: "Открыть сопоставление B-TEST-OFFER",
+      exact: true,
+    })
+    .click();
   await b.getByLabel("Поиск товара МойСклад").fill("Тестовый товар");
   await b.getByRole("button", { name: "Тестовый товар, товар" }).click();
   await b.getByRole("button", { name: "Проверить соответствие" }).click();
   await b.getByLabel("Подтверждаю, что это один и тот же товар").check();
-  await b.getByRole("button", { name: "Подтвердить соответствие" }).click();
+  await b
+    .getByRole("button", {
+      name: "Сопоставить и перейти к следующему",
+      exact: true,
+    })
+    .click();
   await expect(b.getByText(/Соответствие.*сохранено/)).toBeVisible();
   await b.getByRole("button", { name: "Закрыть сопоставление" }).click();
   await b.getByRole("link", { name: "Склады", exact: true }).click();
@@ -121,6 +134,9 @@ test("two merchants register, use independent accounts and stay isolated", async
     .getByRole("button", { name: "Закрыть сопоставление складов" })
     .click();
   await b.getByRole("link", { name: "Интеграции", exact: true }).click();
+  await b
+    .getByRole("button", { name: "Настройка синхронизации", exact: true })
+    .click();
   const automatic = b.getByRole("region", {
     name: "Автоматическая синхронизация",
   });
@@ -427,16 +443,16 @@ async function login(page: Page, email: string) {
 }
 
 async function selectAccounts(page: Page, moy: string, ozon: string) {
-  const selector = page.locator(".workspace-selector");
-  if ((await selector.getAttribute("open")) === null)
-    await selector.locator("summary").first().click();
+  const selector = page.getByRole("region", {
+    name: "Рабочее пространство",
+    exact: true,
+  });
   await selector
     .getByRole("combobox", { name: "МойСклад", exact: true })
     .selectOption(moy);
   await selector
     .getByRole("combobox", { name: "Ozon", exact: true })
     .selectOption(ozon);
-  await selector.locator("summary").first().click();
 }
 
 async function connect(

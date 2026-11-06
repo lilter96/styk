@@ -144,7 +144,11 @@ func (s *Store) SaveCatalogPreview(ctx context.Context, p catalogsync.Preview) (
 	if err = catalogCredentialLocks(ctx, tx, p.Scope); err != nil {
 		return p, err
 	}
-	current, err := readCatalogReviewContext(ctx, tx, p.Scope)
+	current, err := readCatalogPreviewContext(ctx, tx, p)
+	if err != nil {
+		return p, err
+	}
+	current, err = catalogImportReview(ctx, tx, p, current)
 	if err != nil {
 		return p, err
 	}

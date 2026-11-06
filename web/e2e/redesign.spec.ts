@@ -16,66 +16,55 @@ test("new merchant imports all eligible Ozon products with one confirmation", as
     revision: "source-1",
     lifecycle: archived ? "archived" : "active",
   });
-  let configuration = {
-    scope,
-    revision: 0,
-    enabled: false,
-    test_enabled: false,
-    interval_seconds: 300,
-    rules: {},
-    targets: [] as Array<{
-      id: string;
-      source: ReturnType<typeof source>["identity"];
-      target: unknown;
-      create: { values: unknown };
-    }>,
-    updated_at: "",
-  };
-  const approved: string[] = [];
+  const mutations: string[] = [];
   await page.route("**/api/catalog-sync/**", async (route) => {
-    const request = route.request();
-    const url = new URL(request.url());
-    if (url.pathname.endsWith("config")) {
-      if (request.method() === "POST")
-        configuration = {
-          ...request.postDataJSON().config,
-          revision: configuration.revision + 1,
-        };
+    const request = route.request(),
+      url = new URL(request.url());
+    if (request.method() === "POST") mutations.push(url.pathname);
+    if (url.pathname.endsWith("config"))
       return route.fulfill({
-        json: { ...configuration, publication_available: true },
+        json: {
+          scope,
+          revision: 0,
+          enabled: false,
+          test_enabled: false,
+          targets: [],
+          rules: {},
+          publication_available: true,
+        },
       });
-    }
     if (url.pathname.endsWith("products"))
       return route.fulfill({
-        json:
-          url.searchParams.get("provider") !== "ozon"
-            ? { products: [] }
-            : url.searchParams.get("cursor")
-              ? { products: [source("1002"), source("1003", true)] }
-              : { products: [source("1001")], next_cursor: "second-page" },
+        json: url.searchParams.get("cursor")
+          ? { products: [source("1002"), source("1003", true)] }
+          : { products: [source("1001")], next_cursor: "second-page" },
       });
     if (url.pathname.endsWith("operations"))
       return route.fulfill({ json: { operations: [] } });
     const body = request.postDataJSON();
-    const target = configuration.targets.find(
-      (item) => item.id === body.enrollment_ids[0],
-    )!;
-    if (url.pathname.endsWith("preview"))
+    if (url.pathname.endsWith("import-preview"))
       return route.fulfill({
         json: {
-          id: `preview-${target.id}`,
+          id: "batch-preview",
           scope,
-          config_revision: configuration.revision,
+          config_revision: 1,
           expires_at: "2099-01-01T00:00:00Z",
-          decisions: [
-            {
-              enrollment_id: target.id,
+          decisions: body.targets.map(
+            (
+              target: {
+                source: { id: string };
+                target: unknown;
+                create: { values: unknown };
+              },
+              i: number,
+            ) => ({
+              enrollment_id: `frozen-${i}`,
               source: source(target.source.id),
               target: { identity: target.target },
               target_absent: true,
               ready: true,
               validation: [],
-              plan: { conflicts: [] },
+              plan: { conflicts: [], changes: [] },
               commands: [
                 {
                   action: "create",
@@ -83,40 +72,47 @@ test("new merchant imports all eligible Ozon products with one confirmation", as
                   values: target.create.values,
                 },
               ],
-            },
-          ],
+            }),
+          ),
         },
       });
     if (url.pathname.endsWith("approve")) {
-      approved.push(target.source.id);
+      expect(body.enrollment_ids).toEqual(["frozen-0", "frozen-1"]);
       return route.fulfill({
         json: {
-          id: `operation-${target.id}`,
+          id: "batch-operation",
           scope,
-          targets: [{ enrollment_id: target.id }],
+          state: "QUEUED",
+          targets: [{}, {}],
         },
       });
     }
     return route.fulfill({ status: 404, json: {} });
   });
-  await page.goto(origin + "/catalog-sync");
-  const importer = page.getByRole("region", { name: "Импорт товаров из Ozon" });
-  await importer
-    .getByRole("button", { name: "Импортировать все товары" })
-    .click();
-  await expect(importer.getByText(/Новых:/)).toContainText("Новых: 3");
-  await expect(importer.getByText(/Новых:/)).toContainText("В архиве: 1");
-  const start = importer.getByRole("button", { name: "Начать импорт (3)" });
-  await expect(start).toBeDisabled();
-  expect(approved).toEqual([]);
-  await importer
-    .getByRole("checkbox", { name: /Разрешаю создать все/ })
-    .check();
-  await start.click();
-  await expect(importer.getByRole("status")).toContainText(
-    "Передано на отправку: 3",
-  );
-  expect(approved).toEqual(["1001", "1002", "1003"]);
+  await page.goto(origin + "/products/import/ozon-to-moysklad");
+  await page.getByLabel("Выбрать Товар 1001", { exact: true }).check();
+  await page.getByRole("button", { name: "Далее", exact: true }).click();
+  await page.getByLabel("Выбрать Товар 1002", { exact: true }).check();
+  await expect(
+    page.getByLabel("Выбрать Товар 1003", { exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "Проверить выбранные (2)" }).click();
+  await expect(
+    page.getByRole("button", { name: "Отправить изменения (0)" }),
+  ).toBeDisabled();
+  for (const id of ["1001", "1002"])
+    await page
+      .getByLabel(`Подтвердить изменения товара Товар ${id}`, { exact: true })
+      .check();
+  await page.getByLabel(/Я проверил изменения выбранных товаров/).check();
+  await page.getByRole("button", { name: "Отправить изменения (2)" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Запрос поставлен в обработку" }),
+  ).toBeVisible();
+  expect(mutations).toEqual([
+    "/api/catalog-sync/import-preview",
+    "/api/catalog-sync/approve",
+  ]);
 });
 
 // Presentation fixtures are confined to this test. Application requests and
@@ -226,6 +222,10 @@ async function fixtures(page: Page, signedIn = true) {
           target_kind: "product",
           target_id: `moy-${index}`,
           target_name: `Органайзер для рабочего стола ${index + 1}`,
+          provider: "ozon" as const,
+          kind: "product",
+          observed: true,
+          shared_inventory: false,
           match_status: "CONFIRMED",
           candidate_count: 0,
           candidates: [],
@@ -343,6 +343,14 @@ async function fixtures(page: Page, signedIn = true) {
         targets: [],
         updated_at: new Date().toISOString(),
       };
+    else if (path === "/api/product-matching/settings")
+      value = {
+        revision: 0,
+        exact_sku: true,
+        names: true,
+        auto_confirm: false,
+        after_import: false,
+      };
     else if (path === "/api/catalog-sync/products")
       value = { products: [], next_cursor: "" };
     else if (path === "/api/catalog-sync/operations")
@@ -389,8 +397,10 @@ async function fixtures(page: Page, signedIn = true) {
 }
 const routes = [
   ["/", "Добро пожаловать в STYK"],
-  ["/products", "Сопоставление товаров"],
-  ["/catalog-sync", "Синхронизация каталога"],
+  ["/products", "Товары"],
+  ["/products/rules", "Товары"],
+  ["/products/import", "Импорт товаров"],
+  ["/products/matching", "Автосопоставление товаров"],
   ["/orders", "Заказы"],
   ["/warehouses", "Склады"],
   ["/integrations", "Интеграции"],
@@ -532,7 +542,7 @@ test("mobile navigation traps focus, closes with Escape and navigates", async ({
   await page.getByRole("button", { name: "Открыть меню" }).click();
   await dialog.getByRole("link", { name: "Товары", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Сопоставление товаров" }),
+    page.getByRole("heading", { name: "Товары", exact: true }),
   ).toBeVisible();
   await expect(dialog).not.toBeVisible();
 });
@@ -645,7 +655,7 @@ for (const width of [1440, 390]) {
     await fixtures(page);
     await page.goto(origin + "/products");
     await expect(
-      page.getByRole("heading", { name: "Сопоставление товаров" }),
+      page.getByRole("heading", { name: "Товары", exact: true }),
     ).toBeVisible();
     await expect(page.locator(".app-topbar")).toHaveCount(0);
     if (width === 390)
@@ -678,7 +688,7 @@ for (const width of [1440, 390]) {
       page.getByRole("heading", { name: "Wildberries", exact: true }),
     ).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Сопоставление товаров" }),
+      page.getByRole("heading", { name: "Товары", exact: true }),
     ).toHaveCount(0);
     await workspace
       .getByRole("button", { name: "Яндекс Маркет", exact: true })
@@ -994,3 +1004,172 @@ test("confirmation feedback follows warehouse, order and overview content", asyn
     expect(bounds.feedbackTop).toBeGreaterThanOrEqual(bounds.bottom);
   }
 });
+
+test("removed catalog route stays missing without a redirect", async ({
+  page,
+}) => {
+  await fixtures(page);
+  await page.goto(origin + "/catalog-sync");
+  await expect(
+    page.getByRole("heading", { name: "Страница не найдена" }),
+  ).toBeVisible();
+  await expect(page).toHaveURL(origin + "/catalog-sync");
+  await expect(
+    page
+      .getByRole("navigation", { name: "Разделы" })
+      .getByRole("link", { name: "Каталог", exact: true }),
+  ).toHaveCount(0);
+});
+for (const width of [1440, 768, 390])
+  test(`matching preview and explicit result at ${width}px`, async ({
+    page,
+  }) => {
+    await fixtures(page);
+    await page.setViewportSize({ width, height: 950 });
+    const items = [
+      {
+        product_id: "101",
+        offer_id: "STYK-01",
+        name: "Органайзер для рабочего стола",
+        status: "exact",
+        reason: "exact_sku",
+        candidates: [
+          {
+            kind: "product",
+            id: "p1",
+            name: "Органайзер для рабочего стола",
+            article: "STYK-01",
+            evidence: "exact_sku",
+          },
+        ],
+      },
+      {
+        product_id: "102",
+        offer_id: "STYK-02",
+        name: "Органайзер большой",
+        status: "review",
+        reason: "similar_name",
+        candidates: [
+          {
+            kind: "product",
+            id: "p2",
+            name: "Органайзер для бумаг",
+            article: "STYK-03",
+            evidence: "similar_name",
+          },
+        ],
+      },
+      {
+        product_id: "103",
+        offer_id: "STYK-04",
+        name: "Подставка для карандашей",
+        status: "conflict",
+        reason: "duplicate_sku",
+        candidates: [],
+      },
+    ];
+    let policy = {
+      revision: 0,
+      exact_sku: true,
+      names: true,
+      auto_confirm: false,
+      after_import: false,
+    };
+    let runs = 0;
+    await page.route("**/api/product-matching/**", async (route) => {
+      const request = route.request(),
+        path = new URL(request.url()).pathname;
+      if (path.endsWith("settings")) {
+        if (request.method() === "POST")
+          policy = { ...request.postDataJSON().policy, revision: 1 };
+        return route.fulfill({ json: policy });
+      }
+      if (path.endsWith("preview"))
+        return route.fulfill({
+          json: {
+            id: "visual-preview",
+            scope,
+            policy,
+            items,
+            expires_at: "2099-01-01T00:00:00Z",
+          },
+        });
+      runs++;
+      expect(request.postDataJSON().product_ids).toEqual(["101"]);
+      return route.fulfill({
+        json: {
+          id: "visual-run",
+          preview_id: "visual-preview",
+          confirmed: 1,
+          items: [
+            { ...items[0], status: "confirmed", reason: "confirmed_by_rule" },
+          ],
+        },
+      });
+    });
+    await page.goto(origin + "/products/matching");
+    await page
+      .getByRole("radio", { name: /Разрешить подтверждение уникальных/ })
+      .check();
+    await page
+      .getByRole("button", {
+        name: "Сохранить настройки и посмотреть результат",
+      })
+      .click();
+    await expect(
+      page.getByLabel("Выбрать пару STYK-02", { exact: true }),
+    ).toBeDisabled();
+    await expect(
+      page.getByLabel("Выбрать пару STYK-04", { exact: true }),
+    ).toBeDisabled();
+    expect(runs).toBe(0);
+    await page.screenshot({
+      path: `test-results/redesign/${width}-matching-preview.png`,
+      fullPage: true,
+    });
+    await page.getByLabel("Выбрать пару STYK-01", { exact: true }).check();
+    await page.getByLabel(/Разрешаю подтвердить выбранные точные пары/).check();
+    await page
+      .getByRole("button", { name: "Подтвердить выбранные пары" })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: "Результаты сопоставления" }),
+    ).toBeVisible();
+    expect(runs).toBe(1);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth + 1,
+      ),
+    ).toBe(true);
+    await page.screenshot({
+      path: `test-results/redesign/${width}-matching-result.png`,
+      fullPage: true,
+    });
+  });
+
+for (const width of [768, 390]) {
+  test(`expanded integration setup fits ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await fixtures(page);
+    await page.goto(origin + "/integrations");
+    await page
+      .getByRole("button", { name: "Настройка синхронизации", exact: true })
+      .click();
+    const steps = page.locator(".integration-console .setup-steps");
+    await expect(steps).toBeVisible();
+    const columns = await steps.evaluate(
+      (element) =>
+        getComputedStyle(element).gridTemplateColumns.split(" ").length,
+    );
+    expect(columns).toBe(width === 390 ? 1 : 3);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await page.screenshot({
+      path: `test-results/redesign/${width}-integration-setup.png`,
+      fullPage: true,
+    });
+  });
+}

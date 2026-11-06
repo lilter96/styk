@@ -32,6 +32,7 @@ func registerCatalogRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c *c
 	mux.HandleFunc("POST /api/catalog-sync/config", a.authorized(a.connectionMutation(api.audit(api.saveConfig))))
 	mux.HandleFunc("GET /api/catalog-sync/products", a.authorized(api.audit(api.products)))
 	mux.HandleFunc("POST /api/catalog-sync/preview", a.authorized(a.connectionMutation(api.audit(api.preview))))
+	mux.HandleFunc("POST /api/catalog-sync/import-preview", a.authorized(a.connectionMutation(api.audit(api.importPreview))))
 	mux.HandleFunc("POST /api/catalog-sync/reconcile", a.authorized(a.connectionMutation(api.audit(api.reconcile))))
 	mux.HandleFunc("POST /api/catalog-sync/approve", a.authorized(a.connectionMutation(api.audit(api.approve))))
 	mux.HandleFunc("GET /api/catalog-sync/operations", a.authorized(api.audit(api.operations)))

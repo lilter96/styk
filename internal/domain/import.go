@@ -4,6 +4,7 @@ import "time"
 
 // ExternalEntity represents a source identity, not a matched internal product.
 type ExternalEntity struct {
+	Archived                                               *bool
 	Kind, ID, Name, Code, Article, ParentID, SourceUpdated string
 }
 

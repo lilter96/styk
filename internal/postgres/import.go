@@ -57,7 +57,7 @@ func saveInventoryImportTx(ctx context.Context, tx pgx.Tx, snap domain.Inventory
 		return 0, false, fmt.Errorf("insert import: %w", err)
 	}
 	for _, e := range snap.Entities {
-		_, err = tx.Exec(ctx, `INSERT INTO source_entities(import_id,kind,external_id,name,code,article,parent_id,source_updated) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, id, e.Kind, e.ID, e.Name, e.Code, e.Article, e.ParentID, e.SourceUpdated)
+		_, err = tx.Exec(ctx, `INSERT INTO source_entities(import_id,kind,external_id,name,code,article,parent_id,source_updated,archived) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, id, e.Kind, e.ID, e.Name, e.Code, e.Article, e.ParentID, e.SourceUpdated, e.Archived)
 		if err != nil {
 			return 0, false, fmt.Errorf("insert source entity: %w", err)
 		}

@@ -428,6 +428,7 @@ type ref struct {
 	} `json:"meta"`
 }
 type entity struct {
+	Archived  *bool  `json:"archived"`
 	ID        string `json:"id"`
 	AccountID string `json:"accountId"`
 	Name      string `json:"name"`
@@ -518,7 +519,7 @@ func (c *Client) Read(ctx context.Context, account string) (domain.InventoryImpo
 			if err := b.add(resource); err != nil {
 				return err
 			}
-			snap.Entities = append(snap.Entities, domain.ExternalEntity{Kind: kind, ID: e.ID, Name: e.Name, Code: e.Code, Article: e.Article, ParentID: parent, SourceUpdated: e.Updated})
+			snap.Entities = append(snap.Entities, domain.ExternalEntity{Kind: kind, ID: e.ID, Name: e.Name, Code: e.Code, Article: e.Article, ParentID: parent, SourceUpdated: e.Updated, Archived: e.Archived})
 			return nil
 		})
 		if err != nil {

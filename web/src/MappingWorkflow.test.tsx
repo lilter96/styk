@@ -1,8 +1,14 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
-import { ProductMappingPage as Products } from "./ProductMappingPage";
+import { ProductsWorkspace as Products } from "./ProductsWorkspace";
 import type { Product } from "./api";
 import { ConfirmationNotice, useConfirmation } from "./Confirmation";
 afterEach(() => {
@@ -33,6 +39,10 @@ const product = {
   archived: false,
   target_kind: null,
   target_id: null,
+  provider: "ozon" as const,
+  kind: "product",
+  observed: true,
+  shared_inventory: false,
   match_status: "NO_CANDIDATE",
   candidate_count: 0,
   candidates: [],
@@ -126,7 +136,7 @@ function setup(
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
       }
     >
-      <MemoryRouter>
+      <MemoryRouter initialEntries={["/products"]}>
         {withNotice ? <ProductsWithNotice /> : <Products scope={scope} />}
       </MemoryRouter>
     </QueryClientProvider>,
@@ -148,7 +158,7 @@ function ProductsWithNotice() {
 }
 async function createReview() {
   fireEvent.click(
-    await screen.findByRole("button", { name: "Сопоставить offer" }),
+    await screen.findByRole("button", { name: "Открыть сопоставление offer" }),
   );
   fireEvent.change(screen.getByLabelText("Поиск товара МойСклад"), {
     target: { value: "different" },
@@ -266,13 +276,12 @@ it("uses latest-catalog counts for progress instead of historical mappings or th
     catalog_products: 9,
     catalog_confirmed_products: 4,
   });
-  await screen.findByText("Сопоставлено 4 из 9");
-  const progress = screen.getByRole("progressbar", {
-    name: "Сопоставление последнего каталога",
-  });
-  expect(progress.getAttribute("aria-valuemax")).toBe("9");
-  expect(progress.getAttribute("aria-valuenow")).toBe("4");
-  expect(screen.queryByText("Подтверждено соответствий: 99")).toBeNull();
+  const summary = await screen.findByLabelText("Состояние товаров");
+  await waitFor(() =>
+    expect(summary.textContent).toContain("4 сопоставлено в Ozon"),
+  );
+  expect(summary.textContent).toContain("5 без подтверждённой пары");
+  expect(summary.textContent).not.toContain("99");
 });
 
 it("queues several suggestions for individual review without confirming them", async () => {
@@ -281,6 +290,10 @@ it("queues several suggestions for individual review without confirming them", a
       ...product,
       product_id: "p1",
       offer_id: "one",
+      provider: "ozon" as const,
+      kind: "product",
+      observed: true,
+      shared_inventory: false,
       match_status: "ONE_CANDIDATE",
       candidate_count: 1,
       candidates: [
@@ -291,6 +304,10 @@ it("queues several suggestions for individual review without confirming them", a
       ...product,
       product_id: "p2",
       offer_id: "two",
+      provider: "ozon" as const,
+      kind: "product",
+      observed: true,
+      shared_inventory: false,
       match_status: "ONE_CANDIDATE",
       candidate_count: 1,
       candidates: [
@@ -302,6 +319,10 @@ it("queues several suggestions for individual review without confirming them", a
       product_id: "archived",
       offer_id: "archived",
       archived: true,
+      provider: "ozon" as const,
+      kind: "product",
+      observed: true,
+      shared_inventory: false,
       match_status: "ONE_CANDIDATE",
       candidate_count: 1,
       candidates: [{ kind: "product", id: "p4", evidence: ["code"] }],
@@ -324,7 +345,7 @@ it("queues several suggestions for individual review without confirming them", a
   });
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={["/products"]}>
         <Products scope={scope} />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -359,6 +380,10 @@ it("keeps successful and remaining items visible after an individual confirmatio
       ...product,
       candidates,
       candidate_count: 1,
+      provider: "ozon" as const,
+      kind: "product",
+      observed: true,
+      shared_inventory: false,
       match_status: "ONE_CANDIDATE",
     },
     {
@@ -367,6 +392,10 @@ it("keeps successful and remaining items visible after an individual confirmatio
       offer_id: "second",
       candidates,
       candidate_count: 1,
+      provider: "ozon" as const,
+      kind: "product",
+      observed: true,
+      shared_inventory: false,
       match_status: "ONE_CANDIDATE",
     },
   ]);
@@ -406,13 +435,17 @@ it("shows confirmed target and Ozon names supplied by the catalog", async () => 
       target_kind: "product",
       target_name: "Название МойСклад",
       target_article: "ART-42",
+      provider: "ozon" as const,
+      kind: "product",
+      observed: true,
+      shared_inventory: false,
       match_status: "CONFIRMED",
     },
   ]);
   expect(await screen.findByText("Название Ozon")).toBeTruthy();
   expect(screen.getByText("Название МойСклад")).toBeTruthy();
   expect(screen.getByText("ART-42")).toBeTruthy();
-  expect(screen.getByText("Offer ID: offer")).toBeTruthy();
+  expect(screen.getByText("offer")).toBeTruthy();
 });
 
 it("retains partial queue progress and retries an uncertain confirmation only on request", async () => {
@@ -434,6 +467,10 @@ it("retains partial queue progress and retries an uncertain confirmation only on
         ...product,
         candidates,
         candidate_count: 1,
+        provider: "ozon" as const,
+        kind: "product",
+        observed: true,
+        shared_inventory: false,
         match_status: "ONE_CANDIDATE",
       },
       {
@@ -442,6 +479,10 @@ it("retains partial queue progress and retries an uncertain confirmation only on
         offer_id: "second",
         candidates,
         candidate_count: 1,
+        provider: "ozon" as const,
+        kind: "product",
+        observed: true,
+        shared_inventory: false,
         match_status: "ONE_CANDIDATE",
       },
     ],

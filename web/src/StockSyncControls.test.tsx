@@ -37,7 +37,6 @@ function setup({
   remoteState = "",
   deploymentUnavailable = false,
   omitAvailability = false,
-  testAccount = false,
   attestationFails = false,
   recoveryScenario = false,
   otherRecoveryScenario = false,
@@ -50,7 +49,6 @@ function setup({
   remoteState?: string;
   deploymentUnavailable?: boolean;
   omitAvailability?: boolean;
-  testAccount?: boolean;
   attestationFails?: boolean;
   recoveryScenario?: boolean;
   otherRecoveryScenario?: boolean;
@@ -79,7 +77,6 @@ function setup({
   };
   const view = (selected = scope): StockSyncView => ({
     ...selected,
-    ...(testAccount ? { test_account_mode: true } : {}),
     ...(omitAvailability
       ? {}
       : { publication_available: !deploymentUnavailable }),
@@ -163,10 +160,25 @@ function setup({
         });
       const url = new URL(path, "http://test.local");
       if (url.pathname.endsWith("/automatic") && otherRecoveryScenario)
-        return new Response(JSON.stringify({
-          available: true,
-          unresolved: recovered ? [] : [{ operation_id: "b".repeat(32), ozon_product_id: "102", ozon_warehouse_id: "201", quantity: "6", state: "UNKNOWN", readback_at: "2026-10-29T13:27:08Z", readback_quantity: "0" }],
-        }), { status: 200 });
+        return new Response(
+          JSON.stringify({
+            available: true,
+            unresolved: recovered
+              ? []
+              : [
+                  {
+                    operation_id: "b".repeat(32),
+                    ozon_product_id: "102",
+                    ozon_warehouse_id: "201",
+                    quantity: "6",
+                    state: "UNKNOWN",
+                    readback_at: "2026-10-29T13:27:08Z",
+                    readback_quantity: "0",
+                  },
+                ],
+          }),
+          { status: 200 },
+        );
       return new Response(
         JSON.stringify(
           view({
@@ -441,25 +453,50 @@ it("keeps unspecified quantities and proofs unknown until explicitly provided", 
   expect(sent.attestations[0].proofs).toHaveLength(1);
   expect(sent.attestations[0].proofs[0].code).toBe("SALE_UNIT_UNVERIFIED");
 });
-it("records explicit test assumptions without calling them independent proof", async () => {
-  const { calls } = setup({ ready: false, testAccount: true });
-  const dialog = await openEnable();
-  await within(dialog).findByText(/Полнота заказов/);
-  const button = within(dialog).getByRole("button", {
-    name: "Записать тестовые допущения",
-  });
-  expect((button as HTMLButtonElement).disabled).toBe(true);
+async function fillReviewedEvidence(dialog: HTMLElement) {
   fireEvent.click(
-    within(dialog).getByLabelText(/Подтверждаю эти тестовые допущения/),
+    await within(dialog).findByRole("button", {
+      name: "Подтвердить условия вручную",
+    }),
   );
-  fireEvent.click(button);
+  for (const label of [
+    "Ещё не учтённые обязательства, шт.",
+    "Запас на ещё не учтённые уменьшения, шт.",
+    "Страховой остаток, шт.",
+  ])
+    fireEvent.change(within(dialog).getByLabelText(label), {
+      target: { value: "0" },
+    });
+  fireEvent.change(
+    within(dialog).getByLabelText("На какое время подтверждены условия"),
+    { target: { value: "2026-01-01T00:00" } },
+  );
+  fireEvent.change(
+    within(dialog).getByLabelText("Основание проверки без ключей доступа"),
+    {
+      target: {
+        value: "Сверка документов оператором: проверены все обязательства",
+      },
+    },
+  );
+  const evidence = dialog.querySelector(".sync-evidence") as HTMLElement;
+  for (const input of within(evidence).getAllByRole("checkbox"))
+    fireEvent.click(input);
+}
+it("sends only explicitly reviewed quantities and proofs for connected accounts", async () => {
+  const { calls } = setup({ ready: false });
+  const dialog = await openEnable();
+  await fillReviewedEvidence(dialog);
+  fireEvent.click(
+    within(dialog).getByRole("button", {
+      name: "Проверить подтверждённые условия",
+    }),
+  );
   await waitFor(() =>
-    expect(calls.filter((call) => call.path.endsWith("/preview"))).toHaveLength(
-      2,
-    ),
+    expect(calls.filter((c) => c.path.endsWith("/preview"))).toHaveLength(2),
   );
   const sent = JSON.parse(
-    calls.filter((call) => call.path.endsWith("/preview"))[1].body,
+    calls.filter((c) => c.path.endsWith("/preview"))[1].body,
   );
   expect(sent.attestations).toHaveLength(1);
   expect(sent.attestations[0]).toMatchObject({
@@ -468,24 +505,36 @@ it("records explicit test assumptions without calling them independent proof", a
     safety_stock: "0",
   });
   expect(sent.attestations[0].proofs).toHaveLength(9);
-  expect(sent.attestations[0].proofs[0].reference).toContain(
-    "OPERATOR_ATTESTED",
-  );
+  expect(
+    sent.attestations[0].proofs.every(
+      (p: { reference: string }) =>
+        p.reference ===
+        "Сверка документов оператором: проверены все обязательства",
+    ),
+  ).toBe(true);
+  expect(calls.some((c) => c.path.endsWith("/enable"))).toBe(false);
 });
-it("does not claim test assumptions were saved after a failed review", async () => {
-  setup({ ready: false, testAccount: true, attestationFails: true });
+it("keeps enabling blocked when manually reviewed evidence is rejected", async () => {
+  const { calls } = setup({ ready: false, attestationFails: true });
   const dialog = await openEnable();
+  await fillReviewedEvidence(dialog);
   fireEvent.click(
-    within(dialog).getByLabelText(/Подтверждаю эти тестовые допущения/),
-  );
-  fireEvent.click(
-    within(dialog).getByRole("button", { name: "Записать тестовые допущения" }),
+    within(dialog).getByRole("button", {
+      name: "Проверить подтверждённые условия",
+    }),
   );
   await within(dialog).findByText(/Не удалось проверить условия отправки/);
-  expect(within(dialog).queryByText(/Допущения записаны/)).toBeNull();
+  expect(
+    (
+      within(dialog).getByRole("button", {
+        name: "Включить синхронизацию",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  expect(calls.some((c) => c.path.endsWith("/enable"))).toBe(false);
 });
 it("requires explicit uncertainty acceptance before a test recovery", async () => {
-  const { calls } = setup({ testAccount: true, recoveryScenario: true });
+  const { calls } = setup({ recoveryScenario: true });
   fireEvent.click(
     await screen.findByRole("button", { name: "Разрешить новую проверку" }),
   );
@@ -517,16 +566,28 @@ it("requires explicit uncertainty acceptance before a test recovery", async () =
   expect(calls.some((x) => x.path.endsWith("/enable"))).toBe(false);
 });
 it("can recover an older unknown target even when it is not the latest operation", async () => {
-  const { calls } = setup({ testAccount: true, otherRecoveryScenario: true });
+  const { calls } = setup({ otherRecoveryScenario: true });
   fireEvent.click(await screen.findByText(/Отправки, требующие проверки/));
-  fireEvent.click(screen.getByRole("button", { name: "Рассмотреть восстановление" }));
-  const dialog = screen.getByRole("dialog", { name: "Принять неопределённость отправки?" });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Рассмотреть восстановление" }),
+  );
+  const dialog = screen.getByRole("dialog", {
+    name: "Принять неопределённость отправки?",
+  });
   expect(within(dialog).getByText(/Товар 102/)).toBeTruthy();
-  fireEvent.change(within(dialog).getByLabelText("Причина решения"), { target: { value: "Оператор принимает риск тестовой операции" } });
+  fireEvent.change(within(dialog).getByLabelText("Причина решения"), {
+    target: { value: "Оператор принимает риск тестовой операции" },
+  });
   fireEvent.click(within(dialog).getByLabelText(/прежний worker остановлен/));
   fireEvent.click(within(dialog).getByLabelText(/Принимаю неопределённость/));
-  fireEvent.click(within(dialog).getByRole("button", { name: "Записать решение оператора" }));
-  await waitFor(() => expect(calls.some((x) => x.path.endsWith(`${"b".repeat(32)}/supersede`))).toBe(true));
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Записать решение оператора" }),
+  );
+  await waitFor(() =>
+    expect(
+      calls.some((x) => x.path.endsWith(`${"b".repeat(32)}/supersede`)),
+    ).toBe(true),
+  );
   expect(calls.some((x) => x.path.endsWith("/enable"))).toBe(false);
 });
 it("rejects expired reviews and unavailable state without creating an enable request", async () => {

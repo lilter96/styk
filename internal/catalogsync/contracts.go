@@ -65,6 +65,7 @@ type CredentialRevisions struct {
 // TargetContext is authoritative store evidence, never supplied by the browser.
 // CreatedTarget survives restarts and replaces a creation enrollment's empty ID.
 type TargetContext struct {
+	BlockCode     string            `json:"block_code,omitempty"`
 	Enrollment    Enrollment        `json:"enrollment"`
 	Mapping       *catalog.Mapping  `json:"mapping,omitempty"`
 	Baseline      *catalog.Baseline `json:"baseline,omitempty"`
@@ -102,6 +103,7 @@ type Decision struct {
 }
 
 type Preview struct {
+	ImportTargets  []Enrollment        `json:"import_targets,omitempty"`
 	ID             string              `json:"id"`
 	Scope          catalog.Scope       `json:"scope"`
 	ConfigRevision int64               `json:"config_revision"`
@@ -149,6 +151,8 @@ type Operation struct {
 // Work always holds exactly one frozen provider command. ClaimToken is an outbox
 // fencing token. Recovery may reclaim reads; expired DISPATCHING becomes UNKNOWN.
 type Work struct {
+	MappingState       string              `json:"mapping_state,omitempty"`
+	OneTimeImport      bool                `json:"one_time_import,omitempty"`
 	ID                 string              `json:"id"`
 	OperationID        string              `json:"operation_id"`
 	Scope              catalog.Scope       `json:"scope"`
@@ -208,7 +212,16 @@ type PageRequest struct {
 	Search   string           `json:"search,omitempty"`
 }
 
+type ProductSummary struct {
+	Total      int        `json:"total"`
+	Linked     int        `json:"linked"`
+	Excluded   int        `json:"excluded"`
+	ToReview   int        `json:"to_review"`
+	ObservedAt *time.Time `json:"observed_at"`
+}
+
 type ProductPage struct {
+	Summary    *ProductSummary   `json:"summary,omitempty"`
 	Products   []catalog.Product `json:"products"`
 	NextCursor string            `json:"next_cursor,omitempty"`
 }

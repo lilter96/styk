@@ -8,6 +8,7 @@ import {
   within,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
 import { CatalogSync } from "./CatalogSync";
 import { CatalogSyncPreview } from "./CatalogSyncPreview";
 import { CatalogSyncFacts } from "./CatalogSyncFacts";
@@ -150,13 +151,22 @@ function mockAPI(handler?: Handler) {
     });
 }
 const clients: QueryClient[] = [];
-function mount(node = <CatalogSync scope={scope} />) {
+function mount(
+  node = (
+    <>
+      <CatalogSync scope={scope} view="rules" />
+      <CatalogSync scope={scope} view="transfer" />
+    </>
+  ),
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   clients.push(client);
   return render(
-    <QueryClientProvider client={client}>{node}</QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider client={client}>{node}</QueryClientProvider>
+    </MemoryRouter>,
   );
 }
 async function review() {
@@ -400,18 +410,6 @@ it("saves mixed authority settings with expected revision and invalidates the pr
   fireEvent.change(screen.getByLabelText("Название", { exact: true }), {
     target: { value: "OZON_AUTHORITATIVE" },
   });
-  expect(
-    screen.queryByRole("heading", {
-      name: "Проверьте изменения перед отправкой",
-    }),
-  ).toBeNull();
-  expect(
-    (
-      screen.getByRole("button", {
-        name: "Проверить выбранные товары",
-      }) as HTMLButtonElement
-    ).disabled,
-  ).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Сохранить настройки" }));
   await waitFor(() =>
     expect(
@@ -421,6 +419,13 @@ it("saves mixed authority settings with expected revision and invalidates the pr
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true),
+  );
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("heading", {
+        name: "Проверьте изменения перед отправкой",
+      }),
+    ).toBeNull(),
   );
   const save = fetcher.mock.calls.find(
     ([url, init]) => String(url).endsWith("/config") && init?.method === "POST",
@@ -493,22 +498,23 @@ it("distinguishes async acceptance, unknown outcomes and reconciled work without
       : undefined,
   );
   mount();
-  const asyncWork = await screen.findByRole("region", {
-    name: "Отправка operation-1",
-  });
+  const details = await screen.findAllByRole("button", { name: "Подробнее" });
+  fireEvent.click(details[0]);
   expect(
-    within(asyncWork).getByText(/Принятие запроса ещё не подтверждает/),
+    await screen.findByText(/Принятие запроса ещё не подтверждает/),
   ).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Закрыть" }));
+  fireEvent.click(details[1]);
+  expect(await screen.findByText(/Запрос мог выполниться/)).toBeTruthy();
   expect(
-    within(asyncWork).queryByText("Изменения подтверждены сверкой"),
+    screen.queryByRole("button", { name: /Повторить отправку/ }),
   ).toBeNull();
-  const unknown = screen.getByRole("region", { name: "Отправка operation-2" });
-  expect(within(unknown).getByText(/Запрос мог выполниться/)).toBeTruthy();
-  expect(within(unknown).queryByRole("button")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Закрыть" }));
+  fireEvent.click(details[2]);
   expect(
-    within(
-      screen.getByRole("region", { name: "Отправка operation-3" }),
-    ).getAllByText("Изменения подтверждены сверкой").length,
+    within(screen.getByRole("dialog")).getAllByText(
+      "Изменения подтверждены сверкой",
+    ).length,
   ).toBeGreaterThan(0);
 });
 
@@ -573,7 +579,7 @@ it("does not invent required factual values, including false and zero", async ()
 
 it("makes no requests without a complete account pair", () => {
   const fetcher = mockAPI();
-  mount(<CatalogSync scope={{ ...scope, ozon: "" }} />);
+  mount(<CatalogSync scope={{ ...scope, ozon: "" }} view="rules" />);
   expect(screen.getByText(/Подключите МойСклад и Ozon/)).toBeTruthy();
   expect(fetcher).not.toHaveBeenCalled();
 });
@@ -601,7 +607,7 @@ it("isolates a late preview response after changing the account pair", async () 
   clients.push(client);
   const tree = (value: Scope) => (
     <QueryClientProvider client={client}>
-      <CatalogSync scope={value} />
+      <CatalogSync scope={value} view="transfer" />
     </QueryClientProvider>
   );
   const view = render(tree(scope));
@@ -620,127 +626,6 @@ it("isolates a late preview response after changing the account pair", async () 
     ).toBeNull(),
   );
   expect(screen.getByText("Выбрано товаров: 0")).toBeTruthy();
-});
-
-it("creates an unmapped Ozon product in MoySklad only through a durable explicit enrollment and review", async () => {
-  const source: CatalogProduct = {
-    ...product("unmapped-ozon", "Новый товар Ozon"),
-    identity: identity("unmapped-ozon", "ozon"),
-    fields: {
-      name: { state: "known", data: "Новый товар Ozon" },
-      description: { state: "known", data: "Описание из источника" },
-      price: { state: "known", data: "99" },
-      category: { state: "unknown" },
-    },
-  };
-  let saved = configuration({ targets: [] });
-  const fetcher = mockAPI((url, init) => {
-    if (url.pathname.endsWith("/config")) {
-      if (init?.method === "POST")
-        saved = {
-          ...JSON.parse(init.body as string).config,
-          revision: saved.revision + 1,
-        };
-      return json(saved);
-    }
-    if (url.pathname.endsWith("/products"))
-      return json({
-        products: url.searchParams.get("provider") === "ozon" ? [source] : [],
-        enrollments: [],
-      });
-    if (url.pathname.endsWith("/preview")) {
-      const creation = saved.targets[0];
-      return json({
-        ...preview(),
-        config_revision: saved.revision,
-        decisions: [
-          decision({
-            enrollment_id: creation.id,
-            source,
-            target: { identity: creation.target, fields: {}, revision: "" },
-            target_absent: true,
-            commands: [
-              {
-                action: "create",
-                target: creation.target,
-                values: creation.create!.values,
-              },
-            ],
-            plan: {
-              mapping_id: "",
-              mapping_version: 0,
-              fingerprint: "creation-fingerprint",
-              changes: [],
-              conflicts: [],
-              skipped: [],
-              noop: false,
-            },
-          }),
-        ],
-      });
-    }
-    return undefined;
-  });
-  mount();
-  fireEvent.change(await screen.findByLabelText("Список товаров"), {
-    target: { value: "ozon" },
-  });
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Создать в МойСклад" }),
-  );
-  const name = screen.getByLabelText(
-    "Название нового товара",
-  ) as HTMLInputElement;
-  expect(name.value).toBe("Новый товар Ozon");
-  expect(
-    screen.queryByText("Категория Ozon и фактические характеристики"),
-  ).toBeNull();
-  expect(
-    fetcher.mock.calls.filter(([, init]) => init?.method === "POST"),
-  ).toHaveLength(0);
-  fireEvent.click(
-    screen.getByRole("button", { name: "Проверить выбранные товары" }),
-  );
-  await screen.findByRole("heading", {
-    name: "Проверьте изменения перед отправкой",
-  });
-  const created = saved.targets[0];
-  expect(created.id).toMatch(/^create-[\da-f-]{36}$/);
-  expect(created.create?.id).toMatch(/^[\da-f-]{36}$/);
-  expect(created.create?.external_code).toBe(
-    `STYK-CATALOG-${created.create!.id}`,
-  );
-  expect(created.target).toEqual({
-    id: "",
-    entity_type: "product",
-    account: { provider: "moysklad", id: scope.moy },
-  });
-  expect(created.mapping_id).toBeUndefined();
-  expect(created.automatic).toBe(false);
-  expect(created.create?.values).toEqual({
-    name: { state: "known", data: "Новый товар Ozon" },
-    description: { state: "known", data: "Описание из источника" },
-  });
-  expect(screen.getByText("Будет создан новый товар")).toBeTruthy();
-  expect(
-    fetcher.mock.calls.filter(([url]) => String(url).includes("/approve")),
-  ).toHaveLength(0);
-  fireEvent.click(
-    screen.getByLabelText("Подтвердить изменения товара Новый товар Ozon"),
-  );
-  fireEvent.click(
-    screen.getByLabelText(/Я проверил изменения выбранных товаров/),
-  );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Отправить изменения (1)" }),
-  );
-  await screen.findByText(/Подтверждение записано/);
-  const approval = fetcher.mock.calls.find(([url]) =>
-    String(url).includes("/approve"),
-  )!;
-  expect(JSON.parse(approval[1]!.body as string).enrollment_ids).toEqual([
-    created.id,
-  ]);
 });
 
 it("joins an Ozon row to the target side of a canonical mapping without disabling its automatic allowlist", async () => {
@@ -901,164 +786,6 @@ it("keeps publication unavailable even if a preview incorrectly advertises a rea
     fetcher.mock.calls.filter(([url]) => String(url).includes("/approve")),
   ).toHaveLength(0);
 });
-
-it("saves explicit Ozon category facts into creation values and removes them when the seller clears the category", async () => {
-  let saved = configuration({ targets: [] });
-  const fetcher = mockAPI((url, init) => {
-    if (url.pathname.endsWith("/config")) {
-      if (init?.method === "POST")
-        saved = {
-          ...JSON.parse(init.body as string).config,
-          revision: saved.revision + 1,
-        };
-      return json(saved);
-    }
-    if (url.pathname.endsWith("/products"))
-      return json({ products: [product()], enrollments: [] });
-    if (url.pathname.endsWith("/categories")) {
-      const category = {
-        id: "7:8",
-        name: "Посуда",
-        attributes_loaded: true,
-        attributes: [
-          {
-            id: "101",
-            name: "Вес для категории",
-            required: true,
-            type: "number",
-          },
-        ],
-      };
-      return json(
-        url.searchParams.get("category_id") ? category : { items: [category] },
-      );
-    }
-    if (url.pathname.endsWith("/preview"))
-      return json({
-        ...preview([
-          decision({ ready: false, validation: [{ code: "VAT_REQUIRED" }] }),
-        ]),
-        config_revision: saved.revision,
-      });
-    return undefined;
-  });
-  mount();
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Создать в Ozon" }),
-  );
-  fireEvent.change(screen.getByLabelText("Артикул нового товара в Ozon"), {
-    target: { value: "SYNTHETIC-NEW-OFFER" },
-  });
-  expect(
-    (screen.getByLabelText("Цена нового товара") as HTMLInputElement).value,
-  ).toBe("");
-  expect(
-    (screen.getByLabelText("НДС для Ozon") as HTMLInputElement).value,
-  ).toBe("");
-  fireEvent.click(
-    screen.getByText("Категория Ozon и фактические характеристики"),
-  );
-  fireEvent.change(
-    await screen.findByLabelText("Категория товара в Ozon", { exact: true }),
-    {
-      target: { value: "7:8" },
-    },
-  );
-  fireEvent.change(
-    await screen.findByLabelText("Вес для категории (обязательно)"),
-    { target: { value: "0" } },
-  );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Проверить выбранные товары" }),
-  );
-  await screen.findByText("Товар: Укажите фактическую ставку НДС для Ozon.");
-  const originalID = saved.targets[0].create!.id;
-  expect(saved.targets[0].create!.values.category).toEqual({
-    state: "known",
-    data: { description_category_id: 7, type_id: 8 },
-  });
-  expect(saved.targets[0].create!.values.attributes).toEqual({
-    state: "known",
-    data: [
-      {
-        id: 101,
-        complex_id: 0,
-        values: [{ dictionary_value_id: 0, value: "0" }],
-      },
-    ],
-  });
-  expect(saved.targets[0].create!.values.price).toBeUndefined();
-  expect(saved.targets[0].create!.values.currency).toBeUndefined();
-  expect(saved.targets[0].create!.extensions).toBeUndefined();
-  fireEvent.click(
-    screen.getByRole("button", {
-      name: "Убрать категорию и введённые характеристики",
-    }),
-  );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Проверить выбранные товары" }),
-  );
-  await screen.findByText("Товар: Укажите фактическую ставку НДС для Ozon.");
-  expect(saved.targets).toHaveLength(1);
-  expect(saved.targets[0].create!.id).toBe(originalID);
-  expect(saved.targets[0].create!.values.category).toBeUndefined();
-  expect(saved.targets[0].create!.values.attributes).toBeUndefined();
-  expect(
-    fetcher.mock.calls.filter(([url]) => String(url).includes("/approve")),
-  ).toHaveLength(0);
-});
-
-it.each([true, false])(
-  "enables controlled catalog work only after explicit saving and server availability=%s",
-  async (available) => {
-    const fetcher = mockAPI((url, init) => {
-      if (!url.pathname.endsWith("/config")) return undefined;
-      if (init?.method === "POST")
-        return json({ ...JSON.parse(init.body as string).config, revision: 2 });
-      return json(
-        configuration({
-          enabled: false,
-          test_enabled: false,
-          publication_available: available,
-        }),
-      );
-    });
-    mount();
-    fireEvent.click(
-      await screen.findByLabelText(
-        "Разрешить синхронизацию каталога для выбранных аккаунтов",
-      ),
-    );
-    expect(
-      fetcher.mock.calls.filter(([, init]) => init?.method === "POST"),
-    ).toHaveLength(0);
-    fireEvent.click(
-      screen.getByRole("button", { name: "Сохранить настройки" }),
-    );
-    await waitFor(() =>
-      expect(
-        (
-          screen.getByRole("button", {
-            name: "Сохранить настройки",
-          }) as HTMLButtonElement
-        ).disabled,
-      ).toBe(true),
-    );
-    const save = fetcher.mock.calls.find(
-      ([, init]) => init?.method === "POST",
-    )!;
-    const body = JSON.parse(save[1]!.body as string);
-    expect(body.config.enabled).toBe(true);
-    expect(body.config.test_enabled).toBe(available);
-    expect(body.config.publication_available).toBeUndefined();
-    if (!available)
-      expect(
-        screen.getByText(
-          /Отправка изменений в сервисы для этого аккаунта пока недоступна/,
-        ),
-      ).toBeTruthy();
-  },
-);
 
 it("preserves a newline while entering reviewed image URLs and keeps two exact image facts", () => {
   const changed = vi.fn();

@@ -90,6 +90,7 @@ function mountHistory(work: CatalogWork) {
       <CatalogSyncOperations scope={scope} />
     </QueryClientProvider>,
   );
+  fireEvent.click(screen.getByRole("button", { name: "Подробнее" }));
 }
 
 afterEach(() => {

@@ -227,7 +227,7 @@ func catalogHandler(b testing.TB, pool *pgxpool.Pool) (http.Handler, *http.Cooki
 
 func (f catalogPerformanceFixture) request(b testing.TB, search string) *httptest.ResponseRecorder {
 	b.Helper()
-	req := httptest.NewRequest("GET", "http://127.0.0.1:8080/api/products?tenant=tenant&ozon_account=ozon&moysklad_account=moy&search="+url.QueryEscape(search), nil)
+	req := httptest.NewRequest("GET", "http://127.0.0.1:8080/api/products?tenant=tenant&ozon_account=ozon&moysklad_account=moy&provider=ozon&search="+url.QueryEscape(search), nil)
 	req.RemoteAddr = "127.0.0.1:1234"
 	req.AddCookie(f.cookie)
 	w := httptest.NewRecorder()

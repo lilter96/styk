@@ -534,8 +534,8 @@ func testCatalogImportAPI(t *testing.T, provider string) {
 		t.Fatal("invalid origin accepted")
 	}
 	bad := strings.Replace(input, f.account, f.account+"-other", 1)
-	if w := call("POST", "/api/imports", bad, "http://127.0.0.1:5173", cookie); w.Code != 403 {
-		t.Fatal("wrong configured account accepted")
+	if w := call("POST", "/api/imports", bad, "http://127.0.0.1:5173", cookie); w.Code != 404 {
+		t.Fatalf("foreign account must be unavailable: status=%d", w.Code)
 	}
 	bad = strings.Replace(input, f.tenant, f.tenant+"-other", 1)
 	if w := call("POST", "/api/imports", bad, "http://127.0.0.1:5173", cookie); w.Code != 404 {

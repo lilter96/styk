@@ -17,28 +17,25 @@ import (
 	"github.com/lilter96/styk/internal/stockfixture"
 )
 
-func TestCatalogSecurityRealHostCatalogGateIsIndependent(t *testing.T) {
-	tests := []struct {
-		name, stock, catalog string
-		allowed              bool
+func TestCatalogSecurityConstructorsValidateConnectedScopes(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		scope   catalog.Scope
+		allowed bool
 	}{
-		{name: "default_off"},
-		{name: "stock_alone", stock: "true"},
-		{name: "catalog_alone", catalog: "true", allowed: true},
-		{name: "both_enabled", stock: "true", catalog: "true", allowed: true},
-	}
-	for _, tc := range tests {
+		{"connected account", catalogSecurityProviderScope(), true},
+		{"missing tenant", catalog.Scope{MoyskladAccount: stockfixture.MoyskladAccount, OzonAccount: stockfixture.OzonAccount}, false},
+		{"missing source", catalog.Scope{Tenant: stockfixture.Tenant, OzonAccount: stockfixture.OzonAccount}, false},
+		{"missing destination", catalog.Scope{Tenant: stockfixture.Tenant, MoyskladAccount: stockfixture.MoyskladAccount}, false},
+	} {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", tc.stock)
-			t.Setenv("STYK_TEST_ACCOUNT_CATALOG", tc.catalog)
-			scope := catalog.Scope{Tenant: stockfixture.Tenant, MoyskladAccount: stockfixture.MoyskladAccount, OzonAccount: stockfixture.OzonAccount}
-			_, err := moysklad.NewWritableCatalogClient(catalogSecurityMoyClient(t, moysklad.BaseURL), scope)
+			_, err := moysklad.NewWritableCatalogClient(catalogSecurityMoyClient(t, moysklad.BaseURL), tc.scope)
 			if (err == nil) != tc.allowed {
-				t.Errorf("MoySklad catalog constructor allowed=%v, want %v", err == nil, tc.allowed)
+				t.Errorf("MoySklad constructor allowed=%v, want %v", err == nil, tc.allowed)
 			}
-			_, err = ozon.NewWritableCatalogClient(scope, "synthetic-security-token")
+			_, err = ozon.NewWritableCatalogClient(tc.scope, "synthetic-security-token")
 			if (err == nil) != tc.allowed {
-				t.Errorf("Ozon catalog constructor allowed=%v, want %v", err == nil, tc.allowed)
+				t.Errorf("Ozon constructor allowed=%v, want %v", err == nil, tc.allowed)
 			}
 		})
 	}

@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./api";
 import { CatalogSyncFacts } from "./CatalogSyncFacts";
-import { CatalogSyncCreation, newCatalogCreation } from "./CatalogSyncCreation";
+import { Link } from "react-router-dom";
 import {
   catalogURL,
   fieldLabel,
@@ -160,8 +160,9 @@ export function CatalogSyncProducts({
                       ),
                     ].find(
                       (item) =>
-                        sameIdentity(item.source, product.identity) ||
-                        sameIdentity(item.target, product.identity),
+                        !item.create &&
+                        (sameIdentity(item.source, product.identity) ||
+                          sameIdentity(item.target, product.identity)),
                     );
                     const saved =
                       candidate &&
@@ -203,14 +204,12 @@ export function CatalogSyncProducts({
                           <strong>{productName(product)}</strong>
                           <small>
                             {providerLabel(product.identity.account.provider)}:{" "}
-                            {product.identity.offer_id || product.identity.id}
+                            {product.identity.offer_id ||
+                              (product.fields.article?.state === "known"
+                                ? String(product.fields.article.data)
+                                : "Артикул не указан")}
                           </small>
-                          {product.variant && (
-                            <small>
-                              Вариант товара
-                              {product.parent ? ` · ${product.parent.id}` : ""}
-                            </small>
-                          )}
+                          {product.variant && <small>Вариант товара</small>}
                         </td>
                         <td>
                           {enrollment && paired ? (
@@ -220,10 +219,9 @@ export function CatalogSyncProducts({
                               </strong>
                               <small>
                                 {paired.offer_id ||
-                                  paired.id ||
                                   (enrollment.create
                                     ? "Создание нового товара требует проверки"
-                                    : "Нет данных")}
+                                    : "Соответствие подтверждено")}
                               </small>
                             </>
                           ) : (
@@ -239,30 +237,12 @@ export function CatalogSyncProducts({
                                 ? "Создание по явной настройке"
                                 : "Нет подтверждённого соответствия"}
                           {!enrollment && product.lifecycle !== "archived" && (
-                            <button
-                              type="button"
+                            <Link
                               className="secondary"
-                              disabled={disabled}
-                              onClick={() => {
-                                const created = newCatalogCreation(
-                                  product,
-                                  scope,
-                                );
-                                onChange({
-                                  ...selected,
-                                  [created.id]: {
-                                    product,
-                                    enrollment: created,
-                                    manual_values: {},
-                                  },
-                                });
-                              }}
+                              to={`/products/import/${provider === "ozon" ? "ozon-to-moysklad" : "moysklad-to-ozon"}`}
                             >
-                              Создать в{" "}
-                              {product.identity.account.provider === "ozon"
-                                ? "МойСклад"
-                                : "Ozon"}
-                            </button>
+                              Подготовить импорт
+                            </Link>
                           )}
                         </td>
                       </tr>
@@ -329,78 +309,43 @@ export function CatalogSyncProducts({
             <legend className="catalog-sr-only">
               Данные товара {productName(selection.product)}
             </legend>
-            {selection.enrollment.create && (
-              <CatalogSyncCreation
-                enrollment={selection.enrollment}
-                onChange={(enrollment) =>
-                  onChange({ ...selected, [id]: { ...selection, enrollment } })
-                }
-              />
-            )}
-            {!selection.enrollment.create &&
-              manualFields.map((field) => (
-                <label key={field}>
-                  Вручную: {fieldLabel(field)}
-                  <input
-                    value={
-                      typeof selection.manual_values[field]?.data === "string"
-                        ? (selection.manual_values[field].data as string)
-                        : ""
-                    }
-                    onChange={(event) =>
-                      onChange({
-                        ...selected,
-                        [id]: {
-                          ...selection,
-                          manual_values: {
-                            ...selection.manual_values,
-                            [field]: {
-                              state: event.target.value ? "known" : "empty",
-                              data: event.target.value,
-                            },
+            {manualFields.map((field) => (
+              <label key={field}>
+                Вручную: {fieldLabel(field)}
+                <input
+                  value={
+                    typeof selection.manual_values[field]?.data === "string"
+                      ? (selection.manual_values[field].data as string)
+                      : ""
+                  }
+                  onChange={(event) =>
+                    onChange({
+                      ...selected,
+                      [id]: {
+                        ...selection,
+                        manual_values: {
+                          ...selection.manual_values,
+                          [field]: {
+                            state: event.target.value ? "known" : "empty",
+                            data: event.target.value,
                           },
                         },
-                      })
-                    }
-                  />
-                  <small>
-                    Введите фактическое значение. Пустое поле не означает
-                    очистку.
-                  </small>
-                </label>
-              ))}
-            {(!selection.enrollment.create ||
-              selection.enrollment.target.account.provider === "ozon") && (
-              <CatalogSyncFacts
-                scope={scope}
-                facts={selection.facts}
-                onChange={(facts) => {
-                  const create = selection.enrollment.create;
-                  const values = { ...create?.values };
-                  delete values.category;
-                  delete values.attributes;
-                  onChange({
-                    ...selected,
-                    [id]: {
-                      ...selection,
-                      facts,
-                      enrollment: create
-                        ? {
-                            ...selection.enrollment,
-                            create: {
-                              ...create,
-                              values: {
-                                ...values,
-                                ...facts.values,
-                              },
-                            },
-                          }
-                        : selection.enrollment,
-                    },
-                  });
-                }}
-              />
-            )}
+                      },
+                    })
+                  }
+                />
+                <small>
+                  Введите фактическое значение. Пустое поле не означает очистку.
+                </small>
+              </label>
+            ))}
+            <CatalogSyncFacts
+              scope={scope}
+              facts={selection.facts}
+              onChange={(facts) =>
+                onChange({ ...selected, [id]: { ...selection, facts } })
+              }
+            />
           </fieldset>
         </article>
       ))}

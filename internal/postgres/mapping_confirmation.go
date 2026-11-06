@@ -56,6 +56,21 @@ func (s *Store) ConfirmMappingReview(ctx context.Context, req domain.MappingConf
 		return domain.MappingConfirmationResult{}, fmt.Errorf("begin confirmation: %w", err)
 	}
 	defer rollbackTransaction(tx)
+	result, err := confirmMappingReviewTx(ctx, tx, req, fingerprint)
+	if err != nil {
+		return domain.MappingConfirmationResult{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		var pgerr *pgconn.PgError
+		if errors.As(err, &pgerr) && pgerr.Code == "23514" && pgerr.ConstraintName == "product_review_unexpired" {
+			return domain.MappingConfirmationResult{}, ErrReviewExpired
+		}
+		return domain.MappingConfirmationResult{}, fmt.Errorf("commit mapping confirmation: %w", err)
+	}
+	return result, nil
+}
+
+func confirmMappingReviewTx(ctx context.Context, tx pgx.Tx, req domain.MappingConfirmationRequest, fingerprint string) (domain.MappingConfirmationResult, error) {
 	stored, err := loadMappingReview(ctx, tx, req.ReviewID, req.SessionID)
 	if err != nil {
 		return domain.MappingConfirmationResult{}, err
@@ -72,9 +87,6 @@ func (s *Store) ConfirmMappingReview(ctx context.Context, req domain.MappingConf
 	if err == nil {
 		if previousHash != fingerprint {
 			return domain.MappingConfirmationResult{}, ErrIdempotencyConflict
-		}
-		if err = tx.Commit(ctx); err != nil {
-			return domain.MappingConfirmationResult{}, fmt.Errorf("finish confirmation replay: %w", err)
 		}
 		result.IdempotentReplay = true
 		return result, nil
@@ -141,13 +153,6 @@ func (s *Store) ConfirmMappingReview(ctx context.Context, req domain.MappingConf
 	_, err = tx.Exec(ctx, `INSERT INTO product_mapping_confirmation_idempotency(review_id,session_audit_id,idempotency_key,request_hash,mapping_id,mapping_version) VALUES($1,$2,$3,$4,$5,$6)`, r.ID, req.SessionID, req.IdempotencyKey, fingerprint, m.ID, m.Version)
 	if err != nil {
 		return domain.MappingConfirmationResult{}, fmt.Errorf("persist confirmation outcome: %w", err)
-	}
-	if err = tx.Commit(ctx); err != nil {
-		var pgerr *pgconn.PgError
-		if errors.As(err, &pgerr) && pgerr.Code == "23514" && pgerr.ConstraintName == "product_review_unexpired" {
-			return domain.MappingConfirmationResult{}, ErrReviewExpired
-		}
-		return domain.MappingConfirmationResult{}, fmt.Errorf("commit mapping confirmation: %w", err)
 	}
 	return domain.MappingConfirmationResult{MappingID: m.ID, MappingVersion: m.Version, ReviewID: r.ID, EvidenceClass: r.EvidenceClass, ConfirmedAt: m.ConfirmedAt}, nil
 }

@@ -40,12 +40,23 @@ func TestControlledUnknownSupersessionIsAuditedAndSerialized(t *testing.T) {
 	if _, err = db.SupersedeStockUnknown(ctx, request, base.Add(3*time.Second)); !errors.Is(err, domain.ErrStockSyncBlocked) {
 		t.Fatalf("active worker allowed: %v", err)
 	}
-	for _, bad := range []func(*domain.StockRecoveryRequest){func(r *domain.StockRecoveryRequest) { r.Acknowledge = false }, func(r *domain.StockRecoveryRequest) { r.WorkerStopped = false }, func(r *domain.StockRecoveryRequest) { r.Tenant = "another-tenant" }, func(r *domain.StockRecoveryRequest) { r.OzonAccount = "another-account" }} {
-		v := request
-		bad(&v)
-		if _, e := db.SupersedeStockUnknown(ctx, v, base.Add(20*time.Second)); !errors.Is(e, domain.ErrStockSyncInvalid) {
-			t.Fatalf("invalid authorization: %v", e)
-		}
+	for _, tc := range []struct {
+		name   string
+		change func(*domain.StockRecoveryRequest)
+		want   error
+	}{
+		{"missing acknowledgement", func(r *domain.StockRecoveryRequest) { r.Acknowledge = false }, domain.ErrStockSyncInvalid},
+		{"worker not stopped", func(r *domain.StockRecoveryRequest) { r.WorkerStopped = false }, domain.ErrStockSyncInvalid},
+		{"foreign tenant", func(r *domain.StockRecoveryRequest) { r.Tenant = "another-tenant" }, domain.ErrStockSyncNotFound},
+		{"foreign account", func(r *domain.StockRecoveryRequest) { r.OzonAccount = "another-account" }, domain.ErrStockSyncNotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v := request
+			tc.change(&v)
+			if _, err := db.SupersedeStockUnknown(ctx, v, base.Add(20*time.Second)); !errors.Is(err, tc.want) {
+				t.Fatalf("invalid authorization: %v", err)
+			}
+		})
 	}
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {

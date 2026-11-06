@@ -22,7 +22,7 @@ test("two mapped products share automatic imports and reconcile independently", 
       : route.abort(),
   );
   await page.setViewportSize({ width: 1440, height: 900 });
-  await signIn(page, process.env.STYK_CONTROLLED_E2E_SECRET!, `${origin}/`);
+  await signIn(page, origin);
   await selectWorkspace(
     page,
     "cross-e2e",
@@ -30,6 +30,9 @@ test("two mapped products share automatic imports and reconcile independently", 
     "1549477",
   );
   await navigate(page, "Интеграции");
+  await page
+    .getByRole("button", { name: "Настройка синхронизации", exact: true })
+    .click();
   const card = page.getByRole("region", {
     name: "Автоматическая синхронизация",
   });
@@ -56,11 +59,11 @@ test("two mapped products share automatic imports and reconcile independently", 
   await page.screenshot({ path: join(shots, "desktop.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: join(shots, "mobile.png"), fullPage: true });
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBe(true);
+  await expect
+    .poll(() =>
+      page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    )
+    .toBe(true);
   await card.getByRole("button", { name: "Проверить сейчас" }).click();
   await expect(
     card.getByText("Остатки совпадают — отправка не потребовалась."),

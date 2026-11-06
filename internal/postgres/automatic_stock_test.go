@@ -4,12 +4,10 @@ import (
 	"testing"
 
 	"github.com/lilter96/styk/internal/domain"
-	"github.com/lilter96/styk/internal/stockfixture"
 )
 
 func TestAutomaticScopesSeparateConnectedPolicyAndLoopbackSimulation(t *testing.T) {
-	t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", "")
-	t.Setenv("STYK_STOCK_PUBLICATION_ENABLED", "true")
+	t.Setenv("STYK_STOCK_PUBLICATION_TEST_ENDPOINT", "")
 	scope := domain.StockSyncScope{Tenant: "synthetic-auto-one", MoyskladAccount: "synthetic-source", OzonAccount: "synthetic-market"}
 	if !automaticScopeAllowed(scope) {
 		t.Fatal("general connected-account policy unavailable")
@@ -29,15 +27,14 @@ func TestAutomaticScopesSeparateConnectedPolicyAndLoopbackSimulation(t *testing.
 	if automaticScopeAllowed(ordinary) {
 		t.Fatal("simulator flag authorized an ordinary tenant")
 	}
-	t.Setenv("STYK_STOCK_PUBLICATION_ENABLED", "")
-	t.Setenv("STYK_TEST_ACCOUNT_PUBLICATION", "true")
-	if !automaticScopeAllowed(stockfixture.Scope()) {
-		t.Fatal("fixed owner-controlled policy unavailable")
+	t.Setenv("STYK_STOCK_PUBLICATION_TEST_ENDPOINT", "")
+	if !automaticScopeAllowed(ordinary) {
+		t.Fatal("connected account eligibility depends on a fixed fixture")
 	}
-	other := stockfixture.Scope()
-	other.OzonAccount = "other"
-	if automaticScopeAllowed(other) {
-		t.Fatal("test switch widened real account scope")
+	for _, invalid := range []domain.StockSyncScope{{}, {Tenant: ordinary.Tenant, MoyskladAccount: ordinary.MoyskladAccount}, {MoyskladAccount: ordinary.MoyskladAccount, OzonAccount: ordinary.OzonAccount}} {
+		if automaticScopeAllowed(invalid) {
+			t.Fatal("incomplete scope allowed")
+		}
 	}
 }
 

@@ -101,9 +101,6 @@ func TestAutomaticMultipleTargetsScopesAndUnknownIsolation(t *testing.T) {
 	t.Setenv("STYK_STOCK_PUBLICATION_TEST_ENDPOINT", "http://127.0.0.1:1")
 	ctx, cancel := context.WithTimeout(context.Background(), 80*time.Second)
 	defer cancel()
-	if _, err := db.Pool.Exec(ctx, `ALTER TABLE stock_auto_configs DROP CONSTRAINT stock_auto_configs_check`); err != nil {
-		t.Fatal(err)
-	}
 	a := automaticMultiScope(t, db, "one", true)
 	// Target 105 is absent from the stock response, while target 102 remains
 	// independently publishable. This must not be interpreted as zero.

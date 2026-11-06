@@ -82,9 +82,9 @@ test("merchant catalog review dispatches mixed fields through the real stack and
     await a.reload();
     await login(a, aEmail);
     await selectAccounts(a);
-    await a.getByRole("link", { name: "Каталог", exact: true }).click();
+    await a.getByRole("link", { name: "Товары", exact: true }).click();
     await expect(
-      a.getByRole("heading", { name: "Синхронизация каталога", exact: true }),
+      a.getByRole("heading", { name: "Товары", exact: true }),
     ).toBeVisible();
     const emptyConfig = await (
       await a.request.get(catalogURL("config"))
@@ -95,7 +95,9 @@ test("merchant catalog review dispatches mixed fields through the real stack and
       targets: [],
       scope,
     });
+    await a.goto(origin + "/products/rules");
     await configureMixedFields(a);
+    await a.goto(origin + "/products/transfer");
     await a.getByLabel(`Выбрать товар ${sourceName}`, { exact: true }).check();
     const preview = await review(a);
     expect(preview.decisions).toHaveLength(1);
@@ -158,6 +160,7 @@ test("merchant catalog review dispatches mixed fields through the real stack and
     await a
       .getByRole("button", { name: "Обновить статусы", exact: true })
       .click();
+    await a.getByRole("button", { name: "Подробнее", exact: true }).click();
     await expect(
       a
         .locator(".catalog-work")
@@ -180,9 +183,13 @@ test("merchant catalog review dispatches mixed fields through the real stack and
       a.getByText("Изменения подтверждены сверкой", { exact: true }),
     ).toHaveCount(3);
     await a.reload();
+    await a.getByRole("button", { name: "Подробнее", exact: true }).click();
     await expect(
-      a.getByText("Изменения подтверждены сверкой", { exact: true }),
-    ).toHaveCount(3);
+      a
+        .getByRole("dialog")
+        .getByText("Изменения подтверждены сверкой", { exact: true }),
+    ).toHaveCount(2);
+    await a.getByRole("button", { name: "Закрыть", exact: true }).click();
     expect(await providerState(a)).toMatchObject({
       moy_writes: 1,
       ozon_writes: 1,
@@ -214,23 +221,29 @@ test("merchant catalog review dispatches mixed fields through the real stack and
 
 async function creationFlow(page: Page) {
   await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto(origin + "/products/import/ozon-to-moysklad");
+  const configBefore = await (
+    await page.request.get(catalogURL("config"))
+  ).json();
+  await page.getByLabel(`Выбрать ${unmappedName}`, { exact: true }).check();
   await page
-    .getByLabel(`Выбрать товар ${sourceName}`, { exact: true })
-    .uncheck();
-  await page
-    .getByRole("combobox", { name: /Список товаров/ })
-    .selectOption("ozon");
-  const row = page.locator("tbody tr").filter({ hasText: "CATALOG-UNMAPPED" });
-  await row
-    .getByRole("button", { name: "Создать в МойСклад", exact: true })
+    .getByRole("button", { name: "Заполнить данные", exact: true })
     .click();
-  await expect(
-    page.getByLabel("Название нового товара", { exact: true }),
-  ).toHaveValue(unmappedName);
   await page
     .getByLabel("Описание нового товара", { exact: true })
     .fill(unmappedDescription);
-  const preview = await review(page);
+  await page
+    .getByRole("button", { name: "Сохранить данные для проверки", exact: true })
+    .click();
+  const reviewed = page.waitForResponse(
+    (r) =>
+      r.url().includes("/api/catalog-sync/import-preview") &&
+      r.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "Проверить выбранные (1)" }).click();
+  const planResponse = await reviewed;
+  expect(planResponse.status(), await planResponse.text()).toBe(200);
+  const preview = (await planResponse.json()) as Preview;
   expect(preview.decisions[0]).toMatchObject({
     ready: true,
     target_absent: true,
@@ -288,27 +301,15 @@ async function creationFlow(page: Page) {
     moy_writes: 1,
     ozon_writes: 1,
   });
+  const configAfter = await (
+    await page.request.get(catalogURL("config"))
+  ).json();
+  expect(configAfter).toEqual(configBefore);
   await page.reload();
-  await page
-    .getByRole("combobox", { name: /Список товаров/ })
-    .selectOption("ozon");
-  await page
-    .getByLabel(`Выбрать товар ${unmappedName}`, { exact: true })
-    .check();
-  const repeated = await review(page);
-  expect(repeated.decisions[0].ready).toBe(false);
-  expect(repeated.decisions[0].commands || []).toHaveLength(0);
-  expect(repeated.decisions[0].validation.map((issue) => issue.code)).toContain(
-    "CREATED_TARGET_REQUIRES_MAPPING",
-  );
+  await page.getByLabel(`Выбрать ${unmappedName}`, { exact: true }).check();
+  await page.getByRole("button", { name: "Проверить выбранные (1)" }).click();
   await expect(
-    page.getByText(
-      "Товар уже создан. Подтвердите соответствие товаров перед дальнейшей синхронизацией.",
-      { exact: false },
-    ),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Отправить изменения (0)", exact: true }),
+    page.getByRole("button", { name: "Отправить изменения (0)" }),
   ).toBeDisabled();
   expect(await providerState(page)).toMatchObject({ moy_creates: 1 });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -431,6 +432,27 @@ async function assertOtherMerchantDenied(page: Page, preview: Preview) {
     );
     expect(response.status(), `merchant B wrote A ${resource}`).toBe(404);
   }
+  for (const resource of [
+    "catalog-sync/import-preview",
+    "product-matching/settings",
+    "product-matching/preview",
+    "product-matching/runs",
+  ]) {
+    const denied = await page.request.post(`${origin}/api/${resource}`, {
+      headers,
+      data: { ...scope, targets: [], expected_revision: 0 },
+    });
+    expect(denied.status(), `foreign scope in ${resource}`).toBe(404);
+    const csrf = await page.request.post(`${origin}/api/${resource}`, {
+      headers: { Origin: origin },
+      data: { ...scope },
+    });
+    expect(csrf.status(), `missing CSRF in ${resource}`).toBe(403);
+  }
+  const settings = await page.request.get(
+    `${origin}/api/product-matching/settings?${new URLSearchParams(scope)}`,
+  );
+  expect(settings.status()).toBe(404);
 }
 
 async function operations(page: Page): Promise<Operation[]> {
@@ -489,28 +511,28 @@ async function login(page: Page, email: string) {
   const response = await signedIn;
   expect(response.status()).toBe(204);
   await expect(
-    page.getByRole("link", { name: "Каталог", exact: true }),
+    page.getByRole("link", { name: "Товары", exact: true }),
   ).toBeVisible({ timeout: 20_000 });
 }
 
 async function selectAccounts(page: Page) {
-  const selector = page.locator(".workspace-selector");
-  if ((await selector.getAttribute("open")) === null)
-    await selector.locator("summary").click();
+  const selector = page.getByRole("region", {
+    name: "Рабочее пространство",
+    exact: true,
+  });
   await selector
     .getByRole("combobox", { name: "МойСклад", exact: true })
     .selectOption(scope.moysklad_account);
   await selector
     .getByRole("combobox", { name: "Ozon", exact: true })
     .selectOption(scope.ozon_account);
-  await selector.locator("summary").click();
 }
 
 async function screenshots(page: Page) {
   await capture(page, "catalog-desktop.png");
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(
-    page.getByRole("heading", { name: "Синхронизация каталога", exact: true }),
+    page.getByRole("heading", { name: "Товары", exact: true }),
   ).toBeVisible();
   expect(
     await page.evaluate(

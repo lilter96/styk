@@ -95,6 +95,10 @@ func (service Service) decide(ctx context.Context, current ReviewContext, target
 		Source:   catalog.Product{Identity: target.Enrollment.Source, Fields: make(map[catalog.Field]catalog.Value)},
 		Target:   catalog.Product{Identity: target.Enrollment.Target, Fields: make(map[catalog.Field]catalog.Value)},
 		Commands: make([]catalog.Command, 0, 2), Validation: make([]catalog.FieldError, 0)}
+	if target.BlockCode != "" {
+		decision.block(target.BlockCode)
+		return decision
+	}
 	if target.Fenced {
 		decision.block("TARGET_OUTCOME_UNRESOLVED")
 		return decision

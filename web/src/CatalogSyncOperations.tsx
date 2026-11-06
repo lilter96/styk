@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { IntegrationDialog } from "./IntegrationDialog";
 import { api, post } from "./api";
 import {
   catalogURL,
@@ -223,6 +224,21 @@ function WorkResult({
         {providerLabel(work.command.target.account.provider)}:{" "}
         {targetCaption(work)}
       </p>
+      {work.command.action === "create" && work.state === "RECONCILED" && (
+        <p
+          className={
+            work.mapping_state === "LINKED"
+              ? "catalog-success"
+              : "catalog-warning"
+          }
+        >
+          {work.mapping_state === "LINKED"
+            ? "Карточка создана и связь товаров подтверждена."
+            : work.mapping_state === "CONFLICT"
+              ? "Карточка создана. Существующая связь требует ручного разбора; она не изменена."
+              : "Карточка создана. Связь ожидает полной загрузки каталогов. Обновите данные в интеграциях."}
+        </p>
+      )}
       {uncertain && (
         <p className="catalog-warning">
           Запрос мог выполниться. Повторная отправка недоступна до сверки
@@ -268,6 +284,7 @@ function WorkResult({
 }
 
 export function CatalogSyncOperations({ scope }: { scope: Scope }) {
+  const [selected, setSelected] = useState<string | null>(null);
   const [cursor, setCursor] = useState("");
   const [history, setHistory] = useState<string[]>([]);
   const query = useQuery({
@@ -288,7 +305,13 @@ export function CatalogSyncOperations({ scope }: { scope: Scope }) {
     retry: false,
     refetchInterval: (query) =>
       query.state.data?.operations.some((operation) =>
-        operation.targets.some((work) => activeStates.has(work.state)),
+        operation.targets.some(
+          (work) =>
+            activeStates.has(work.state) ||
+            (work.command.action === "create" &&
+              work.state === "RECONCILED" &&
+              (!work.mapping_state || work.mapping_state === "WAITING")),
+        ),
       )
         ? 5000
         : false,
@@ -303,6 +326,7 @@ export function CatalogSyncOperations({ scope }: { scope: Scope }) {
         <button
           className="secondary"
           disabled={query.isFetching}
+          aria-hidden={selected ? true : undefined}
           onClick={() => void query.refetch()}
         >
           Обновить статусы
@@ -322,34 +346,102 @@ export function CatalogSyncOperations({ scope }: { scope: Scope }) {
               выбранные товары.
             </p>
           )}
-          {query.data.operations.map((operation) => (
-            <section
-              className="catalog-operation"
-              aria-label={`Отправка ${operation.id}`}
-              key={operation.id}
-            >
-              <header>
-                <p>
-                  Отправка от{" "}
-                  {new Date(operation.created_at).toLocaleString("ru-RU")}
-                </p>
-                <span>{stateLabel(operation.state)}</span>
-              </header>
-              {operation.targets.map((work) => (
-                <WorkResult
-                  work={work}
-                  scope={scope}
-                  onRefresh={() => {
-                    void query.refetch();
-                  }}
-                  key={work.id}
-                />
+          {!!query.data.operations.length && (
+            <div className="catalog-table-scroll products-history-table">
+              <table className="catalog-table">
+                <thead>
+                  <tr>
+                    <th>Когда</th>
+                    <th>Товары и направление</th>
+                    <th>Результат</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {query.data.operations.map((operation) => (
+                    <tr key={operation.id}>
+                      <td>
+                        {new Date(operation.created_at).toLocaleString("ru-RU")}
+                      </td>
+                      <td>
+                        <strong>
+                          {operation.targets.length === 1
+                            ? productName(operation.targets[0].decision.source)
+                            : `${operation.targets.length} изменений`}
+                        </strong>
+                        <small>
+                          {[
+                            ...new Set(
+                              operation.targets.map((w) =>
+                                providerLabel(
+                                  w.command.target.account.provider,
+                                ),
+                              ),
+                            ),
+                          ]
+                            .map((name) => `В ${name}`)
+                            .join(", ")}
+                        </small>
+                      </td>
+                      <td>
+                        <span
+                          className={`catalog-state ${operation.state === "RECONCILED" ? "success" : operation.state === "UNKNOWN" || operation.state === "REJECTED" || operation.state === "BLOCKED" ? "warning" : ""}`}
+                        >
+                          {stateLabel(operation.state)}
+                        </span>
+                      </td>
+                      <td>
+                        <button
+                          className="secondary"
+                          onClick={() => setSelected(operation.id)}
+                        >
+                          Подробнее
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {selected &&
+            query.data.operations
+              .filter((o) => o.id === selected)
+              .map((operation) => (
+                <IntegrationDialog
+                  key={operation.id}
+                  title="Детали отправки"
+                  className="products-history-dialog catalog-sync"
+                  onClose={() => setSelected(null)}
+                >
+                  <p>
+                    Отправка от{" "}
+                    {new Date(operation.created_at).toLocaleString("ru-RU")}
+                  </p>
+                  {operation.targets.map((work) => (
+                    <WorkResult
+                      key={work.id}
+                      work={work}
+                      scope={scope}
+                      onRefresh={() => void query.refetch()}
+                    />
+                  ))}
+                  {!operation.targets.length && (
+                    <p>Данные по товарам пока не получены. Обновите статусы.</p>
+                  )}
+                  <button
+                    className="secondary"
+                    disabled={query.isFetching}
+                    onClick={() => void query.refetch()}
+                  >
+                    Обновить статусы
+                  </button>
+                  <details>
+                    <summary>Технические сведения об отправке</summary>
+                    <code>{operation.id}</code>
+                  </details>
+                </IntegrationDialog>
               ))}
-              {!operation.targets.length && (
-                <p>Данные по товарам пока не получены. Обновите статусы.</p>
-              )}
-            </section>
-          ))}
           <div className="catalog-actions">
             <button
               className="secondary"

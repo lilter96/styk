@@ -1,7 +1,12 @@
 import { expect, test } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { navigate, selectWorkspace, signIn } from "./workspace";
+import {
+  navigate,
+  selectWorkspace,
+  signIn,
+  reviewStockEvidence,
+} from "./workspace";
 
 test("operator accepts a test-only unknown outcome and reviews a separate publication", async ({
   page,
@@ -25,9 +30,12 @@ test("operator accepts a test-only unknown outcome and reviews a separate public
       : route.abort(),
   );
   await page.setViewportSize({ width: 1440, height: 900 });
-  await signIn(page, process.env.STYK_CONTROLLED_E2E_SECRET!, `${origin}/`);
+  await signIn(page, origin);
   await selectWorkspace(page, tenant, moy, ozon);
   await navigate(page, "Интеграции");
+  await page
+    .getByRole("button", { name: "Настройка синхронизации", exact: true })
+    .click();
   await expect(
     page.getByText("Результат уточняется", { exact: true }),
   ).toBeVisible();
@@ -75,20 +83,19 @@ test("operator accepts a test-only unknown outcome and reviews a separate public
   let dialog = page.getByRole("dialog", {
     name: "Включить синхронизацию остатков?",
   });
-  await dialog.getByLabel(/Подтверждаю эти тестовые допущения/).check();
-  await dialog
-    .getByRole("button", { name: "Записать тестовые допущения" })
-    .click();
-  await expect(
-    dialog.getByText(/Допущения записаны как утверждение оператора/),
-  ).toBeVisible();
+  await reviewStockEvidence(dialog);
   await dialog.getByRole("button", { name: "Отмена" }).click();
+  await page.setViewportSize({ width: 1440, height: 900 });
   for (const [name, field, account] of [
     ["МойСклад", "moysklad_account", moy],
     ["Ozon", "ozon_account", ozon],
   ]) {
+    if (name === "Ozon")
+      await page
+        .getByRole("combobox", { name: "МойСклад", exact: true })
+        .selectOption("");
     const panel = page.getByRole("region", { name: `${name}: импорт данных` });
-    await panel.getByRole("button", { name: "Обновить данные" }).click();
+    await panel.getByRole("button", { name: "Обновить", exact: true }).click();
     const confirm = page.getByRole("dialog", {
       name: `Загрузить данные ${name}?`,
     });
@@ -98,7 +105,9 @@ test("operator accepts a test-only unknown outcome and reviews a separate public
         r.url().endsWith("/api/imports") && r.request().method() === "POST",
     );
     await confirm.getByRole("button", { name: "Подтвердить загрузку" }).click();
-    const op = (await (await request).json()).operation;
+    const imported = await request;
+    expect(imported.status(), await imported.text()).toBe(201);
+    const op = (await imported.json()).operation;
     const query = new URLSearchParams({ tenant, [field]: account });
     await expect
       .poll(
@@ -112,8 +121,12 @@ test("operator accepts a test-only unknown outcome and reviews a separate public
       )
       .toBe("SUCCEEDED");
     await expect(
-      panel.getByRole("button", { name: "Обновить данные" }),
+      panel.getByRole("button", { name: "Обновить", exact: true }),
     ).toBeEnabled({ timeout: 10000 });
+    if (name === "Ozon")
+      await page
+        .getByRole("combobox", { name: "МойСклад", exact: true })
+        .selectOption(moy);
   }
   await page
     .getByRole("button", { name: "Включить синхронизацию", exact: true })
@@ -121,7 +134,10 @@ test("operator accepts a test-only unknown outcome and reviews a separate public
   dialog = page.getByRole("dialog", {
     name: "Включить синхронизацию остатков?",
   });
-  await expect(dialog.getByText(/Условия отправки подтверждены/)).toBeVisible();
+  await expect(
+    dialog.getByText(/Условия отправки подтверждены/),
+    await dialog.innerText(),
+  ).toBeVisible();
   await dialog.getByText("Проверенные товары и склады").click();
   await expect(dialog.getByText(/к отправке 7 шт/)).toBeVisible();
   await dialog

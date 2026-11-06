@@ -63,7 +63,11 @@ func approveCatalogLocked(ctx context.Context, tx pgx.Tx, a catalogsync.Approval
 	if err != nil {
 		return zero, err
 	}
-	current, err := readCatalogReviewContext(ctx, tx, a.Scope)
+	current, err := readCatalogPreviewContext(ctx, tx, p)
+	if err != nil {
+		return zero, err
+	}
+	current, err = catalogImportReview(ctx, tx, p, current)
 	if err != nil {
 		return zero, err
 	}
@@ -76,6 +80,9 @@ func approveCatalogLocked(ctx context.Context, tx pgx.Tx, a catalogsync.Approval
 	}
 	decisions, err := selectedCatalogDecisions(a, p, current.Config)
 	if err != nil {
+		return zero, err
+	}
+	if err = saveCatalogImportEnrollments(ctx, tx, p, current.Config, decisions); err != nil {
 		return zero, err
 	}
 	return insertCatalogApproval(ctx, tx, a, p, hash, decisions, now)
@@ -96,7 +103,7 @@ func replayCatalogApproval(ctx context.Context, tx pgx.Tx, a catalogsync.Approva
 
 func validateCatalogApproval(a catalogsync.Approval, p catalogsync.Preview, current catalogsync.ReviewContext, now time.Time) error {
 	c := current.Config
-	if !c.Enabled || !c.TestEnabled || !catalogScopeValid(a.Scope) {
+	if ((!c.Enabled || !c.TestEnabled) && len(p.ImportTargets) == 0) || !catalogScopeValid(a.Scope) || (len(p.ImportTargets) > 0 && a.Automatic) {
 		return catalogsync.ErrBlocked
 	}
 	if !p.ExpiresAt.After(now) || p.ConfigRevision != c.Revision || p.Credentials != current.Credentials || p.Credentials.Moysklad < 1 || p.Credentials.Ozon < 1 {
@@ -204,7 +211,7 @@ func insertCatalogWork(ctx context.Context, tx pgx.Tx, op catalogsync.Operation,
 	if err != nil {
 		return catalogsync.Work{}, err
 	}
-	w := catalogsync.Work{ID: id, OperationID: op.ID, Scope: op.Scope, EnrollmentID: d.EnrollmentID, ConfigRevision: p.ConfigRevision, Credentials: p.Credentials, Command: cmd, CommandFingerprint: hash, Decision: d, State: catalogsync.StateQueued, Automatic: automatic, NextRunAt: now}
+	w := catalogsync.Work{OneTimeImport: len(p.ImportTargets) > 0, ID: id, OperationID: op.ID, Scope: op.Scope, EnrollmentID: d.EnrollmentID, ConfigRevision: p.ConfigRevision, Credentials: p.Credentials, Command: cmd, CommandFingerprint: hash, Decision: d, State: catalogsync.StateQueued, Automatic: automatic, NextRunAt: now}
 	raw, err := catalogJSON(w)
 	if err != nil {
 		return w, err

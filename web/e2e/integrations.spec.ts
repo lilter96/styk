@@ -169,7 +169,7 @@ test("explicit local registration uses bounded synthetic providers", async ({
   await moyDialog.getByRole("button", { name: "Закрыть настройки" }).click();
   await navigate(page, "Товары");
   await expect(
-    page.getByRole("heading", { name: "Сопоставление товаров" }),
+    page.getByRole("heading", { name: "Товары", exact: true }),
   ).toBeVisible();
   await navigate(page, "Склады");
   await expect(

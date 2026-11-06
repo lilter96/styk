@@ -8,7 +8,6 @@ import {
 } from "./CatalogSyncProducts";
 import { CatalogSyncPreview } from "./CatalogSyncPreview";
 import { CatalogSyncOperations } from "./CatalogSyncOperations";
-import { CatalogBulkImport } from "./CatalogBulkImport";
 import {
   catalogURL,
   configBody,
@@ -26,8 +25,7 @@ import "./catalog-sync.css";
 
 export type CatalogSyncProps = {
   scope: Scope;
-  moyLabel?: string;
-  ozonLabel?: string;
+  view: "rules" | "transfer";
 };
 const sameScope = (value: CatalogConfig["scope"], scope: Scope) =>
   value?.tenant === scope.tenant &&
@@ -48,13 +46,8 @@ export function CatalogSync(props: CatalogSyncProps) {
     );
   return <CatalogSyncAccount key={JSON.stringify(scope)} {...props} />;
 }
-export const CatalogSyncPage = CatalogSync;
 
-function CatalogSyncAccount({
-  scope,
-  moyLabel = "Подключённый аккаунт",
-  ozonLabel = "Подключённый аккаунт",
-}: CatalogSyncProps) {
+function CatalogSyncAccount({ scope, view }: CatalogSyncProps) {
   const client = useQueryClient();
   const configKey = ["catalog-config", scope];
   const config = useQuery({
@@ -72,7 +65,7 @@ function CatalogSyncAccount({
   );
   const [preview, setPreview] = useState<CatalogPreview | null>(null);
   const [dirty, setDirty] = useState(false);
-  const [busy, setBusy] = useState<"preview" | "approve" | "bulk" | null>(null);
+  const [busy, setBusy] = useState<"preview" | "approve" | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [uncertain, setUncertain] = useState<string[]>([]);
@@ -235,23 +228,6 @@ function CatalogSyncAccount({
   }
   return (
     <div className="catalog-sync">
-      <header className="catalog-heading">
-        <h1>Синхронизация каталога</h1>
-        <p>
-          МойСклад: <strong>{moyLabel}</strong> · Ozon:{" "}
-          <strong>{ozonLabel}</strong>
-        </p>
-        <p>
-          Настройте источники, проверьте разницу и подтвердите выбранные товары.
-        </p>
-      </header>
-      {config.data?.publication_available === false && (
-        <p className="catalog-warning">
-          Отправка изменений в сервисы для этого аккаунта пока недоступна. Можно
-          настроить каталог и проверить данные. Изменение настройки не снимает
-          ограничение отправки.
-        </p>
-      )}
       {config.isLoading && <p role="status">Загружаем настройки каталога…</p>}
       {config.isError && (
         <p className="catalog-error" role="alert">
@@ -268,87 +244,88 @@ function CatalogSyncAccount({
       )}
       {config.data && sameScope(config.data.scope, scope) && (
         <>
-          <CatalogBulkImport
-            scope={scope}
-            config={config.data}
-            disabled={busy !== null || dirty || uncertainSelection}
-            onSaved={saved}
-            onBusy={(running) => {
-              setBusy(running ? "bulk" : null);
-              if (running) {
-                setSelected({});
-                setPreview(null);
-              }
-            }}
-          />
-          <fieldset disabled={busy === "bulk"}>
-            <CatalogSyncConfig
-              key={config.data.revision}
-              scope={scope}
-              config={config.data}
-              onSaved={saved}
-              onDirty={(value) => {
-                setDirty(value);
-                setPreview(null);
-              }}
-            />
-          </fieldset>
-          <CatalogSyncProducts
-            scope={scope}
-            config={config.data}
-            selected={selected}
-            disabled={busy !== null}
-            onChange={(next) => {
-              setSelected(next);
-              setPreview(null);
-              setMessage("");
-            }}
-          />
-          <div className="catalog-review-action">
-            <button
-              disabled={
-                busy !== null ||
-                dirty ||
-                uncertainSelection ||
-                !Object.keys(selected).length
-              }
-              onClick={() => void review()}
-            >
-              {busy === "preview"
-                ? "Проверяем изменения…"
-                : "Проверить выбранные товары"}
-            </button>
-            <p>
-              Выбор товаров сохранится для этой пары аккаунтов. Проверка не
-              отправляет изменения в сервисы.
-            </p>
-          </div>
-          {(!config.data.enabled || !config.data.test_enabled) && (
-            <p className="catalog-warning">
-              Перед отправкой включите синхронизацию каталога и сохраните
-              настройки. Само включение не подтверждает изменения новых товаров.
-            </p>
+          {view === "rules" && (
+            <fieldset>
+              <CatalogSyncConfig
+                key={config.data.revision}
+                scope={scope}
+                config={config.data}
+                onSaved={saved}
+                onDirty={(value) => {
+                  setDirty(value);
+                  setPreview(null);
+                }}
+              />
+            </fieldset>
           )}
-          {uncertainSelection && (
-            <p className="catalog-warning" role="alert">
-              Для выбранного товара результат предыдущего подтверждения
-              неизвестен. Уберите его из выбора, чтобы проверить другие товары.
-            </p>
-          )}
-          {preview && (
-            <CatalogSyncPreview
-              key={preview.id}
-              preview={preview}
-              busy={busy === "approve"}
-              blocked={
-                uncertainSelection ||
-                dirty ||
-                !config.data.enabled ||
-                !config.data.test_enabled ||
-                config.data.publication_available === false
-              }
-              onApprove={(ids) => void approve(ids)}
-            />
+          {view === "transfer" && (
+            <>
+              <CatalogSyncProducts
+                scope={scope}
+                config={config.data}
+                selected={selected}
+                disabled={busy !== null}
+                onChange={(next) => {
+                  setSelected(next);
+                  setPreview(null);
+                  setMessage("");
+                }}
+              />
+              <div className="catalog-review-action">
+                <button
+                  disabled={
+                    busy !== null ||
+                    dirty ||
+                    uncertainSelection ||
+                    !Object.keys(selected).length
+                  }
+                  onClick={() => void review()}
+                >
+                  {busy === "preview"
+                    ? "Проверяем изменения…"
+                    : "Проверить выбранные товары"}
+                </button>
+                <p>
+                  Выбор товаров сохранится для этой пары аккаунтов. Проверка не
+                  отправляет изменения в сервисы.
+                </p>
+              </div>
+              {(!config.data.enabled || !config.data.test_enabled) && (
+                <p className="catalog-warning">
+                  Перед отправкой включите синхронизацию каталога и сохраните
+                  настройки. Само включение не подтверждает изменения новых
+                  товаров.
+                </p>
+              )}
+              {config.data.publication_available === false && (
+                <p className="catalog-warning">
+                  Отправка изменений в сервисы для этого аккаунта пока
+                  недоступна.
+                </p>
+              )}
+              {uncertainSelection && (
+                <p className="catalog-warning" role="alert">
+                  Для выбранного товара результат предыдущего подтверждения
+                  неизвестен. Уберите его из выбора, чтобы проверить другие
+                  товары.
+                </p>
+              )}
+              {preview && preview.config_revision === config.data.revision && (
+                <CatalogSyncPreview
+                  key={preview.id}
+                  preview={preview}
+                  busy={busy === "approve"}
+                  blocked={
+                    uncertainSelection ||
+                    dirty ||
+                    !config.data.enabled ||
+                    !config.data.test_enabled ||
+                    config.data.publication_available === false
+                  }
+                  onApprove={(ids) => void approve(ids)}
+                />
+              )}
+            </>
           )}
         </>
       )}
@@ -362,7 +339,7 @@ function CatalogSyncAccount({
           {message}
         </p>
       )}
-      <CatalogSyncOperations scope={scope} />
+      {view !== "rules" && <CatalogSyncOperations scope={scope} />}
     </div>
   );
 }

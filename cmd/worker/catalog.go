@@ -21,6 +21,7 @@ import (
 // catalogWork shares the normal worker's fair RunNext turn and durable outbox.
 // A read-only traversal has its own bounded budget; it never writes to a provider.
 type catalogWork struct {
+	products  *postgres.Store
 	publisher catalogsync.Runner
 	service   catalogsync.Service
 	nextCheck time.Time
@@ -40,7 +41,20 @@ func (w *catalogWork) RunNext(ctx context.Context) (bool, error) {
 	w.nextCheck = time.Now().Add(5 * time.Second)
 	read, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	return w.service.Tick(read)
+	if w.products != nil {
+		linked, err := w.products.RunCreatedProductLink(read)
+		if err != nil {
+			return linked, err
+		}
+		worked = worked || linked
+		matched, err := w.products.RunProductMatchAutomation(read)
+		if err != nil {
+			return matched, err
+		}
+		worked = worked || matched
+	}
+	scheduled, err := w.service.Tick(read)
+	return worked || scheduled, err
 }
 
 func catalogAllowed(scope catalog.Scope) bool {
@@ -61,6 +75,7 @@ func newCatalogWork(db *postgres.Store, resolver *credentials.Resolver) (applica
 	}
 	factory := catalogprovider.Factory{Credentials: resolver, Gate: gate}
 	return &catalogWork{
+		products:  db,
 		mode:      os.Getenv("STYK_WORKER_MODE"),
 		publisher: catalogsync.Runner{Enabled: true, WorkerID: hex.EncodeToString(instance[:]), Store: db, Resolver: factory, AllowScope: catalogAllowed},
 		service:   catalogsync.Service{Store: db, Resolver: factory, AllowScope: catalogAllowed},

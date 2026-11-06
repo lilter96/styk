@@ -214,7 +214,7 @@ export function MoySkladProductSettings() {
           Перейти к сопоставлению товаров
           <Icon name="arrow" />
         </Link>
-        <Link className="secondary moy-navigation-card" to="/catalog-sync">
+        <Link className="secondary moy-navigation-card" to="/products/rules">
           <Icon name="catalog" />
           Открыть каталог
           <Icon name="arrow" />

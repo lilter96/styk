@@ -1,3 +1,4 @@
+import type { CatalogConfig } from "./CatalogSyncTypes";
 import { Icon } from "./UI";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -7,16 +8,20 @@ import {
 } from "./ProductMappingTable";
 import "./matching-page.css";
 import { useQuery } from "@tanstack/react-query";
-import { api, params, type Page, type Product, type Report } from "./api";
+import { api, params, type Page, type Product } from "./api";
 import { useConfirmation, type Confirmation, type Scope } from "./Confirmation";
+import { Link } from "react-router-dom";
+import { IntegrationDialog } from "./IntegrationDialog";
 import { ProductReview } from "./ProductReview";
 
 export function ProductMappingPage({
   scope,
   confirmation,
+  config,
 }: {
   scope: Scope;
   confirmation?: Confirmation;
+  config?: CatalogConfig;
 }) {
   const localConfirmation = useConfirmation();
   const activeConfirmation = confirmation ?? localConfirmation;
@@ -37,6 +42,7 @@ export function ProductMappingPage({
     return () => clearTimeout(timer);
   }, [search, query]);
   const [archived, setArchived] = useState("");
+  const [provider, setProvider] = useState("");
   const [mapping, setMapping] = useState("");
   const [offset, setOffset] = useState(0);
   const [selectedProducts, setSelectedProducts] = useState<Product[]>([]);
@@ -48,7 +54,16 @@ export function ProductMappingPage({
     ozon_account: scope.ozon,
   };
   const products = useQuery({
-    queryKey: ["products", scope, query, archived, mapping, offset, pageSize],
+    queryKey: [
+      "products",
+      scope,
+      query,
+      archived,
+      mapping,
+      provider,
+      offset,
+      pageSize,
+    ],
     queryFn: ({ signal }) =>
       api<Page<Product> & { total?: number }>(
         "/api/products?" +
@@ -57,6 +72,7 @@ export function ProductMappingPage({
             search: query,
             archived,
             mapping,
+            provider,
             offset,
             pageSize,
           }),
@@ -64,26 +80,6 @@ export function ProductMappingPage({
       ),
     enabled: ready,
   });
-  const diagnostics = useQuery({
-    queryKey: ["diagnostics", scope],
-    queryFn: ({ signal }) =>
-      api<Report>("/api/diagnostics?" + params(base), signal),
-    enabled: ready,
-  });
-  const confirmed = diagnostics.data?.mapping_counts?.confirmed_products;
-  const unconfirmed = diagnostics.data?.mapping_counts?.unconfirmed_products;
-  const hasCounts = Number.isFinite(confirmed) && Number.isFinite(unconfirmed);
-  const catalogTotal = diagnostics.data?.mapping_counts?.catalog_products;
-  const catalogConfirmed =
-    diagnostics.data?.mapping_counts?.catalog_confirmed_products;
-  const hasCatalogCounts =
-    typeof catalogTotal === "number" &&
-    typeof catalogConfirmed === "number" &&
-    Number.isInteger(catalogTotal) &&
-    Number.isInteger(catalogConfirmed) &&
-    catalogTotal >= 0 &&
-    catalogConfirmed >= 0 &&
-    catalogConfirmed <= catalogTotal;
   const reset = () => setOffset(0);
   useEffect(() => {
     queueRequest.current?.abort();
@@ -137,6 +133,7 @@ export function ProductMappingPage({
             params({
               ...base,
               mapping: "unconfirmed",
+              provider: "ozon",
               archived: "false",
               offset: start,
             }),
@@ -171,81 +168,28 @@ export function ProductMappingPage({
   }
   return (
     <div className="product-mapping-page">
-      <header className="mapping-heading">
-        <h1>Сопоставление товаров</h1>
-        <p>
-          Укажите, какому товару МойСклад соответствует товар Ozon. Каждое
-          соответствие подтверждается вами.
-        </p>
-      </header>
-      {(hasCatalogCounts || hasCounts) && (
-        <section
-          className="mapping-progress-card"
-          aria-label="Состояние сопоставления"
-        >
-          <div className="mapping-progress-copy">
-            <strong>
-              {hasCatalogCounts
-                ? `Сопоставлено ${catalogConfirmed} из ${catalogTotal}`
-                : `Подтверждено соответствий: ${confirmed}`}
-            </strong>
-            {hasCatalogCounts && catalogTotal > 0 && (
-              <div
-                className="mapping-progress-bar"
-                role="progressbar"
-                aria-label="Сопоставление последнего каталога"
-                aria-valuemin={0}
-                aria-valuemax={catalogTotal}
-                aria-valuenow={catalogConfirmed}
-              >
-                <i
-                  style={{
-                    width: `${(catalogConfirmed / catalogTotal) * 100}%`,
-                  }}
-                />
-              </div>
-            )}
-            <p>
-              {hasCatalogCounts
-                ? `Осталось сопоставить ${catalogTotal - catalogConfirmed} товаров`
-                : `Без соответствия в последней загрузке: ${unconfirmed}`}
-            </p>
-          </div>
-          {hasCatalogCounts && (
-            <span className="matching-page-percent">
-              {catalogTotal
-                ? Math.round((catalogConfirmed / catalogTotal) * 100)
-                : 0}
-              %
-            </span>
-          )}
-          <div className="matching-page-progress-action">
-            <button
-              className="mapping-filter-action"
-              disabled={
-                hasCatalogCounts
-                  ? catalogConfirmed === catalogTotal
-                  : unconfirmed === 0
-              }
-              onClick={() => {
-                setMapping("unconfirmed");
-                reset();
-              }}
-            >
-              <Icon name="search" size="button" />
-              Проверить несопоставленные
-            </button>
-            <small>Найдите и подтвердите соответствия</small>
-          </div>
-        </section>
-      )}
       <div className="mapping-filters">
+        <label>
+          Источник
+          <select
+            aria-label="Источник товара"
+            value={provider}
+            onChange={(e) => {
+              setProvider(e.target.value);
+              reset();
+            }}
+          >
+            <option value="">Все товары</option>
+            <option value="ozon">Предложения Ozon</option>
+            <option value="moysklad">Только в МойСклад</option>
+          </select>
+        </label>
         <label className="matching-page-search">
           <span className="matching-page-sr">Поиск</span>
           <div>
             <Icon name="search" size="button" />
             <input
-              placeholder="Название, артикул, offer ID или SKU"
+              placeholder="Поиск по названию или артикулу"
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
@@ -408,6 +352,7 @@ export function ProductMappingPage({
       ) : (
         <ProductMappingTable
           items={products.data.items}
+          config={config}
           selected={selectedProducts}
           pending={!!activeConfirmation.pending}
           open={setReview}
@@ -474,7 +419,26 @@ export function ProductMappingPage({
         </ProductMappingTable>
       )}
       {queueMessage && <p role="status">{queueMessage}</p>}
-      {review && (
+      {review?.provider === "moysklad" && (
+        <IntegrationDialog
+          title={review.name || "Товар МойСклад"}
+          onClose={() => setReview(null)}
+        >
+          <p>Артикул: {review.offer_id || "не указан"}</p>
+          <p>
+            В этой паре аккаунтов нет подтверждённого предложения Ozon. Для
+            существующей карточки откройте сопоставление со стороны Ozon. Для
+            новой — подготовьте импорт.
+          </p>
+          <Link
+            className="primary-button"
+            to="/products/import/moysklad-to-ozon"
+          >
+            Подготовить карточку Ozon
+          </Link>
+        </IntegrationDialog>
+      )}
+      {review && review.provider !== "moysklad" && (
         <ProductReview
           key={review.product_id}
           product={

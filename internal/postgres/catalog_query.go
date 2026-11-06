@@ -86,6 +86,10 @@ func (s *Store) CatalogProducts(ctx context.Context, scope catalog.Scope, page c
 	if err != nil {
 		return result, err
 	}
+	result.Summary, err = catalogProductSummary(ctx, tx, scope, page, cursor)
+	if err != nil {
+		return result, err
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return result, fmt.Errorf("commit catalog selection: %w", err)
 	}
@@ -101,7 +105,7 @@ func pinCatalogImports(ctx context.Context, q catalogQuerier, scope catalog.Scop
 }
 
 const catalogProductsSQL = `WITH moy AS (
- SELECT 'moysklad'::text provider,e.kind,e.external_id id,''::text offer_id,''::text sku,e.name,e.article,e.parent_id,NULL::boolean archived,i.finished_at observed_at,i.fingerprint||':'||e.source_updated revision
+ SELECT 'moysklad'::text provider,e.kind,e.external_id id,''::text offer_id,''::text sku,e.name,e.article,e.parent_id,e.archived,i.finished_at observed_at,i.fingerprint||':'||e.source_updated revision
  FROM source_entities e JOIN source_imports i ON i.id=e.import_id JOIN stock_connections c ON c.tenant_id=$1 AND c.source=i.source AND c.account_id=i.account_id
  WHERE ($11='' OR $11='moysklad') AND e.import_id=$4 AND i.source='moysklad' AND i.account_id=$2 AND (c.include_import_history OR i.started_at>=c.registered_at) AND e.kind IN ('product','variant')
  AND ('moysklad',e.kind,e.external_id)>($6,$7,$8) AND ($9='' OR e.external_id ILIKE '%'||$9||'%' OR e.name ILIKE '%'||$9||'%' OR e.article ILIKE '%'||$9||'%' OR e.code ILIKE '%'||$9||'%') ORDER BY e.kind,e.external_id LIMIT $10
@@ -189,7 +193,7 @@ func (s *Store) CatalogHistory(ctx context.Context, scope catalog.Scope, page ca
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
 	args := append(catalogScopeArgs(scope), cursor.ID, cursor.At, page.Limit+1)
-	rows, err := s.Pool.Query(ctx, `SELECT o.id,o.preview_id,o.created_at,COALESCE(jsonb_agg(w.work ORDER BY w.id) FILTER(WHERE w.id IS NOT NULL),'[]'::jsonb) FROM (SELECT * FROM catalog_sync_operations WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND ($4='' OR (created_at,id)<($5,$4)) ORDER BY created_at DESC,id DESC LIMIT $6) o LEFT JOIN catalog_sync_work w ON w.operation_id=o.id GROUP BY o.id,o.preview_id,o.created_at ORDER BY o.created_at DESC,o.id DESC`, args...)
+	rows, err := s.Pool.Query(ctx, `SELECT o.id,o.preview_id,o.created_at,COALESCE(jsonb_agg(w.work || jsonb_build_object('mapping_state',COALESCE(l.state,'')) ORDER BY w.id) FILTER(WHERE w.id IS NOT NULL),'[]'::jsonb) FROM (SELECT * FROM catalog_sync_operations WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND ($4='' OR (created_at,id)<($5,$4)) ORDER BY created_at DESC,id DESC LIMIT $6) o LEFT JOIN catalog_sync_work w ON w.operation_id=o.id LEFT JOIN catalog_created_links l ON l.work_id=w.id GROUP BY o.id,o.preview_id,o.created_at ORDER BY o.created_at DESC,o.id DESC`, args...)
 	if err != nil {
 		return result, fmt.Errorf("list catalog operation history: %w", err)
 	}
@@ -218,7 +222,7 @@ func (s *Store) CatalogHistory(ctx context.Context, scope catalog.Scope, page ca
 
 func readCatalogOperation(ctx context.Context, q catalogQuerier, scope catalog.Scope, id string) (catalogsync.Operation, error) {
 	args := append(catalogScopeArgs(scope), id)
-	return scanCatalogOperation(q.QueryRow(ctx, `SELECT o.id,o.preview_id,o.created_at,COALESCE(jsonb_agg(w.work ORDER BY w.id) FILTER(WHERE w.id IS NOT NULL),'[]'::jsonb) FROM catalog_sync_operations o LEFT JOIN catalog_sync_work w ON w.operation_id=o.id WHERE o.tenant_id=$1 AND o.moysklad_account=$2 AND o.ozon_account=$3 AND o.id=$4 GROUP BY o.id,o.preview_id,o.created_at`, args...), scope)
+	return scanCatalogOperation(q.QueryRow(ctx, `SELECT o.id,o.preview_id,o.created_at,COALESCE(jsonb_agg(w.work || jsonb_build_object('mapping_state',COALESCE(l.state,'')) ORDER BY w.id) FILTER(WHERE w.id IS NOT NULL),'[]'::jsonb) FROM catalog_sync_operations o LEFT JOIN catalog_sync_work w ON w.operation_id=o.id LEFT JOIN catalog_created_links l ON l.work_id=w.id WHERE o.tenant_id=$1 AND o.moysklad_account=$2 AND o.ozon_account=$3 AND o.id=$4 GROUP BY o.id,o.preview_id,o.created_at`, args...), scope)
 }
 
 func scanCatalogOperation(row pgx.Row, scope catalog.Scope) (catalogsync.Operation, error) {

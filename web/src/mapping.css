@@ -12,44 +12,6 @@
 .product-mapping-page p {
   margin: 0;
 }
-.mapping-back {
-  color: var(--styk-primary-hover);
-  font-weight: 500;
-  align-self: flex-start;
-}
-.mapping-heading h1 {
-  font-size: 28px;
-  font-weight: 700;
-  line-height: 1.25;
-  letter-spacing: -0.01em;
-}
-.mapping-heading > p {
-  margin-top: 6px;
-  color: var(--styk-muted);
-  font-size: 16px;
-}
-.mapping-progress-card {
-  background: #fff;
-  border: 1px solid var(--styk-line);
-  border-radius: 16px;
-  padding: 24px;
-  display: flex;
-  justify-content: space-between;
-  gap: 24px;
-  align-items: center;
-}
-.mapping-progress-card strong {
-  font-size: 16px;
-  font-weight: 600;
-}
-.mapping-progress-card p,
-.mapping-progress-card > span {
-  color: var(--styk-muted);
-  font-size: 14px;
-}
-.mapping-progress-card p {
-  margin-top: 6px;
-}
 .mapping-filters {
   display: flex;
   gap: 16px;
@@ -505,11 +467,6 @@
   border-radius: 10px;
 }
 @media (max-width: 700px) {
-  .mapping-progress-card {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 10px;
-  }
   .mapping-filters {
     gap: 12px;
   }
@@ -527,15 +484,6 @@
     align-items: flex-start;
     flex-direction: column;
   }
-  .mapping-heading h1 {
-    font-size: 26px;
-  }
-  .mapping-heading > p {
-    font-size: 15px;
-  }
-  .mapping-progress-card {
-    padding: 20px;
-  }
   .mapping-review-pagination {
     gap: 8px;
   }
@@ -543,23 +491,6 @@
     font-size: 13px;
     padding: 8px;
   }
-}
-.mapping-progress-copy {
-  flex: 1;
-  max-width: 560px;
-}
-.mapping-progress-bar {
-  height: 8px;
-  border-radius: 999px;
-  background: var(--styk-line);
-  overflow: hidden;
-  margin-top: 10px;
-}
-.mapping-progress-bar i {
-  display: block;
-  height: 100%;
-  background: var(--styk-primary);
-  border-radius: 999px;
 }
 
 .product-mapping-page button.mapping-select {
@@ -1014,9 +945,6 @@
   .product-mapping-page button.mapping-filter-action {
     width: 100%;
     white-space: normal;
-  }
-  .mapping-progress-copy {
-    width: 100%;
   }
   .login {
     padding: 24px 20px;

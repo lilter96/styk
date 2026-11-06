@@ -69,10 +69,6 @@ func runMerchantBrowser(t *testing.T, automatic bool) {
 		t.Setenv("STYK_MERCHANT_AUTOSIM", "1")
 		t.Setenv("STYK_STOCK_PUBLICATION_ENABLED", "true")
 		t.Setenv("STYK_STOCK_PUBLICATION_TEST_ENDPOINT", providerServer.URL)
-		// Only this disposable test schema admits the existing loopback simulator.
-		if _, err = db.Pool.Exec(context.Background(), `ALTER TABLE stock_auto_configs DROP CONSTRAINT stock_auto_configs_check`); err != nil {
-			t.Fatal(err)
-		}
 		if _, err = db.Pool.Exec(context.Background(), `INSERT INTO saas_workspaces(id,name,legacy_unclaimed) VALUES($1,'Магазин B (симулятор)',true)`, browserAutoWorkspace); err != nil {
 			t.Fatal(err)
 		}
