@@ -8,6 +8,7 @@ import (
 )
 
 func TestConfirmationFingerprintBindsSemanticRequest(t *testing.T) {
+	t.Parallel()
 	base := domain.MappingConfirmationRequest{ReviewID: strings.Repeat("a", 32), SessionID: "one", IdempotencyKey: "first", Acknowledged: true, Explanation: "synthetic"}
 	original, err := confirmationFingerprint(base)
 	if err != nil {
@@ -24,6 +25,7 @@ func TestConfirmationFingerprintBindsSemanticRequest(t *testing.T) {
 		"review":          func(r *domain.MappingConfirmationRequest) { r.ReviewID = strings.Repeat("b", 32) },
 		"acknowledgement": func(r *domain.MappingConfirmationRequest) { r.Acknowledged = false },
 		"explanation":     func(r *domain.MappingConfirmationRequest) { r.Explanation += " changed" },
+		"replacement":     func(r *domain.MappingConfirmationRequest) { r.ReplaceExisting = true },
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := base

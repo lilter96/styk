@@ -40,7 +40,7 @@ export function useConfirmation() {
         AbortSignal.timeout(30000),
       );
       if (
-        p.intent.kind === "warehouse" &&
+        (p.intent.kind === "warehouse" || p.intent.replace) &&
         (value.review_id !== p.intent.reviewId ||
           !Number.isSafeInteger(value.mapping_id) ||
           value.mapping_id < 1 ||
@@ -48,7 +48,7 @@ export function useConfirmation() {
           value.mapping_version < 1 ||
           !Number.isFinite(Date.parse(value.confirmed_at)))
       )
-        throw new Error("Invalid warehouse confirmation response");
+        throw new Error("Invalid mapping confirmation response");
       setResult(value);
       setResultContext(p);
       setPending(null);
@@ -58,6 +58,7 @@ export function useConfirmation() {
           "products",
           "review-history",
           "review-targets",
+          "conflict-targets",
           "warehouses",
           "warehouse-review",
           "warehouse-overview",
@@ -82,6 +83,7 @@ export function useConfirmation() {
           "REVIEW_EXPIRED",
           "REVIEW_STALE",
           "MAPPING_CONFLICT",
+          "MAPPING_BUSY",
           "INVALID_REQUEST",
           "FORBIDDEN",
           "REVIEW_NOT_FOUND",
@@ -115,12 +117,13 @@ export function useConfirmation() {
     reviewId: string,
     explanation: string,
     kind: "product" | "warehouse" = "product",
+    replace = false,
   ) {
     if (pendingRef.current || lock.current) return;
     const p = {
       scope: { ...scope },
       product,
-      intent: createConfirmationIntent(reviewId, explanation, kind),
+      intent: createConfirmationIntent(reviewId, explanation, kind, replace),
       uncertain: false,
     };
     pendingRef.current = p;

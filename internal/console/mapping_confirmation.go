@@ -18,6 +18,13 @@ func (a *auth) confirmMappingReview(db *postgres.Store) http.HandlerFunc {
 	return a.confirmationHandler(service.Confirm)
 }
 
+func (a *auth) replaceMappingReview(db *postgres.Store) http.HandlerFunc {
+	return a.confirmationHandler(func(ctx context.Context, req domain.MappingConfirmationRequest) (domain.MappingConfirmationResult, error) {
+		req.ReplaceExisting = true
+		return (application.MappingConfirmation{Store: db}).Confirm(ctx, req)
+	})
+}
+
 func (a *auth) confirmWarehouseReview(db *postgres.Store) http.HandlerFunc {
 	service := application.WarehouseConfirmation{Store: db}
 	return a.confirmationHandler(service.Confirm)
@@ -63,6 +70,8 @@ func (a *auth) confirmationHandler(confirm func(context.Context, domain.MappingC
 				writeError(w, http.StatusConflict, "REVIEW_EXPIRED")
 			case errors.Is(err, postgres.ErrReviewStale):
 				writeError(w, http.StatusConflict, "REVIEW_STALE")
+			case errors.Is(err, postgres.ErrMappingBusy):
+				writeError(w, http.StatusConflict, "MAPPING_BUSY")
 			case errors.Is(err, postgres.ErrMappingConflict):
 				writeError(w, http.StatusConflict, "MAPPING_CONFLICT")
 			case errors.Is(err, postgres.ErrIdempotencyConflict):

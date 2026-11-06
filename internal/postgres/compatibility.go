@@ -15,7 +15,7 @@ func (s *Store) RequireCurrentSchema(ctx context.Context) error {
 	defer cancel()
 	var version int64
 	err := s.Pool.QueryRow(ctx, `SELECT COALESCE(max(version_id),0) FROM (SELECT DISTINCT ON(version_id) version_id,is_applied FROM goose_db_version ORDER BY version_id,id DESC) versions WHERE is_applied`).Scan(&version)
-	if err != nil || version < 70 {
+	if err != nil || version < 71 {
 		return ErrSchemaIncompatible
 	}
 	var compatible bool
@@ -30,7 +30,7 @@ func (s *Store) requireProductSchema(ctx context.Context) error {
 	var compatible bool
 	err := s.Pool.QueryRow(ctx, `SELECT bool_and(to_regclass(name) IS NOT NULL)
  AND EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid=to_regclass('source_entities') AND attname='archived' AND NOT attisdropped)
- FROM (VALUES ('product_matching_policies'),('product_matching_policy_audits'),('product_matching_previews'),('product_matching_runs'),('product_matching_cycles'),('catalog_created_links')) AS required(name)`).Scan(&compatible)
+ FROM (VALUES ('product_matching_policies'),('product_matching_policy_audits'),('product_matching_previews'),('product_matching_runs'),('product_matching_cycles'),('catalog_created_links'),('product_mapping_replacements')) AS required(name)`).Scan(&compatible)
 	if err != nil || !compatible {
 		return ErrSchemaIncompatible
 	}

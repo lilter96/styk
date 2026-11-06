@@ -18,6 +18,7 @@ import (
 
 var (
 	ErrReviewExpired       = errors.New("review expired")
+	ErrMappingBusy         = errors.New("mapping has active external work")
 	ErrReviewStale         = errors.New("review stale")
 	ErrMappingConflict     = errors.New("mapping conflict")
 	ErrIdempotencyConflict = errors.New("idempotency key reused with different request")
@@ -27,11 +28,12 @@ var (
 // its canonical format can evolve without silently changing retry semantics.
 func confirmationFingerprint(req domain.MappingConfirmationRequest) (string, error) {
 	b, err := json.Marshal(struct {
-		Version      int    `json:"version"`
-		ReviewID     string `json:"review_id"`
-		Acknowledged bool   `json:"acknowledged"`
-		Explanation  string `json:"explanation"`
-	}{1, req.ReviewID, req.Acknowledged, req.Explanation})
+		Version         int    `json:"version"`
+		ReviewID        string `json:"review_id"`
+		Acknowledged    bool   `json:"acknowledged"`
+		Explanation     string `json:"explanation"`
+		ReplaceExisting bool   `json:"replace_existing,omitempty"`
+	}{1, req.ReviewID, req.Acknowledged, req.Explanation, req.ReplaceExisting})
 	if err != nil {
 		return "", fmt.Errorf("encode confirmation fingerprint: %w", err)
 	}
@@ -123,10 +125,18 @@ func confirmMappingReviewTx(ctx context.Context, tx pgx.Tx, req domain.MappingCo
 	if strings.TrimSpace(snap.Offer) == "" {
 		return domain.MappingConfirmationResult{}, ErrReviewStale
 	}
-	// Existing mappings, including the same target, require no new confirmation;
-	// replacement and attaching a second review are deliberately unsupported.
-	if snap.Conflict || snap.MappingID != nil {
+	// Ordinary confirmation cannot replace a mapping. Only the explicit replace
+	// endpoint may write a new version of the exact reviewed mapping.
+	if !req.ReplaceExisting && (snap.Conflict || snap.MappingID != nil) {
 		return domain.MappingConfirmationResult{}, ErrMappingConflict
+	}
+	if req.ReplaceExisting {
+		if !replacementAllowed(snap, r) {
+			return domain.MappingConfirmationResult{}, ErrMappingConflict
+		}
+		if err := replacementWorkIdle(ctx, tx, stored.scope(), *snap.MappingID, r.Source.ID); err != nil {
+			return domain.MappingConfirmationResult{}, err
+		}
 	}
 	if r.EvidenceClass == domain.MappingDeterministicCandidate {
 		src := domain.MatchSource{Identity: r.Source, OfferID: snap.Offer}
@@ -138,7 +148,8 @@ func confirmMappingReviewTx(ctx context.Context, tx pgx.Tx, req domain.MappingCo
 	if !time.Now().Before(r.ExpiresAt) {
 		return domain.MappingConfirmationResult{}, ErrReviewExpired
 	}
-	m, err := insertConfirmedMapping(ctx, tx, mappingInsert{Scope: stored.scope(), ProductID: r.Source.ID, OfferID: snap.Offer, TargetKind: r.Target.Kind, TargetID: r.Target.ID, Provenance: auditPrincipal(req.SessionID), OzonImportID: r.OzonImportID, MoyskladImportID: r.MoyskladImportID, ReviewID: &r.ID})
+	in := mappingInsert{Scope: stored.scope(), ProductID: r.Source.ID, OfferID: snap.Offer, TargetKind: r.Target.Kind, TargetID: r.Target.ID, Provenance: auditPrincipal(req.SessionID), OzonImportID: r.OzonImportID, MoyskladImportID: r.MoyskladImportID, ReviewID: &r.ID}
+	m, err := writeReviewedMapping(ctx, tx, in, snap, req)
 	if err != nil {
 		var pgerr *pgconn.PgError
 		if errors.As(err, &pgerr) && pgerr.Code == "23505" && pgerr.TableName == "product_mappings" {

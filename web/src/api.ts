@@ -262,6 +262,7 @@ export type Product = {
   target_kind: string | null;
   target_id: string | null;
   match_status: string;
+  conflict_reasons?: string[];
   candidate_count: number;
   candidates: {
     kind: string;
@@ -306,11 +307,13 @@ export type ConfirmationIntent = Readonly<{
   reviewId: string;
   body: string;
   kind: "product" | "warehouse";
+  replace?: boolean;
 }>;
 export function createConfirmationIntent(
   reviewId: string,
   explanation: string,
   kind: "product" | "warehouse" = "product",
+  replace = false,
 ): ConfirmationIntent {
   if (!/^[0-9a-f]{32}$/.test(reviewId))
     throw new Error("Invalid review identifier.");
@@ -323,6 +326,7 @@ export function createConfirmationIntent(
   return Object.freeze({
     reviewId,
     kind,
+    ...(replace ? { replace: true } : {}),
     body: JSON.stringify({
       idempotency_key: key,
       acknowledge: true,
@@ -343,7 +347,7 @@ export async function sendConfirmation(
   signal?: AbortSignal,
 ): Promise<ConfirmationResult> {
   const response = await authFetch(
-    `/api/${intent.kind}-mapping-reviews/${intent.reviewId}/confirm`,
+    `/api/${intent.kind}-mapping-reviews/${intent.reviewId}/${intent.replace ? "replace" : "confirm"}`,
     {
       method: "POST",
       credentials: "same-origin",

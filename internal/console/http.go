@@ -141,6 +141,7 @@ func handlerWithAuth(db *postgres.Store, a *auth, connections *connections) (htt
 	}))
 	mux.HandleFunc("POST /api/product-mapping-reviews", a.authorized(a.createMappingReview(db, lifetime)))
 	mux.HandleFunc("POST /api/product-mapping-reviews/{id}/confirm", a.authorized(a.confirmMappingReview(db)))
+	mux.HandleFunc("POST /api/product-mapping-reviews/{id}/replace", a.authorized(a.replaceMappingReview(db)))
 	mux.HandleFunc("GET /api/product-mapping-reviews/{id}", a.authorized(a.inspectMappingReview(db)))
 	registerProductMatchingRoutes(mux, a, db)
 	mux.HandleFunc("GET /api/products", a.authorized(products(db)))

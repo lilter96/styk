@@ -3,6 +3,7 @@ import type { CatalogConfig } from "./CatalogSyncTypes";
 import { BrandLogo } from "./BrandLogo";
 import type { Product } from "./api";
 import { Icon } from "./UI";
+import { conflictTitle } from "./productConflict";
 
 export const eligibleForQueue = (p: Product) =>
   p.provider !== "moysklad" &&
@@ -109,7 +110,12 @@ function MappingRow({
             {confirmed ? "Связан" : conflict ? "Конфликт" : "Нет пары"}
           </span>
           {p.observed === false && <small>Нет в последней загрузке</small>}
-          {p.shared_inventory && (
+          {conflict && (
+            <small className="products-conflict-reason">
+              {conflictTitle(p)}
+            </small>
+          )}
+          {!conflict && p.shared_inventory && (
             <small>Общий остаток для нескольких предложений</small>
           )}
           {p.kind === "variant" && <small>Модификация товара</small>}

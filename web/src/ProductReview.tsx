@@ -1,3 +1,4 @@
+import { ProductMappingConflict } from "./ProductMappingConflict";
 import { ProductMatchingConfirmation } from "./ProductMatchingConfirmation";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -48,7 +49,7 @@ type Review = {
   MappingConflict: boolean;
   PrincipalType: string;
 };
-export function ProductReview({
+function MatchingReview({
   product,
   scope,
   close,
@@ -539,5 +540,19 @@ export function ProductReview({
         </footer>
       </section>
     </IntegrationDialog>
+  );
+}
+
+export function ProductReview(props: Parameters<typeof MatchingReview>[0]) {
+  const [conflict] = useState(props.product.match_status === "CONFLICT");
+  return conflict ? (
+    <ProductMappingConflict
+      product={props.product}
+      scope={props.scope}
+      close={props.close}
+      confirmation={props.confirmation}
+    />
+  ) : (
+    <MatchingReview {...props} />
   );
 }

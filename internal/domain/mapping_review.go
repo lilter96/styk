@@ -28,10 +28,11 @@ type MappingReviewRequest struct {
 }
 
 type MappingReviewResult struct {
-	Review          MappingReview
-	Status          string
-	MappingConflict bool
-	PrincipalType   string
+	Review             MappingReview
+	Status             string
+	MappingConflict    bool
+	ReplacementAllowed bool
+	PrincipalType      string
 }
 
 // MappingConfirmationRequest is constructed by the authenticated server. The
@@ -39,6 +40,7 @@ type MappingReviewResult struct {
 type MappingConfirmationRequest struct {
 	ReviewID, SessionID, IdempotencyKey string
 	Acknowledged                        bool
+	ReplaceExisting                     bool
 	Explanation                         string
 }
 

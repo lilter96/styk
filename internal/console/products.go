@@ -87,23 +87,24 @@ func products(db *postgres.Store) http.HandlerFunc {
 		}
 		defer rows.Close()
 		type item struct {
-			Provider       string      `json:"provider"`
-			Kind           string      `json:"kind"`
-			Observed       bool        `json:"observed"`
-			Shared         bool        `json:"shared_inventory"`
-			ProductID      string      `json:"product_id"`
-			OfferID        string      `json:"offer_id"`
-			Name           *string     `json:"name,omitempty"`
-			SKU            *string     `json:"sku"`
-			Archived       *bool       `json:"archived"`
-			TargetKind     *string     `json:"target_kind"`
-			TargetID       *string     `json:"target_id"`
-			TargetName     *string     `json:"target_name,omitempty"`
-			TargetArticle  *string     `json:"target_article,omitempty"`
-			Status         string      `json:"match_status"`
-			Candidates     []candidate `json:"candidates"`
-			CandidateCount int         `json:"candidate_count"`
-			Truncated      bool        `json:"candidates_truncated"`
+			Provider        string      `json:"provider"`
+			Kind            string      `json:"kind"`
+			Observed        bool        `json:"observed"`
+			Shared          bool        `json:"shared_inventory"`
+			ProductID       string      `json:"product_id"`
+			OfferID         string      `json:"offer_id"`
+			Name            *string     `json:"name,omitempty"`
+			SKU             *string     `json:"sku"`
+			Archived        *bool       `json:"archived"`
+			TargetKind      *string     `json:"target_kind"`
+			TargetID        *string     `json:"target_id"`
+			TargetName      *string     `json:"target_name,omitempty"`
+			TargetArticle   *string     `json:"target_article,omitempty"`
+			Status          string      `json:"match_status"`
+			ConflictReasons []string    `json:"conflict_reasons,omitempty"`
+			Candidates      []candidate `json:"candidates"`
+			CandidateCount  int         `json:"candidate_count"`
+			Truncated       bool        `json:"candidates_truncated"`
 		}
 		items := []item{}
 		for rows.Next() {
@@ -153,6 +154,7 @@ func products(db *postgres.Store) http.HandlerFunc {
 			}
 			result := engine.Match(tenant, domain.MatchSource{Identity: domain.ProductIdentity{System: "ozon", Account: account, Kind: "product", ID: v.ProductID}, OfferID: v.OfferID}, moy)
 			v.Status = presentMatch(result.Status)
+			v.ConflictReasons = productConflictReasons(result, moy)
 			v.CandidateCount = len(result.Candidates)
 			for _, c := range result.Candidates {
 				if len(v.Candidates) == 20 {
@@ -206,7 +208,15 @@ WITH latest AS (
   SELECT COALESCE(p.product_id,m.ozon_product_id) AS product_id,COALESCE(p.offer_id,m.ozon_offer_id) AS offer_id,p.sku,p.archived,
     CASE WHEN m.moysklad_account=$3 THEN m.target_kind END AS target_kind,
     CASE WHEN m.moysklad_account=$3 THEN m.target_id END AS target_id,NULLIF(p.name,'') AS name,
-    'ozon'::text AS provider,'product'::text AS kind,p.product_id IS NOT NULL AS observed,COALESCE(m.moysklad_account<>$3,false) AS mapping_conflict
+    'ozon'::text AS provider,'product'::text AS kind,p.product_id IS NOT NULL AS observed,
+    (btrim(COALESCE(p.offer_id,m.ozon_offer_id),$8)<>'' AND (
+      COALESCE(m.moysklad_account<>$3 OR m.ozon_offer_id<>COALESCE(p.offer_id,m.ozon_offer_id),false)
+      OR (m.id IS NOT NULL AND EXISTS(SELECT 1 FROM source_entities s JOIN source_latest sl ON sl.id=s.import_id
+        WHERE s.kind IN ('product','variant') AND (s.kind,s.external_id)<>(m.target_kind,m.target_id)
+        AND (btrim(s.article,$8)=btrim(COALESCE(p.offer_id,m.ozon_offer_id),$8) OR btrim(s.code,$8)=btrim(COALESCE(p.offer_id,m.ozon_offer_id),$8))))
+      OR EXISTS(SELECT 1 FROM product_mappings other WHERE other.tenant_id=$1 AND other.ozon_account=$2
+        AND other.ozon_offer_id=COALESCE(p.offer_id,m.ozon_offer_id) AND other.ozon_product_id<>COALESCE(p.product_id,m.ozon_product_id))
+    )) AS mapping_conflict
   FROM (SELECT p.* FROM ozon_product_observations p JOIN latest l ON l.id=p.import_id) p
   FULL JOIN (SELECT * FROM product_mappings WHERE tenant_id=$1 AND ozon_account=$2) m ON m.ozon_product_id=p.product_id
 ), combined AS (
@@ -340,4 +350,29 @@ func rollbackReadTransaction(tx pgx.Tx) {
 	if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
 		slog.Error("console read transaction rollback unavailable")
 	}
+}
+
+func productConflictReasons(r domain.MatchResult, account string) []string {
+	if r.Status != matching.MappingConflict {
+		return nil
+	}
+	reasons := make([]string, 0, 3)
+	if r.Confirmed != nil {
+		if r.Confirmed.Target.Account != account {
+			reasons = append(reasons, "OTHER_ACCOUNT")
+		}
+		if r.Confirmed.OfferID != r.Source.OfferID {
+			reasons = append(reasons, "OFFER_CHANGED")
+		}
+		for _, c := range r.Candidates {
+			if c.Target != r.Confirmed.Target {
+				reasons = append(reasons, "DIFFERENT_CANDIDATE")
+				break
+			}
+		}
+	}
+	if len(reasons) == 0 {
+		reasons = append(reasons, "OFFER_CONFLICT")
+	}
+	return reasons
 }

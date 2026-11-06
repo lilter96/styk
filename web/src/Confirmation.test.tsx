@@ -113,6 +113,7 @@ for (const code of [
   "REVIEW_EXPIRED",
   "REVIEW_STALE",
   "MAPPING_CONFLICT",
+  "MAPPING_BUSY",
   "INVALID_REQUEST",
   "FORBIDDEN",
 ]) {

@@ -33,6 +33,7 @@ type reviewSnapshot struct {
 	MappingID                                                                                         *int64
 	MappingVersion                                                                                    *int
 	Conflict                                                                                          bool
+	OfferConflict                                                                                     bool
 }
 
 func lockReview(ctx context.Context, tx pgx.Tx, scope MatchScope) error {
@@ -92,6 +93,7 @@ func snapshotReview(ctx context.Context, tx pgx.Tx, in domain.MappingReviewReque
 	if e != nil {
 		return s, e
 	}
+	s.OfferConflict = otherConflict
 	s.Conflict = s.Conflict || otherConflict
 	return s, nil
 }
@@ -152,7 +154,7 @@ func createMappingReviewTx(ctx context.Context, tx pgx.Tx, in domain.MappingRevi
 	if e != nil {
 		return domain.MappingReviewResult{}, fmt.Errorf("persist review: %w", e)
 	}
-	return domain.MappingReviewResult{Review: r, Status: "CURRENT", MappingConflict: snap.Conflict, PrincipalType: auditPrincipal(in.SessionID)}, nil
+	return domain.MappingReviewResult{Review: r, Status: "CURRENT", MappingConflict: snap.Conflict, ReplacementAllowed: replacementAllowed(snap, r), PrincipalType: auditPrincipal(in.SessionID)}, nil
 }
 
 func (s *Store) InspectMappingReview(ctx context.Context, id, sessionID string) (domain.MappingReviewResult, error) {
@@ -177,7 +179,7 @@ func (s *Store) InspectMappingReview(ctx context.Context, id, sessionID string) 
 	if e = tx.Commit(ctx); e != nil {
 		return domain.MappingReviewResult{}, e
 	}
-	return domain.MappingReviewResult{Review: stored.review, Status: status, MappingConflict: snap.Conflict, PrincipalType: auditPrincipal(sessionID)}, nil
+	return domain.MappingReviewResult{Review: stored.review, Status: status, MappingConflict: snap.Conflict, ReplacementAllowed: replacementAllowed(snap, stored.review), PrincipalType: auditPrincipal(sessionID)}, nil
 }
 
 type storedMappingReview struct {
