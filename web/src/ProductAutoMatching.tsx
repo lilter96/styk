@@ -331,51 +331,6 @@ function ProductAutoMatchingAccount({
                     )}
                   </div>
                 )}
-                {data.examples.length > 0 && (
-                  <section
-                    className="automatch-examples"
-                    aria-label="Примеры найденных совпадений"
-                  >
-                    <h3>Примеры совпадений</h3>
-                    <div className="automatch-example-head">
-                      <span>Товар Ozon</span>
-                      <span />
-                      <span>Товар МойСклад</span>
-                    </div>
-                    {data.examples.map((item) => (
-                      <article key={item.product_id}>
-                        <div>
-                          <BrandLogo provider="ozon" decorative />
-                          <span>
-                            <strong title={item.name}>
-                              {item.name || item.offer_id}
-                            </strong>
-                            <small>{item.offer_id}</small>
-                          </span>
-                        </div>
-                        <span
-                          className="automatch-pair-arrow"
-                          aria-hidden="true"
-                        >
-                          ↔
-                        </span>
-                        <div>
-                          <BrandLogo provider="moysklad" decorative />
-                          <span>
-                            <strong title={item.candidates[0]?.name}>
-                              {item.candidates[0]?.name ||
-                                item.candidates[0]?.id}
-                            </strong>
-                            <small>
-                              {item.candidates[0]?.article ||
-                                "Точное совпадение"}
-                            </small>
-                          </span>
-                        </div>
-                      </article>
-                    ))}
-                  </section>
-                )}
                 <div className="automatch-primary-action">
                   <p>
                     Сопоставятся только однозначные активные товары.
@@ -404,6 +359,51 @@ function ProductAutoMatchingAccount({
                     )
                   )}
                 </div>
+                {data.examples.length > 0 && (
+                  <section
+                    className="automatch-examples"
+                    aria-label="Примеры найденных совпадений"
+                  >
+                    <h3>Примеры совпадений</h3>
+                    <div className="automatch-example-head">
+                      <span>Товар Ozon</span>
+                      <span />
+                      <span>Товар МойСклад</span>
+                    </div>
+                    {data.examples.map((item) => (
+                      <article key={item.product_id}>
+                        <div>
+                          <BrandLogo provider="ozon" decorative />
+                          <span>
+                            <strong title={item.name}>
+                              {item.name || item.offer_id}
+                            </strong>
+                            <small title={item.offer_id}>{item.offer_id}</small>
+                          </span>
+                        </div>
+                        <span
+                          className="automatch-pair-arrow"
+                          aria-hidden="true"
+                        >
+                          ↔
+                        </span>
+                        <div>
+                          <BrandLogo provider="moysklad" decorative />
+                          <span>
+                            <strong title={item.candidates[0]?.name}>
+                              {item.candidates[0]?.name ||
+                                item.candidates[0]?.id}
+                            </strong>
+                            <small title={item.candidates[0]?.article}>
+                              {item.candidates[0]?.article ||
+                                "Точное совпадение"}
+                            </small>
+                          </span>
+                        </div>
+                      </article>
+                    ))}
+                  </section>
+                )}
                 <details className="automatch-exceptions">
                   <summary>
                     Остальные товары: {exceptions} · Уже связаны:{" "}

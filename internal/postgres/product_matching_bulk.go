@@ -34,30 +34,59 @@ func (s *Store) queueProductMatchingApplication(ctx context.Context, r ProductMa
 		return err
 	}
 	defer rollbackMerchantMutation(tx)
-	var state, apply, key string
-	var count, total int
-	err = tx.QueryRow(ctx, `SELECT state,apply_state,apply_key,COALESCE((summary->>'exact')::int,0),apply_total FROM product_matching_jobs WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND id=$4 AND actor=$5 FOR UPDATE`, append(catalogScopeArgs(r.Scope), r.JobID, r.Actor)...).Scan(&state, &apply, &key, &count, &total)
-	if err != nil {
-		return catalogError("read matching approval", err)
-	}
-	if err = catalogActor(ctx, tx, r.Scope.Tenant, r.Actor); err != nil {
-		return err
-	}
-	if apply != "NOT_STARTED" {
-		if key != r.Key || total != r.Expected {
-			return catalogsync.ErrConflict
-		}
-		return tx.Commit(ctx)
-	}
-	if state != "COMPLETED" || count != r.Expected {
-		return catalogsync.ErrStale
-	}
-	_, err = tx.Exec(ctx, `UPDATE product_matching_jobs SET apply_state='QUEUED',apply_key=$2,apply_total=$3,updated_at=clock_timestamp() WHERE id=$1`, r.JobID, r.Key, r.Expected)
-	if err != nil {
+	if err = queueMatchingApproval(ctx, tx, r); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
 }
+
+type matchingApprovalState struct {
+	state, apply, key string
+	count, total      int
+}
+
+func queueMatchingApproval(ctx context.Context, tx pgx.Tx, r ProductMatchingApproval) error {
+	session, err := catalogActorSession(ctx, r.Actor)
+	if err != nil {
+		return err
+	}
+	batch := &pgx.Batch{}
+	args := append(catalogScopeArgs(r.Scope), r.JobID, r.Actor)
+	batch.Queue(`SELECT state,apply_state,apply_key,COALESCE((summary->>'exact')::int,0),apply_total FROM product_matching_jobs WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND id=$4 AND actor=$5 FOR UPDATE`, args...)
+	if session != "" {
+		batch.Queue(`SELECT saas_require_actor($1,$2,true)`, r.Scope.Tenant, session)
+	}
+	batch.Queue(`UPDATE product_matching_jobs SET apply_state='QUEUED',apply_key=$6,apply_total=$7,updated_at=clock_timestamp() WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND id=$4 AND actor=$5 AND apply_state='NOT_STARTED' AND state='COMPLETED' AND COALESCE((summary->>'exact')::int,0)=$7`, append(args, r.Key, r.Expected)...)
+	results := tx.SendBatch(ctx, batch)
+	var previous matchingApprovalState
+	err = results.QueryRow().Scan(&previous.state, &previous.apply, &previous.key, &previous.count, &previous.total)
+	if err != nil {
+		return catalogError("read matching approval", errors.Join(err, results.Close()))
+	}
+	for i := 1; i < batch.Len(); i++ {
+		if _, err = results.Exec(); err != nil {
+			return errors.Join(err, results.Close())
+		}
+	}
+	if err = results.Close(); err != nil {
+		return err
+	}
+	return previous.validate(r)
+}
+
+func (previous matchingApprovalState) validate(r ProductMatchingApproval) error {
+	if previous.apply != "NOT_STARTED" {
+		if previous.key != r.Key || previous.total != r.Expected {
+			return catalogsync.ErrConflict
+		}
+		return nil
+	}
+	if previous.state != "COMPLETED" || previous.count != r.Expected {
+		return catalogsync.ErrStale
+	}
+	return nil
+}
+
 func (s *Store) executeProductMatchingApplication(ctx context.Context, id string) (ProductMatchingApplication, error) {
 	tx, err := beginProductMatchingSet(ctx, s.Pool)
 	if err != nil {

@@ -79,19 +79,38 @@ func catalogLock(ctx context.Context, tx pgx.Tx, scope catalog.Scope) error {
 }
 
 func catalogActor(ctx context.Context, tx pgx.Tx, tenant, actor string) error {
+	session, err := catalogActorSession(ctx, actor)
+	if err != nil {
+		return err
+	}
+	if session == "" {
+		return nil
+	}
+	return requireMerchantActor(ctx, tx, tenant, "MERCHANT_SESSION:"+session, true)
+}
+
+// Resolve the same actor before ordinary or batched mutation queries.
+func catalogActorSession(ctx context.Context, actor string) (string, error) {
 	if actor == "" || len(actor) > 128 {
-		return catalogsync.ErrInvalid
+		return "", catalogsync.ErrInvalid
 	}
-	if session, ok := identity.SessionFromContext(ctx); ok && session.AuditID != actor {
-		return catalogsync.ErrBlocked
-	}
-	if _, ok := identity.SessionFromContext(ctx); ok {
-		return requireContextActor(ctx, tx, tenant, true)
+	if session, ok := identity.SessionFromContext(ctx); ok {
+		if session.AuditID != actor {
+			return "", catalogsync.ErrBlocked
+		}
+		return session.AuditID, nil
 	}
 	if strings.HasPrefix(actor, "user.") {
-		return requireMerchantActor(ctx, tx, tenant, "MERCHANT_SESSION:"+actor, true)
+		return actor, nil
 	}
-	return requireMerchantActor(ctx, tx, tenant, actor, true)
+	if strings.HasPrefix(actor, "MERCHANT_SESSION:") {
+		session := strings.TrimPrefix(actor, "MERCHANT_SESSION:")
+		if session == "" {
+			return "", catalogsync.ErrInvalid
+		}
+		return session, nil
+	}
+	return "", nil
 }
 
 // Deployment switches are enforced by the service, worker and provider client.

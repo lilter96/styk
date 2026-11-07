@@ -207,7 +207,9 @@
   color: var(--styk-muted);
   font-size: 13px;
   line-height: 1.5;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .reference-shell .automatic-matching .automatch-pair-arrow {
   text-align: center;
