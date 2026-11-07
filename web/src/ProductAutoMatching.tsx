@@ -253,7 +253,7 @@ function ProductAutoMatchingAccount({
               <>
                 <div className="automatch-result-heading">
                   <div>
-                    <h2>
+                    <h2 aria-live="polite">
                       {done
                         ? `Сопоставлено товаров: ${confirmed}`
                         : applying
@@ -279,7 +279,7 @@ function ProductAutoMatchingAccount({
                   )}
                 </div>
                 {(applying ||
-                  done ||
+                  (done && skipped > 0) ||
                   data.apply.state === "FAILED" ||
                   ["STALE", "CANCELLED"].includes(data.apply.state)) && (
                   <div className="automatch-application" role="status">
@@ -333,8 +333,9 @@ function ProductAutoMatchingAccount({
                 )}
                 <div className="automatch-primary-action">
                   <p>
-                    Сопоставятся только однозначные активные товары.
-                    Существующие связи сохранятся.
+                    {done
+                      ? "Все подходящие пары обработаны. Остальные товары можно проверить вручную."
+                      : "Сопоставятся только однозначные активные товары. Существующие связи сохранятся."}
                   </p>
                   {done ? (
                     <Link className="primary-button" to="/products">
@@ -405,8 +406,8 @@ function ProductAutoMatchingAccount({
                 )}
                 <details className="automatch-exceptions">
                   <summary>
-                    Остальные товары: {exceptions} · Уже связаны:{" "}
-                    {data.summary.confirmed || 0}
+                    Остальные товары: {exceptions}
+                    {!done && <> · Уже связаны: {data.summary.confirmed || 0}</>}
                   </summary>
                   <div>
                     <p>

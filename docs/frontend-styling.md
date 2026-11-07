@@ -94,6 +94,13 @@ table row into a tall card; measure representative row heights after clamping.
 - Empty search results need a useful next action, such as clearing the search;
   a disabled pager and an otherwise blank drawer are insufficient.
 
+Customizable selects (`appearance: base-select`) require a flex row for the
+selected value and `::picker-icon`. A page/mobile `display: block` specialization
+puts the arrow on a separate line. Use `inline-flex`, explicit alignment, padding
+and height on the owning select, and inspect the open picker. At mobile widths
+verify the computed 16px font and 44px height; a declaration can lose to the
+shared `select:not([multiple]):not([size])` selector despite loading later.
+
 ## Visual review before reporting completion
 
 Use the existing local preview in the user's visible browser when requested.

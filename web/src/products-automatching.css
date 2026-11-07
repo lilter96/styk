@@ -85,6 +85,9 @@
   line-height: 1.5;
   color: var(--styk-muted);
 }
+.reference-shell .automatic-matching .automatch-criteria-options .is-selected small {
+  color: var(--styk-ink);
+}
 .reference-shell
   .automatic-matching
   fieldset:disabled
@@ -172,8 +175,11 @@
 }
 .reference-shell .automatic-matching .automatch-example-head {
   background: var(--styk-primary-soft);
-  color: var(--styk-muted);
+  color: var(--styk-ink);
   font-size: 13px;
+}
+.reference-shell .automatic-matching .automatch-examples article {
+  min-height: 70px;
 }
 .reference-shell .automatic-matching .automatch-examples article + article {
   border-top: 1px solid var(--styk-line);
@@ -353,6 +359,9 @@
     gap: 8px;
     padding: 12px;
     grid-template-columns: minmax(0, 1fr) 16px minmax(0, 1fr);
+  }
+  .reference-shell .automatic-matching .automatch-examples article {
+    min-height: 100px;
   }
   .reference-shell .automatic-matching .automatch-examples article > div {
     align-items: start;

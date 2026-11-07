@@ -79,7 +79,10 @@ Inspected `/products/matching` at 1440×1000, 1366×768 and 390×844: actual glo
 search/application, radio arrow-key selection, mobile picker/open options,
 loading/disabled/success/zero states, long identifiers, exceptions and expanded
 future automation. Mobile matching selects use 16px text and 44px height. Checked
-computed padding, control geometry and overflow. Screen-reader behavior and a
+computed padding, control geometry and overflow. Secondary text on white measured
+4.72:1; labels on the selected soft surface use ink at 15.17:1. The unchanged
+shared primary gradient has a 4.26:1 white-text contrast at its light endpoint,
+a pre-existing shared-theme accessibility gap; this page does not redefine it. Screen-reader behavior and a
 complete WCAG audit are not established by these checks.
 
 No local unit, integration or browser test suites ran. Local checks are limited
@@ -100,8 +103,8 @@ check on 2104 products measured:
 
 The dedicated CI check enforces <1 second for both operations for each criterion.
 These are service/database measurements on the same CI host. The visible localhost
-browser against a remote Neon branch measured 1189 ms HTTP / 1060 ms matching
-service / approximately 1289 ms from automated click to the confirmed UI for 2104
+browser against a remote Neon branch finally measured 1115 ms HTTP / 986 ms matching
+service / approximately 1193 ms from automated click to the confirmed UI for 2104
 pairs. Thus a universal sub-second click-to-result guarantee over that remote
 connection has **not** been demonstrated. External providers are not called by
 matching. The cloned synthetic environment performed no provider create/update.
