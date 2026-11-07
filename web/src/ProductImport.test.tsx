@@ -32,12 +32,32 @@ afterEach(() => {
   clients.forEach((client) => client.clear());
   vi.restoreAllMocks();
 });
-function setup(lost = false) {
+function setup(lost = false, count = 0) {
+  let savedDraft = {
+    revision: 0,
+    state: {},
+    updated_at: new Date().toISOString(),
+  };
   const writes: Array<{ path: string; body: Record<string, unknown> }> = [];
   const fetcher = vi
     .spyOn(globalThis, "fetch")
     .mockImplementation(async (input, init) => {
       const path = new URL(String(input), "http://localhost");
+      if (path.pathname === "/api/product-import-draft") {
+        if (init?.method === "POST")
+          savedDraft = {
+            revision: savedDraft.revision + 1,
+            state: JSON.parse(String(init.body)).state,
+            updated_at: new Date().toISOString(),
+          };
+        return response(savedDraft);
+      }
+      if ((!init?.method || init.method === "GET") && count)
+        return response({
+          products: Array.from({ length: count }, (_, i) =>
+            source("SKU-" + String(i).padStart(3, "0")),
+          ),
+        });
       if (!init?.method || init.method === "GET")
         return response({
           products: path.searchParams.get("cursor")
@@ -53,8 +73,8 @@ function setup(lost = false) {
           scope: scopeBody(scope),
           config_revision: 1,
           expires_at: new Date(Date.now() + 60000).toISOString(),
-          decisions: (body.targets as Enrollment[]).map((e, index) => ({
-            enrollment_id: `frozen-${index}`,
+          decisions: (body.targets as Enrollment[]).map((e) => ({
+            enrollment_id: `frozen-${e.source.id}`,
             source: source(e.source.id),
             target: { identity: e.target },
             target_absent: true,
@@ -81,14 +101,23 @@ function setup(lost = false) {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   clients.push(client);
-  render(
+  const scene = (
     <MemoryRouter>
       <QueryClientProvider client={client}>
         <ProductImport scope={scope} provider="ozon" />
       </QueryClientProvider>
-    </MemoryRouter>,
+    </MemoryRouter>
   );
-  return { writes, fetcher };
+  const view = render(scene);
+  return {
+    writes,
+    fetcher,
+    remount: () => {
+      view.rerender(<></>);
+      client.clear();
+      view.rerender(scene);
+    },
+  };
 }
 async function prepare() {
   fireEvent.click(await screen.findByLabelText("Выбрать Товар A"));
@@ -142,7 +171,7 @@ it("keeps selection across pages and uses one server plan and one explicit appro
     "/api/catalog-sync/import-preview",
     "/api/catalog-sync/approve",
   ]);
-  expect(writes[1].body.enrollment_ids).toEqual(["frozen-0", "frozen-1"]);
+  expect(writes[1].body.enrollment_ids).toEqual(["frozen-A", "frozen-B"]);
   expect(screen.queryByText("Успешно создано")).toBeNull();
 });
 it("does not retry or create another plan after an unknown approval outcome", async () => {
@@ -175,4 +204,69 @@ it("does not retry or create another plan after an unknown approval outcome", as
     1,
   );
   expect(writes.filter((w) => w.path.endsWith("approve"))).toHaveLength(1);
+});
+
+it("imports a selection larger than twenty using immutable per-batch approvals", async () => {
+  const { writes, fetcher } = setup(false, 45);
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Выбрать доступные на странице",
+    }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Проверить выбранные (45)" }),
+  );
+  await screen.findByRole("heading", {
+    name: "Готовность карточек к созданию",
+  });
+  expect(
+    writes
+      .filter((w) => w.path.endsWith("import-preview"))
+      .map((w) => (w.body.targets as Enrollment[]).length),
+  ).toEqual([20, 20, 5]);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Выбрать все готовые (45)" }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Продолжить с 45 товарами →" }),
+  );
+  fireEvent.click(
+    await screen.findByLabelText(/Я проверил изменения выбранных товаров/),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Отправить изменения (45)" }),
+  );
+  await screen.findByRole("heading", { name: "Запрос поставлен в обработку" });
+  const approved = writes.filter((w) => w.path.endsWith("approve"));
+  expect(
+    approved.map((w) => (w.body.enrollment_ids as string[]).length),
+  ).toEqual([20, 20, 5]);
+  expect(new Set(approved.map((w) => w.body.idempotency_key)).size).toBe(3);
+  const calls = fetcher.mock.calls;
+  const firstApproval = calls.findIndex(([url]) =>
+    String(url).endsWith("/approve"),
+  );
+  expect(
+    calls
+      .slice(0, firstApproval)
+      .some(
+        ([url, init]) =>
+          String(url).includes("product-import-draft") &&
+          init?.body &&
+          JSON.parse(String(init.body)).state.intents.length === 3,
+      ),
+  ).toBe(true);
+});
+it("restores a server draft after leaving the workflow", async () => {
+  const { remount } = setup();
+  fireEvent.click(await screen.findByLabelText("Выбрать Товар A"));
+  fireEvent.click(screen.getByRole("button", { name: "Сохранить черновик" }));
+  await screen.findByText(/Черновик сохранён на сервере/);
+  remount();
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Восстановить черновик (1)" }),
+  );
+  expect(
+    (screen.getByLabelText("Выбрать Товар A") as HTMLInputElement).checked,
+  ).toBe(true);
 });

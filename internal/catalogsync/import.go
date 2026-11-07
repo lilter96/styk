@@ -46,7 +46,7 @@ func (service Service) PreviewImport(ctx context.Context, request ImportRequest)
 	}
 	now := service.now()
 	p := Preview{ID: id, Scope: request.Scope, ConfigRevision: current.Config.Revision, Credentials: current.Credentials,
-		Actor: request.Actor, CreatedAt: now, ExpiresAt: now.Add(10 * time.Minute), ImportTargets: targets, Decisions: make([]Decision, 0, len(targets))}
+		Actor: request.Actor, CreatedAt: now, ExpiresAt: now.Add(time.Hour), ImportTargets: targets, Decisions: make([]Decision, 0, len(targets))}
 	for _, target := range current.Targets {
 		decision := service.decide(ctx, current, target, nil)
 		if decision.Ready && (decision.Source.Lifecycle != catalog.LifecycleActive || decision.Source.Variant || decision.Source.Parent != nil) {

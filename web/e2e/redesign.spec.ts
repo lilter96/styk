@@ -1083,6 +1083,24 @@ for (const width of [1440, 768, 390])
           policy = { ...request.postDataJSON().policy, revision: 1 };
         return route.fulfill({ json: policy });
       }
+      if (path.includes("/jobs"))
+        return route.fulfill({
+          json: {
+            id: "visual-job",
+            state: "COMPLETED",
+            processed: items.length,
+            total: items.length,
+            pages: 1,
+            code: "",
+            preview: {
+              id: "visual-preview",
+              scope,
+              policy,
+              items,
+              expires_at: "2099-01-01T00:00:00Z",
+            },
+          },
+        });
       if (path.endsWith("preview"))
         return route.fulfill({
           json: {
@@ -1110,6 +1128,12 @@ for (const width of [1440, 768, 390])
     await page
       .getByRole("radio", { name: /Разрешить подтверждение уникальных/ })
       .check();
+    await page
+      .getByRole("button", { name: "Сохранить правила", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "Сохранить правила", exact: true }),
+    ).toBeDisabled();
     await page
       .getByRole("button", {
         name: "Посмотреть предварительный результат",

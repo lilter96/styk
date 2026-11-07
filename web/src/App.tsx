@@ -17,7 +17,7 @@ import {
   ImportSubmissionNotice,
   useImportSubmission,
 } from "./ImportSubmission";
-import { ProductsWorkspace } from "./ProductsWorkspace";
+
 import { WarehouseOverview } from "./WarehouseOverview";
 import { WarehouseStockDetail } from "./WarehouseStockDetail";
 import { hasAuthLink, MerchantAuth } from "./MerchantAuth";
@@ -49,6 +49,11 @@ import {
 } from "./api";
 
 type Scope = { tenant: string; moy: string; ozon: string };
+const ProductsWorkspace = lazy(() =>
+  import("./ProductsWorkspace").then((module) => ({
+    default: module.ProductsWorkspace,
+  })),
+);
 const OrdersSettingsPage = lazy(() =>
   import("./OrdersSettingsPage").then((module) => ({
     default: module.OrdersSettingsPage,
@@ -299,12 +304,14 @@ export function Products({
   confirmation?: Confirmation;
 }) {
   return (
-    <ProductsWorkspace
-      scope={scope}
-      confirmation={confirmation}
-      moyLabel={moyLabel}
-      ozonLabel={ozonLabel}
-    />
+    <Suspense fallback={<p role="status">Загружаем товары…</p>}>
+      <ProductsWorkspace
+        scope={scope}
+        confirmation={confirmation}
+        moyLabel={moyLabel}
+        ozonLabel={ozonLabel}
+      />
+    </Suspense>
   );
 }
 

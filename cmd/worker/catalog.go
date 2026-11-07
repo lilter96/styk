@@ -26,9 +26,21 @@ type catalogWork struct {
 	service   catalogsync.Service
 	nextCheck time.Time
 	mode      string
+	matchTurn bool
 }
 
 func (w *catalogWork) RunNext(ctx context.Context) (bool, error) {
+	if w.mode == "matching" {
+		return w.products.RunProductMatchingJob(ctx)
+	}
+	if w.products != nil && !w.matchTurn {
+		w.matchTurn = true
+		worked, err := w.products.RunProductMatchingJob(ctx)
+		if err != nil || worked || w.mode == "matching" {
+			return worked, err
+		}
+	}
+	w.matchTurn = false
 	ctx = catalogprovider.AuditRequests(ctx)
 	worked := false
 	var err error
@@ -52,6 +64,9 @@ func (w *catalogWork) RunNext(ctx context.Context) (bool, error) {
 			return matched, err
 		}
 		worked = worked || matched
+		if matched {
+			w.nextCheck = time.Time{}
+		}
 	}
 	scheduled, err := w.service.Tick(read)
 	return worked || scheduled, err
@@ -63,7 +78,7 @@ func catalogAllowed(scope catalog.Scope) bool {
 
 func newCatalogWork(db *postgres.Store, resolver *credentials.Resolver) (application.PublicationRunner, error) {
 	if !catalogaccess.Enabled() {
-		return nil, nil
+		return &catalogWork{products: db, mode: "matching"}, nil
 	}
 	var instance [16]byte
 	if _, err := rand.Read(instance[:]); err != nil {

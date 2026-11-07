@@ -167,6 +167,7 @@ export function ProductMappingTable({
   open,
   startQueue,
   canStartQueue,
+  clearSelection,
   children,
   config,
 }: {
@@ -179,6 +180,7 @@ export function ProductMappingTable({
   open: (p: Product) => void;
   startQueue: () => void;
   canStartQueue: boolean;
+  clearSelection?: () => void;
   children: React.ReactNode;
 }) {
   const checkbox = useRef<HTMLInputElement>(null);
@@ -211,12 +213,27 @@ export function ProductMappingTable({
         </label>
         <span>Проверка ничего не отправляет</span>
         <div>
-          <span>Выбрано: {selected.length}</span>
+          <span>
+            Выбрано: {selected.length} · Без пары:{" "}
+            {selected.filter((p) => p.match_status !== "CONFIRMED").length} ·
+            Связанных:{" "}
+            {selected.filter((p) => p.match_status === "CONFIRMED").length}
+          </span>
+          {clearSelection && (
+            <button
+              className="secondary"
+              disabled={pending || !selected.length}
+              onClick={clearSelection}
+            >
+              Снять весь выбор
+            </button>
+          )}
           <button
             disabled={pending || !selected.length || !canStartQueue}
             onClick={startQueue}
           >
-            Сопоставить выбранные
+            Сопоставить без пары (
+            {selected.filter((p) => p.match_status !== "CONFIRMED").length})
           </button>
         </div>
       </div>

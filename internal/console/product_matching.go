@@ -9,6 +9,7 @@ import (
 
 func registerProductMatchingRoutes(mux *http.ServeMux, a *auth, db *postgres.Store) {
 	registerProductMatchingSettings(mux, a, db)
+	registerProductMatchingJobs(mux, a, db)
 	registerProductMatchingPreview(mux, a, db)
 	registerProductMatchingRuns(mux, a, db)
 }
@@ -43,12 +44,13 @@ func registerProductMatchingPreview(mux *http.ServeMux, a *auth, db *postgres.St
 	mux.HandleFunc("POST /api/product-matching/preview", a.authorized(a.connectionMutation(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			catalogRequestScope
-			Revision int64 `json:"expected_revision"`
+			Revision int64  `json:"expected_revision"`
+			After    string `json:"after"`
 		}
 		if !decodeStockSync(w, r, &body) {
 			return
 		}
-		value, err := db.PreviewProductMatches(r.Context(), body.catalogScope(), body.Revision, catalogActor(r))
+		value, err := db.PreviewProductMatchesPage(r.Context(), body.catalogScope(), body.Revision, catalogActor(r), body.After)
 		if err != nil {
 			catalogHTTPError(w, err)
 			return

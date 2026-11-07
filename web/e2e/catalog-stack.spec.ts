@@ -360,7 +360,7 @@ async function review(page: Page): Promise<Preview> {
       response.request().method() === "POST",
   );
   await page
-    .getByRole("button", { name: "Проверить выбранные товары", exact: true })
+    .getByRole("button", { name: "Сохранить выбор и проверить", exact: true })
     .click();
   const response = await reviewed;
   expect(response.status(), await response.text()).toBe(200);

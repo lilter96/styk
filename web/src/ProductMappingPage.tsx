@@ -84,6 +84,18 @@ export function ProductMappingPage({
       ),
     enabled: ready,
   });
+  useEffect(() => {
+    if (!products.data) return;
+    setSelectedProducts((previous) =>
+      previous.map(
+        (item) =>
+          products.data.items.find(
+            (p) =>
+              p.product_id === item.product_id && p.provider === item.provider,
+          ) || item,
+      ),
+    );
+  }, [products.data]);
   const reset = () => setOffset(0);
   useEffect(() => {
     queueRequest.current?.abort();
@@ -435,6 +447,10 @@ export function ProductMappingPage({
             if (product && product.match_status !== "CONFIRMED")
               setReview(product);
           }}
+          clearSelection={() => {
+            setSelectedProducts([]);
+            setCompleted([]);
+          }}
           canStartQueue={selectedProducts.some(
             (p) =>
               p.match_status !== "CONFIRMED" &&
@@ -459,8 +475,14 @@ export function ProductMappingPage({
       {selectedProducts.some((p) => p.match_status === "CONFIRMED") && (
         <div className="products-selection-footer">
           <span>
-            <b>Выбрано {selectedProducts.length} товаров</b> · Проверка ничего
-            не отправляет
+            <b>
+              Связанных товаров:{" "}
+              {
+                selectedProducts.filter((p) => p.match_status === "CONFIRMED")
+                  .length
+              }
+            </b>{" "}
+            · Проверка ничего не отправляет
           </span>
           <Link
             className="primary-button"
@@ -472,7 +494,12 @@ export function ProductMappingPage({
                 .map((p) => ({ id: p.product_id, offer: p.offer_id || "" })),
             }}
           >
-            Проверить изменения →
+            Проверить изменения (
+            {
+              selectedProducts.filter((p) => p.match_status === "CONFIRMED")
+                .length
+            }
+            ) →
           </Link>
         </div>
       )}

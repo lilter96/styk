@@ -40,7 +40,7 @@ func saveProductMatchPolicy(ctx context.Context, tx pgx.Tx, scope catalog.Scope,
 }
 
 func persistProductMatchPreview(ctx context.Context, tx pgx.Tx, scope catalog.Scope, policy matching.Policy, data productMatchSnapshot, actor string) (ProductMatchPreview, error) {
-	p := ProductMatchPreview{Scope: scope, Policy: policy, ExpiresAt: time.Now().UTC().Add(5 * time.Minute)}
+	p := ProductMatchPreview{Scope: scope, Policy: policy, After: data.After, HasNext: data.HasNext, Total: data.Total, ExpiresAt: time.Now().UTC().Add(time.Hour)}
 	var err error
 	p.Fingerprint, err = catalogHash(data)
 	if err != nil {

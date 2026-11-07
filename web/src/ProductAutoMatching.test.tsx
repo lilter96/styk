@@ -13,6 +13,7 @@ import { ProductAutoMatching } from "./ProductAutoMatching";
 const clients: QueryClient[] = [];
 afterEach(() => {
   cleanup();
+  localStorage.clear();
   clients.forEach((c) => c.clear());
   vi.restoreAllMocks();
 });
@@ -66,6 +67,29 @@ function mount(lost = false) {
       new Response(JSON.stringify(data), {
         headers: { "Content-Type": "application/json" },
       });
+    if (path.includes("/jobs")) {
+      if (init?.method === "POST")
+        calls.push({ path, body: JSON.parse(String(init.body)) });
+      return response({
+        id: "job",
+        state: "COMPLETED",
+        processed: 2,
+        total: 2,
+        pages: 1,
+        code: "",
+        preview: {
+          id: "preview",
+          scope: {
+            tenant: "test",
+            moysklad_account: "moy",
+            ozon_account: "ozon",
+          },
+          policy,
+          items,
+          expires_at: new Date(Date.now() + 60000).toISOString(),
+        },
+      });
+    }
     if (!init?.method || init.method === "GET") return response(policy);
     const body = JSON.parse(String(init.body));
     calls.push({ path, body });
@@ -136,7 +160,7 @@ it("suggests by default without saving a policy or allowing a name match to conf
   expect(
     (screen.getByLabelText("Выбрать пару B") as HTMLInputElement).disabled,
   ).toBe(true);
-  expect(calls.map((c) => c.path)).toEqual(["/api/product-matching/preview"]);
+  expect(calls.map((c) => c.path)).toEqual(["/api/product-matching/jobs"]);
 });
 
 it("requires opt-in, exact selection and acknowledgement, and recovers a lost response with the same key", async () => {

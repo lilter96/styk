@@ -17,6 +17,9 @@ export function ProductCreationEditor({
   onChange,
   onFacts,
   onClose,
+  onSave,
+  saving = false,
+  saveMessage,
 }: {
   scope: Scope;
   enrollment: Enrollment;
@@ -24,6 +27,9 @@ export function ProductCreationEditor({
   onChange: (e: Enrollment) => void;
   onFacts: (facts: ProductFacts) => void;
   onClose: () => void;
+  onSave?: () => Promise<void>;
+  saving?: boolean;
+  saveMessage?: string;
 }) {
   const [step, setStep] = useState(0);
   const values = enrollment.create!.values;
@@ -44,8 +50,20 @@ export function ProductCreationEditor({
     return (
       <>
         <CatalogSyncCreation enrollment={enrollment} onChange={onChange} />
-        <p>Изменения хранятся только до ухода со страницы.</p>
-        <button onClick={onClose}>Вернуться к проверке</button>
+        <p>Сохраните черновик, чтобы вернуться к заполнению позже.</p>
+        {saveMessage && <p role="status">{saveMessage}</p>}
+        <footer className="products-creation-footer">
+          <button
+            className="secondary"
+            disabled={saving || !onSave}
+            onClick={() => void onSave?.()}
+          >
+            {saving ? "Сохраняем…" : "Сохранить черновик"}
+          </button>
+          <button disabled={saving} onClick={onClose}>
+            Вернуться к проверке
+          </button>
+        </footer>
       </>
     );
   return (
@@ -89,9 +107,9 @@ export function ProductCreationEditor({
           {step === 3 && (
             <>
               <p className="products-notice">
-                Изменения хранятся только до ухода со страницы. Данные ещё не
-                отправлены. Вернитесь к списку и выполните серверную проверку
-                карточки.
+                Сохраните черновик, чтобы вернуться к заполнению позже. Данные
+                ещё не отправлены. Вернитесь к списку и выполните серверную
+                проверку карточки.
               </p>
               <dl className="products-creation-summary">
                 {Object.entries({
@@ -143,9 +161,14 @@ export function ProductCreationEditor({
           </p>
         </aside>
       </div>
+      {saveMessage && (
+        <p role="status" className="products-notice">
+          {saveMessage}
+        </p>
+      )}
       <footer className="products-creation-footer">
         <span>
-          Изменения хранятся только до ухода со страницы. Данные ещё не
+          Сохраните черновик, чтобы вернуться к заполнению позже. Данные ещё не
           отправлены
         </span>
         <button
@@ -154,8 +177,12 @@ export function ProductCreationEditor({
         >
           Назад
         </button>
-        <button className="secondary" onClick={onClose}>
-          Вернуться к списку
+        <button
+          className="secondary"
+          disabled={saving || !onSave}
+          onClick={() => void onSave?.()}
+        >
+          {saving ? "Сохраняем…" : "Сохранить черновик"}
         </button>
         {step < 3 ? (
           <button

@@ -144,6 +144,7 @@ func handlerWithAuth(db *postgres.Store, a *auth, connections *connections) (htt
 	mux.HandleFunc("POST /api/product-mapping-reviews/{id}/replace", a.authorized(a.replaceMappingReview(db)))
 	mux.HandleFunc("GET /api/product-mapping-reviews/{id}", a.authorized(a.inspectMappingReview(db)))
 	registerProductMatchingRoutes(mux, a, db)
+	registerProductDraftRoutes(mux, a, db)
 	mux.HandleFunc("GET /api/products", a.authorized(products(db)))
 	mux.HandleFunc("GET /api/moysklad-products", a.authorized(searchTargets(db)))
 	mux.HandleFunc("GET /api/product-mapping-history", a.authorized(mappingHistory(db)))

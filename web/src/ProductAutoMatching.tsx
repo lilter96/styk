@@ -6,6 +6,7 @@ import { useConfirmation, type Confirmation, type Scope } from "./Confirmation";
 import { ProductReview } from "./ProductReview";
 import { Icon } from "./UI";
 import { BrandLogo } from "./BrandLogo";
+import { useProductMatchingJob } from "./ProductMatchingJob";
 import { scopeBody } from "./CatalogSyncTypes";
 
 type Policy = {
@@ -32,7 +33,8 @@ type MatchItem = {
   candidates: Candidate[];
   shared_inventory: boolean;
 };
-type Preview = {
+export type MatchingPreview = {
+  after?: string;
   id: string;
   scope: ReturnType<typeof scopeBody>;
   policy: Policy;
@@ -83,6 +85,7 @@ function ProductAutoMatchingAccount({
   confirmation?: Confirmation;
 }) {
   const client = useQueryClient();
+  const job = useProductMatchingJob(scope);
   const local = useConfirmation();
   const activeConfirmation = confirmation || local;
   const settings = useQuery({
@@ -95,19 +98,46 @@ function ProductAutoMatchingAccount({
     retry: false,
   });
   const [policy, setPolicy] = useState<Policy | null>(null);
-  const [preview, setPreview] = useState<Preview | null>(null);
+  const [preview, setPreview] = useState<MatchingPreview | null>(null);
   const [run, setRun] = useState<Run | null>(null);
   const [filter, setFilter] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [acknowledge, setAcknowledge] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [uncertain, setUncertain] = useState(false);
+  const intentKey = "styk.matching-confirmation." + JSON.stringify(scope);
+  type RunIntent = {
+    preview_id: string;
+    product_ids: string[];
+    acknowledge: true;
+    idempotency_key: string;
+  };
+  const pendingRun = useRef<RunIntent | null>(
+    (() => {
+      try {
+        const value = JSON.parse(localStorage.getItem(intentKey) || "null");
+        return value &&
+          typeof value.preview_id === "string" &&
+          typeof value.idempotency_key === "string" &&
+          value.acknowledge === true &&
+          Array.isArray(value.product_ids) &&
+          value.product_ids.every((id: unknown) => typeof id === "string")
+          ? value
+          : null;
+      } catch {
+        return null;
+      }
+    })(),
+  );
+  const [uncertain, setUncertain] = useState(!!pendingRun.current);
   const [error, setError] = useState("");
   const [review, setReview] = useState<Product | null>(null);
   const [now, setNow] = useState(Date.now());
   const lock = useRef(false);
   const controller = useRef(new AbortController());
-  const runKey = useRef(crypto.randomUUID());
+  const runKey = useRef(
+    pendingRun.current?.idempotency_key || crypto.randomUUID(),
+  );
+  const adoptedPreview = useRef("");
   useEffect(() => {
     const active = new AbortController();
     controller.current = active;
@@ -155,21 +185,62 @@ function ProductAutoMatchingAccount({
     try {
       const current = settings.data;
       if (!current || policyChanged) return;
-      const value = await post<Preview>(
+      await job.start(current.revision, signal());
+      if (controller.current.signal.aborted) return;
+      setPreview(null);
+      runKey.current = crypto.randomUUID();
+      setFilter("");
+    } catch (error) {
+      if (!controller.current.signal.aborted) setError(failure(error));
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  }
+  useEffect(() => {
+    const value = job.query.data?.preview;
+    if (
+      !value ||
+      job.query.data?.state !== "COMPLETED" ||
+      adoptedPreview.current === value.id
+    )
+      return;
+    adoptedPreview.current = value.id;
+    if (
+      value.scope.tenant !== scope.tenant ||
+      value.scope.moysklad_account !== scope.moy ||
+      value.scope.ozon_account !== scope.ozon
+    )
+      return;
+    setPreview(value);
+    setRun(null);
+    const pending = pendingRun.current;
+    setSelected(pending?.preview_id === value.id ? pending.product_ids : []);
+    setAcknowledge(pending?.preview_id === value.id);
+    runKey.current = pending?.idempotency_key || crypto.randomUUID();
+    setFilter("");
+  }, [job.query.data?.preview, job.query.data?.state, scope]);
+  async function refreshPage() {
+    if (!preview || lock.current || uncertain) return;
+    lock.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      const value = await post<MatchingPreview>(
         "/api/product-matching/preview",
-        { ...scopeBody(scope), expected_revision: current.revision },
+        {
+          ...scopeBody(scope),
+          expected_revision: preview.policy.revision,
+          after: preview.after || "",
+        },
         signal(),
       );
       if (controller.current.signal.aborted) return;
-      if (
-        value.scope.tenant !== scope.tenant ||
-        value.scope.moysklad_account !== scope.moy ||
-        value.scope.ozon_account !== scope.ozon
-      )
-        throw new Error("scope mismatch");
       setPreview(value);
+      setRun(null);
+      setSelected([]);
+      setAcknowledge(false);
       runKey.current = crypto.randomUUID();
-      setFilter("");
     } catch (error) {
       if (!controller.current.signal.aborted) setError(failure(error));
     } finally {
@@ -183,21 +254,25 @@ function ProductAutoMatchingAccount({
     setBusy(true);
     setError("");
     try {
+      const intent = pendingRun.current || {
+        preview_id: preview.id,
+        product_ids: [...selected],
+        acknowledge: true as const,
+        idempotency_key: runKey.current,
+      };
+      pendingRun.current = intent;
+      localStorage.setItem(intentKey, JSON.stringify(intent));
       const result = await post<Run>(
         "/api/product-matching/runs",
-        {
-          ...scopeBody(scope),
-          preview_id: preview.id,
-          product_ids: selected,
-          acknowledge: true,
-          idempotency_key: runKey.current,
-        },
+        { ...scopeBody(scope), ...intent },
         signal(),
       );
       if (controller.current.signal.aborted) return;
       if (result.preview_id !== preview.id || !result.id)
         throw new Error("result mismatch");
       setRun(result);
+      pendingRun.current = null;
+      localStorage.removeItem(intentKey);
       setUncertain(false);
       setSelected([]);
       setAcknowledge(false);
@@ -207,7 +282,12 @@ function ProductAutoMatchingAccount({
       ]);
     } catch (error) {
       if (!controller.current.signal.aborted) {
-        const unknown = !(error instanceof ApiError) || error.status >= 500;
+        const unknown =
+          uncertain || !(error instanceof ApiError) || error.status >= 500;
+        if (!unknown) {
+          pendingRun.current = null;
+          localStorage.removeItem(intentKey);
+        }
         setUncertain(unknown);
         setError(
           unknown
@@ -264,7 +344,94 @@ function ProductAutoMatchingAccount({
           </button>
         </p>
       )}
-      {!preview && draft && (
+      {uncertain && !error && (
+        <p role="alert">
+          Сохранён запрос с неизвестным результатом. Откройте исходную страницу
+          результатов и нажмите «Проверить результат», чтобы повторить тот же
+          запрос.
+        </p>
+      )}
+      {job.id && (
+        <section className="products-match-job" aria-label="Обработка каталога">
+          {job.query.isError ? (
+            <p role="alert">
+              Не удалось прочитать результат.{" "}
+              <button
+                className="secondary"
+                onClick={() => void job.query.refetch()}
+              >
+                Повторить чтение
+              </button>
+            </p>
+          ) : (
+            <p role="status">
+              Обработано товаров: {job.query.data?.processed ?? 0} из{" "}
+              {job.query.data?.total ?? "…"}.{" "}
+              {job.query.data?.state === "COMPLETED"
+                ? "Проверка завершена."
+                : job.query.data?.state === "STALE"
+                  ? "Данные или права изменились. Запустите новую проверку."
+                  : job.query.data?.state === "FAILED"
+                    ? "Проверка остановлена из-за ошибки сервиса. Повторите проверку."
+                    : "Проверка выполняется в фоне. Страницу можно закрыть и вернуться позже."}
+            </p>
+          )}
+          {job.query.data?.state === "COMPLETED" && (
+            <p>
+              Итог фоновой проверки: точных {job.query.data.summary?.exact ?? 0}
+              , требуют проверки {job.query.data.summary?.review ?? 0},
+              конфликтов {job.query.data.summary?.conflict ?? 0}, без пары{" "}
+              {job.query.data.summary?.unmatched ?? 0}, связанных{" "}
+              {job.query.data.summary?.confirmed ?? 0}.
+            </p>
+          )}
+          <button
+            className="secondary"
+            disabled={busy || uncertain}
+            onClick={() => {
+              void job
+                .clear()
+                .then(() => {
+                  setPreview(null);
+                  setRun(null);
+                  setSelected([]);
+                })
+                .catch((error) => setError(failure(error)));
+            }}
+          >
+            Новая проверка
+          </button>
+          {job.query.data?.state === "COMPLETED" && (
+            <nav aria-label="Страницы сопоставления">
+              <button
+                className="secondary"
+                disabled={
+                  !job.page || job.query.isFetching || busy || uncertain
+                }
+                onClick={() => job.setPage(job.page - 1)}
+              >
+                Предыдущие товары
+              </button>
+              <span>
+                Страница {job.page + 1} из {job.query.data.pages}
+              </span>
+              <button
+                className="secondary"
+                disabled={
+                  job.page + 1 >= job.query.data.pages ||
+                  job.query.isFetching ||
+                  busy ||
+                  uncertain
+                }
+                onClick={() => job.setPage(job.page + 1)}
+              >
+                Следующие товары
+              </button>
+            </nav>
+          )}
+        </section>
+      )}
+      {!preview && !job.id && draft && (
         <>
           <section className="products-match-section">
             <h2>
@@ -328,6 +495,8 @@ function ProductAutoMatchingAccount({
                   <b>По названию</b>
                   <p>
                     Похожие названия покажем как подсказки для ручной проверки.
+                    Если нужного товара нет в подсказках, используйте ручной
+                    поиск.
                   </p>
                 </div>
                 <span className="mapping-chip warning">Подсказки</span>
@@ -442,9 +611,17 @@ function ProductAutoMatchingAccount({
       )}
       {preview && (
         <>
+          <button
+            className="secondary"
+            disabled={busy || uncertain}
+            onClick={() => void refreshPage()}
+          >
+            Перепроверить эту страницу
+          </button>
           <h2>
             {run ? "Результаты сопоставления" : "Предварительный результат"}
           </h2>
+          <p>Ниже — результаты для {items.length} товаров текущей страницы.</p>
           <div className="products-match-counts">
             {[
               ["exact", "Точные совпадения"],
@@ -526,11 +703,26 @@ function ProductAutoMatchingAccount({
                     {item.candidates.length === 1
                       ? item.candidates[0].name
                       : item.candidates.length
-                        ? `${item.candidates.length} варианта`
+                        ? `Показано вариантов: ${item.candidates.length}`
                         : "Не найдено"}
                   </div>
                   <span className={`products-match-reason ${item.status}`}>
                     {reasons[item.reason] || "Требуется проверка"}
+                    {item.candidates.some(
+                      (c) => c.evidence === "similar_name",
+                    ) && (
+                      <small>
+                        {item.candidates
+                          .filter((c) => c.evidence === "similar_name")
+                          .map(
+                            (c) =>
+                              `${c.name}: ${Math.round(c.score * 100)}% совпадения слов`,
+                          )
+                          .join("; ")}
+                        . Название — только подсказка, проверьте модель и
+                        комплектацию.
+                      </small>
+                    )}
                     {item.shared_inventory && (
                       <small>Общий товар МойСклад</small>
                     )}

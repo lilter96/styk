@@ -16,9 +16,10 @@ type Policy struct {
 	AutoConfirm bool  `json:"auto_confirm"`
 }
 type Source struct {
-	Match    domain.MatchSource `json:"match"`
-	Name     string             `json:"name"`
-	Archived *bool              `json:"archived"`
+	DuplicateOffer bool               `json:"duplicate_offer,omitempty"`
+	Match          domain.MatchSource `json:"match"`
+	Name           string             `json:"name"`
+	Archived       *bool              `json:"archived"`
 }
 type Target struct {
 	Match    domain.MatchTarget `json:"match"`
@@ -60,7 +61,7 @@ func Preview(tenant, account string, policy Policy, sources []Source, targets []
 	for _, s := range sources {
 		match := engine.Match(tenant, s.Match, account)
 		item := exactItem(s, match, indexed, policy)
-		if offers[Normalize(s.Match.OfferID)] > 1 && match.Confirmed == nil {
+		if (s.DuplicateOffer || offers[Normalize(s.Match.OfferID)] > 1) && match.Confirmed == nil {
 			item.Status, item.Reason = "conflict", "duplicate_offer"
 		}
 		if item.Status == "unmatched" && policy.Names {

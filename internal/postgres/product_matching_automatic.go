@@ -38,7 +38,7 @@ const productMatchDueSQL = `SELECT p.tenant_id,p.moysklad_account,p.ozon_account
  JOIN LATERAL(SELECT i.id,i.finished_at FROM source_imports i WHERE i.source='moysklad' AND i.account_id=p.moysklad_account ORDER BY i.id DESC LIMIT 1) m ON true
  JOIN LATERAL(SELECT i.id,i.finished_at,b.traversal_status FROM source_imports i LEFT JOIN ozon_import_batches b ON b.import_id=i.id WHERE i.source='ozon' AND i.account_id=p.ozon_account ORDER BY i.id DESC LIMIT 1) o ON true
  WHERE p.policy->>'after_import'='true' AND p.policy->>'auto_confirm'='true'
- AND p.last_checked_at<clock_timestamp()-interval '30 seconds'
+ AND (p.last_checked_at<clock_timestamp()-interval '30 seconds' OR p.batch_cursor<>'')
  AND m.finished_at BETWEEN clock_timestamp()-interval '1 hour' AND clock_timestamp()
  AND o.finished_at BETWEEN clock_timestamp()-interval '1 hour' AND clock_timestamp() AND o.traversal_status='completed'
  AND (p.activated_moy_import<>m.id OR p.activated_ozon_import<>o.id)
@@ -67,6 +67,16 @@ func (s *Store) runProductMatchCycle(ctx context.Context, scope catalog.Scope) e
 	data, err := productMatchData(ctx, tx, scope)
 	if err != nil {
 		return err
+	}
+	var after string
+	if err = tx.QueryRow(ctx, `SELECT CASE WHEN batch_moy_import=$4 AND batch_ozon_import=$5 THEN batch_cursor ELSE '' END FROM product_matching_policies WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3`, append(catalogScopeArgs(scope), data.MoyID, data.OzonID)...).Scan(&after); err != nil {
+		return err
+	}
+	if after != "" {
+		data, err = productMatchDataPage(ctx, tx, scope, after)
+		if err != nil {
+			return err
+		}
 	}
 	if err = productMatchCycleCurrent(ctx, tx, scope, p.Revision, data); err != nil {
 		return err
@@ -104,10 +114,8 @@ func productMatchCycleCurrent(ctx context.Context, tx pgx.Tx, scope catalog.Scop
 
 func executeProductMatchCycle(ctx context.Context, tx pgx.Tx, p ProductMatchPreview, data productMatchSnapshot, actor string) error {
 	ids := make([]string, 0, 100)
-	exact := 0
 	for _, item := range p.Items {
 		if item.Status == "exact" {
-			exact++
 			if len(ids) < 100 {
 				ids = append(ids, item.ProductID)
 			}
@@ -125,8 +133,9 @@ func executeProductMatchCycle(ctx context.Context, tx pgx.Tx, p ProductMatchPrev
 	if err = saveProductMatchRun(ctx, tx, req, result, key); err != nil {
 		return err
 	}
-	if exact > 100 {
-		return nil
+	if data.HasNext {
+		_, err = tx.Exec(ctx, `UPDATE product_matching_policies SET batch_cursor=$4,batch_moy_import=$5,batch_ozon_import=$6 WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3`, p.Scope.Tenant, p.Scope.MoyskladAccount, p.Scope.OzonAccount, data.Sources[len(data.Sources)-1].Match.Identity.ID, data.MoyID, data.OzonID)
+		return err
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO product_matching_cycles(tenant_id,moysklad_account,ozon_account,revision,moy_import,ozon_import,run_id) VALUES($1,$2,$3,$4,$5,$6,$7)`, p.Scope.Tenant, p.Scope.MoyskladAccount, p.Scope.OzonAccount, p.Policy.Revision, data.MoyID, data.OzonID, result.ID)
 	if err != nil {

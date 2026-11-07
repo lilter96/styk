@@ -141,6 +141,7 @@ export type Decision = {
   ready: boolean;
 };
 export type CatalogPreview = {
+  credentials?: { moysklad: number; ozon: number };
   id: string;
   scope: CatalogConfig["scope"];
   config_revision: number;

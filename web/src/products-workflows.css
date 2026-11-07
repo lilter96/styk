@@ -1,0 +1,72 @@
+/* Workflow components own their status, batch controls and pagination geometry. */
+.reference-shell
+  .products-workspace
+  :is(.products-draft-bar, .products-match-job) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  margin-block: 16px;
+  background: #fff;
+  border: 1px solid var(--styk-control-line);
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.reference-shell
+  .products-workspace
+  :is(.products-draft-bar, .products-match-job)
+  p {
+  margin: 0;
+  flex-basis: 100%;
+}
+.reference-shell
+  .products-workspace
+  :is(.products-match-job nav, .products-batch-pagination) {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-block: 12px;
+}
+.reference-shell
+  .products-workspace
+  :is(.products-draft-bar, .products-match-job, .products-batch-pagination)
+  button {
+  min-height: 44px;
+}
+.reference-shell .products-workspace .products-match-reason small {
+  display: block;
+  line-height: 1.5;
+  font-size: 13px;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+.reference-shell
+  .products-workspace
+  .products-creation-wizard
+  > .products-notice {
+  flex: none;
+  margin: 16px 24px;
+}
+@media (max-width: 600px) {
+  .reference-shell
+    .products-workspace
+    :is(.products-draft-bar, .products-match-job) {
+    padding: 16px;
+  }
+  .reference-shell
+    .products-workspace
+    :is(.products-draft-bar, .products-match-job)
+    button {
+    white-space: normal;
+    max-width: 100%;
+  }
+  .reference-shell
+    .products-workspace
+    .products-creation-wizard
+    > .products-notice {
+    margin: 12px 16px;
+  }
+}

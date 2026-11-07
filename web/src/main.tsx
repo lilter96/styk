@@ -14,6 +14,7 @@ import "./products-reference.css";
 import "./products-matching-layout.css";
 import "./products-controls.css";
 import "./products-conflict.css";
+import "./products-workflows.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {

@@ -14,6 +14,9 @@ import (
 )
 
 type ProductMatchPreview struct {
+	After       string          `json:"after"`
+	HasNext     bool            `json:"has_next"`
+	Total       int             `json:"total"`
 	ID          string          `json:"id"`
 	Scope       catalog.Scope   `json:"scope"`
 	Policy      matching.Policy `json:"policy"`
@@ -92,8 +95,11 @@ func lockProductMatch(ctx context.Context, tx pgx.Tx, scope catalog.Scope, actor
 }
 
 func (s *Store) PreviewProductMatches(ctx context.Context, scope catalog.Scope, revision int64, actor string) (ProductMatchPreview, error) {
+	return s.PreviewProductMatchesPage(ctx, scope, revision, actor, "")
+}
+func (s *Store) PreviewProductMatchesPage(ctx context.Context, scope catalog.Scope, revision int64, actor, after string) (ProductMatchPreview, error) {
 	var p ProductMatchPreview
-	if scope.Validate() != nil {
+	if scope.Validate() != nil || len(after) > 256 {
 		return p, catalogsync.ErrInvalid
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
@@ -114,7 +120,7 @@ func (s *Store) PreviewProductMatches(ctx context.Context, scope catalog.Scope, 
 	if p.Policy.Revision != revision {
 		return p, catalogsync.ErrStale
 	}
-	data, err := productMatchData(ctx, tx, scope)
+	data, err := productMatchDataPage(ctx, tx, scope, after)
 	if err != nil {
 		return p, err
 	}
@@ -199,7 +205,7 @@ func currentProductMatchPreview(ctx context.Context, tx pgx.Tx, req ProductMatch
 	if p.Policy != policy || !p.ExpiresAt.After(time.Now()) {
 		return p, catalogsync.ErrStale
 	}
-	data, err := productMatchData(ctx, tx, req.Scope)
+	data, err := productMatchDataPage(ctx, tx, req.Scope, p.After)
 	if err != nil {
 		return p, err
 	}

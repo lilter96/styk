@@ -11,7 +11,7 @@ import {
   type Decision,
 } from "./CatalogSyncTypes";
 
-function canApprove(decision: Decision) {
+export function canApprove(decision: Decision) {
   const values = decision.commands.flatMap((command) =>
     Object.values({ ...command.values, ...command.extensions }),
   );
@@ -158,6 +158,7 @@ export function CatalogSyncPreview({
   onApprove: (enrollmentIDs: string[]) => void;
   initialSelected?: string[];
 }) {
+  const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<string[]>(initialSelected);
   const [acknowledged, setAcknowledged] = useState(false);
   const [now, setNow] = useState(Date.now());
@@ -218,52 +219,82 @@ export function CatalogSyncPreview({
               требуют проверки
             </span>
           </div>
-          {preview.decisions.map((decision) => (
-            <article className="catalog-decision" key={decision.enrollment_id}>
-              <header>
-                <span className="products-image-placeholder">
-                  <BrandLogo
-                    provider={decision.source.identity.account.provider}
-                    decorative
-                  />
-                </span>
-                <h3>{productName(decision.source)}</h3>
-                <span
-                  className={`mapping-chip ${canApprove(decision) ? "ok" : "warning"}`}
-                >
-                  {canApprove(decision)
-                    ? "Готов к передаче"
-                    : decision.plan.noop
-                      ? "Без изменений"
-                      : "Нужна проверка"}
-                </span>
-                {decision.target_absent && (
-                  <span className="catalog-warning">
-                    Будет создан новый товар
+          {preview.decisions
+            .slice(page * 20, (page + 1) * 20)
+            .map((decision) => (
+              <article
+                className="catalog-decision"
+                key={decision.enrollment_id}
+              >
+                <header>
+                  <span className="products-image-placeholder">
+                    <BrandLogo
+                      provider={decision.source.identity.account.provider}
+                      decorative
+                    />
                   </span>
-                )}
-              </header>
-              <DecisionDiff decision={decision} />
-              <label className="catalog-check">
-                <input
-                  type="checkbox"
-                  checked={selected.includes(decision.enrollment_id)}
-                  disabled={disabled || !canApprove(decision)}
-                  onChange={(event) => {
-                    setSelected(
-                      event.target.checked
-                        ? [...selected, decision.enrollment_id]
-                        : selected.filter(
-                            (id) => id !== decision.enrollment_id,
-                          ),
-                    );
-                    setAcknowledged(false);
-                  }}
-                />
-                Подтвердить изменения товара {productName(decision.source)}
-              </label>
-            </article>
-          ))}
+                  <h3>{productName(decision.source)}</h3>
+                  <span
+                    className={`mapping-chip ${canApprove(decision) ? "ok" : "warning"}`}
+                  >
+                    {canApprove(decision)
+                      ? "Готов к передаче"
+                      : decision.plan.noop
+                        ? "Без изменений"
+                        : "Нужна проверка"}
+                  </span>
+                  {decision.target_absent && (
+                    <span className="catalog-warning">
+                      Будет создан новый товар
+                    </span>
+                  )}
+                </header>
+                <DecisionDiff decision={decision} />
+                <label className="catalog-check">
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(decision.enrollment_id)}
+                    disabled={disabled || !canApprove(decision)}
+                    onChange={(event) => {
+                      setSelected(
+                        event.target.checked
+                          ? [...selected, decision.enrollment_id]
+                          : selected.filter(
+                              (id) => id !== decision.enrollment_id,
+                            ),
+                      );
+                      setAcknowledged(false);
+                    }}
+                  />
+                  Подтвердить изменения товара {productName(decision.source)}
+                </label>
+              </article>
+            ))}
+          {preview.decisions.length > 20 && (
+            <nav
+              className="products-batch-pagination"
+              aria-label="Товары в подтверждении"
+            >
+              <button
+                className="secondary"
+                disabled={!page || busy}
+                onClick={() => setPage(page - 1)}
+              >
+                Предыдущие карточки
+              </button>
+              <span>
+                Страница {page + 1} из{" "}
+                {Math.ceil(preview.decisions.length / 20)}
+              </span>
+              <button
+                className="secondary"
+                disabled={(page + 1) * 20 >= preview.decisions.length || busy}
+                onClick={() => setPage(page + 1)}
+              >
+                Следующие карточки
+              </button>
+            </nav>
+          )}
         </div>
         <aside className="products-preview-approval">
           <h3>Перед отправкой</h3>
