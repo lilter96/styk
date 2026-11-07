@@ -12,6 +12,7 @@ import (
 
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/matching"
+	"github.com/lilter96/styk/internal/postgres"
 )
 
 func TestProductMatchingNativeHashesMatchCanonicalConfirmation(t *testing.T) {
@@ -96,10 +97,18 @@ func TestProductMatchingNativeClassificationMatchesDomain(t *testing.T) {
 	for _, p := range targets {
 		candidates = append(candidates, matching.Target{Match: domain.MatchTarget{Identity: domain.ProductIdentity{System: "moysklad", Account: scope.MoyskladAccount, Kind: p.Kind, ID: p.ID}, Article: p.Article, Code: p.Code, ParentID: p.ParentID}, Archived: p.Archived})
 	}
+	var mappings []domain.Mapping
+	for _, pair := range []struct{ source, target string }{{"7", "exact"}, {"6", "duplicate-1"}} {
+		m, err := db.ConfirmMatch(ctx, postgres.MatchScope{Tenant: scope.Tenant, MoyskladAccount: scope.MoyskladAccount, OzonAccount: scope.OzonAccount}, pair.source, "product", pair.target, "native-conformance")
+		if err != nil {
+			t.Fatal(err)
+		}
+		mappings = append(mappings, m)
+	}
 	for _, criterion := range []matching.Criterion{matching.ArticleOrCode, matching.Article, matching.Code} {
 		t.Run(string(criterion), func(t *testing.T) {
-			expected := matching.Preview(scope.Tenant, scope.MoyskladAccount, matching.Policy{ExactSKU: true, Criterion: criterion}, sources, candidates, nil)
-			rows, err := db.Pool.Query(ctx, `SELECT product_id,status,reason FROM product_matching_rows($1,$2,$3,$4,$5,$6) ORDER BY product_id`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, mi, oi, criterion.Fields())
+			expected := matching.Preview(scope.Tenant, scope.MoyskladAccount, matching.Policy{ExactSKU: true, Criterion: criterion}, sources, candidates, mappings)
+			rows, err := db.Pool.Query(ctx, `SELECT product_id,status,reason,shared_inventory FROM product_matching_rows($1,$2,$3,$4,$5,$6) ORDER BY product_id`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, mi, oi, criterion.Fields())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -107,10 +116,11 @@ func TestProductMatchingNativeClassificationMatchesDomain(t *testing.T) {
 			index := 0
 			for rows.Next() {
 				var id, status, reason string
-				if err = rows.Scan(&id, &status, &reason); err != nil {
+				var shared bool
+				if err = rows.Scan(&id, &status, &reason, &shared); err != nil {
 					t.Fatal(err)
 				}
-				if index >= len(expected) || id != expected[index].ProductID || status != expected[index].Status || reason != expected[index].Reason {
+				if index >= len(expected) || id != expected[index].ProductID || status != expected[index].Status || reason != expected[index].Reason || shared != expected[index].SharedInventory {
 					t.Fatalf("domain mismatch at %s: %s/%s, expected %+v", id, status, reason, expected[index])
 				}
 				index++

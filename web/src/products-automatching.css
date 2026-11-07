@@ -193,9 +193,9 @@
   flex: none;
 }
 .reference-shell .automatic-matching .automatch-examples strong {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  display: block;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   overflow: hidden;
   font-size: 14px;
   font-weight: 600;

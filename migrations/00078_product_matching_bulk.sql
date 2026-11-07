@@ -80,18 +80,23 @@ CREATE FUNCTION product_matching_rows(tenant text,moy text,ozon text,mi bigint,o
  SELECT kind,external_id,product_matching_key(article) AS key FROM source_entities WHERE import_id=mi AND kind IN ('product','variant') AND 'article'=ANY(fields) AND product_matching_key(article)<>''
  UNION SELECT kind,external_id,product_matching_key(code) AS key FROM source_entities WHERE import_id=mi AND kind IN ('product','variant') AND 'code'=ANY(fields) AND product_matching_key(code)<>''
  ), grouped AS MATERIALIZED(SELECT key,count(*) n,min(kind) kind,min(external_id) id FROM target_keys GROUP BY key),
- target_usage AS MATERIALIZED(SELECT target_kind,target_id,count(*) n,min(ozon_account) account,min(ozon_product_id) product FROM product_mappings WHERE tenant_id=tenant AND moysklad_account=moy GROUP BY target_kind,target_id),
  products AS(SELECT p.*,product_matching_key(p.offer_id) AS key,count(*) OVER(PARTITION BY product_matching_key(p.offer_id)) AS duplicates FROM ozon_product_observations p WHERE p.import_id=oi),
+ relevant_targets AS MATERIALIZED(
+ SELECT moy AS account,kind,external_id AS id FROM target_keys
+ UNION SELECT m.moysklad_account,m.target_kind,m.target_id FROM product_mappings m JOIN products p ON p.product_id=m.ozon_product_id WHERE m.tenant_id=tenant AND m.ozon_account=ozon),
+ target_usage AS MATERIALIZED(SELECT m.moysklad_account AS target_account,m.target_kind,m.target_id,count(*) n,min(m.ozon_account) account,min(m.ozon_product_id) product FROM product_mappings m JOIN relevant_targets t ON t.account=m.moysklad_account AND t.kind=m.target_kind AND t.id=m.target_id WHERE m.tenant_id=tenant GROUP BY m.moysklad_account,m.target_kind,m.target_id),
+ key_usage AS MATERIALIZED(SELECT k.key,sum(u.n) n,min(u.account) account,min(u.product) product FROM target_keys k JOIN target_usage u ON u.target_account=moy AND u.target_kind=k.kind AND u.target_id=k.external_id GROUP BY k.key),
  joined AS(
  SELECT p.product_id,p.offer_id,COALESCE(p.name,'') name,p.sku,p.archived,p.key,p.duplicates,
  COALESCE(g.n,0) n,
  g.kind target_kind,g.id target_id,COALESCE(t.name,'') target_name,COALESCE(t.article,'') article,COALESCE(t.code,'') code,COALESCE(t.parent_id,'') parent_id,COALESCE(t.source_updated,'') source_updated,t.archived target_archived,
  m.id mapping_id,m.moysklad_account mapping_account,m.ozon_offer_id mapping_offer,m.target_kind mapping_kind,m.target_id mapping_target,om.id other_offer,
- COALESCE(u.n>1 OR (u.n=1 AND (u.account<>ozon OR u.product<>p.product_id)),false) shared_inventory
+ CASE WHEN p.key='' THEN false ELSE COALESCE(u.n>1 OR (u.n=1 AND (u.account<>ozon OR u.product<>p.product_id)),false) OR COALESCE(ku.n>1 OR (ku.n=1 AND (ku.account<>ozon OR ku.product<>p.product_id)),false) END shared_inventory
  FROM products p LEFT JOIN grouped g ON g.key=p.key
  LEFT JOIN source_entities t ON t.import_id=mi AND t.kind=g.kind AND t.external_id=g.id
  LEFT JOIN product_mappings m ON m.tenant_id=tenant AND m.ozon_account=ozon AND m.ozon_product_id=p.product_id
- LEFT JOIN target_usage u ON u.target_kind=COALESCE(m.target_kind,g.kind) AND u.target_id=COALESCE(m.target_id,g.id)
+ LEFT JOIN target_usage u ON u.target_account=m.moysklad_account AND u.target_kind=m.target_kind AND u.target_id=m.target_id
+ LEFT JOIN key_usage ku ON ku.key=p.key
  LEFT JOIN product_mappings om ON om.tenant_id=tenant AND om.ozon_account=ozon AND om.ozon_offer_id=p.offer_id AND om.ozon_product_id<>p.product_id
  ), classified AS(
  SELECT j.*,CASE
