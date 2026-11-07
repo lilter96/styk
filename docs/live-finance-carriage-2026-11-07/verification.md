@@ -1,5 +1,8 @@
 # Verification — 2026-11-07
 
+> Это evidence первоначального запуска. Последующая доработка Carriage, исправленные contract gates и новые проверки: [актуальный отчёт](../live-carriage-completion-2026-11-07/README.md). Исторические результаты ниже не переобъявляются новыми LIVE-операциями.
+
+
 Проверки используют disposable loopback PostgreSQL и synthetic provider fixtures. Команды тестов не получают production credentials; LIVE выполнялся отдельно и отражён в operations.jsonl.
 
 | Проверка | Результат |

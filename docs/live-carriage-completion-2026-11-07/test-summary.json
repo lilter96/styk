@@ -1,0 +1,127 @@
+{
+  "go_top_level_terminal_counts": {
+    "pass": 1675,
+    "skip": 27
+  },
+  "go_including_subtest_terminal_counts": {
+    "pass": 4582,
+    "skip": 29
+  },
+  "business_top_level_total": 588,
+  "business_top_level_pass": 572,
+  "business_top_level_skip": 16,
+  "business_missing": 0,
+  "business_duplicates": 0,
+  "frontend_unit_pass": 420,
+  "browser_pass": 63,
+  "skipped_top_level_tests": [
+    {
+      "package": "github.com/lilter96/styk/cmd/checks",
+      "test": "TestOwnedListenerHelper"
+    },
+    {
+      "package": "github.com/lilter96/styk/internal/console",
+      "test": "TestConnectionSettingsPersistenceIsolationAndCredentialIndependence"
+    },
+    {
+      "package": "github.com/lilter96/styk/internal/console",
+      "test": "TestConnectionSettingsConcurrentEditsAndRollback"
+    },
+    {
+      "package": "github.com/lilter96/styk/internal/console",
+      "test": "TestConnectionSettingsArchivePreservesEvidence"
+    },
+    {
+      "package": "github.com/lilter96/styk/internal/console",
+      "test": "TestConnectionBrowser"
+    },
+    {
+      "package": "github.com/lilter96/styk/internal/console",
+      "test": "TestConnectionRegistrationIntegration"
+    },
+    {
+      "package": "github.com/lilter96/styk/internal/console",
+      "test": "TestRegistrationPersistenceFailureDoesNotLeavePartialState"
+    },
+    {
+      "package": "github.com/lilter96/styk/internal/console",
+      "test": "TestConcurrentRegistrationDoesNotTransferAccount"
+    },
+    {
+      "package": "github.com/lilter96/styk/internal/console",
+      "test": "TestCredentialStorageIdentityReplayScopeAndStoredWorker"
+    },
+    {
+      "package": "github.com/lilter96/styk/internal/console",
+      "test": "TestCredentialConcurrentRevisionAndRegistrationRollback"
+    },
+    {
+      "package": "github.com/lilter96/styk/internal/console",
+      "test": "TestCredentialLegacyScopedProbeBeforeExplicitRegistration"
+    },
+    {
+      "package": "github.com/lilter96/styk/tests/integration",
+      "test": "TestMerchantBrowserWorkspaces"
+    },
+    {
+      "package": "github.com/lilter96/styk/tests/integration",
+      "test": "TestRedesignMatchingBrowser"
+    },
+    {
+      "package": "github.com/lilter96/styk/tests/integration",
+      "test": "TestControlledStockRecoveryBrowser"
+    },
+    {
+      "package": "github.com/lilter96/styk/tests/integration",
+      "test": "TestProviderCoordinatorProcessChild"
+    },
+    {
+      "package": "github.com/lilter96/styk/tests/integration",
+      "test": "TestControlledStockPublicationBrowser"
+    },
+    {
+      "package": "github.com/lilter96/styk/tests/integration",
+      "test": "TestOzonFulfillmentFbsE2E"
+    },
+    {
+      "package": "github.com/lilter96/styk/tests/integration",
+      "test": "TestControlledStockAutomaticBrowser"
+    },
+    {
+      "package": "github.com/lilter96/styk/tests/integration",
+      "test": "TestOrdersNativeProcessChild"
+    },
+    {
+      "package": "github.com/lilter96/styk/tests/integration",
+      "test": "TestMoySkladSettingsBrowser"
+    },
+    {
+      "package": "github.com/lilter96/styk/tests/integration",
+      "test": "TestStockPublicationCrashHelper"
+    },
+    {
+      "package": "github.com/lilter96/styk/tests/integration",
+      "test": "TestCatalogMerchantBrowserStack"
+    },
+    {
+      "package": "github.com/lilter96/styk/tests/integration",
+      "test": "TestOrderFlowFullE2E"
+    },
+    {
+      "package": "github.com/lilter96/styk/tests/integration",
+      "test": "TestStockShadowBrowser"
+    },
+    {
+      "package": "github.com/lilter96/styk/tests/integration",
+      "test": "TestControlledStockAutomaticMultiBrowser"
+    },
+    {
+      "package": "github.com/lilter96/styk/tests/integration",
+      "test": "TestOrdersProcessChild"
+    },
+    {
+      "package": "github.com/lilter96/styk/tests/integration",
+      "test": "TestWarehouseOverviewBrowser"
+    }
+  ]
+}

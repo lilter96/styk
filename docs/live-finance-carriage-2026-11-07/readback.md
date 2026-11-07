@@ -1,5 +1,8 @@
 # Независимый readback
 
+> Это evidence первоначального запуска. Последующая доработка Carriage, исправленные contract gates и новые проверки: [актуальный отчёт](../live-carriage-completion-2026-11-07/README.md). Исторические результаты ниже не переобъявляются новыми LIVE-операциями.
+
+
 В этом запуске внешних WRITE 0. Поэтому число обязательных readback после WRITE равно 0; нельзя заявлять подтверждённое создание или проведение финансового документа/новой carriage.
 
 Отдельно выполнены реальные независимые чтения: source monthly reports, metadata договоров, accrual types/by-day/postings, текущая carriage discovery и known-ID исторической carriage. Historical get вернул root envelope с status=closed, integration_type=ozon_optional, first_mile_type=dropoff, available_actions=[show_ui_assembly_list,get_waybill]. Чужой аккаунт не смог прочитать этот carriage ID: provider 404 CARRIAGE_NOT_FOUND. Это доказывает scope isolation для данного чтения, а не новое бизнес-событие.

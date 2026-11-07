@@ -1,0 +1,21 @@
+{
+  "instrumented_read_calls": 56,
+  "provider_writes": 0,
+  "read_calls_by_provider": {
+    "moysklad": 10,
+    "ozon": 46
+  },
+  "read_calls_by_status": {
+    "200": 54,
+    "404": 2
+  },
+  "ozon_accounts": 2,
+  "moysklad_identities": 2,
+  "unique_postings_examined": 2,
+  "historical_carriages_examined": 1,
+  "ready_awaiting_deliver_observed": 0,
+  "browser_read_only_previews": 4,
+  "production_create": "NOT_OBSERVED_NO_READY_BATCH",
+  "production_approve": "NOT_OBSERVED_NO_READY_BATCH",
+  "production_handoff": "NOT_PERFORMED"
+}

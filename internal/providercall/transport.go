@@ -124,7 +124,7 @@ func isMutation(req *http.Request) bool {
 		return false
 	}
 	switch path {
-	case "/v1/roles", "/v2/finance/realization", "/v1/finance/accrual/types", "/v1/finance/accrual/by-day", "/v1/finance/accrual/postings", "/v1/carriage/get", "/v2/carriage/delivery/list", "/v2/posting/fbs/act/get-postings", "/v5/fbs/posting/product/exemplar/status", "/v2/posting/fbs/product/country/list", "/v2/product/info/stocks-by-warehouse/fbs", "/v3/products/info/attributes", "/v1/posting/fbs/cancel-reason":
+	case "/v2/posting/fbs/act/check-status", "/v1/roles", "/v2/finance/realization", "/v1/finance/accrual/types", "/v1/finance/accrual/by-day", "/v1/finance/accrual/postings", "/v1/carriage/get", "/v2/carriage/delivery/list", "/v2/posting/fbs/act/get-postings", "/v5/fbs/posting/product/exemplar/status", "/v2/posting/fbs/product/country/list", "/v2/product/info/stocks-by-warehouse/fbs", "/v3/products/info/attributes", "/v1/posting/fbs/cancel-reason":
 		return false
 	}
 	return true

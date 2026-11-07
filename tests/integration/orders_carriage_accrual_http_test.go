@@ -99,6 +99,12 @@ func TestOrdersCarriageHTTPEmptyOrUnverifiedMembershipNeverQueuesWrites(t *testi
 			body := f.scopeBody()
 			body["expected_revision"], body["action"], body["delivery_method_id"], body["all_blr_traceable"] = f.config.Revision, "CREATE", "4001", false
 			status, raw := f.call(t, http.MethodPost, "/api/orders/carriage/preview", body, true)
+			if unknown {
+				if status != 503 {
+					t.Fatal("schema drift must stop preview", status, string(raw))
+				}
+				return
+			}
 			var preview orders.CarriagePreview
 			if status != 200 || json.Unmarshal(raw, &preview) != nil || len(preview.Validation) == 0 || preview.Plan.Snapshot.ObservedMethodCount != map[bool]int{false: 0, true: 1}[unknown] {
 				t.Fatal("blocked full batch preview unavailable", status, string(raw))

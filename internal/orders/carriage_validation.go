@@ -165,6 +165,5 @@ func (plan CarriagePlan) MatchesMembers(actual CarriageSnapshot) bool {
 	if !actual.Complete || actual.Scope != plan.Scope || actual.DeliveryMethodID != plan.DeliveryMethodID || actual.WarehouseID != plan.WarehouseID {
 		return false
 	}
-	fingerprint, err := CarriageMembershipFingerprint(actual.Members)
-	return err == nil && fingerprint == plan.MembershipFingerprint
+	return sameCarriageComposition(plan.Members, actual.Members)
 }

@@ -50,23 +50,34 @@ type CarriageMember struct {
 	Blockers          []Validation   `json:"blockers"`
 }
 
+// CarriageDocuments records independently observed document readiness.
+type CarriageDocuments struct {
+	Status  string   `json:"status"`
+	ActType string   `json:"act_type"`
+	Added   []string `json:"added_to_act"`
+	Removed []string `json:"removed_from_act"`
+	Partial bool     `json:"partial"`
+}
+
 // CarriageSnapshot is observational evidence. Neither document formation nor
 // an empty provider error establishes physical handoff or stock movement.
 type CarriageSnapshot struct {
-	Scope                  Scope            `json:"scope"`
-	DeliveryMethodID       string           `json:"delivery_method_id"`
-	WarehouseID            string           `json:"warehouse_id"`
-	CarriageID             string           `json:"carriage_id,omitempty"`
-	Header                 *CarriageHeader  `json:"header,omitempty"`
-	Members                []CarriageMember `json:"members"`
-	CandidateIDs           []string         `json:"candidate_ids"`
-	ContractVersion        string           `json:"contract_version"`
-	ObservedMethodCount    int              `json:"observed_method_count"`
-	SourceShapeFingerprint string           `json:"source_shape_fingerprint,omitempty"`
-	Complete               bool             `json:"complete"`
-	ObservedAt             time.Time        `json:"observed_at"`
-	Fingerprint            string           `json:"fingerprint"`
-	Blockers               []Validation     `json:"blockers"`
+	ReadyCount             int                `json:"ready_count,omitempty"`
+	Documents              *CarriageDocuments `json:"documents,omitempty"`
+	Scope                  Scope              `json:"scope"`
+	DeliveryMethodID       string             `json:"delivery_method_id"`
+	WarehouseID            string             `json:"warehouse_id"`
+	CarriageID             string             `json:"carriage_id,omitempty"`
+	Header                 *CarriageHeader    `json:"header,omitempty"`
+	Members                []CarriageMember   `json:"members"`
+	CandidateIDs           []string           `json:"candidate_ids"`
+	ContractVersion        string             `json:"contract_version"`
+	ObservedMethodCount    int                `json:"observed_method_count"`
+	SourceShapeFingerprint string             `json:"source_shape_fingerprint,omitempty"`
+	Complete               bool               `json:"complete"`
+	ObservedAt             time.Time          `json:"observed_at"`
+	Fingerprint            string             `json:"fingerprint"`
+	Blockers               []Validation       `json:"blockers"`
 }
 
 type CarriagePlan struct {

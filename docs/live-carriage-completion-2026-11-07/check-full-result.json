@@ -1,0 +1,9 @@
+{
+  "started_at": "2026-11-07T13:41:36.899426+00:00",
+  "wall_seconds": 261.303,
+  "returncode": 0,
+  "outer_deadline_reached": false,
+  "source_manifest_sha256": "b517c109cfbdbcd84b5d7a99a4d50eade793c38cdcc42884db9342b46807952d",
+  "source_unchanged": true,
+  "status": "PASS"
+}

@@ -2,15 +2,13 @@
 
 Этот файл описывает проверенные границы кода. LIVE failures/counts и окончательный CI дополняет основной агент по журналу; прежние 7/254 или прошлый PASS здесь не переобъявлены текущими.
 
-## Carriage: текущий контракт не даёт завершить обычную запись
+## Carriage: исправленные contract gates и оставшаяся LIVE-проверка
 
-Есть реальные CREATE/APPROVE transports, durable previews/work, глобальный account+method fence, outbox/worker, readback и UI. Но текущий adapter **не допускает** production CREATE на непроверенном непустом `/v2/carriage/delivery/list` и APPROVE без доказанного canonical успешного readback state. Live пустые envelopes и limit/cursor validation не доказывают shape непустой партии, completeness всех профилей или success enum. Это неполнота проверенного контракта/поддерживаемого workflow; не утверждение, что Ozon запрещает writer.
+Актуальная доработка описана в [отчёте Carriage](../live-carriage-completion-2026-11-07/README.md). Безусловные `CARRIAGE_NONEMPTY_DISCOVERY_CONTRACT_UNVERIFIED` и `CARRIAGE_APPROVAL_CONTRACT_UNVERIFIED` удалены. Непустой `/v2/carriage/delivery/list` подтверждён реальным filtered read; текущие counters, errors и carriages читаются, полный ready-состав собирается и сверяется со счётчиками.
 
-Доступный zh Swagger не перечисляет approval states; main Swagger превышает лимит reader, публичные download attempts были недоступны. Неизвестное состояние не заменяется выдуманным `formed`. Известный carriage ID можно читать, но ACK/HTTP200 не считается завершённым подтверждением. При lost create ACK без ID нет безопасного автоматического усыновления кандидата по method/date.
+CREATE и APPROVE доступны для обычного FBS/dropoff при выполнении реальных prerequisites. Подтверждение проверяется по отдельному `/v2/posting/fbs/act/check-status`, ready документам, exact membership и изменившемуся header; enum успешного carriage status не выдуман. Сквозные HTTP/PostgreSQL/worker тесты проходят, но **новые production CREATE/APPROVE остаются NOT_OBSERVED_LIVE**: в обоих аккаунтах сейчас нет готовой партии. Историческая закрытая партия прочитана; это не новая выполненная запись.
 
-`all_blr_traceable=true` остаётся blocked до подтверждения ETTN prerequisites. `containers_count` требует реального trust-acceptance режима. Composition replacement (`set-postings`) не реализован: STYK не подрезает и не отменяет чужие отправления после неожиданного batch expansion. rFBS и неподтверждённые profile/Express/carrier combinations не получают FBS Carriage authority.
-
-Первый настоящий seller gate — проверенный текущий непустой discovery и approval state contract, затем реальная полностью собранная FBS партия с exact membership, ownership и двумя согласиями. При отсутствии фактической партии CREATE/APPROVE/PHYSICAL_HANDOFF остаются NOT_OBSERVED_LIVE; пустой ответ не превращается в искусственный PASS.
+`all_blr_traceable=true` остаётся blocked до реализации проверенных ETTN prerequisites. `containers_count` требует реального trust-acceptance режима. Composition replacement (`set-postings`) не реализован. rFBS, Express, pickup, сторонние integration/profile combinations не получают обычную FBS Carriage authority. Потерянный CREATE ACK без ID остаётся UNKNOWN и требует установления точной identity; повторный POST/усыновление кандидата по похожей дате запрещены.
 
 ## Финансы: классификация не равна полному бухгалтерскому импорту
 
