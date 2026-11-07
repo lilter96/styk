@@ -172,7 +172,7 @@ function mount(
 async function review() {
   fireEvent.click(await screen.findByLabelText("Выбрать товар Тестовая чашка"));
   fireEvent.click(
-    screen.getByRole("button", { name: "Проверить выбранные товары" }),
+    screen.getByRole("button", { name: "Сохранить выбор и проверить" }),
   );
   return screen.findByRole("heading", {
     name: "Проверьте изменения перед отправкой",
@@ -272,7 +272,7 @@ it("never retries an approval with an unknown outcome, including double clicks a
     fetcher.mock.calls.filter(([url]) => String(url).includes("/approve")),
   ).toHaveLength(1);
   expect(
-    screen.queryByRole("button", { name: "Проверить выбранные товары" }),
+    screen.queryByRole("button", { name: "Сохранить выбор и проверить" }),
   ).toBeNull();
   expect(
     (
@@ -623,7 +623,7 @@ it("isolates a late preview response after changing the account pair", async () 
   const view = render(tree(scope));
   fireEvent.click(await screen.findByLabelText("Выбрать товар Тестовая чашка"));
   fireEvent.click(
-    screen.getByRole("button", { name: "Проверить выбранные товары" }),
+    screen.getByRole("button", { name: "Сохранить выбор и проверить" }),
   );
   view.rerender(tree(other));
   await screen.findByText(/Товары не найдены/);
@@ -662,7 +662,7 @@ it("joins an Ozon row to the target side of a canonical mapping without disablin
   expect(choice.disabled).toBe(false);
   fireEvent.click(choice);
   fireEvent.click(
-    screen.getByRole("button", { name: "Проверить выбранные товары" }),
+    screen.getByRole("button", { name: "Сохранить выбор и проверить" }),
   );
   await screen.findByRole("heading", {
     name: "Проверьте изменения перед отправкой",

@@ -3381,7 +3381,7 @@
     content: "S";
   }
   .reference-shell .products-workspace .products-account-pair {
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     gap: 12px;
     padding: 6px 12px;
     margin: 12px 0 10px;
@@ -3390,10 +3390,13 @@
     .products-workspace
     .products-account-pair
     .products-account-name {
-    display: none;
+    display: inline;
+    overflow-wrap: anywhere;
+    white-space: normal;
   }
   .reference-shell .products-workspace .products-account-pair > span {
-    white-space: nowrap;
+    min-width: 0;
+    white-space: normal;
     gap: 6px;
   }
   .reference-shell .products-workspace .products-summary {

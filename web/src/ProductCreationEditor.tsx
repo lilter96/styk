@@ -44,7 +44,8 @@ export function ProductCreationEditor({
     return (
       <>
         <CatalogSyncCreation enrollment={enrollment} onChange={onChange} />
-        <button onClick={onClose}>Сохранить данные для проверки</button>
+        <p>Изменения хранятся только до ухода со страницы.</p>
+        <button onClick={onClose}>Вернуться к проверке</button>
       </>
     );
   return (
@@ -88,8 +89,9 @@ export function ProductCreationEditor({
           {step === 3 && (
             <>
               <p className="products-notice">
-                Данные ещё не отправлены. После сохранения выполните серверную
-                проверку карточки.
+                Изменения хранятся только до ухода со страницы. Данные ещё не
+                отправлены. Вернитесь к списку и выполните серверную проверку
+                карточки.
               </p>
               <dl className="products-creation-summary">
                 {Object.entries({
@@ -142,7 +144,10 @@ export function ProductCreationEditor({
         </aside>
       </div>
       <footer className="products-creation-footer">
-        <span>Данные ещё не отправлены</span>
+        <span>
+          Изменения хранятся только до ухода со страницы. Данные ещё не
+          отправлены
+        </span>
         <button
           className="secondary"
           onClick={() => (step ? setStep(step - 1) : onClose())}
@@ -150,7 +155,7 @@ export function ProductCreationEditor({
           Назад
         </button>
         <button className="secondary" onClick={onClose}>
-          Сохранить черновик
+          Вернуться к списку
         </button>
         {step < 3 ? (
           <button
@@ -162,7 +167,7 @@ export function ProductCreationEditor({
             Далее: {labels[step + 1].toLowerCase()} →
           </button>
         ) : (
-          <button onClick={onClose}>Сохранить данные для проверки</button>
+          <button onClick={onClose}>Вернуться к проверке</button>
         )}
       </footer>
     </div>

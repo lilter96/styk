@@ -66,7 +66,16 @@ function failure(error: unknown) {
       : "Не удалось выполнить сопоставление. Обновите данные и повторите проверку.";
 }
 
-export function ProductAutoMatching({
+export function ProductAutoMatching(props: {
+  scope: Scope;
+  confirmation?: Confirmation;
+}) {
+  return (
+    <ProductAutoMatchingAccount key={JSON.stringify(props.scope)} {...props} />
+  );
+}
+
+function ProductAutoMatchingAccount({
   scope,
   confirmation,
 }: {
@@ -111,8 +120,32 @@ export function ProductAutoMatching({
   const draft = policy || settings.data;
   const signal = () =>
     AbortSignal.any([controller.current.signal, AbortSignal.timeout(45000)]);
-  async function prepare() {
+  const policyChanged =
+    !!draft && JSON.stringify(draft) !== JSON.stringify(settings.data);
+  async function savePolicy() {
     if (!draft || lock.current) return;
+    lock.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      const value = await post<Policy>(
+        "/api/product-matching/settings",
+        { ...scopeBody(scope), policy: draft },
+        signal(),
+      );
+      if (controller.current.signal.aborted) return;
+      client.setQueryData(["product-matching-settings", scope], value);
+      setPolicy(value);
+      setPreview(null);
+    } catch (error) {
+      if (!controller.current.signal.aborted) setError(failure(error));
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  }
+  async function prepare() {
+    if (!draft || policyChanged || lock.current) return;
     lock.current = true;
     setBusy(true);
     setError("");
@@ -120,17 +153,8 @@ export function ProductAutoMatching({
     setSelected([]);
     setAcknowledge(false);
     try {
-      let current = draft;
-      if (JSON.stringify(current) !== JSON.stringify(settings.data)) {
-        current = await post<Policy>(
-          "/api/product-matching/settings",
-          { ...scopeBody(scope), policy: current },
-          signal(),
-        );
-        if (controller.current.signal.aborted) return;
-        client.setQueryData(["product-matching-settings", scope], current);
-        setPolicy(current);
-      }
+      const current = settings.data;
+      if (!current || policyChanged) return;
       const value = await post<Preview>(
         "/api/product-matching/preview",
         { ...scopeBody(scope), expected_revision: current.revision },
@@ -386,12 +410,27 @@ export function ProductAutoMatching({
               </div>
             </label>
           </section>
+          {policyChanged && (
+            <p role="status">
+              Изменения ещё не сохранены. Сохранение применит выбранные правила,
+              в том числе подтверждение после импорта.
+            </p>
+          )}
           <div className="products-match-footer">
             <Link className="secondary" to="/products">
               Отмена
             </Link>
             <button
-              disabled={busy || (!draft.exact_sku && !draft.names)}
+              className="secondary"
+              disabled={busy || !policyChanged}
+              onClick={() => void savePolicy()}
+            >
+              Сохранить правила
+            </button>
+            <button
+              disabled={
+                busy || policyChanged || (!draft.exact_sku && !draft.names)
+              }
               onClick={() => void prepare()}
             >
               {busy
@@ -442,6 +481,12 @@ export function ProductAutoMatching({
             <b>Основание</b>
             <b>Решение</b>
           </div>
+          {filter && !items.some((item) => item.status === filter) && (
+            <p role="status">
+              В этой группе товаров нет. Выберите другую группу или нажмите
+              выбранный фильтр ещё раз, чтобы показать все результаты.
+            </p>
+          )}
           <div className="products-match-list">
             {items
               .filter((i) => !filter || i.status === filter)

@@ -17,7 +17,19 @@ import {
   type CatalogConfig,
 } from "./CatalogSyncTypes";
 
-export function ProductsWorkspace({
+export function ProductsWorkspace(
+  props: Parameters<typeof ProductsWorkspaceAccount>[0],
+) {
+  const { pathname } = useLocation();
+  return (
+    <ProductsWorkspaceAccount
+      key={JSON.stringify([props.scope, pathname])}
+      {...props}
+    />
+  );
+}
+
+function ProductsWorkspaceAccount({
   scope,
   confirmation,
   moyLabel,

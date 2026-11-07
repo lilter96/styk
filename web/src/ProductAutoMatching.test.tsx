@@ -1,5 +1,11 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { ProductAutoMatching } from "./ProductAutoMatching";
@@ -101,20 +107,23 @@ function mount(lost = false) {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   clients.push(client);
-  render(
+  const scene = (scope: { tenant: string; moy: string; ozon: string }) => (
     <MemoryRouter>
       <QueryClientProvider client={client}>
-        <ProductAutoMatching
-          scope={{ tenant: "test", moy: "moy", ozon: "ozon" }}
-        />
+        <ProductAutoMatching scope={scope} />
       </QueryClientProvider>
-    </MemoryRouter>,
+    </MemoryRouter>
   );
-  return calls;
+  const view = render(scene({ tenant: "test", moy: "moy", ozon: "ozon" }));
+  return {
+    calls,
+    changeScope: (scope: { tenant: string; moy: string; ozon: string }) =>
+      view.rerender(scene(scope)),
+  };
 }
 
 it("suggests by default without saving a policy or allowing a name match to confirm", async () => {
-  const calls = mount();
+  const { calls } = mount();
   fireEvent.click(
     await screen.findByRole("button", {
       name: "Посмотреть предварительный результат",
@@ -131,11 +140,30 @@ it("suggests by default without saving a policy or allowing a name match to conf
 });
 
 it("requires opt-in, exact selection and acknowledgement, and recovers a lost response with the same key", async () => {
-  const calls = mount(true);
+  const { calls } = mount(true);
   fireEvent.click(
     await screen.findByRole("radio", {
       name: /Разрешить подтверждение уникальных/,
     }),
+  );
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Посмотреть предварительный результат",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  expect(calls).toHaveLength(0);
+  fireEvent.click(screen.getByRole("button", { name: "Сохранить правила" }));
+  await screen.findByRole("button", { name: "Сохранить правила" });
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Посмотреть предварительный результат",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
   );
   fireEvent.click(
     screen.getByRole("button", {
@@ -171,4 +199,35 @@ it("requires opt-in, exact selection and acknowledgement, and recovers a lost re
   expect(runs).toHaveLength(2);
   expect(runs[0].body).toEqual(runs[1].body);
   expect(runs[0].body.product_ids).toEqual(["1"]);
+});
+
+it("discards unsaved rules on account change without saving them", async () => {
+  const { calls, changeScope } = mount();
+  const names = await screen.findByRole("checkbox", { name: /По названию/ });
+  fireEvent.click(names);
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Посмотреть предварительный результат",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  changeScope({ tenant: "test", moy: "moy", ozon: "other" });
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("checkbox", {
+          name: /По названию/,
+        }) as HTMLInputElement
+      ).checked,
+    ).toBe(true),
+  );
+  expect(calls).toHaveLength(0);
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Сохранить правила",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
 });
