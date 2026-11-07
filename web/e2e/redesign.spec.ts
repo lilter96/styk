@@ -89,6 +89,15 @@ test("new merchant imports all eligible Ozon products with one confirmation", as
     }
     return route.fulfill({ status: 404, json: {} });
   });
+  let savedDraft = { revision: 0, state: {} };
+  await page.route("**/api/product-import-draft*", async (route) => {
+    if (route.request().method() === "POST")
+      savedDraft = {
+        revision: savedDraft.revision + 1,
+        state: route.request().postDataJSON().state,
+      };
+    await route.fulfill({ json: savedDraft });
+  });
   await page.goto(origin + "/products/import/ozon-to-moysklad");
   await page.getByLabel("Выбрать Товар 1001", { exact: true }).check();
   await page.getByRole("button", { name: "Далее", exact: true }).click();

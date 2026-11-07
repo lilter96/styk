@@ -22,7 +22,6 @@ import {
   type Scope,
   type ProductPage,
 } from "./CatalogSyncTypes";
-import "./catalog-sync.css";
 
 export type CatalogSyncProps = {
   scope: Scope;

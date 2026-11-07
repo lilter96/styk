@@ -6,7 +6,6 @@ import {
   MappingPagination,
   eligibleForQueue,
 } from "./ProductMappingTable";
-import "./matching-page.css";
 import { useQuery } from "@tanstack/react-query";
 import { api, params, type Page, type Product } from "./api";
 import { useConfirmation, type Confirmation, type Scope } from "./Confirmation";

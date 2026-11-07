@@ -9,6 +9,8 @@ import "./mapping.css";
 import "./design-system.css";
 import "./orders-settings.css";
 import "./product-matching.css";
+import "./matching-page.css";
+import "./catalog-sync.css";
 import "./products-workspace.css";
 import "./products-reference.css";
 import "./products-matching-layout.css";

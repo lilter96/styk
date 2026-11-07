@@ -2851,6 +2851,15 @@
   overflow-wrap: anywhere;
 }
 @media (max-width: 700px) {
+  .reference-shell
+    .products-create-dialog
+    :is(input:not([type="checkbox"]), textarea, select) {
+    font-size: 16px;
+    min-height: 44px;
+  }
+  .reference-shell .products-workspace .products-creation-footer > button {
+    font-size: 13px;
+  }
   .reference-shell .products-workspace .products-creation-layout {
     grid-template-columns: 1fr;
   }
