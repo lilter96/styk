@@ -12,6 +12,8 @@ import { MemoryRouter } from "react-router-dom";
 import { ProductsWorkspace as Products } from "./ProductsWorkspace";
 import type { Product } from "./api";
 import { ConfirmationNotice, useConfirmation } from "./Confirmation";
+// Full CI also runs race-enabled Go/database workers on the same runner.
+vi.setConfig({ testTimeout: 15000 });
 const clients: QueryClient[] = [];
 afterEach(() => {
   cleanup();
@@ -167,13 +169,33 @@ async function createReview() {
   fireEvent.change(screen.getByLabelText("Поиск товара МойСклад"), {
     target: { value: "different" },
   });
-  const target = await screen.findByRole("button", {
-    name: "Synthetic variant, вариант",
-  });
-  await waitFor(() =>
-    expect((target as HTMLButtonElement).disabled).toBe(false),
+  // Wait for the debounced request, rather than clicking an old result node
+  // while its query is being replaced.
+  await waitFor(
+    () =>
+      expect(
+        vi
+          .mocked(globalThis.fetch)
+          .mock.calls.some(
+            ([path]) =>
+              String(path).includes("moysklad-products") &&
+              new URL(String(path), "http://localhost").searchParams.get(
+                "query",
+              ) === "different",
+          ),
+      ).toBe(true),
+    { timeout: 10000 },
   );
-  fireEvent.click(target);
+  await waitFor(
+    () =>
+      expect(
+        screen.getByLabelText("Товары МойСклад").getAttribute("aria-busy"),
+      ).toBe("false"),
+    { timeout: 10000 },
+  );
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Synthetic variant, вариант" }),
+  );
   expect(screen.queryByText("Технические данные товаров")).toBeNull();
   fireEvent.click(
     await screen.findByRole("button", { name: "Проверить соответствие" }),
