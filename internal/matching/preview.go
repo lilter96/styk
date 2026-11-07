@@ -27,12 +27,14 @@ type Target struct {
 	Archived *bool              `json:"archived"`
 }
 type Suggestion struct {
-	ID       string  `json:"id"`
-	Kind     string  `json:"kind"`
-	Name     string  `json:"name"`
-	Article  string  `json:"article"`
-	Evidence string  `json:"evidence"`
-	Score    float64 `json:"score"`
+	MatchedField string  `json:"matched_field,omitempty"`
+	MatchedValue string  `json:"matched_value,omitempty"`
+	ID           string  `json:"id"`
+	Kind         string  `json:"kind"`
+	Name         string  `json:"name"`
+	Article      string  `json:"article"`
+	Evidence     string  `json:"evidence"`
+	Score        float64 `json:"score"`
 }
 type Item struct {
 	ProductID       string       `json:"product_id"`

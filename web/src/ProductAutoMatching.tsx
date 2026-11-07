@@ -378,7 +378,7 @@ function ProductAutoMatchingAccount({
                             <strong title={item.name}>
                               {item.name || item.offer_id}
                             </strong>
-                            <small title={item.offer_id}>{item.offer_id}</small>
+                            <small title={item.offer_id}>Артикул: {item.offer_id}</small>
                           </span>
                         </div>
                         <span
@@ -394,9 +394,8 @@ function ProductAutoMatchingAccount({
                               {item.candidates[0]?.name ||
                                 item.candidates[0]?.id}
                             </strong>
-                            <small title={item.candidates[0]?.article}>
-                              {item.candidates[0]?.article ||
-                                "Точное совпадение"}
+                            <small title={item.candidates[0]?.matched_value}>
+                              {item.candidates[0]?.matched_field === "code" ? "Код" : "Артикул"}: {item.candidates[0]?.matched_value}
                             </small>
                           </span>
                         </div>

@@ -31,6 +31,8 @@ const exact = {
       kind: "product",
       name: "Кружка синяя",
       article: "A",
+      matched_field: "article" as const,
+      matched_value: "A",
       evidence: "exact_sku",
       score: 1,
     },

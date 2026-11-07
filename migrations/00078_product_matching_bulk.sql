@@ -112,7 +112,7 @@ CREATE FUNCTION product_matching_rows(tenant text,moy text,ozon text,mi bigint,o
  WHEN target_kind='variant' OR parent_id<>'' THEN ARRAY['review','variant_requires_review']
  ELSE ARRAY['exact','exact_sku'] END result FROM joined j)
  SELECT product_id,offer_id,name,result[1],result[2],target_kind,target_id,
- CASE WHEN n=1 THEN jsonb_build_array(jsonb_build_object('id',target_id,'kind',target_kind,'name',target_name,'article',article,'evidence','exact_sku','score',1)) ELSE '[]'::jsonb END,
+ CASE WHEN n=1 THEN jsonb_build_array(jsonb_build_object('id',target_id,'kind',target_kind,'name',target_name,'article',article,'matched_field',CASE WHEN 'article'=ANY(fields) AND product_matching_key(article)=key THEN 'article' ELSE 'code' END,'matched_value',CASE WHEN 'article'=ANY(fields) AND product_matching_key(article)=key THEN article ELSE code END,'evidence','exact_sku','score',1)) ELSE '[]'::jsonb END,
  shared_inventory,sku,archived,target_name,article,code,parent_id,source_updated FROM classified
 $$;
 -- +goose StatementEnd

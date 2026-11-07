@@ -1153,7 +1153,7 @@ for (const width of [1440, 768, 390])
           total: 2106,
           code: "",
           summary: { exact: 2104, review: 1, conflict: 1 },
-          examples: [items[0]],
+          examples: [{...items[0], candidates: items[0].candidates.map(c => ({...c, matched_field: "article", matched_value: c.article}))}],
           attention: items.slice(1),
           apply: application,
         },

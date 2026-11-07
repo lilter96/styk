@@ -21,6 +21,8 @@ export const matchingCriteria: {
   },
 ];
 export type MatchingCandidate = {
+  matched_field: "article" | "code";
+  matched_value: string;
   id: string;
   kind: string;
   name: string;
