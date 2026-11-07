@@ -302,6 +302,15 @@
   width: min(100%, 360px);
   margin: 0;
 }
+.reference-shell .products-workspace .automatic-matching .automatch-automation-criterion select {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  height: 44px;
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 1.5;
+}
 .reference-shell .automatic-matching .automatch-error {
   display: grid;
   justify-items: start;
@@ -322,8 +331,13 @@
   .reference-shell .automatic-matching .automatch-criteria-options {
     display: none;
   }
-  .reference-shell .automatic-matching .automatch-criterion-mobile {
-    display: block;
+  .reference-shell .products-workspace .automatic-matching select.automatch-criterion-mobile {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 44px;
+    height: 44px;
+    padding: 10px 12px;
     width: 100%;
     font-size: 16px;
   }
@@ -350,6 +364,9 @@
     .automatch-primary-action
     :is(button, .primary-button) {
     width: 100%;
+  }
+  .reference-shell .products-workspace .automatic-matching .automatch-automation-criterion select {
+    font-size: 16px;
   }
   .reference-shell .automatic-matching .automatch-automation {
     padding: 0 16px;

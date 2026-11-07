@@ -18,7 +18,7 @@ const productMatchingSearchSQL = `WITH matches AS MATERIALIZED(SELECT * FROM pro
  updated AS(UPDATE product_matching_jobs SET state='COMPLETED',processed=(SELECT count(*) FROM inserted),summary=(SELECT summary FROM counts),updated_at=clock_timestamp() WHERE id=$1 RETURNING processed,summary)
  SELECT u.processed,u.summary,e.items,a.items FROM updated u CROSS JOIN examples e CROSS JOIN attention a`
 
-func completeProductMatchingSearch(ctx context.Context, tx pgx.Tx, j ProductMatchingJob, scope catalog.Scope, actor string, criterion matching.Criterion, data productMatchSnapshot) (ProductMatchingJob, error) {
+func completeProductMatchingSearch(ctx context.Context, tx pgx.Tx, j ProductMatchingJob, scope catalog.Scope, criterion matching.Criterion, data productMatchSnapshot) (ProductMatchingJob, error) {
 	var examples, attention []byte
 	err := tx.QueryRow(ctx, productMatchingSearchSQL, j.ID, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, data.MoyID, data.OzonID, criterion.Fields()).Scan(&j.Processed, &j.Summary, &examples, &attention)
 	if err != nil {

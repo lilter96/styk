@@ -1,5 +1,7 @@
 # Products review completion, 2026-11-07
 
+> Automatic matching now uses the [native whole-catalogue workflow](products-automatic-matching.md); its paged matching descriptions below are historical. Import/draft behavior still applies.
+
 Base: master `3ac695e`, including reviewed Products `340c6f8` and the subsequent
 orders/schema work. This iteration keeps the approved STYK visual system.
 

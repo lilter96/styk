@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/lilter96/styk/internal/catalog"
 	"github.com/lilter96/styk/internal/catalogsync"
 )
@@ -102,24 +103,30 @@ func (s *Store) executeProductMatchingApplication(ctx context.Context, id string
 	}
 	result, err := authorizeAndApplyMatching(ctx, tx, w)
 	if err != nil {
-		if ctx.Err() != nil {
+		result, err = failProductMatchingApplication(ctx, tx, id, app, err)
+		if err != nil {
 			return app, err
 		}
-		if _, rollbackErr := tx.Exec(ctx, `ROLLBACK TO SAVEPOINT matching_apply`); rollbackErr != nil {
-			return app, errors.Join(err, rollbackErr)
-		}
-		app.State, app.Code = "FAILED", "MATCHING_SERVICE_UNAVAILABLE"
-		if errors.Is(err, catalogsync.ErrStale) || errors.Is(err, catalogsync.ErrBlocked) {
-			app.State, app.Code = "STALE", "MATCHING_SOURCE_STALE"
-		}
-		if _, err = tx.Exec(ctx, `UPDATE product_matching_jobs SET apply_state=$2,apply_code=$3,updated_at=clock_timestamp() WHERE id=$1`, id, app.State, app.Code); err != nil {
-			return app, err
-		}
-	} else {
-		app = result
 	}
-	return app, tx.Commit(ctx)
+	return result, tx.Commit(ctx)
 }
+
+func failProductMatchingApplication(ctx context.Context, tx pgx.Tx, id string, app ProductMatchingApplication, cause error) (ProductMatchingApplication, error) {
+	if ctx.Err() != nil {
+		return app, cause
+	}
+	if _, err := tx.Exec(ctx, `ROLLBACK TO SAVEPOINT matching_apply`); err != nil {
+		return app, errors.Join(cause, err)
+	}
+	app.State, app.Code = "FAILED", "MATCHING_SERVICE_UNAVAILABLE"
+	var sqlError *pgconn.PgError
+	if errors.Is(cause, catalogsync.ErrStale) || errors.Is(cause, catalogsync.ErrBlocked) || (errors.As(cause, &sqlError) && sqlError.Code == "42501") {
+		app.State, app.Code = "STALE", "MATCHING_SOURCE_STALE"
+	}
+	_, err := tx.Exec(ctx, `UPDATE product_matching_jobs SET apply_state=$2,apply_code=$3,updated_at=clock_timestamp() WHERE id=$1`, id, app.State, app.Code)
+	return app, err
+}
+
 func readProductMatchingApplication(ctx context.Context, tx pgx.Tx, id string) (productMatchingWork, ProductMatchingApplication, error) {
 	var w productMatchingWork
 	var app ProductMatchingApplication

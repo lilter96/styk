@@ -66,10 +66,6 @@ func createProductMatchingJob(ctx context.Context, tx pgx.Tx, scope catalog.Scop
 	if _, err = initializeImportConfig(ctx, tx, c, actor); err != nil {
 		return j, err
 	}
-	p, err := readProductMatchPolicy(ctx, tx, scope)
-	if err != nil {
-		return j, err
-	}
 	data, err := productMatchingImports(ctx, tx, scope)
 	if err != nil {
 		return j, err
@@ -80,11 +76,11 @@ func createProductMatchingJob(ctx context.Context, tx pgx.Tx, scope catalog.Scop
 	}
 	j.State, j.Total, j.Criterion = "QUEUED", data.Total, criterion
 	j.Apply.State = "NOT_STARTED"
-	_, err = tx.Exec(ctx, `INSERT INTO product_matching_jobs(id,tenant_id,moysklad_account,ozon_account,actor,request_key,revision,moy_import,ozon_import,state,total,criterion) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'QUEUED',$10,$11)`, j.ID, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, actor, key, p.Revision, data.MoyID, data.OzonID, j.Total, string(criterion))
+	_, err = tx.Exec(ctx, `INSERT INTO product_matching_jobs(id,tenant_id,moysklad_account,ozon_account,actor,request_key,revision,moy_import,ozon_import,state,total,criterion) VALUES($1,$2,$3,$4,$5,$6,COALESCE((SELECT revision FROM product_matching_policies WHERE tenant_id=$2 AND moysklad_account=$3 AND ozon_account=$4),0),$7,$8,'QUEUED',$9,$10)`, j.ID, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, actor, key, data.MoyID, data.OzonID, j.Total, string(criterion))
 	if err != nil {
 		return j, fmt.Errorf("queue matching job: %w", err)
 	}
-	return completeProductMatchingSearch(ctx, tx, j, scope, actor, criterion, data)
+	return completeProductMatchingSearch(ctx, tx, j, scope, criterion, data)
 }
 
 func replayProductMatchingJob(ctx context.Context, tx pgx.Tx, scope catalog.Scope, actor, key string, criterion matching.Criterion) (ProductMatchingJob, bool, error) {
