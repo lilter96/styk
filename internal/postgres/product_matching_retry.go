@@ -6,6 +6,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/lilter96/styk/internal/catalog"
 	"github.com/lilter96/styk/internal/catalogsync"
+	"github.com/lilter96/styk/internal/matching"
 )
 
 // Retry keeps the committed cursor and pages. Changed snapshots require a new job.
@@ -20,14 +21,24 @@ func (s *Store) RetryProductMatchingJob(ctx context.Context, scope catalog.Scope
 		return err
 	}
 	defer rollbackMerchantMutation(tx)
-	var state, after string
+	var state, after, apply string
+	var criterion matching.Criterion
 	var revision, mi, oi int64
-	err = tx.QueryRow(ctx, `SELECT state,cursor,revision,moy_import,ozon_import FROM product_matching_jobs WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND id=$4 AND actor=$5 FOR UPDATE`, append(catalogScopeArgs(scope), id, actor)...).Scan(&state, &after, &revision, &mi, &oi)
+	err = tx.QueryRow(ctx, `SELECT state,cursor,revision,moy_import,ozon_import,criterion,apply_state FROM product_matching_jobs WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND id=$4 AND actor=$5 FOR UPDATE`, append(catalogScopeArgs(scope), id, actor)...).Scan(&state, &after, &revision, &mi, &oi, &criterion, &apply)
 	if err != nil {
 		return catalogError("read matching retry", err)
 	}
 	if err = lockProductMatch(ctx, tx, scope, actor); err != nil {
 		return err
+	}
+	if apply == "FAILED" {
+		if err = validateProductMatchingRetry(ctx, tx, scope, revision, mi, oi, after, criterion); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, `UPDATE product_matching_jobs SET apply_state='QUEUED',apply_code='',updated_at=clock_timestamp() WHERE id=$1`, id); err != nil {
+			return err
+		}
+		return tx.Commit(ctx)
 	}
 	if state == "QUEUED" || state == "RUNNING" || state == "COMPLETED" {
 		return tx.Commit(ctx)
@@ -35,7 +46,7 @@ func (s *Store) RetryProductMatchingJob(ctx context.Context, scope catalog.Scope
 	if state != "FAILED" {
 		return catalogsync.ErrStale
 	}
-	if err = validateProductMatchingRetry(ctx, tx, scope, revision, mi, oi, after); err != nil {
+	if err = validateProductMatchingRetry(ctx, tx, scope, revision, mi, oi, after, criterion); err != nil {
 		return err
 	}
 	_, err = tx.Exec(ctx, `UPDATE product_matching_jobs SET state='QUEUED',code='',updated_at=clock_timestamp() WHERE id=$1`, id)
@@ -44,15 +55,8 @@ func (s *Store) RetryProductMatchingJob(ctx context.Context, scope catalog.Scope
 	}
 	return tx.Commit(ctx)
 }
-func validateProductMatchingRetry(ctx context.Context, tx pgx.Tx, scope catalog.Scope, revision, mi, oi int64, after string) error {
-	policy, err := readProductMatchPolicy(ctx, tx, scope)
-	if err != nil {
-		return err
-	}
-	if policy.Revision != revision {
-		return catalogsync.ErrStale
-	}
-	data, err := productMatchDataPage(ctx, tx, scope, after)
+func validateProductMatchingRetry(ctx context.Context, tx pgx.Tx, scope catalog.Scope, revision, mi, oi int64, after string, criterion matching.Criterion) error {
+	data, err := productMatchDataPage(ctx, tx, scope, after, criterion)
 	if err != nil {
 		return err
 	}

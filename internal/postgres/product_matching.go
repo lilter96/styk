@@ -61,7 +61,7 @@ func (s *Store) ProductMatchPolicy(ctx context.Context, scope catalog.Scope) (ma
 	return readProductMatchPolicy(ctx, s.Pool, scope)
 }
 func (s *Store) SaveProductMatchPolicy(ctx context.Context, scope catalog.Scope, p matching.Policy, actor string) (matching.Policy, error) {
-	if scope.Validate() != nil || p.Revision < 0 || p.AutoConfirm && !p.ExactSKU || p.AfterImport && !p.AutoConfirm {
+	if !p.Criterion.Resolved().Valid() || scope.Validate() != nil || p.Revision < 0 || p.AutoConfirm && !p.ExactSKU || p.AfterImport && !p.AutoConfirm {
 		return p, catalogsync.ErrInvalid
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
@@ -120,7 +120,7 @@ func (s *Store) PreviewProductMatchesPage(ctx context.Context, scope catalog.Sco
 	if p.Policy.Revision != revision {
 		return p, catalogsync.ErrStale
 	}
-	data, err := productMatchDataPage(ctx, tx, scope, after)
+	data, err := productMatchDataPage(ctx, tx, scope, after, p.Policy.Criterion)
 	if err != nil {
 		return p, err
 	}
@@ -205,7 +205,7 @@ func currentProductMatchPreview(ctx context.Context, tx pgx.Tx, req ProductMatch
 	if p.Policy != policy || !p.ExpiresAt.After(time.Now()) {
 		return p, catalogsync.ErrStale
 	}
-	data, err := productMatchDataPage(ctx, tx, req.Scope, p.After)
+	data, err := productMatchDataPage(ctx, tx, req.Scope, p.After, p.Policy.Criterion)
 	if err != nil {
 		return p, err
 	}
@@ -256,7 +256,7 @@ func confirmProductMatchItem(ctx context.Context, tx pgx.Tx, req ProductMatchExe
 	if err != nil {
 		return err
 	}
-	confirmation := domain.MappingConfirmationRequest{ReviewID: review.Review.ID, SessionID: req.Actor, IdempotencyKey: req.IdempotencyKey, Acknowledged: true, Explanation: "Unique exact match; policy opt-in; preview " + req.PreviewID}
+	confirmation := domain.MappingConfirmationRequest{ReviewID: review.Review.ID, SessionID: req.Actor, IdempotencyKey: req.IdempotencyKey, Acknowledged: true, Explanation: "Explicit exact matching; preview " + req.PreviewID}
 	fingerprint, err := confirmationFingerprint(confirmation)
 	if err != nil {
 		return err

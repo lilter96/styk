@@ -16,7 +16,7 @@ func (s *Store) RequireCurrentSchema(ctx context.Context) error {
 	var version int64
 	var financeCarriageVersions int
 	err := s.Pool.QueryRow(ctx, `SELECT COALESCE(max(version_id),0),count(*) FILTER(WHERE version_id IN(73,74,75,76)) FROM (SELECT DISTINCT ON(version_id) version_id,is_applied FROM goose_db_version ORDER BY version_id,id DESC) versions WHERE is_applied`).Scan(&version, &financeCarriageVersions)
-	if err != nil || version < 77 || financeCarriageVersions != 4 {
+	if err != nil || version < 78 || financeCarriageVersions != 4 {
 		return ErrSchemaIncompatible
 	}
 	var compatible bool
@@ -54,6 +54,7 @@ func (s *Store) requireCarriageSchema(ctx context.Context) error {
 func (s *Store) requireProductSchema(ctx context.Context) error {
 	var compatible bool
 	err := s.Pool.QueryRow(ctx, `SELECT bool_and(to_regclass(name) IS NOT NULL)
+ AND EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid=to_regclass('product_matching_jobs') AND attname='apply_state' AND NOT attisdropped)
  AND EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid=to_regclass('source_entities') AND attname='archived' AND NOT attisdropped)
  FROM (VALUES ('product_matching_policies'),('product_matching_policy_audits'),('product_matching_previews'),('product_matching_runs'),('product_matching_cycles'),('catalog_created_links'),('product_mapping_replacements'),('product_import_drafts'),('product_matching_jobs'),('product_matching_job_pages')) AS required(name)`).Scan(&compatible)
 	if err != nil || !compatible {

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/lilter96/styk/internal/matching"
 	"github.com/lilter96/styk/internal/postgres"
 )
 
@@ -11,13 +12,13 @@ func registerProductMatchingJobs(mux *http.ServeMux, a *auth, db *postgres.Store
 	mux.HandleFunc("POST /api/product-matching/jobs", a.authorized(a.connectionMutation(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			catalogRequestScope
-			Revision int64  `json:"expected_revision"`
-			Key      string `json:"idempotency_key"`
+			Criterion matching.Criterion `json:"criterion"`
+			Key       string             `json:"idempotency_key"`
 		}
 		if !decodeStockSync(w, r, &body) {
 			return
 		}
-		j, err := db.CreateProductMatchingJob(r.Context(), body.catalogScope(), body.Revision, catalogActor(r), body.Key)
+		j, err := db.CreateProductMatchingJob(r.Context(), body.catalogScope(), catalogActor(r), body.Key, body.Criterion)
 		if err != nil {
 			catalogHTTPError(w, err)
 			return
@@ -37,6 +38,7 @@ func registerProductMatchingJobs(mux *http.ServeMux, a *auth, db *postgres.Store
 	})))
 
 	registerProductMatchingRead(mux, a, db)
+	registerProductMatchingApply(mux, a, db)
 }
 
 func registerProductMatchingRead(mux *http.ServeMux, a *auth, db *postgres.Store) {
@@ -52,12 +54,12 @@ func registerProductMatchingRead(mux *http.ServeMux, a *auth, db *postgres.Store
 		w.WriteHeader(http.StatusNoContent)
 	})))
 	mux.HandleFunc("GET /api/product-matching/jobs/{id}", a.authorized(func(w http.ResponseWriter, r *http.Request) {
-		page := 0
+		page := -1
 		var err error
 		if raw := r.URL.Query().Get("page"); raw != "" {
 			page, err = strconv.Atoi(raw)
 		}
-		if err != nil || page < 0 {
+		if err != nil || page < -1 {
 			writeError(w, 400, "INVALID_PAGE")
 			return
 		}
@@ -68,4 +70,26 @@ func registerProductMatchingRead(mux *http.ServeMux, a *auth, db *postgres.Store
 		}
 		writeJSON(w, j)
 	}))
+}
+
+func registerProductMatchingApply(mux *http.ServeMux, a *auth, db *postgres.Store) {
+	mux.HandleFunc("POST /api/product-matching/jobs/{id}/apply", a.authorized(a.connectionMutation(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			catalogRequestScope
+			Key         string `json:"idempotency_key"`
+			Expected    int    `json:"expected_count"`
+			Acknowledge bool   `json:"acknowledge"`
+		}
+		if !decodeStockSync(w, r, &body) {
+			return
+		}
+		req := postgres.ProductMatchingApproval{Scope: body.catalogScope(), JobID: r.PathValue("id"), Actor: catalogActor(r), Key: body.Key, Expected: body.Expected, Acknowledge: body.Acknowledge}
+		if err := db.ApplyProductMatchingJob(r.Context(), req); err != nil {
+			catalogHTTPError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		writeJSON(w, map[string]string{"job_id": r.PathValue("id")})
+	})))
 }

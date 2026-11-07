@@ -17,17 +17,18 @@ type productMatchSnapshot struct {
 	Sources                         []matching.Source
 	Targets                         []matching.Target
 	Mappings                        []domain.Mapping
+	Criterion                       matching.Criterion
 	After                           string
 	HasNext                         bool
 	Total                           int
 }
 
 func productMatchData(ctx context.Context, tx pgx.Tx, scope catalog.Scope) (productMatchSnapshot, error) {
-	return productMatchDataPage(ctx, tx, scope, "")
+	return productMatchDataPage(ctx, tx, scope, "", matching.ArticleOrCode)
 }
 
-func productMatchDataPage(ctx context.Context, tx pgx.Tx, scope catalog.Scope, after string) (productMatchSnapshot, error) {
-	data := productMatchSnapshot{After: after}
+func productMatchDataPage(ctx context.Context, tx pgx.Tx, scope catalog.Scope, after string, criterion matching.Criterion) (productMatchSnapshot, error) {
+	data := productMatchSnapshot{After: after, Criterion: criterion.Resolved()}
 	var fresh bool
 	err := tx.QueryRow(ctx, `WITH imports AS (
  SELECT DISTINCT ON(i.source) i.source,i.id,i.fingerprint,i.finished_at,b.traversal_status
@@ -53,7 +54,7 @@ func productMatchDataPage(ctx context.Context, tx pgx.Tx, scope catalog.Scope, a
 	if err != nil {
 		return data, err
 	}
-	data.Targets, err = productMatchTargets(ctx, tx, scope, data.MoyID, data.Sources)
+	data.Targets, err = productMatchTargets(ctx, tx, scope, data.MoyID, data.Sources, criterion)
 	if err != nil {
 		return data, err
 	}
@@ -77,13 +78,13 @@ func productMatchSources(ctx context.Context, tx pgx.Tx, scope catalog.Scope, im
 	}
 	return result, rows.Err()
 }
-func productMatchTargets(ctx context.Context, tx pgx.Tx, scope catalog.Scope, importID int64, sources []matching.Source) ([]matching.Target, error) {
+func productMatchTargets(ctx context.Context, tx pgx.Tx, scope catalog.Scope, importID int64, sources []matching.Source, criterion matching.Criterion) ([]matching.Target, error) {
 	offers, names := make([]string, 0, len(sources)), make([]string, 0, len(sources))
 	for _, s := range sources {
 		offers = append(offers, s.Match.OfferID)
 		names = append(names, s.Name)
 	}
-	rows, err := tx.Query(ctx, productMatchTargetsSQL, importID, offers, names)
+	rows, err := tx.Query(ctx, productMatchTargetsSQL, importID, offers, names, string(criterion.Resolved()))
 	if err != nil {
 		return nil, fmt.Errorf("read matching candidates: %w", err)
 	}
@@ -101,7 +102,7 @@ func productMatchTargets(ctx context.Context, tx pgx.Tx, scope catalog.Scope, im
 
 const productMatchTargetsSQL = `WITH exact AS (
  SELECT t.kind,t.external_id,t.article,t.code,t.name,t.parent_id,t.archived FROM unnest($2::text[]) offer
- CROSS JOIN LATERAL(SELECT s.* FROM source_entities s WHERE s.import_id=$1 AND s.kind IN ('product','variant') AND product_matching_key(offer)<>'' AND (product_matching_key(s.article)=product_matching_key(offer) OR product_matching_key(s.code)=product_matching_key(offer)) ORDER BY s.kind,s.external_id LIMIT 3) t
+ CROSS JOIN LATERAL(SELECT s.* FROM source_entities s WHERE s.import_id=$1 AND s.kind IN ('product','variant') AND product_matching_key(offer)<>'' AND (($4<>'code' AND product_matching_key(s.article)=product_matching_key(offer)) OR ($4<>'article' AND product_matching_key(s.code)=product_matching_key(offer))) ORDER BY s.kind,s.external_id LIMIT 3) t
 ), names AS (
  SELECT t.kind,t.external_id,t.article,t.code,t.name,t.parent_id,t.archived FROM unnest($3::text[]) title
  CROSS JOIN LATERAL(SELECT s.*, (SELECT count(*)::float FROM (SELECT unnest(product_matching_words(s.name)) INTERSECT SELECT unnest(product_matching_words(title))) shared) / NULLIF((SELECT count(*) FROM (SELECT unnest(product_matching_words(s.name)) UNION SELECT unnest(product_matching_words(title))) combined),0) score

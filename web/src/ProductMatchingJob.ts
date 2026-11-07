@@ -1,110 +1,144 @@
 import { api, ApiError, params, post } from "./api";
 import { scopeBody, type Scope } from "./CatalogSyncTypes";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
-import type { MatchingPreview } from "./ProductAutoMatching";
-export type MatchingJob = {
-  id: string;
-  state: "QUEUED" | "RUNNING" | "COMPLETED" | "STALE" | "FAILED";
-  processed: number;
-  total: number;
-  pages: number;
-  code: string;
-  summary?: Record<string, number>;
-  preview?: MatchingPreview;
-};
-function savedJobIntent(key: string): { revision: number; key: string } | null {
+import { useEffect, useState } from "react";
+import {
+  matchingCriteria,
+  type MatchingCriterion,
+  type MatchingJob,
+} from "./ProductMatchingTypes";
+export type { MatchingJob } from "./ProductMatchingTypes";
+function stored<T>(key: string): T | null {
   try {
-    const value = JSON.parse(localStorage.getItem(key) || "null");
-    return value &&
-      Number.isSafeInteger(value.revision) &&
-      typeof value.key === "string"
-      ? value
-      : null;
+    return JSON.parse(localStorage.getItem(key) || "null") as T | null;
   } catch {
     return null;
   }
 }
 export function useProductMatchingJob(scope: Scope) {
-  const storageKey = "styk.matching-job." + JSON.stringify(scope);
-  const [id, setID] = useState(() => localStorage.getItem(storageKey) || "");
-  const [page, setPageState] = useState(() =>
-    Math.max(
-      0,
-      Math.floor(Number(localStorage.getItem(storageKey + ".page")) || 0),
-    ),
+  const storage = "styk.automatic-matching." + JSON.stringify(scope);
+  const [id, setID] = useState(() => localStorage.getItem(storage) || "");
+  const [criterion, setCriterionState] = useState<MatchingCriterion>(() => {
+    const value = localStorage.getItem(storage + ".criterion");
+    return (
+      matchingCriteria.find((c) => c.id === value)?.id || "article_or_code"
+    );
+  });
+  const [starting, setStarting] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [uncertain, setUncertain] = useState(
+    () => !!stored(storage + ".approval"),
   );
-  const setPage = (value: number) => {
-    localStorage.setItem(storageKey + ".page", String(value));
-    setPageState(value);
-  };
   const query = useQuery<MatchingJob>({
-    queryKey: ["matching-job", scope, id, page],
+    queryKey: ["matching-job", scope, id],
     enabled: !!id,
-    placeholderData: (previous) => (previous?.id === id ? previous : undefined),
+    retry: false,
     queryFn: ({ signal }) =>
-      api<MatchingJob>(
-        `/api/product-matching/jobs/${id}?` +
-          params({ ...scopeBody(scope), page }),
+      api(
+        `/api/product-matching/jobs/${id}?` + params(scopeBody(scope)),
         signal,
       ),
-    retry: false,
     refetchInterval: (q) =>
       q.state.data &&
-      ["COMPLETED", "STALE", "FAILED"].includes(q.state.data.state)
+      q.state.data.state !== "QUEUED" &&
+      q.state.data.state !== "RUNNING" &&
+      !["QUEUED", "RUNNING"].includes(q.state.data.apply.state)
         ? false
-        : 2000,
+        : 1500,
   });
-  async function start(revision: number, signal: AbortSignal) {
-    const pendingKey = storageKey + ".intent";
-    const intent = savedJobIntent(pendingKey) || {
-      revision,
-      key: crypto.randomUUID(),
-    };
-    localStorage.setItem(pendingKey, JSON.stringify(intent));
-    let value: MatchingJob;
+  useEffect(() => {
+    if (query.data?.apply && query.data.apply.state !== "NOT_STARTED") {
+      localStorage.removeItem(storage + ".approval");
+      setUncertain(false);
+    }
+  }, [query.data?.apply.state, storage]);
+  async function start(signal: AbortSignal) {
+    const saved = stored<{ key: string; criterion: MatchingCriterion }>(
+      storage + ".intent",
+    );
+    const intent =
+      saved?.criterion === criterion
+        ? saved
+        : { key: crypto.randomUUID(), criterion };
+    localStorage.setItem(storage + ".intent", JSON.stringify(intent));
+    setStarting(true);
     try {
-      value = await post<MatchingJob>(
+      const value = await post<MatchingJob>(
         "/api/product-matching/jobs",
-        {
-          ...scopeBody(scope),
-          expected_revision: intent.revision,
-          idempotency_key: intent.key,
-        },
+        { ...scopeBody(scope), criterion, idempotency_key: intent.key },
         signal,
       );
+      if (!value.id || value.criterion !== criterion)
+        throw new Error("Unexpected matching job");
+      localStorage.removeItem(storage + ".intent");
+      localStorage.setItem(storage, value.id);
+      setID(value.id);
     } catch (error) {
       if (
         error instanceof ApiError &&
-        [400, 403, 404, 409, 422].includes(error.status)
+        [400, 403, 409, 422].includes(error.status)
       )
-        localStorage.removeItem(pendingKey);
+        localStorage.removeItem(storage + ".intent");
       throw error;
+    } finally {
+      setStarting(false);
     }
-    localStorage.removeItem(pendingKey);
-    localStorage.setItem(storageKey, value.id);
-    setID(value.id);
-    setPage(0);
-    return value;
+  }
+  async function apply(signal: AbortSignal) {
+    if (!query.data) return;
+    const previous = stored<{ id: string; key: string; expected: number }>(
+      storage + ".approval",
+    );
+    const intent =
+      previous?.id === id
+        ? previous
+        : {
+            id,
+            key: crypto.randomUUID(),
+            expected: query.data.summary.exact || 0,
+          };
+    localStorage.setItem(storage + ".approval", JSON.stringify(intent));
+    setSubmitting(true);
+    try {
+      await post(
+        `/api/product-matching/jobs/${id}/apply`,
+        {
+          ...scopeBody(scope),
+          idempotency_key: intent.key,
+          expected_count: intent.expected,
+          acknowledge: true,
+        },
+        signal,
+      );
+      localStorage.removeItem(storage + ".approval");
+      setUncertain(false);
+      await query.refetch();
+    } catch (error) {
+      const unknown =
+        uncertain || !(error instanceof ApiError) || error.status >= 500;
+      if (!unknown) localStorage.removeItem(storage + ".approval");
+      setUncertain(unknown);
+      throw error;
+    } finally {
+      setSubmitting(false);
+    }
   }
   return {
     id,
-    page,
+    criterion,
     query,
+    starting,
+    submitting,
+    uncertain,
     start,
-    setPage,
+    apply,
+    setCriterion: (value: MatchingCriterion) => {
+      localStorage.setItem(storage + ".criterion", value);
+      setCriterionState(value);
+    },
     resume: async () => {
       await post(`/api/product-matching/jobs/${id}/retry`, scopeBody(scope));
       await query.refetch();
-    },
-    clear: async () => {
-      if (id)
-        await post(`/api/product-matching/jobs/${id}/cancel`, scopeBody(scope));
-      localStorage.removeItem(storageKey + ".intent");
-      localStorage.removeItem(storageKey);
-      localStorage.removeItem(storageKey + ".page");
-      setID("");
-      setPage(0);
     },
   };
 }

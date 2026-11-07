@@ -9,16 +9,57 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { ProductAutoMatching } from "./ProductAutoMatching";
-
+import type { MatchingJob } from "./ProductMatchingTypes";
 const clients: QueryClient[] = [];
 afterEach(() => {
   cleanup();
-  localStorage.clear();
   clients.forEach((c) => c.clear());
+  clients.length = 0;
+  localStorage.clear();
   vi.restoreAllMocks();
 });
-function mount(lost = false) {
-  const calls: Array<{ path: string; body: Record<string, unknown> }> = [];
+const exact = {
+  product_id: "101",
+  offer_id: "A",
+  name: "Кружка синяя",
+  status: "exact",
+  reason: "exact_sku",
+  shared_inventory: false,
+  candidates: [
+    {
+      id: "p1",
+      kind: "product",
+      name: "Кружка синяя",
+      article: "A",
+      evidence: "exact_sku",
+      score: 1,
+    },
+  ],
+};
+const response = (value: unknown) =>
+  new Response(JSON.stringify(value), {
+    headers: { "Content-Type": "application/json" },
+  });
+function mount(lost = false, noMatches = false) {
+  let j: MatchingJob = {
+    id: "job-one",
+    criterion: "article_or_code",
+    state: "COMPLETED",
+    processed: 2105,
+    total: 2105,
+    pages: 22,
+    code: "",
+    summary: { exact: noMatches ? 0 : 2104, conflict: 1 },
+    examples: noMatches ? [] : [exact],
+    attention: [],
+    apply: {
+      state: "NOT_STARTED",
+      total: 0,
+      confirmed: 0,
+      skipped: 0,
+      code: "",
+    },
+  };
   let policy = {
     revision: 0,
     exact_sku: true,
@@ -26,239 +67,160 @@ function mount(lost = false) {
     auto_confirm: false,
     after_import: false,
   };
-  let attempts = 0;
-  const items = [
-    {
-      product_id: "1",
-      offer_id: "A",
-      name: "Чашка",
-      status: "exact",
-      reason: "unique_exact",
-      candidates: [
-        {
-          kind: "product",
-          id: "p1",
-          name: "Чашка",
-          article: "A",
-          evidence: "exact_sku",
-        },
-      ],
-    },
-    {
-      product_id: "2",
-      offer_id: "B",
-      name: "Чашка большая",
-      status: "review",
-      reason: "similar_name",
-      candidates: [
-        {
-          kind: "product",
-          id: "p1",
-          name: "Чашка",
-          article: "A",
-          evidence: "similar_name",
-        },
-      ],
-    },
-  ];
+  const calls: { path: string; body: Record<string, unknown> }[] = [];
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const path = new URL(String(input), "http://localhost").pathname;
-    const response = (data: unknown) =>
-      new Response(JSON.stringify(data), {
-        headers: { "Content-Type": "application/json" },
-      });
-    if (path.includes("/jobs")) {
-      if (init?.method === "POST")
-        calls.push({ path, body: JSON.parse(String(init.body)) });
-      return response({
-        id: "job",
-        state: "COMPLETED",
-        processed: 2,
-        total: 2,
-        pages: 1,
-        code: "",
-        preview: {
-          id: "preview",
-          scope: {
-            tenant: "test",
-            moysklad_account: "moy",
-            ozon_account: "ozon",
-          },
-          policy,
-          items,
-          expires_at: new Date(Date.now() + 60000).toISOString(),
-        },
-      });
-    }
-    if (!init?.method || init.method === "GET") return response(policy);
-    const body = JSON.parse(String(init.body));
-    calls.push({ path, body });
+    const body = init?.method === "POST" ? JSON.parse(String(init.body)) : null;
+    if (body) calls.push({ path, body });
     if (path.endsWith("settings")) {
-      policy = { ...body.policy, revision: 1 };
+      if (body) policy = { ...body.policy, revision: policy.revision + 1 };
       return response(policy);
     }
-    if (path.endsWith("preview"))
-      return response({
-        id: "preview",
-        scope: {
-          tenant: "test",
-          moysklad_account: "moy",
-          ozon_account: "ozon",
+    if (path.endsWith("/apply")) {
+      if (lost) {
+        lost = false;
+        throw new TypeError("Connection lost");
+      }
+      j = {
+        ...j,
+        apply: {
+          state: "COMPLETED",
+          total: 2104,
+          confirmed: 2104,
+          skipped: 0,
+          code: "",
         },
-        policy,
-        items,
-        expires_at: new Date(Date.now() + 60000).toISOString(),
-      });
-    if (path.endsWith("runs")) {
-      if (lost && ++attempts === 1) throw new TypeError("lost response");
-      return response({
-        id: "run",
-        preview_id: "preview",
-        scope: {
-          tenant: "test",
-          moysklad_account: "moy",
-          ozon_account: "ozon",
-        },
-        confirmed: 1,
-        items: [
-          { ...items[0], status: "confirmed", reason: "confirmed_by_rule" },
-        ],
-      });
+      };
+      return response({ job_id: j.id });
     }
-    throw new Error(path);
+    if (path.endsWith("/retry")) return new Response(null, { status: 204 });
+    if (path.endsWith("/jobs") && body) {
+      j = { ...j, criterion: body.criterion, id: "job-" + calls.length };
+      return response(j);
+    }
+    if (path.includes("/jobs/")) return response(j);
+    throw new Error("Unexpected API request " + path);
   });
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    defaultOptions: { queries: { retry: false } },
   });
   clients.push(client);
-  const scene = (scope: { tenant: string; moy: string; ozon: string }) => (
+  const scope = { tenant: "test", moy: "moy", ozon: "ozon" };
+  const scene = (s = scope) => (
     <MemoryRouter>
       <QueryClientProvider client={client}>
-        <ProductAutoMatching scope={scope} />
+        <ProductAutoMatching scope={s} />
       </QueryClientProvider>
     </MemoryRouter>
   );
-  const view = render(scene({ tenant: "test", moy: "moy", ozon: "ozon" }));
+  const view = render(scene());
   return {
     calls,
-    changeScope: (scope: { tenant: string; moy: string; ozon: string }) =>
-      view.rerender(scene(scope)),
+    remount: () => {
+      view.rerender(<></>);
+      client.clear();
+      view.rerender(scene());
+    },
+    changeScope: () => view.rerender(scene({ ...scope, ozon: "another-shop" })),
   };
 }
-
-it("suggests by default without saving a policy or allowing a name match to confirm", async () => {
+it("shows examples automatically and applies every exact pair across the whole catalogue in one click", async () => {
   const { calls } = mount();
-  fireEvent.click(
-    await screen.findByRole("button", {
-      name: "Посмотреть предварительный результат",
-    }),
-  );
-  expect(
-    ((await screen.findByLabelText("Выбрать пару A")) as HTMLInputElement)
-      .disabled,
-  ).toBe(true);
-  expect(
-    (screen.getByLabelText("Выбрать пару B") as HTMLInputElement).disabled,
-  ).toBe(true);
-  expect(calls.map((c) => c.path)).toEqual(["/api/product-matching/jobs"]);
-});
-
-it("requires opt-in, exact selection and acknowledgement, and recovers a lost response with the same key", async () => {
-  const { calls } = mount(true);
-  fireEvent.click(
-    await screen.findByRole("radio", {
-      name: /Разрешить подтверждение уникальных/,
-    }),
-  );
-  expect(
-    (
-      screen.getByRole("button", {
-        name: "Посмотреть предварительный результат",
-      }) as HTMLButtonElement
-    ).disabled,
-  ).toBe(true);
-  expect(calls).toHaveLength(0);
-  fireEvent.click(screen.getByRole("button", { name: "Сохранить правила" }));
-  await screen.findByRole("button", { name: "Сохранить правила" });
-  await waitFor(() =>
-    expect(
-      (
-        screen.getByRole("button", {
-          name: "Посмотреть предварительный результат",
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(false),
-  );
-  fireEvent.click(
-    screen.getByRole("button", {
-      name: "Посмотреть предварительный результат",
-    }),
-  );
-  fireEvent.click(
-    await screen.findByRole("button", {
-      name: "Выбрать точные пары на странице (1)",
-    }),
-  );
-  expect(
-    (screen.getByLabelText("Выбрать пару A") as HTMLInputElement).checked,
-  ).toBe(true);
-  expect(
-    (screen.getByLabelText("Выбрать пару B") as HTMLInputElement).disabled,
-  ).toBe(true);
-  expect(
-    (
-      screen.getByRole("button", {
-        name: "Подтвердить выбранные пары",
-      }) as HTMLButtonElement
-    ).disabled,
-  ).toBe(true);
-  fireEvent.click(
-    screen.getByLabelText(/Разрешаю подтвердить выбранные точные пары/),
-  );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Подтвердить выбранные пары" }),
-  );
-  const retry = await screen.findByRole("button", {
-    name: "Проверить результат",
+  const apply = await screen.findByRole("button", {
+    name: "Сопоставить все товары (2104)",
   });
   expect(
-    (screen.getByLabelText("Выбрать пару A") as HTMLInputElement).disabled,
-  ).toBe(true);
-  fireEvent.click(retry);
-  await screen.findByText(/Подтверждено в этом запуске: 1/);
-  const runs = calls.filter((c) => c.path.endsWith("runs"));
-  expect(runs).toHaveLength(2);
-  expect(runs[0].body).toEqual(runs[1].body);
-  expect(runs[0].body.product_ids).toEqual(["1"]);
+    screen.getByRole("region", { name: "Примеры найденных совпадений" }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /Следующие товары/ })).toBeNull();
+  expect(calls.map((c) => c.path)).toEqual(["/api/product-matching/jobs"]);
+  fireEvent.click(apply);
+  await screen.findByRole("heading", { name: "Сопоставлено товаров: 2104" });
+  const approvals = calls.filter((c) => c.path.endsWith("/apply"));
+  expect(approvals).toHaveLength(1);
+  expect(approvals[0].body).toMatchObject({
+    expected_count: 2104,
+    acknowledge: true,
+  });
+  expect(approvals[0].body).not.toHaveProperty("product_ids");
+  expect(calls.some((c) => c.path.endsWith("settings"))).toBe(false);
 });
-
-it("discards unsaved rules on account change without saving them", async () => {
-  const { calls, changeScope } = mount();
-  const names = await screen.findByRole("checkbox", { name: /По названию/ });
-  fireEvent.click(names);
-  expect(
-    (
-      screen.getByRole("button", {
-        name: "Посмотреть предварительный результат",
-      }) as HTMLButtonElement
-    ).disabled,
-  ).toBe(true);
-  changeScope({ tenant: "test", moy: "moy", ozon: "other" });
+it("a different criterion creates its own read-only search without saving automation", async () => {
+  const { calls } = mount();
+  await screen.findByRole("button", { name: "Сопоставить все товары (2104)" });
+  fireEvent.click(screen.getByRole("radio", { name: /Только код/ }));
   await waitFor(() =>
-    expect(
-      (
-        screen.getByRole("checkbox", {
-          name: /По названию/,
-        }) as HTMLInputElement
-      ).checked,
-    ).toBe(true),
+    expect(calls.filter((c) => c.path.endsWith("/jobs"))).toHaveLength(2),
   );
-  expect(calls).toHaveLength(0);
+  expect(calls.at(-1)?.body.criterion).toBe("code");
+  expect(
+    calls.every(
+      (c) => !c.path.endsWith("/apply") && !c.path.endsWith("settings"),
+    ),
+  ).toBe(true);
+});
+it("restores an uncertain approval and repeats its exact key after reload", async () => {
+  const { calls, remount } = mount(true);
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Сопоставить все товары (2104)",
+    }),
+  );
+  await screen.findByText(/Ответ о запуске не получен/);
+  const first = calls.find((c) => c.path.endsWith("/apply"))!.body;
+  remount();
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Проверить запуск сопоставления",
+    }),
+  );
+  await screen.findByRole("heading", { name: "Сопоставлено товаров: 2104" });
+  const approvals = calls.filter((c) => c.path.endsWith("/apply"));
+  expect(approvals).toHaveLength(2);
+  expect(approvals[1].body).toEqual(first);
+  expect(calls.filter((c) => c.path.endsWith("/jobs"))).toHaveLength(1);
+});
+it("does not offer a bulk confirmation when no exact pairs were found", async () => {
+  const { calls } = mount(false, true);
+  await screen.findByRole("heading", { name: "Точных совпадений пока нет" });
   expect(
     (
       screen.getByRole("button", {
-        name: "Сохранить правила",
+        name: "Сопоставить все товары (0)",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
+  expect(calls.some((c) => c.path.endsWith("/apply"))).toBe(false);
+});
+it("saves standing automation only through its separate explicit action", async () => {
+  const { calls } = mount();
+  await screen.findByRole("button", { name: "Сопоставить все товары (2104)" });
+  fireEvent.click(
+    screen.getByText("Сопоставлять товары после новых загрузок", {
+      selector: "summary",
+    }),
+  );
+  fireEvent.click(
+    screen.getByLabelText(
+      "Автоматически сопоставлять точные пары после новых полных загрузок",
+    ),
+  );
+  expect(calls.some((c) => c.path.endsWith("settings"))).toBe(false);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Сохранить автоматизацию" }),
+  );
+  await screen.findByText("Автоматизация сохранена");
+  expect(
+    calls.find((c) => c.path.endsWith("settings"))?.body.policy,
+  ).toMatchObject({ after_import: true, auto_confirm: true });
+});
+it("switching accounts starts a separate search and cannot carry a previous approval", async () => {
+  const { calls, changeScope } = mount();
+  await screen.findByRole("button", { name: "Сопоставить все товары (2104)" });
+  changeScope();
+  await waitFor(() =>
+    expect(calls.filter((c) => c.path.endsWith("/jobs"))).toHaveLength(2),
+  );
+  expect(calls.at(-1)?.body.ozon_account).toBe("another-shop");
+  expect(calls.some((c) => c.path.endsWith("/apply"))).toBe(false);
 });

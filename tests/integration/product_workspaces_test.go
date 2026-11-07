@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/lilter96/styk/internal/catalogsync"
 	"github.com/lilter96/styk/internal/domain"
+	"github.com/lilter96/styk/internal/matching"
 	"github.com/lilter96/styk/internal/postgres"
 )
 
@@ -68,7 +69,7 @@ func TestProductMatchingJobTraversesLargeCatalogueAndKeepsGlobalDuplicates(t *te
 	if _, err := db.SaveOzonImport(ctx, market, "large-match-ozon"); err != nil {
 		t.Fatal(err)
 	}
-	job, err := db.CreateProductMatchingJob(ctx, scope, 0, "matching-test", "large-job")
+	job, err := db.CreateProductMatchingJob(ctx, scope, "matching-test", "large-job", matching.ArticleOrCode)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,20 +114,20 @@ func TestProductMatchingJobTraversesLargeCatalogueAndKeepsGlobalDuplicates(t *te
 	if job.Preview.Items[1].Reason != "duplicate_sku" || job.Preview.Items[2].Reason != "duplicate_offer" {
 		t.Fatalf("cross-page duplicates: %+v", job.Preview.Items[:3])
 	}
-	again, err := db.CreateProductMatchingJob(ctx, scope, 0, "matching-test", "large-job")
+	again, err := db.CreateProductMatchingJob(ctx, scope, "matching-test", "large-job", matching.ArticleOrCode)
 	if err != nil || again.ID != job.ID {
 		t.Fatal("job replay duplicated work", err)
 	}
 }
 
-func TestProductMatchingJobStopsOnPolicyChangeAndDoesNotWriteMappings(t *testing.T) {
+func TestProductMatchingJobPinsImportsAndDoesNotWriteMappings(t *testing.T) {
 	db, scope := productMatchingFixture(t)
 	ctx := context.Background()
-	job, err := db.CreateProductMatchingJob(ctx, scope, 0, "matching-test", "stale-job")
+	job, err := db.CreateProductMatchingJob(ctx, scope, "matching-test", "stale-job", matching.ArticleOrCode)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.Pool.Exec(ctx, `UPDATE product_matching_jobs SET revision=99 WHERE id=$1`, job.ID); err != nil {
+	if _, err = db.Pool.Exec(ctx, `UPDATE product_matching_jobs SET moy_import=ozon_import WHERE id=$1`, job.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = db.RunProductMatchingJob(ctx); err != nil {
@@ -134,7 +135,7 @@ func TestProductMatchingJobStopsOnPolicyChangeAndDoesNotWriteMappings(t *testing
 	}
 	state, err := db.ProductMatchingJob(ctx, scope, job.ID, "matching-test", 0)
 	if err != nil || state.State != "STALE" {
-		t.Fatalf("policy change ignored: %+v %v", state, err)
+		t.Fatalf("source pin change ignored: %+v %v", state, err)
 	}
 	var mappings int
 	if err = db.Pool.QueryRow(ctx, `SELECT count(*) FROM product_mappings`).Scan(&mappings); err != nil || mappings != 0 {

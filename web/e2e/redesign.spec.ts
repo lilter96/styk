@@ -192,6 +192,36 @@ async function fixtures(page: Page, signedIn = true) {
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;
+    if (
+      path === "/api/product-matching/jobs" ||
+      path.startsWith("/api/product-matching/jobs/")
+    ) {
+      const criterion =
+        route.request().method() === "POST"
+          ? route.request().postDataJSON().criterion
+          : "article_or_code";
+      return route.fulfill({
+        json: {
+          id: "visual-empty",
+          criterion,
+          state: "COMPLETED",
+          processed: 0,
+          total: 0,
+          pages: 1,
+          code: "",
+          summary: {},
+          examples: [],
+          attention: [],
+          apply: {
+            state: "NOT_STARTED",
+            total: 0,
+            confirmed: 0,
+            skipped: 0,
+            code: "",
+          },
+        },
+      });
+    }
     if (route.request().method() !== "GET") {
       await route.fulfill({
         status: 405,
@@ -1076,96 +1106,83 @@ for (const width of [1440, 768, 390])
         candidates: [],
       },
     ];
-    let policy = {
-      revision: 0,
-      exact_sku: true,
-      names: true,
-      auto_confirm: false,
-      after_import: false,
+    let applyCount = 0;
+    let application = {
+      state: "NOT_STARTED",
+      total: 0,
+      confirmed: 0,
+      skipped: 0,
+      code: "",
     };
-    let runs = 0;
     await page.route("**/api/product-matching/**", async (route) => {
       const request = route.request(),
         path = new URL(request.url()).pathname;
       if (path.endsWith("settings")) {
-        if (request.method() === "POST")
-          policy = { ...request.postDataJSON().policy, revision: 1 };
-        return route.fulfill({ json: policy });
+        expect(request.method()).toBe("GET");
+        return route.fulfill({
+          json: {
+            revision: 0,
+            exact_sku: true,
+            names: true,
+            auto_confirm: false,
+            after_import: false,
+          },
+        });
       }
-      if (path.includes("/jobs"))
-        return route.fulfill({
-          json: {
-            id: "visual-job",
-            state: "COMPLETED",
-            processed: items.length,
-            total: items.length,
-            pages: 1,
-            code: "",
-            preview: {
-              id: "visual-preview",
-              scope,
-              policy,
-              items,
-              expires_at: "2099-01-01T00:00:00Z",
-            },
-          },
+      if (path.endsWith("/apply")) {
+        applyCount++;
+        expect(request.postDataJSON()).toMatchObject({
+          expected_count: 2104,
+          acknowledge: true,
         });
-      if (path.endsWith("preview"))
-        return route.fulfill({
-          json: {
-            id: "visual-preview",
-            scope,
-            policy,
-            items,
-            expires_at: "2099-01-01T00:00:00Z",
-          },
-        });
-      runs++;
-      expect(request.postDataJSON().product_ids).toEqual(["101"]);
+        expect(request.postDataJSON().product_ids).toBeUndefined();
+        application = {
+          state: "COMPLETED",
+          total: 2104,
+          confirmed: 2104,
+          skipped: 0,
+          code: "",
+        };
+        return route.fulfill({ status: 202, json: { job_id: "visual-job" } });
+      }
       return route.fulfill({
         json: {
-          id: "visual-run",
-          preview_id: "visual-preview",
-          confirmed: 1,
-          items: [
-            { ...items[0], status: "confirmed", reason: "confirmed_by_rule" },
-          ],
+          id: "visual-job",
+          criterion: "article_or_code",
+          state: "COMPLETED",
+          processed: 2106,
+          total: 2106,
+          pages: 22,
+          code: "",
+          summary: { exact: 2104, review: 1, conflict: 1 },
+          examples: [items[0]],
+          attention: items.slice(1),
+          apply: application,
         },
       });
     });
     await page.goto(origin + "/products/matching");
-    await page
-      .getByRole("radio", { name: /Разрешить подтверждение уникальных/ })
-      .check();
-    const prepare = page.getByRole("button", {
-      name: "Посмотреть предварительный результат",
+    const apply = page.getByRole("button", {
+      name: "Сопоставить все товары (2104)",
+      exact: true,
     });
-    await expect(prepare).toBeDisabled();
-    await page
-      .getByRole("button", { name: "Сохранить правила", exact: true })
-      .click();
-    await expect(prepare).toBeEnabled();
-    await prepare.click();
+    await expect(apply).toBeEnabled();
+    expect(applyCount).toBe(0);
     await expect(
-      page.getByLabel("Выбрать пару STYK-02", { exact: true }),
-    ).toBeDisabled();
-    await expect(
-      page.getByLabel("Выбрать пару STYK-04", { exact: true }),
-    ).toBeDisabled();
-    expect(runs).toBe(0);
+      page.getByRole("region", { name: "Примеры найденных совпадений" }),
+    ).toBeVisible();
     await page.screenshot({
       path: `test-results/redesign/${width}-matching-preview.png`,
       fullPage: true,
     });
-    await page.getByLabel("Выбрать пару STYK-01", { exact: true }).check();
-    await page.getByLabel(/Разрешаю подтвердить выбранные точные пары/).check();
-    await page
-      .getByRole("button", { name: "Подтвердить выбранные пары" })
-      .click();
+    await apply.click();
     await expect(
-      page.getByRole("heading", { name: "Результаты сопоставления" }),
+      page.getByRole("heading", {
+        name: "Сопоставлено товаров: 2104",
+        exact: true,
+      }),
     ).toBeVisible();
-    expect(runs).toBe(1);
+    expect(applyCount).toBe(1);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth + 1,

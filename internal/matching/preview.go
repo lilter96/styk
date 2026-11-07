@@ -9,11 +9,12 @@ import (
 )
 
 type Policy struct {
-	AfterImport bool  `json:"after_import"`
-	Revision    int64 `json:"revision"`
-	ExactSKU    bool  `json:"exact_sku"`
-	Names       bool  `json:"names"`
-	AutoConfirm bool  `json:"auto_confirm"`
+	Criterion   Criterion `json:"criterion,omitempty"`
+	AfterImport bool      `json:"after_import"`
+	Revision    int64     `json:"revision"`
+	ExactSKU    bool      `json:"exact_sku"`
+	Names       bool      `json:"names"`
+	AutoConfirm bool      `json:"auto_confirm"`
 }
 type Source struct {
 	DuplicateOffer bool               `json:"duplicate_offer,omitempty"`
@@ -49,7 +50,7 @@ func Preview(tenant, account string, policy Policy, sources []Source, targets []
 	indexed := make(map[domain.ProductIdentity]Target, len(targets))
 	offers := make(map[string]int, len(sources))
 	for _, t := range targets {
-		plain = append(plain, t.Match)
+		plain = append(plain, policy.Criterion.target(t.Match))
 		indexed[t.Match.Identity] = t
 	}
 	for _, s := range sources {

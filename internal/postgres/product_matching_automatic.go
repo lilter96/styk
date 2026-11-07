@@ -64,7 +64,7 @@ func (s *Store) runProductMatchCycle(ctx context.Context, scope catalog.Scope) e
 	if err = authorizeProductMatchCycle(ctx, tx, scope); err != nil {
 		return err
 	}
-	data, err := productMatchData(ctx, tx, scope)
+	data, err := productMatchDataPage(ctx, tx, scope, "", p.Criterion)
 	if err != nil {
 		return err
 	}
@@ -73,7 +73,7 @@ func (s *Store) runProductMatchCycle(ctx context.Context, scope catalog.Scope) e
 		return err
 	}
 	if after != "" {
-		data, err = productMatchDataPage(ctx, tx, scope, after)
+		data, err = productMatchDataPage(ctx, tx, scope, after, p.Criterion)
 		if err != nil {
 			return err
 		}
