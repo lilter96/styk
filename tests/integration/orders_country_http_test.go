@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os/exec"
 	"strings"
 	"sync"
 	"testing"
@@ -165,7 +164,7 @@ func countryHTTPRollbackGuard(t *testing.T, f ordersStoreFixture) {
 	catalogSyncMigrate(t, dsn, "down-to", "58")
 	ctx, cancel := context.WithTimeout(f.ctx, 30*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, "go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", dsn, "down")
+	command := migrationCommand(t, ctx, "-dir", "../../migrations", "postgres", dsn, "down")
 	output, err := command.CombinedOutput()
 	if err == nil || !bytes.Contains(output, []byte("country declaration history prevents destructive rollback")) {
 		t.Fatal("country intent history could be lost or wrong rollback failure")

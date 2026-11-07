@@ -5,7 +5,6 @@ package integration
 import (
 	"context"
 	"errors"
-	"os/exec"
 	"strings"
 	"sync"
 	"testing"
@@ -123,7 +122,7 @@ func TestDeliveryObservationRollbackPreservesHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	dsn := db.Pool.Config().ConnString()
-	command := exec.CommandContext(ctx, "go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", dsn, "down-to", "46")
+	command := migrationCommand(t, ctx, "-dir", "../../migrations", "postgres", dsn, "down-to", "46")
 	output, err := command.CombinedOutput()
 	if err == nil || !strings.Contains(string(output), "refusing to discard delivery capability observation history") {
 		t.Fatal("rollback did not retain delivery history")

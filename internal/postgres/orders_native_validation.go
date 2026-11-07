@@ -12,7 +12,7 @@ func validateNativeMovementCurrent(command orders.Command, current orders.Review
 	if !command.Action.IsNativeMovement() {
 		return nil
 	}
-	if automatic || movement == nil || !movement.AllowedBy(current.Config.NativeDocuments, command.Action, now) {
+	if movement == nil || !nativeMovementPolicyAllows(command, current.Config, automatic, now) {
 		return orders.ErrBlocked
 	}
 	if ordermoney.NativeConsumptionAllows(command, current.NativeConsumption[command.PostingNumber]).Code != "" {
@@ -26,6 +26,9 @@ func validateNativeMovementCurrent(command orders.Command, current orders.Review
 		return orders.ErrStale
 	}
 	config := current.Config
+	if config.Finance != nil && config.Finance.Enabled && movement.ContractID != config.Finance.ContractID {
+		return orders.ErrStale
+	}
 	if movement.OrganizationID != config.OrganizationID || movement.AgentID != config.AgentID || movement.StoreID != command.Warehouse.MoyskladStoreID || config.CurrencyID != "" && movement.CurrencyID != config.CurrencyID {
 		return orders.ErrStale
 	}
@@ -41,6 +44,13 @@ func validateNativeMovementCurrent(command orders.Command, current orders.Review
 		}
 	}
 	return nil
+}
+
+func nativeMovementPolicyAllows(command orders.Command, config orders.Config, automatic bool, now time.Time) bool {
+	if automatic {
+		return command.NativeMovement.AllowedByLifecycle(config, command, now)
+	}
+	return command.MerchantIntent == nil && command.NativeMovement.AllowedBy(config.NativeDocuments, command.Action, now)
 }
 
 func validateNativeDocumentCompletion(work orders.Work, completion orders.Completion) error {

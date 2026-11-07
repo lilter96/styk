@@ -155,11 +155,24 @@ it("does not retry or create another plan after an unknown approval outcome", as
     ),
   );
   expect(
+    screen.queryByRole("button", { name: "Проверить выбранные (2)" }),
+  ).toBeNull();
+  expect(
     (
       screen.getByRole("button", {
-        name: "Проверить выбранные (2)",
+        name: /Вернуться к готовности товаров/,
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Отправить изменения (2)",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  expect(writes.filter((w) => w.path.endsWith("import-preview"))).toHaveLength(
+    1,
+  );
   expect(writes.filter((w) => w.path.endsWith("approve"))).toHaveLength(1);
 });

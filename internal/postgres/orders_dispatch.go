@@ -101,6 +101,12 @@ func orderDispatchCurrent(ctx context.Context, tx pgx.Tx, work orders.Work, guar
 	if current.Credentials != work.Credentials || current.Config.Revision != work.ConfigRevision {
 		return false, nil
 	}
+	if err = validateMerchantIntentJournal(ctx, tx, work.Command, work.ID); err != nil {
+		if errors.Is(err, orders.ErrBlocked) || errors.Is(err, orders.ErrStale) || errors.Is(err, orders.ErrNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
 	if work.State.ReadOnly() {
 		return true, nil
 	}

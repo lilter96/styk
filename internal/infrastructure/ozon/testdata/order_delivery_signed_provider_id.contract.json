@@ -1,0 +1,13 @@
+{
+  "reviewed_at": "2026-11-07",
+  "endpoint": "POST /v3/posting/fbs/get",
+  "official_source": "https://docs.ozon.ru/api/seller/zh/swagger.json",
+  "schema": "v3DeliveryMethod",
+  "field": "tpl_provider_id",
+  "type": "integer:int64",
+  "minimum": null,
+  "documented_negative_meaning": null,
+  "fixture_class": "Minimal sanitized reproduction of a live-observed signed provider identifier; all order, SKU, warehouse, method and offer identities and prices are synthetic",
+  "live_observation": "Two historical Express postings returned tpl_provider_id=-2. Removing delivery_method in memory made the old normal decoder pass. No provider write was used.",
+  "safety": "Negative provider identifiers remain opaque observed values, not null, own-delivery authority or positive carrier identities. Generic order, SKU, warehouse and method ID decoding remains unchanged."
+}

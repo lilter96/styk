@@ -49,7 +49,9 @@ unknown future values. A disabled method is not automatically evidence that an
 already assigned posting cannot be fulfilled: each action still needs its own
 validated prerequisites. Legacy profile identities without this new observation
 remain valid. These observations do not enroll targets or grant stock publication
-permission; the exact-account test policy and reviewed mappings remain required. Rollback refuses to
+permission; current owner consent, exact account-pair scope, reviewed mappings and
+action-specific dispatch guards remain required. Historical lab account limits
+are not an enrollment gate for connected merchants. Rollback refuses to
 discard observation history while the table is populated; no provider operation
 is issued.
 

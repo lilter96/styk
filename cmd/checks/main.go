@@ -12,11 +12,17 @@ import (
 	"sort"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/lilter96/styk/internal/checkpolicy"
 )
 
 type options struct{ base, head, format, lane string }
+
+// Leave room inside the five-minute wall budget for terminating process groups
+// and removing the owned PostgreSQL container after a deadline or failure.
+const verificationBudget = 5 * time.Minute
+const verificationCleanupReserve = 20 * time.Second
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -29,7 +35,12 @@ func main() {
 
 func run(ctx context.Context, args []string) error {
 	if len(args) == 0 || (args[0] != "plan" && args[0] != "run") {
-		return errors.New("usage: checks plan|run [--base REF] [--head REF] [--format text|json|github] [--lane fast|go|web|browser|integration|full]")
+		return errors.New("usage: checks plan|run [--base REF] [--head REF] [--format text|json|github] [--lane fast|go|web|browser|presentation|integration|full|unit-all|integration-all|browser-stack]")
+	}
+	if args[0] == "run" {
+		var cancel context.CancelFunc
+		ctx, cancel = verificationContext(ctx)
+		defer cancel()
 	}
 	o, err := parseOptions(args[1:])
 	if err != nil {
@@ -55,7 +66,7 @@ func parseOptions(args []string) (options, error) {
 	f.StringVar(&o.base, "base", os.Getenv("STYK_CHECK_BASE"), "comparison ref; omitted: local staged/unstaged/untracked files")
 	f.StringVar(&o.head, "head", os.Getenv("STYK_CHECK_HEAD"), "commit to check; omitted: working tree")
 	f.StringVar(&o.format, "format", "text", "text, json or github outputs")
-	f.StringVar(&o.lane, "lane", "fast", "fast, go, web, browser, integration or full")
+	f.StringVar(&o.lane, "lane", "fast", "fast, go, web, browser, presentation, integration, full, unit-all, integration-all or browser-stack")
 	if err := f.Parse(args); err != nil {
 		return o, err
 	}
@@ -63,6 +74,10 @@ func parseOptions(args []string) (options, error) {
 		return o, errors.New("unexpected positional arguments")
 	}
 	return o, nil
+}
+
+func verificationContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, verificationBudget-verificationCleanupReserve)
 }
 
 func printPlan(p checkpolicy.Plan, format string) error {

@@ -14,7 +14,7 @@ import (
 // Userinfo and query text can never stand in for the dedicated database path.
 func publicationTestDatabaseURL(raw string) bool {
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "postgres" || u.Opaque != "" || u.Fragment != "" || u.RawFragment != "" || strings.Contains(raw, "#") || u.ForceQuery || u.Path != "/styk_stock_publication_v1_test" || u.RawPath != "" {
+	if err != nil || u.Scheme != "postgres" || u.Opaque != "" || u.Fragment != "" || u.RawFragment != "" || strings.Contains(raw, "#") || u.ForceQuery || (u.Path != "/styk_stock_publication_v1_test" && !ownedFullDatabasePath(u.Path)) || u.RawPath != "" {
 		return false
 	}
 	host := u.Hostname()
@@ -58,6 +58,8 @@ func publicationDatabaseURLCases() []publicationDatabaseURLCase {
 		{"dedicated-private-shape", "postgres://synthetic:dummy-password@127.0.0.1:5432" + path + "?sslmode=disable", true},
 		{"localhost", "postgres://synthetic@localhost" + path, true},
 		{"ipv6-loopback", "postgres://synthetic@[::1]:5432" + path + "?sslmode=require", true},
+		{"owned-full-worker", "postgres://synthetic@127.0.0.1/styk_full_123_456789_7_test?sslmode=disable", true},
+		{"malformed-full-worker", "postgres://synthetic@127.0.0.1/styk_full_123_456789_8_test", false},
 		{"release-database-stays-skipped", "postgres://synthetic@127.0.0.1/styk_orders_release_test", false},
 		{"protected-db-testname-in-password", "postgres://synthetic:styk_stock_publication_v1_test@127.0.0.1/styk", false},
 		{"protected-db-testname-in-query", "postgres://synthetic@127.0.0.1/styk?application_name=styk_stock_publication_v1_test", false},

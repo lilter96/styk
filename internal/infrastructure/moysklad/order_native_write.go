@@ -17,6 +17,9 @@ func (c *OrderClient) nativeMovementPayload(command orders.Command) (map[string]
 		return nil, ErrOrderIntent
 	}
 	body := map[string]any{"syncId": movement.Correlation.SyncID, "externalCode": movement.Correlation.Marker, "name": movement.Correlation.Marker, "organization": c.reference("entity/organization", "organization", movement.OrganizationID), "agent": c.reference("entity/counterparty", "counterparty", movement.AgentID), "store": c.reference("entity/store", "store", movement.StoreID), "applicable": *movement.Applicable.Value, "vatEnabled": *movement.VATEnabled.Value, "vatIncluded": *movement.VATIncluded.Value, "moment": movement.Moment.In(time.FixedZone("Moscow", 3*60*60)).Format("2006-01-02 15:04:05.000")}
+	if movement.ContractID != "" {
+		body["contract"] = c.reference("entity/contract", "contract", movement.ContractID)
+	}
 	rate := map[string]any{"currency": c.reference("entity/currency", "currency", movement.CurrencyID)}
 	if movement.RateValue.IsKnown() {
 		rate["value"] = json.Number(*movement.RateValue.Value)
@@ -85,12 +88,36 @@ func (c *OrderClient) nativeMovementPreflight(ctx context.Context, command order
 	}
 	_, err = c.lookupNativeDocument(ctx, movement.Correlation)
 	if errors.Is(err, orders.ErrNotFound) {
-		return nil
+		return c.nativeDemandPreflight(ctx, command, parent)
 	}
 	if err == nil {
 		return orders.ErrConflict
 	}
 	return err
+}
+
+func (c *OrderClient) nativeDemandPreflight(ctx context.Context, command orders.Command, parent orders.TargetObservation) error {
+	if command.MerchantIntent == nil || command.Action != orders.ActionDemandCreate {
+		return nil
+	}
+	if command.NativeMovement.DemandCoverageValidation(command, time.Now().UTC()).Code != "" {
+		return orders.ErrBlocked
+	}
+	issue := orders.AutomaticDemandCoverage(parent.LinkedDemandIDs)
+	if issue.Code == "" {
+		return nil
+	}
+	if issue.Code != "native_linked_demand_coverage_unavailable" {
+		return orders.ErrBlocked
+	}
+	coverage, err := c.readNativeDemandCoverage(ctx, parent)
+	if err != nil {
+		return err
+	}
+	if coverage.Validation(command.Scope, command.Correlation, command.ExpectedTargetRevision, time.Now().UTC()).Code != "" {
+		return orders.ErrBlocked
+	}
+	return nil
 }
 
 func (c *OrderClient) nativeMovementProductPreflight(ctx context.Context, command orders.Command) error {

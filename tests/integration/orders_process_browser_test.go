@@ -126,7 +126,7 @@ func ordersProcessRunBrowser(t *testing.T, ctx context.Context, web string, scop
 		specs = []string{"e2e/smoke.spec.ts", "e2e/orders-stack.spec.ts"}
 	}
 	args := append([]string{"node_modules/@playwright/test/cli.js", "test"}, specs...)
-	args = append(args, "--workers=1", "--reporter=line")
+	args = append(args, "--workers=1", "--reporter=line", "--output="+t.TempDir())
 	cmd := exec.CommandContext(ctx, "node", args...)
 	cmd.Dir = web
 	cmd.Env = append(os.Environ(), "STYK_ORDERS_STACK_ORIGIN="+ordersProcessOrigin, "STYK_ORDERS_STACK_SCOPE="+string(raw), "STYK_ORDERS_MAIL_SECRET="+mailSecret)

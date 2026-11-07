@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os/exec"
 	"testing"
 	"time"
 
@@ -115,7 +114,7 @@ func assertLabelRollbackRejected(t *testing.T, f ordersStoreFixture) {
 	catalogSyncMigrate(t, dsn, "down-to", "52")
 	ctx, cancel := context.WithTimeout(f.ctx, 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", dsn, "down")
+	cmd := migrationCommand(t, ctx, "-dir", "../../migrations", "postgres", dsn, "down")
 	output, err := cmd.CombinedOutput()
 	if err == nil || !bytes.Contains(output, []byte("encrypted label artifacts prevent destructive rollback")) {
 		t.Fatal("label migration did not reject destructive rollback for the expected reason")

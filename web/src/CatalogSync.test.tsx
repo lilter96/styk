@@ -235,7 +235,11 @@ it("previews without approving and submits only explicitly selected canonical en
     acknowledge: true,
     idempotency_key: expect.any(String),
   });
-  expect(screen.queryByText("Изменения подтверждены сверкой")).toBeNull();
+  expect(
+    screen.queryByText("Изменения подтверждены сверкой", {
+      selector: ".catalog-state",
+    }),
+  ).toBeNull();
 });
 
 it("never retries an approval with an unknown outcome, including double clicks and status refresh", async () => {
@@ -268,12 +272,18 @@ it("never retries an approval with an unknown outcome, including double clicks a
     fetcher.mock.calls.filter(([url]) => String(url).includes("/approve")),
   ).toHaveLength(1);
   expect(
+    screen.queryByRole("button", { name: "Проверить выбранные товары" }),
+  ).toBeNull();
+  expect(
     (
       screen.getByRole("button", {
-        name: "Проверить выбранные товары",
+        name: "Отправить изменения (1)",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
+  expect(
+    fetcher.mock.calls.filter(([url]) => String(url).includes("/preview")),
+  ).toHaveLength(1);
 });
 
 it("blocks the whole product on a conflict and does not expose provider error messages", () => {

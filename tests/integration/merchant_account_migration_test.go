@@ -5,7 +5,6 @@ package integration
 import (
 	"context"
 	"errors"
-	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -105,7 +104,7 @@ func TestMerchantAccountBackfillLeavesAmbiguousOwnershipUnassigned(t *testing.T)
 		if direction == "up-to" {
 			target = "39"
 		}
-		cmd := exec.Command("go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", db.Pool.Config().ConnString(), direction, target)
+		cmd := migrationCommand(t, context.Background(), "-dir", "../../migrations", "postgres", db.Pool.Config().ConnString(), direction, target)
 		output, err := cmd.CombinedOutput()
 		return string(output), err
 	}

@@ -6,6 +6,8 @@ import (
 )
 
 type SaveConfigRequest struct {
+	FinanceConsent    bool   `json:"finance_consent,omitempty"`
+	LifecycleConsent  bool   `json:"lifecycle_consent,omitempty"`
 	AutomationConsent bool   `json:"automation_consent,omitempty"`
 	ReadEnabled       *bool  `json:"read_enabled,omitempty"`
 	Config            Config `json:"config"`
@@ -15,10 +17,12 @@ type SaveConfigRequest struct {
 }
 
 type ReviewContext struct {
-	NativeSplitBlocked             map[string]bool `json:"-"`
-	NativeAncestorConsumed         map[string]bool `json:"-"`
-	RevalidationWorkID             string          `json:"-"`
-	RevalidationCommandFingerprint string          `json:"-"`
+	MerchantPending                map[string]bool                `json:"-"`
+	NativeStateBaselines           map[string]NativeStateBaseline `json:"-"`
+	NativeSplitBlocked             map[string]bool                `json:"-"`
+	NativeAncestorConsumed         map[string]bool                `json:"-"`
+	RevalidationWorkID             string                         `json:"-"`
+	RevalidationCommandFingerprint string                         `json:"-"`
 
 	SplitAncestorSettlements map[string]SplitAncestorSettlementPermission `json:"-"`
 
@@ -43,6 +47,7 @@ type ReviewContext struct {
 }
 
 type PreviewRequest struct {
+	MerchantIntent       *MerchantIntent          `json:"-"`
 	CompositionProposals []CompositionProposal    `json:"composition_proposals,omitempty"`
 	NativeProposals      []NativeMovementProposal `json:"native_proposals,omitempty"`
 	Scope                Scope                    `json:"scope"`

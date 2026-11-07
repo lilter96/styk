@@ -139,6 +139,7 @@ func preparePositionPatch(command *orders.Command, baselines []orders.PositionBa
 		return orders.Validation{Field: "positions", Code: "position_ownership_or_replacement_unverified"}
 	}
 	command.Action = orders.ActionMirrorPositionUpdate
+	command.NativeStateBaseline = nil
 	command.PositionPatch = patch
 	command.CustomerOrder.OwnedFields = patch.Fields()
 	command.CustomerOrder.PIIMappings = nil

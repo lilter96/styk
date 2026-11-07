@@ -28,7 +28,7 @@ func TestMoySkladSettingsBrowser(t *testing.T) {
 		t.Skip("settings browser test not requested")
 	}
 	u, err := url.Parse(os.Getenv("TEST_DATABASE_URL"))
-	if err != nil || u.Hostname() != "127.0.0.1" || u.Path != "/styk_settings_browser_test" {
+	if err != nil || u.Hostname() != "127.0.0.1" || (u.Path != "/styk_settings_browser_test" && !(ownedFullDatabasePath(u.Path) && ordersProcessDatabaseURL(u.String()))) {
 		t.Fatal("dedicated local settings test database required")
 	}
 	db, err := postgres.Open(context.Background(), u.String(), 5*time.Second)

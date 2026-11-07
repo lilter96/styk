@@ -11,19 +11,25 @@ import (
 	"io"
 	"regexp"
 	"slices"
+	"sync"
 )
 
 //go:embed manifest.json
 var manifestJSON []byte
 
 var (
-	ErrManifest = errors.New("invalid order contract manifest")
-	fieldPath   = regexp.MustCompile(`^\$(\.[a-zA-Z_][a-zA-Z_0-9]*|\[\])*$`)
+	ErrManifest      = errors.New("invalid order contract manifest")
+	fieldPath        = regexp.MustCompile(`^\$(\.[a-zA-Z_][a-zA-Z_0-9]*|\[\])*$`)
+	embeddedManifest = sync.OnceValues(func() (Manifest, error) { return DecodeManifest(manifestJSON) })
 )
 
 // ContractManifest returns a fresh copy of the reviewed embedded snapshot.
 func ContractManifest() (Manifest, error) {
-	return DecodeManifest(manifestJSON)
+	manifest, err := embeddedManifest()
+	if err != nil {
+		return Manifest{}, err
+	}
+	return manifest.clone(), nil
 }
 
 // DecodeManifest rejects incomplete classifications and inconsistent schemas.

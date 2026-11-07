@@ -51,6 +51,17 @@ func (command Command) Validate() error {
 }
 
 func (command Command) validateAttachments() error {
+	if command.MerchantPositionBaseline != nil && (command.MerchantIntent == nil || command.Action != ActionPostingPack) {
+		return ErrInvalid
+	}
+	if command.MerchantIntent != nil {
+		intent := command.MerchantIntent
+		if intent.Validate() != nil || command.Action.IsMirror() || command.LifecyclePolicyRevision < 1 || command.AutomationGrantRevision != 0 || intent.Scope != command.Scope || intent.Correlation != command.Correlation || intent.Action != command.Action || intent.ConfigRevision != command.ConfigRevision || intent.CredentialRevision != command.Credentials.Moysklad || intent.AfterRevision != command.ExpectedTargetRevision {
+			return ErrInvalid
+		}
+	} else if command.LifecyclePolicyRevision != 0 {
+		return ErrInvalid
+	}
 	if command.SplitAncestorSettlement != nil && (command.SplitTransfer != nil || command.SplitSourceWorkID != "" || command.RetainedSplitWorkID != "" || command.SupersededSplitWorkID != "" || !command.SplitAncestorSettlement.AllowsCommand(command)) {
 		return ErrInvalid
 	}
@@ -149,6 +160,9 @@ func (command Command) validatePostingAction() error {
 }
 
 func (write CustomerOrderWrite) Validate(scope Scope) error {
+	if write.ContractID != "" && !validUUID(write.ContractID) {
+		return ErrInvalid
+	}
 	for _, id := range []string{write.OrganizationID, write.AgentID, write.StoreID, write.StateID, write.SalesChannelID} {
 		if !validID(id) {
 			return ErrInvalid

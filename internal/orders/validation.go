@@ -14,6 +14,14 @@ const (
 )
 
 func (config Config) Validate() error {
+	if config.Finance != nil && config.Finance.Enabled {
+		if config.Finance.Validate() != nil || config.Finance.Scope != config.Scope || config.Finance.ConfigRevision != config.Revision || !config.ReadsEnabled() {
+			return ErrInvalid
+		}
+		if config.Enabled && (config.OrganizationID != config.Finance.OrganizationID || config.AgentID != config.Finance.AgentID || config.CurrencyID != config.Finance.CurrencyID) {
+			return ErrInvalid
+		}
+	}
 	if config.CurrencyID != "" && !validUUID(config.CurrencyID) {
 		return ErrInvalid
 	}
@@ -154,6 +162,9 @@ func (config Config) validateStatusMappings() error {
 }
 
 func (config Config) validateReverseStatusMappings() error {
+	if err := config.validateLifecycle(); err != nil {
+		return err
+	}
 	seen := make(map[string]bool, len(config.ReverseStatusMappings))
 	for _, mapping := range config.ReverseStatusMappings {
 		if mapping.Validate() != nil || seen[mapping.StateID] {

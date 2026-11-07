@@ -16,7 +16,7 @@ func TestRedesignMatchingBrowser(t *testing.T) {
 		t.Skip("redesign matching browser test not requested")
 	}
 	u, err := url.Parse(os.Getenv("TEST_DATABASE_URL"))
-	if err != nil || u.Hostname() != "127.0.0.1" || u.Path != "/styk_redesign_test" {
+	if err != nil || u.Hostname() != "127.0.0.1" || (u.Path != "/styk_redesign_test" && !(ownedFullDatabasePath(u.Path) && ordersProcessDatabaseURL(u.String()))) {
 		t.Fatal("dedicated local redesign test database required")
 	}
 	for _, key := range []string{"MOYSKLAD_TOKEN", "MOYSKLAD_ACCOUNT_ID", "OZON_CLIENT_ID", "OZON_API_KEY", "STYK_CREDENTIAL_ENCRYPTION_KEY"} {

@@ -90,12 +90,13 @@ type TargetPosition struct {
 // TargetObservation contains sanitized native facts, not raw customerorder JSON.
 // Complete requires every position page, not a truncated embedded collection.
 type TargetObservation struct {
-	SourceDeleted     Field[string] `json:"source_deleted,omitzero"`
-	ProviderUpdatedAt Field[string] `json:"provider_updated_at,omitzero"`
-	RedactedFields    []string      `json:"redacted_fields,omitempty"`
-	Scope             Scope         `json:"scope"`
-	Correlation       Correlation   `json:"correlation"`
-	Revision          string        `json:"revision"`
+	LinkedDemandIDs   Field[[]string] `json:"linked_demand_ids,omitzero"`
+	SourceDeleted     Field[string]   `json:"source_deleted,omitzero"`
+	ProviderUpdatedAt Field[string]   `json:"provider_updated_at,omitzero"`
+	RedactedFields    []string        `json:"redacted_fields,omitempty"`
+	Scope             Scope           `json:"scope"`
+	Correlation       Correlation     `json:"correlation"`
+	Revision          string          `json:"revision"`
 	// HeaderRevision commits to typed header facts before privacy redaction.
 	// It is not a provider version, watermark or proof of snapshot atomicity.
 	HeaderRevision string             `json:"header_revision,omitempty"`

@@ -183,7 +183,8 @@ func TestAutomaticMultipleTargetsScopesAndUnknownIsolation(t *testing.T) {
 		clients[account] = c
 		return c
 	}
-	runner := stocksync.Runner{Enabled: true, Store: db, ResolveOzon: func(_ context.Context, _, account string) (*ozon.Client, error) { return makeClient(account), nil }}
+	var clockAdvance atomic.Int64
+	runner := stocksync.Runner{Now: func() time.Time { return time.Now().UTC().Add(time.Duration(clockAdvance.Load())) }, Enabled: true, Store: db, ResolveOzon: func(_ context.Context, _, account string) (*ozon.Client, error) { return makeClient(account), nil }}
 	advance := func() {
 		t.Helper()
 		if _, _, err := db.AdvanceAutomaticStock(ctx, time.Now()); err != nil {
@@ -452,16 +453,14 @@ func TestAutomaticMultipleTargetsScopesAndUnknownIsolation(t *testing.T) {
 	}
 	startReads(c, positiveDone.LastCycle.ID)
 	zeroCycle := waitState(c, "WAITING_PUBLICATION")
-	limit := time.Now().Add(35 * time.Second)
-	for time.Now().Before(limit) {
-		worked, e := runner.RunNext(ctx)
-		if e != nil {
-			t.Fatal(e)
-		}
-		if worked {
-			break
-		}
-		time.Sleep(250 * time.Millisecond)
+	// Keep the real 30-second target guard. Verify it rejects the immediate
+	// repeat, then advance the workflow clock instead of sleeping 30 seconds.
+	if worked, e := runner.RunNext(ctx); e != nil || worked || writes.Load() != 6 {
+		t.Fatalf("target cooldown did not prevent an immediate repeat: worked=%v writes=%d err=%v", worked, writes.Load(), e)
+	}
+	clockAdvance.Add(int64(31 * time.Second))
+	if worked, e := runner.RunNext(ctx); e != nil || !worked {
+		t.Fatalf("elapsed target cooldown did not permit the next dispatch: worked=%v err=%v", worked, e)
 	}
 	zeroDone := waitState(c, "COMPLETE")
 	zeroOp, err := db.StockPublication(ctx, c.scope, zeroCycle.LastCycle.PublicationID)

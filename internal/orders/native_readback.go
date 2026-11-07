@@ -10,6 +10,9 @@ func NativeDocumentMatches(command Command, actual NativeDocumentObservation) bo
 	if wanted.Correlation.DocumentID != "" && wanted.Correlation.DocumentID != actual.Correlation.DocumentID {
 		return false
 	}
+	if wanted.ContractID != "" && wanted.ContractID != actual.ContractID {
+		return false
+	}
 	if wanted.OrganizationID != actual.OrganizationID || wanted.AgentID != actual.AgentID || wanted.StoreID != actual.StoreID || wanted.CurrencyID != actual.CurrencyID || !nativeBoolEqual(wanted.Applicable, actual.Applicable) || !nativeBoolEqual(wanted.VATEnabled, actual.VATEnabled) || !nativeBoolEqual(wanted.VATIncluded, actual.VATIncluded) || !desiredDecimal(wanted.RateValue, actual.RateValue) {
 		return false
 	}
@@ -62,6 +65,9 @@ func nativeDocumentLineEqual(wanted NativeMovementLine, actual NativeDocumentPos
 func NativeParentReadback(command Command, target TargetObservation) bool {
 	movement := command.NativeMovement
 	if movement == nil || !nativeDocumentPresent(target.SourceDeleted) || !target.Complete || target.Scope != command.Scope || !baselineCorrelationMatches(command.Correlation, target.Correlation) || target.Correlation.CustomerOrderID != command.Correlation.CustomerOrderID || target.ObservedAt.IsZero() || len(target.Positions) != len(command.TargetPositions) {
+		return false
+	}
+	if movement.ContractID != "" && target.Fields.ContractID != movement.ContractID {
 		return false
 	}
 	if target.Fields.OrganizationID != movement.OrganizationID || target.Fields.AgentID != movement.AgentID || target.Fields.StoreID != movement.StoreID || target.Fields.CurrencyID != movement.CurrencyID {
@@ -122,7 +128,7 @@ func nativeParentPositionEffect(action Action, before, after TargetPosition) boo
 // and unrelated attributes from movement previews and immutable evidence.
 func NativeParentFacts(target TargetObservation) TargetObservation {
 	fields := target.Fields
-	target.Fields = CustomerOrderWrite{OrganizationID: fields.OrganizationID, AgentID: fields.AgentID, StoreID: fields.StoreID, CurrencyID: fields.CurrencyID, RateValue: fields.RateValue, VATEnabled: fields.VATEnabled, VATIncluded: fields.VATIncluded, Applicable: fields.Applicable, StateID: fields.StateID}
+	target.Fields = CustomerOrderWrite{ContractID: fields.ContractID, OrganizationID: fields.OrganizationID, AgentID: fields.AgentID, StoreID: fields.StoreID, CurrencyID: fields.CurrencyID, RateValue: fields.RateValue, VATEnabled: fields.VATEnabled, VATIncluded: fields.VATIncluded, Applicable: fields.Applicable, StateID: fields.StateID}
 	return target
 }
 

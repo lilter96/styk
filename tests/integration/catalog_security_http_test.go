@@ -5,7 +5,9 @@ package integration
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net"
@@ -17,10 +19,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/lilter96/styk/internal/catalog"
 	"github.com/lilter96/styk/internal/catalogsync"
 	"github.com/lilter96/styk/internal/console"
 	"github.com/lilter96/styk/internal/identity"
+	"github.com/lilter96/styk/internal/postgres"
 )
 
 var errCatalogSecurityNetwork = errors.New("catalog security test forbids outbound connections")
@@ -46,8 +50,8 @@ func newCatalogSecurityHTTP(t *testing.T) *catalogSecurityHTTP {
 	if err != nil {
 		t.Fatal(err)
 	}
-	owner := catalogSecurityHTTPUser(t, store, "catalog-owner@example.test")
-	other := catalogSecurityHTTPUser(t, store, "catalog-other@example.test")
+	owner := catalogSecurityHTTPUser(t, f.db, "catalog-owner@example.test")
+	other := catalogSecurityHTTPUser(t, f.db, "catalog-other@example.test")
 	if err = store.ClaimLegacy(t.Context(), f.scope.Tenant, owner.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -70,15 +74,34 @@ func newCatalogSecurityHTTP(t *testing.T) *catalogSecurityHTTP {
 	return h
 }
 
-func catalogSecurityHTTPUser(t *testing.T, store *identity.Store, email string) identity.User {
+// Scope tests seed verified identities, then create real identity sessions and
+// exercise the normal cookie, CSRF and ownership checks in MerchantHandler.
+func catalogSecurityHTTPUser(t *testing.T, db *postgres.Store, email string) identity.User {
 	t.Helper()
-	if _, _, err := store.Register(t.Context(), email, "long-password-owner", "Synthetic catalog security"); err != nil {
+	var random [16]byte
+	if _, err := rand.Read(random[:]); err != nil {
 		t.Fatal(err)
 	}
-	verifyTestEmail(t, store, email)
-	user, err := store.Authenticate(t.Context(), email, "long-password-owner")
+	suffix := hex.EncodeToString(random[:])
+	user := identity.User{ID: "u_" + suffix, Email: email, AuthVersion: 1}
+	err := pgx.BeginFunc(t.Context(), db.Pool, func(tx pgx.Tx) error {
+		for _, statement := range []struct {
+			query string
+			args  []any
+		}{
+			{`INSERT INTO saas_users(id,email,password_hash,email_verified_at) VALUES($1,$2,$3,clock_timestamp())`, []any{user.ID, email, make([]byte, 40)}},
+			{`INSERT INTO saas_workspaces(id,name) VALUES($1,'Synthetic catalog merchant')`, []any{"w_" + suffix}},
+			{`INSERT INTO saas_memberships(workspace_id,user_id,role) VALUES($1,$2,'OWNER')`, []any{"w_" + suffix, user.ID}},
+			{`INSERT INTO saas_merchant_accounts(user_id,tenant_id) VALUES($1,$2)`, []any{user.ID, "w_" + suffix}},
+		} {
+			if _, err := tx.Exec(t.Context(), statement.query, statement.args...); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal("seed isolated catalog merchant", err)
 	}
 	return user
 }

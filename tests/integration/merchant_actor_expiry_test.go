@@ -5,7 +5,6 @@ package integration
 import (
 	"context"
 	"errors"
-	"os/exec"
 	"testing"
 	"time"
 
@@ -24,7 +23,7 @@ func TestMerchantActorExpiryIsCheckedAfterLockWait(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			db, _ := controlledFixture(t)
 			if rollback {
-				cmd := exec.Command("go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", db.Pool.Config().ConnString(), "down-to", "41")
+				cmd := migrationCommand(t, context.Background(), "-dir", "../../migrations", "postgres", db.Pool.Config().ConnString(), "down-to", "41")
 				if out, err := cmd.CombinedOutput(); err != nil {
 					t.Fatalf("rollback compatible security migration: %v %s", err, out)
 				}

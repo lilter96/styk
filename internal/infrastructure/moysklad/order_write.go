@@ -48,6 +48,9 @@ func (c *OrderClient) orderPreflight(ctx context.Context, command orders.Command
 		return err
 	}
 	if command.Action == orders.ActionMirrorCreate {
+		if err = c.commissionOrderContract(ctx, *command.CustomerOrder); err != nil {
+			return err
+		}
 		_, err = c.readOrderCorrelation(ctx, command.Correlation)
 		if errors.Is(err, ErrOrderCorrelation) {
 			return nil

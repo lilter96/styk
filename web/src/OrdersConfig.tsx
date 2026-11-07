@@ -1,4 +1,14 @@
 import { OrdersStatusSettings } from "./OrdersStatusSettings";
+import { OrdersLifecycleSettings } from "./OrdersLifecycleSettings";
+import { OrdersCommissionSettings } from "./OrdersCommissionSettings";
+import {
+  financeConsentRequired,
+  financeValidation,
+} from "./OrdersFinanceTypes";
+import {
+  lifecycleConsentRequired,
+  lifecycleValidation,
+} from "./OrdersLifecycleTypes";
 import { OrdersAddressMapping } from "./OrdersAddressMapping";
 import { OrdersReservationMapping } from "./OrdersReservationMapping";
 import { OrdersNativePolicy, nativePolicyValid } from "./OrdersNativePolicy";
@@ -18,7 +28,6 @@ import {
   WarehouseSummary,
 } from "./OrdersWarehouseSettings";
 import { useOrdersDraftGuard } from "./useOrdersDraftGuard";
-import "./orders-settings.css";
 import {
   orderScopeBody,
   orderRequestError,
@@ -127,6 +136,8 @@ export function OrdersConfig({
   const [dirty, setDirty] = useState(false);
   const [consent, setConsent] = useState(false);
   const [automationConsent, setAutomationConsent] = useState(false);
+  const [lifecycleConsent, setLifecycleConsent] = useState(false);
+  const [financeConsent, setFinanceConsent] = useState(false);
   const [automatic, setAutomatic] = useState(
     !!config.automation &&
       !config.automation.revoked_at &&
@@ -158,6 +169,16 @@ export function OrdersConfig({
       automaticFields.some(
         (field) => !config.automation?.fields.includes(field),
       ));
+  const lifecycleConsentNeeded = lifecycleConsentRequired(
+    config.lifecycle,
+    draft.lifecycle,
+  );
+  const lifecycleError = lifecycleValidation(draft);
+  const financeConsentNeeded = financeConsentRequired(
+    config.finance,
+    draft.finance,
+  );
+  const financeError = financeValidation(draft);
   function cancel() {
     if (!dirty || !window.confirm("Отменить несохранённые изменения?")) return;
     setDraft(independentReadConfig(config));
@@ -173,6 +194,8 @@ export function OrdersConfig({
     );
     setAutomaticFields(config.automation?.fields ?? []);
     setAutomationConsent(false);
+    setLifecycleConsent(false);
+    setFinanceConsent(false);
     setConsent(false);
     setDirty(false);
     onDirty(false);
@@ -183,6 +206,8 @@ export function OrdersConfig({
     setDirty(true);
     onDirty(true);
     setAutomationConsent(false);
+    setLifecycleConsent(false);
+    setFinanceConsent(false);
     setError("");
   }
   function automationChange() {
@@ -321,13 +346,22 @@ export function OrdersConfig({
                 ? "Проверьте срок хранения данных покупателя."
                 : !nativePolicyValid(draft.native_documents)
                   ? "Проверьте разрешения складских документов в разделе «Дополнительно»."
-                  : enabledNeedsConsent && !consent
-                    ? "Подтвердите разрешение передачи в разделе «Общие»."
-                    : automatic && (!actions.length || !automaticFields.length)
-                      ? "Выберите действия и данные в разделе «Автоматизация»."
-                      : permanentConsentNeeded && !automationConsent
-                        ? "Подтвердите постоянную автоматизацию и выбранные права в разделе «Автоматизация»."
-                        : "";
+                  : lifecycleError
+                    ? lifecycleError
+                    : financeError
+                      ? financeError
+                      : financeConsentNeeded && !financeConsent
+                        ? "Подтвердите отдельное финансовое разрешение в разделе «Работа в МойСклад»."
+                        : lifecycleConsentNeeded && !lifecycleConsent
+                          ? "Подтвердите команды и складские документы в разделе «Работа в МойСклад»."
+                          : enabledNeedsConsent && !consent
+                            ? "Подтвердите разрешение передачи в разделе «Общие»."
+                            : automatic &&
+                                (!actions.length || !automaticFields.length)
+                              ? "Выберите действия и данные в разделе «Автоматизация»."
+                              : permanentConsentNeeded && !automationConsent
+                                ? "Подтвердите постоянную автоматизацию и выбранные права в разделе «Автоматизация»."
+                                : "";
   const saveDisabled =
     busy ||
     setupBusy ||
@@ -339,6 +373,10 @@ export function OrdersConfig({
     !reverseValid ||
     !statusesValid ||
     !nativePolicyValid(draft.native_documents) ||
+    !!lifecycleError ||
+    !!financeError ||
+    (financeConsentNeeded && !financeConsent) ||
+    (lifecycleConsentNeeded && !lifecycleConsent) ||
     (automatic &&
       (!automaticAllowed ||
         (permanentConsentNeeded && !automationConsent) ||
@@ -360,6 +398,8 @@ export function OrdersConfig({
         ...orderScopeBody(scope),
         expected_revision: config.revision,
         automation_consent: automationConsent,
+        lifecycle_consent: lifecycleConsent,
+        finance_consent: financeConsent,
         read_enabled: readConfigured ? readEnabled === true : draft.enabled,
         config: {
           ...editable,
@@ -404,6 +444,7 @@ export function OrdersConfig({
   return (
     <form
       className="order-settings-form"
+      data-section={section}
       onSubmit={(event) => {
         event.preventDefault();
         void save();
@@ -478,7 +519,13 @@ export function OrdersConfig({
                 checked={draft.enabled}
                 disabled={busy}
                 onChange={(event) => {
-                  change({ ...draft, enabled: event.target.checked });
+                  change({
+                    ...draft,
+                    enabled: event.target.checked,
+                    ...(!event.target.checked && draft.lifecycle
+                      ? { lifecycle: { ...draft.lifecycle, enabled: false } }
+                      : {}),
+                  });
                   setConsent(false);
                   if (!event.target.checked) setAutomatic(false);
                 }}
@@ -752,8 +799,8 @@ export function OrdersConfig({
             <div className="settings-card">
               <h3>Статусы Ozon → МойСклад</h3>
               <p>
-                При изменении статуса Ozon выбирается состояние заказа в
-                МойСклад.
+                STYK меняет состояние только при подтверждённом владении его
+                текущей версией. Ручной статус продавца сохраняется.
               </p>
               <OrdersStatusSettings
                 draft={draft}
@@ -769,8 +816,9 @@ export function OrdersConfig({
               </h3>
               <p className="settings-info">
                 <Icon name="error" />
-                Изменения в МойСклад никогда не запускают действие в Ozon сами.
-                Сначала вы проверяете и подтверждаете его.
+                Эти правила только предлагают действие для проверки.
+                Автоматические команды включаются отдельно в разделе «Работа в
+                МойСклад».
               </p>{" "}
               {(draft.reverse_status_mappings ?? []).map((mapping, index) => (
                 <div className="orders-status-mapping" key={index}>
@@ -857,6 +905,30 @@ export function OrdersConfig({
                 Добавить обратное предложение
               </button>
             </div>
+          </section>
+          <section
+            hidden={section !== "lifecycle"}
+            aria-labelledby="settings-lifecycle"
+          >
+            <OrdersLifecycleSettings
+              draft={draft}
+              metadata={metadata.data}
+              disabled={busy || setupBusy}
+              consent={lifecycleConsent}
+              consentRequired={lifecycleConsentNeeded}
+              onConsent={setLifecycleConsent}
+              onChange={change}
+            />
+            <OrdersCommissionSettings
+              scope={scope}
+              draft={draft}
+              metadata={metadata.data}
+              disabled={busy || setupBusy}
+              consent={financeConsent}
+              consentRequired={financeConsentNeeded}
+              onConsent={setFinanceConsent}
+              onChange={change}
+            />
           </section>
           <section
             hidden={section !== "automation"}

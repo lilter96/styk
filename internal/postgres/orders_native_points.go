@@ -13,7 +13,7 @@ import (
 // Called only after the existing ingestion page journal is inserted, in the
 // same transaction. Failed native reads are evidence, never successful zeros.
 func saveOrderNativePointPage(ctx context.Context, tx pgx.Tx, page orders.SourcePage, now time.Time) error {
-	if page.Stream != orders.NativePointStream {
+	if !orders.IsNativeReadStream(page.Stream) {
 		if len(page.NativeReads) > 0 || len(page.NativeDocumentReads) > 0 {
 			return orders.ErrInvalid
 		}
@@ -66,6 +66,9 @@ func saveOrderNativePointRead(ctx context.Context, tx pgx.Tx, page orders.Source
 	}
 	var snapshotID *int64
 	var observedAt *time.Time
+	if err = observeOrderMerchantIntent(ctx, tx, page, read, now); err != nil {
+		return err
+	}
 	if read.Point != nil {
 		id, e := saveOrderNativePointSnapshot(ctx, tx, *read.Point, now)
 		if e != nil {

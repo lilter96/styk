@@ -181,6 +181,7 @@ func TestRunnerUpdateRequiresFreshFullTargetEvenWithStaticRevision(t *testing.T)
 	t.Parallel()
 	review, observation := existingFlowReview(t)
 	observation.Fields.StateID = "old-state"
+	review.NativeStateBaselines = map[string]orders.NativeStateBaseline{observation.Correlation.PostingNumber: flowStateBaseline(observation)}
 	store := &flowStore{review: review}
 	source, target := &flowProvider{posting: review.Postings[0]}, &flowProvider{target: observation, correlation: observation.Correlation}
 	resolver := flowResolver{source: source, target: target}

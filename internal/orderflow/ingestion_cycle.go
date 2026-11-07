@@ -25,6 +25,11 @@ func (i *Ingestor) Collect(ctx context.Context, scope orders.Scope) error {
 	var nativeErr error
 	if i.options.NativeResolver != nil {
 		nativeErr = i.CollectStream(ctx, scope, orders.NativePointStream)
+		config, configErr := i.store.OrderConfig(ctx, scope)
+		if configErr == nil && config.Lifecycle != nil && config.Lifecycle.Active(i.options.Now(), scope, config.Revision) {
+			nativeErr = errors.Join(nativeErr, i.CollectStream(ctx, scope, orders.NativeChangesStream))
+		}
+		nativeErr = errors.Join(nativeErr, configErr)
 	}
 	return errors.Join(discoveryErr, activeErr, nativeErr)
 }
@@ -151,6 +156,14 @@ func (i *Ingestor) releaseLease(ctx context.Context, lease orders.IngestionLease
 
 func (i *Ingestor) nextWindow(config orders.Config, checkpoint orders.Checkpoint, stream string) (orders.OrderWindow, string) {
 	now := i.options.Now().UTC()
+	if stream == orders.NativeChangesStream {
+		window := nativeChangesWindow(now, checkpoint, config.Revision)
+		window.Limit = i.options.PageSize
+		if !checkpoint.Complete && !checkpoint.Exhausted && checkpoint.ConfigRevision == config.Revision && checkpoint.Revision > 0 {
+			return window, checkpoint.RefreshKey
+		}
+		return window, ingestionDigest(stream, window.From.Format(time.RFC3339Nano), window.To.Format(time.RFC3339Nano), strconv.FormatInt(config.Revision, 10), strconv.FormatInt(checkpoint.Revision, 10))
+	}
 	window := i.anchoredWindow(stream, now)
 	if checkpoint.ConfigRevision == config.Revision && checkpoint.Revision > 0 && stream != ActiveStream && stream != orders.NativePointStream {
 		if !checkpoint.Complete && !checkpoint.Exhausted {
@@ -238,6 +251,9 @@ func (i *Ingestor) persistLeasedPage(ctx context.Context, config orders.Config, 
 }
 
 func (i *Ingestor) readLeasedPage(ctx context.Context, scope orders.Scope, credentials orders.CredentialRevisions, window orders.OrderWindow, cursor string) (orders.OrderSourcePage, error) {
+	if window.Stream == orders.NativeChangesStream {
+		return i.readNativeChangesPage(ctx, scope, credentials, window, cursor)
+	}
 	if window.Stream == orders.NativePointStream {
 		return i.readNativePointPage(ctx, scope, credentials, cursor)
 	}
@@ -288,7 +304,7 @@ func (i *Ingestor) renewLease(ctx context.Context, lease orders.IngestionLease) 
 }
 
 func ingestionStream(stream string) bool {
-	return stream == DiscoveryStream || stream == UnfulfilledStream || stream == ActiveStream || stream == orders.NativePointStream
+	return stream == DiscoveryStream || stream == UnfulfilledStream || stream == ActiveStream || orders.IsNativeReadStream(stream)
 }
 
 func ingestionDigest(parts ...string) string {

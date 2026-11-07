@@ -8,8 +8,6 @@ ENV_FILE ?= $(if $(wildcard .env),.env,.env.local)
 export
 endif
 GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
-INTEGRATION_TEST_TIMEOUT ?= 40m
-INTEGRATION_TEST_FLAGS ?=
 GOOSE := go run -tags="no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql" github.com/pressly/goose/v3/cmd/goose@v3.25.0
 .PHONY: up down migrate test test-integration lint build check-plan check check-go check-web check-ui check-integration check-full
 
@@ -37,10 +35,10 @@ down:
 migrate:
 	@$(GOOSE) -dir migrations postgres "$(or $(DATABASE_URL_UNPOOLED),$(DATABASE_URL))" up
 test:
-	go test ./...
+	go run ./cmd/checks run --lane unit-all
 test-integration:
 	# Live provider checks run separately with an explicit request ledger.
-	env -u DATABASE_URL -u STYK_CREDENTIAL_ENCRYPTION_KEY -u STYK_OPERATOR_SECRET -u STYK_LIVE_ORDER_FLOW_TEST -u STYK_LIVE_OZON_FULFILLMENT_TEST -u MOYSKLAD_TOKEN -u MOYSKLAD_ACCOUNT_ID -u OZON_API_KEY -u OZON_CLIENT_ID go test -timeout=$(INTEGRATION_TEST_TIMEOUT) -tags=integration -count=1 $(INTEGRATION_TEST_FLAGS) ./tests/integration/...
+	go run ./cmd/checks run --lane integration-all
 lint:
 	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './vendor/*'))" || (gofmt -l $$(find . -name '*.go' -not -path './vendor/*'); exit 1)
 	go vet ./...

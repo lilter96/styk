@@ -1,9 +1,14 @@
+import { OrdersAccrualReport } from "./OrdersAccrualReport";
+import { OrdersCarriage } from "./OrdersCarriage";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "./api";
 import { Icon } from "./UI";
 import { ProviderLogo } from "./ProviderLogo";
 import { OrdersConfig } from "./OrdersConfig";
+import { OrdersLifecycleJournal } from "./OrdersLifecycleJournal";
+import { OrdersRealizationReport } from "./OrdersRealizationReport";
+import { OrdersCommissionImport } from "./OrdersCommissionImport";
 import { settingsSections, type SettingsSection } from "./OrdersSettingsParts";
 import {
   ordersURL,
@@ -13,7 +18,6 @@ import {
 } from "./OrdersTypes";
 import type { OrdersProps } from "./Orders";
 import "./Orders.css";
-import "./orders-settings.css";
 
 export function OrdersSettingsPage({
   scope,
@@ -99,25 +103,39 @@ export function OrdersSettingsPage({
         </p>
       ) : (
         config.data && (
-          <OrdersConfig
-            key={`${JSON.stringify(scope)}:${config.data.revision}`}
-            scope={scope}
-            config={config.data}
-            section={section}
-            onSection={openSection}
-            moyLabel={moyLabel}
-            ozonLabel={ozonLabel}
-            onDirty={() => {}}
-            onSaved={(value) => {
-              client.setQueryData(["orders-config", scope], value);
-              void client.invalidateQueries({
-                queryKey: ["orders-config", scope],
-              });
-              void client.invalidateQueries({
-                queryKey: ["orders-postings", scope],
-              });
-            }}
-          />
+          <>
+            <OrdersConfig
+              key={`${JSON.stringify(scope)}:${config.data.revision}`}
+              scope={scope}
+              config={config.data}
+              section={section}
+              onSection={openSection}
+              moyLabel={moyLabel}
+              ozonLabel={ozonLabel}
+              onDirty={() => {}}
+              onSaved={(value) => {
+                client.setQueryData(["orders-config", scope], value);
+                void client.invalidateQueries({
+                  queryKey: ["orders-config", scope],
+                });
+                void client.invalidateQueries({
+                  queryKey: ["orders-postings", scope],
+                });
+              }}
+            />
+            {section === "lifecycle" && (
+              <div
+                className="settings-content settings-lifecycle-diagnostics"
+                key={JSON.stringify(scope)}
+              >
+                <OrdersLifecycleJournal scope={scope} />
+                <OrdersRealizationReport scope={scope} />
+                <OrdersAccrualReport scope={scope} />
+                <OrdersCommissionImport scope={scope} config={config.data} />
+                <OrdersCarriage scope={scope} config={config.data} />
+              </div>
+            )}
+          </>
         )
       )}
     </div>

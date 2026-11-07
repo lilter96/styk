@@ -66,6 +66,9 @@ func (r *Runner) dispatchFulfillment(ctx context.Context, work orders.Work) erro
 	if allowed, err := r.authorizeDispatch(ctx, work, "CONFIG_MAPPING_OR_CREDENTIALS_CHANGED"); !allowed || err != nil {
 		return err
 	}
+	if !r.merchantIntentCurrent(ctx, work) {
+		return r.stop(ctx, work, "MERCHANT_NATIVE_INTENT_CHANGED")
+	}
 	decision, sourceErr := r.reviewedDecision(ctx, work)
 	if sourceErr == nil {
 		_, sourceErr = r.freshSource(ctx, work, decision.Posting)
@@ -89,8 +92,23 @@ func (r *Runner) dispatchFulfillment(ctx context.Context, work orders.Work) erro
 	if err != nil {
 		return r.stop(ctx, work, "SCOPED_SOURCE_CREDENTIALS_UNAVAILABLE")
 	}
+	return r.writeFulfillment(ctx, work, client, exemplarSecret)
+}
+
+func (r *Runner) writeFulfillment(ctx context.Context, work orders.Work, client orders.Provider, exemplarSecret *orders.ExemplarSecret) error {
 	var began atomic.Bool
 	authorize := func(check context.Context) (bool, error) {
+		// Read through the original context: a borrowed write guard/evidence
+		// would recursively authorize the diagnostic MoySklad GET itself.
+		deadline := work.LeaseUntil
+		if bounded, ok := check.Deadline(); ok && bounded.Before(deadline) {
+			deadline = bounded
+		}
+		nativeCheck, cancel := context.WithDeadline(ctx, deadline)
+		defer cancel()
+		if !r.merchantIntentCurrent(nativeCheck, work) {
+			return false, orders.ErrStale
+		}
 		allowed, err := r.store.GuardOrderDispatch(check, orders.DispatchGuard{Work: work, Now: r.now(), Begin: true, ExemplarSecret: exemplarSecret})
 		if allowed && err == nil {
 			began.Store(true)
@@ -110,7 +128,7 @@ func (r *Runner) dispatchFulfillment(ctx context.Context, work orders.Work) erro
 		return r.stop(ctx, work, "FINAL_DISPATCH_GUARD_NOT_ENTERED")
 	}
 	work.State, work.DispatchCount = orders.StateDispatching, 1
-	if command.Action == orders.ActionExemplarPrepare {
+	if work.Command.Action == orders.ActionExemplarPrepare {
 		return r.recordPreparedExemplars(ctx, work, receipt, writeErr)
 	}
 	return r.recordWrite(ctx, work, receipt, writeErr)

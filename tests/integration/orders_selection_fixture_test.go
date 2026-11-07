@@ -26,9 +26,10 @@ func selectionOrdersFixture(t testing.TB) ordersStoreFixture {
 		dsn = strings.TrimSpace(string(raw))
 	}
 	u, err := url.Parse(dsn)
-	if err != nil || u.Scheme != "postgres" || (u.Hostname() != "127.0.0.1" && u.Hostname() != "localhost") || u.Path != "/styk_orders_store_test" {
+	if err != nil || u.Scheme != "postgres" || (u.Hostname() != "127.0.0.1" && u.Hostname() != "localhost") || (u.Path != "/styk_orders_store_test" && !ownedFullDatabasePath(u.Path)) {
 		t.Fatal("selection tests require the dedicated localhost orders test database")
 	}
+	ordersProcessSafety(t, dsn)
 	t.Setenv("TEST_DATABASE_URL", u.String())
 	return newOrdersStoreFixture(t)
 }

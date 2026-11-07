@@ -21,30 +21,46 @@ func executePlan(ctx context.Context, root string, p checkpolicy.Plan, lane stri
 	if err := command(ctx, root, nil, "git", "diff", "--cached", "--check"); err != nil {
 		return err
 	}
+	return executeLane(ctx, root, p, lane)
+}
+
+func executeLane(ctx context.Context, root string, p checkpolicy.Plan, lane string) error {
 	switch lane {
 	case "fast":
-		if err := goChecks(ctx, root, p); err != nil {
-			return err
-		}
-		if err := webChecks(ctx, root, p.Web); err != nil {
-			return err
-		}
-		fmt.Println("Fast checks complete. Run selected browser/integration lanes when listed by check-plan; full regression is a separate explicit/CI lane.")
-		if p.Full {
-			fmt.Println("This impact requires the full CI gate. Fast checks are not a full regression result.")
-		}
+		return fastChecks(ctx, root, p)
 	case "go":
 		return goChecks(ctx, root, p)
 	case "web":
 		return webChecks(ctx, root, p.Web)
 	case "browser":
 		return browserChecks(ctx, root, p.Browser)
+	case "presentation":
+		return presentationChecks(ctx, root, p)
 	case "integration":
 		return integrationChecks(ctx, root, p)
 	case "full":
 		return fullChecks(ctx, root)
+	case "unit-all":
+		return command(ctx, root, nil, "go", "test", "-race", "-timeout=4m", "./...")
+	case "integration-all":
+		return allBusinessIntegration(ctx, root)
+	case "browser-stack":
+		return browserStackChecks(ctx, root)
 	default:
 		return errors.New("unknown lane")
+	}
+}
+
+func fastChecks(ctx context.Context, root string, p checkpolicy.Plan) error {
+	if err := goChecks(ctx, root, p); err != nil {
+		return err
+	}
+	if err := webChecks(ctx, root, p.Web); err != nil {
+		return err
+	}
+	fmt.Println("Fast checks complete. Run selected browser/integration lanes when listed by check-plan; full regression is a separate explicit/CI lane.")
+	if p.Full {
+		fmt.Println("This impact requires the full CI gate. Fast checks are not a full regression result.")
 	}
 	return nil
 }
@@ -129,6 +145,13 @@ func browserChecks(ctx context.Context, root string, specs []string) error {
 	return command(ctx, filepath.Join(root, "web"), nil, "node", append([]string{"e2e/run-ui.mjs"}, specs...)...)
 }
 
+func presentationChecks(ctx context.Context, root string, p checkpolicy.Plan) error {
+	if err := webChecks(ctx, root, p.Web); err != nil {
+		return err
+	}
+	return browserChecks(ctx, root, p.Browser)
+}
+
 func integrationChecks(ctx context.Context, root string, p checkpolicy.Plan) error {
 	if p.Full {
 		return errors.New("impact requires full regression; use check-full or the CI full job, not a partial integration result")
@@ -152,11 +175,36 @@ func integrationChecks(ctx context.Context, root string, p checkpolicy.Plan) err
 	sort.Strings(packages)
 	for _, pkg := range packages {
 		fmt.Printf("Integration %s: %s\n", pkg, strings.Join(p.Integration[pkg], ", "))
-		if err = command(ctx, root, env, "go", "test", "-race", "-tags=integration", "-count=1", "-timeout=8m", pkg, "-run", checkpolicy.TestPattern(p.Integration[pkg])); err != nil {
+		if err = command(ctx, root, env, "go", "test", "-race", "-tags=integration", "-count=1", "-timeout=4m", pkg, "-run", checkpolicy.TestPattern(p.Integration[pkg])); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func allBusinessIntegration(ctx context.Context, root string) error {
+	env, cleanup, err := testDatabase(ctx)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	if err = migrateTestDatabase(ctx, root, env); err != nil {
+		return err
+	}
+	return fullGoIntegration(ctx, root, env)
+}
+
+func browserStackChecks(ctx context.Context, root string) error {
+	env, cleanup, err := testDatabase(ctx)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	if err = migrateTestDatabase(ctx, root, env); err != nil {
+		return err
+	}
+	env = append(env, "STYK_ORDERS_BROWSER_E2E=1")
+	return command(ctx, root, env, "go", "test", "-race", "-tags=integration", "-count=1", "-timeout=4m", "-v", "./tests/integration", "-run", "^TestOrdersNineProcessStack$")
 }
 
 func commandsInOrder(ctx context.Context, root string, env []string, commands [][]string) error {
@@ -176,7 +224,7 @@ func command(ctx context.Context, root string, extra []string, name string, args
 	configureProcess(cmd)
 	cmd.Dir, cmd.Env = root, append(cleanEnvironment(), extra...)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	if err := cmd.Run(); err != nil {
+	if err := errors.Join(cmd.Run(), finishProcess(cmd)); err != nil {
 		return fmt.Errorf("%s failed after %s: %w", name, time.Since(started).Round(time.Millisecond), err)
 	}
 	fmt.Printf("Passed %s in %s\n", name, time.Since(started).Round(time.Millisecond))

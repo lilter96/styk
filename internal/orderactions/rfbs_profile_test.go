@@ -34,6 +34,21 @@ func TestRFBSRouteUsesActualIntegrationAndDistinctProviderFields(t *testing.T) {
 			p.Delivery.ProviderID = orders.Present("0")
 			return p
 		}, RFBSRouteUnknown, "rfbs_hybrid_provider_evidence_required"},
+		{"negative provider is not null", func() orders.Posting {
+			p := rfbsPVZPosting(false)
+			p.Delivery.ProviderID = orders.Present("-2")
+			return p
+		}, RFBSRouteUnknown, "rfbs_hybrid_provider_evidence_required"},
+		{"negative tpl does not identify partner or own delivery", func() orders.Posting {
+			p := rfbsPVZPosting(true)
+			p.Delivery.TPLProviderID = orders.Present("-2")
+			return p
+		}, RFBSRouteUnknown, "rfbs_hybrid_partner_profile_conflict"},
+		{"negative tpl is not absence for own delivery", func() orders.Posting {
+			p := rfbsPVZPosting(false)
+			p.Delivery.TPLProviderID = orders.Present("-2")
+			return p
+		}, RFBSRouteUnknown, "rfbs_hybrid_partner_profile_conflict"},
 		{"hybrid wrong destination", func() orders.Posting {
 			p := rfbsPVZPosting(false)
 			p.DeliveryProfile.Destination = orders.Present("customer")

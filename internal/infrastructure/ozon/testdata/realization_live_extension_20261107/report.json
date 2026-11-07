@@ -1,0 +1,31 @@
+{
+  "result": {
+    "header": {
+      "number": "SYNTHETIC-LIVE-SHAPE-2026-10",
+      "currency_sys_name": "RUB",
+      "doc_date": "2026-11-05",
+      "start_date": "2026-10-01",
+      "stop_date": "2026-10-31"
+    },
+    "rows": [
+      {
+        "rowNumber": 1,
+        "item": {"sku": 101, "offer_id": "synthetic-offer"},
+        "commission_ratio": 0.1,
+        "seller_price_per_instance": 100,
+        "delivery_commission": {
+          "quantity": 2,
+          "amount": 200,
+          "bonus": 5,
+          "standard_fee": 20,
+          "bank_coinvestment": 0,
+          "pick_up_point_coinvestment": 9007199254740993.00000000000000001,
+          "stars": 0,
+          "total": 185,
+          "price_per_instance": 100
+        },
+        "return_commission": null
+      }
+    ]
+  }
+}

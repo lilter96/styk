@@ -66,6 +66,9 @@ type NativeMovementLine struct {
 }
 
 type NativeMovement struct {
+	DemandCoverage   *NativeDemandCoverage       `json:"demand_coverage,omitempty"`
+	ContractID       string                      `json:"contract_id,omitempty"`
+	LinkedDemandIDs  Field[[]string]             `json:"linked_demand_ids,omitzero"`
 	Retry            *NativeRetryAuthorization   `json:"retry,omitempty"`
 	ParentEffect     NativeParentEffect          `json:"parent_effect,omitempty"`
 	ParentApplicable Field[bool]                 `json:"parent_applicable,omitzero"`
@@ -111,6 +114,7 @@ type NativeReturnEvidence struct {
 
 // ReturnsComplete means a bounded complete traversal, never an atomic snapshot.
 type NativeDocumentObservation struct {
+	ContractID        string                    `json:"contract_id,omitempty"`
 	SourceDeleted     Field[string]             `json:"source_deleted,omitzero"`
 	Scope             Scope                     `json:"scope"`
 	Correlation       NativeDocumentCorrelation `json:"correlation"`

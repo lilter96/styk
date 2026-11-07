@@ -146,9 +146,30 @@ test("orders review reaches real API replicas and durable worker readback", asyn
     await a.setViewportSize({ width: 390, height: 844 });
     await a.getByRole("button", { name: "Открыть меню" }).click();
     const menu = a.getByRole("dialog", { name: "Разделы STYK" });
-    await expect(
-      menu.getByRole("navigation", { name: "Разделы" }).getByRole("link"),
-    ).toHaveCount(7);
+    const navigation = menu
+      .getByRole("navigation", { name: "Разделы" })
+      .getByRole("link");
+    await expect(navigation).toHaveCount(6);
+    await expect(navigation).toHaveText([
+      "Обзор",
+      "Товары",
+      "Заказы",
+      "Склады",
+      "Интеграции",
+      "Диагностика",
+    ]);
+    expect(
+      await navigation.evaluateAll((links) =>
+        links.map((link) => link.getAttribute("href")),
+      ),
+    ).toEqual([
+      "/",
+      "/products",
+      "/orders",
+      "/warehouses",
+      "/integrations",
+      "/diagnostics",
+    ]);
     await a.keyboard.press("Escape");
     const overflow = await a.evaluate(() => ({
       viewport: window.innerWidth,

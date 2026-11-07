@@ -59,7 +59,7 @@ func databaseEnvironment(dsn string) []string {
 func disposableDatabase(ctx context.Context) ([]string, func(), error) {
 	name, password := "styk-checks-"+rand.Text()[:12], rand.Text()
 	cleanup := func() { removeDatabase(name) }
-	cmd := exec.CommandContext(ctx, "docker", "run", "--rm", "--detach", "--name", name, "--publish", "127.0.0.1::5432", "--env", "POSTGRES_USER=styk", "--env", "POSTGRES_PASSWORD", "--env", "POSTGRES_DB="+testDatabaseName, "postgres:17.6")
+	cmd := exec.CommandContext(ctx, "docker", "run", "--rm", "--detach", "--name", name, "--publish", "127.0.0.1::5432", "--env", "POSTGRES_USER=styk", "--env", "POSTGRES_PASSWORD", "--env", "POSTGRES_DB="+testDatabaseName, "postgres:17.6", "postgres", "-c", "max_connections=200", "-c", "max_locks_per_transaction=512")
 	cmd.Env = append(cleanEnvironment(), "POSTGRES_PASSWORD="+password)
 	if err := cmd.Run(); err != nil {
 		cleanup()

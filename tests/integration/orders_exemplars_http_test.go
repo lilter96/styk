@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os/exec"
 	"strings"
 	"sync"
 	"testing"
@@ -287,7 +286,7 @@ func assertExemplarRollbackRejected(t *testing.T, f ordersStoreFixture) {
 	catalogSyncMigrate(t, dsn, "down-to", "56")
 	ctx, cancel := context.WithTimeout(f.ctx, 30*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, "go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", f.db.Pool.Config().ConnString(), "down")
+	command := migrationCommand(t, ctx, "-dir", "../../migrations", "postgres", f.db.Pool.Config().ConnString(), "down")
 	output, err := command.CombinedOutput()
 	if err == nil || !bytes.Contains(output, []byte("exemplar intent history prevents destructive rollback")) {
 		t.Fatal("exemplar migration allowed history loss or failed for unrelated reason")

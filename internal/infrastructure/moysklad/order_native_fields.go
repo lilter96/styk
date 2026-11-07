@@ -10,6 +10,13 @@ import (
 func (c *OrderClient) decodeNativeDocumentFields(ctx context.Context, document nativeDocumentDTO, raw map[string]json.RawMessage, correlation orders.NativeDocumentCorrelation) (orders.NativeDocumentObservation, error) {
 	observation := orders.NativeDocumentObservation{Scope: c.scope, Correlation: correlation}
 	observation.Correlation.DocumentID = document.ID
+	if document.Contract.Meta.Href != "" {
+		id, err := c.referenceID(document.Contract, "entity/contract", "contract")
+		if err != nil {
+			return observation, err
+		}
+		observation.ContractID = id
+	}
 	refs := []struct {
 		ref        catalogReference
 		path, kind string

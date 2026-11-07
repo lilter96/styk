@@ -1,0 +1,121 @@
+{
+  "version": "ozon-realization-v2-2026-11-06",
+  "checked_at": "2026-11-06",
+  "source": "https://docs.ozon.ru/api/seller/zh/swagger.json",
+  "retrieval": "Official published OpenAPI inspected through web tool; direct curl failed SSL; no raw-download digest claimed.",
+  "coverage": "Verified named request/response schema and referenced financial fields; fixture values synthetic, not a provider capture.",
+  "method": "POST",
+  "endpoint": "/v2/finance/realization",
+  "request_schema": "v2GetRealizationReportRequestV2",
+  "request": {
+    "required": [
+      "month",
+      "year"
+    ],
+    "properties": {
+      "month": "integer:int32",
+      "year": "integer:int32"
+    }
+  },
+  "response_schema": "v2GetRealizationReportResponseV2",
+  "response": {
+    "result": {
+      "header": "GetRealizationReportResponseV2Header",
+      "rows": "array:GetRealizationReportResponseV2Row"
+    }
+  },
+  "header_fields": {
+    "contract_date": "string",
+    "contract_number": "string",
+    "currency_sys_name": "string",
+    "doc_date": "string",
+    "number": "string",
+    "payer_inn": "string:discarded",
+    "payer_kpp": "string:discarded",
+    "payer_name": "string:discarded",
+    "receiver_inn": "string:discarded",
+    "receiver_kpp": "string:discarded",
+    "receiver_name": "string:discarded",
+    "start_date": "string",
+    "stop_date": "string"
+  },
+  "row_fields": {
+    "commission_ratio": "number:double",
+    "delivery_commission": "RowItemCommission",
+    "item": "RowItem",
+    "return_commission": "RowItemCommissionReturn",
+    "rowNumber": "integer:int32",
+    "seller_price_per_instance": "number:double"
+  },
+  "item_fields": {
+    "barcode": "string:discarded",
+    "name": "string:discarded",
+    "offer_id": "string",
+    "sku": "integer:int64"
+  },
+  "commission_fields": {
+    "amount": "number:double",
+    "bonus": "number:double",
+    "commission": "number:double",
+    "compensation": "number:double",
+    "price_per_instance": "number:double",
+    "standard_fee": "number:double",
+    "bank_coinvestment": "number:double",
+    "stars": "number:double",
+    "total": "number:double",
+    "quantity": "integer:int32"
+  },
+  "quantity_type": "integer:int32",
+  "legacy_fields": [
+    "commission",
+    "compensation"
+  ],
+  "legacy_fields_cutoff": "Reports generated through 2024-04-30",
+  "source_optional_fields": "Response schemas do not declare required fields; STYK requires report number, currency, explicit rows, unique rowNumber and exact SKU/offer identity before returning a review.",
+  "idempotency": "Read-only operation. No provider report UUID/revision or write idempotency semantics verified.",
+  "limits": {
+    "history_from": "2023-08",
+    "publication": "Current schema: by fifth day of following month. Older news333 says after fifth; current schema takes precedence; STYK requires actual response.",
+    "pagination": "No request cursor, declared total or row count in verified v2 schema",
+    "local_rows": 10000,
+    "local_response_bytes": 4194304,
+    "local_timeout_seconds": 20,
+    "attempts": 1
+  },
+  "permissions": "Client-Id/API-Key required; provider 401/403 is permission/authentication failure, not an empty report. No unverified per-key permission enum claimed.",
+  "accounting_gaps": [
+    "No FBS/FBO scheme or posting number on v2 row; posting endpoint alternative not implemented",
+    "No independently declared report totals or total row count",
+    "No immutable report UUID/correction version; changed content requires manual correction review",
+    "Restricted sales-only native draft maps standard_fee minus bonus; return, loyalty, services, VAT-exclusive and legacy mappings remain unsupported",
+    "Selected price basis and source amount/net consistency are explicit restrictive STYK gates, not a universal verified Ozon amount formula"
+  ],
+  "posting_report_alternative": {
+    "endpoint": "/v1/finance/realization/posting",
+    "request": {
+      "month": "integer:int32",
+      "year": "integer:int32"
+    },
+    "response": "Root header/rows; no result envelope; row_number, order.posting_number",
+    "history_from": "2023-08",
+    "oversized_400_alternative": "/v1/report/realization/posting/create",
+    "implemented": false
+  },
+  "fixture": {
+    "path": "report.json",
+    "sha256": "4199397153ddb198abb48ea9ae8c974443ee8131f8c06040d639708a91a2fe30",
+    "classification": "STYK generated synthetic values using verified field shapes"
+  },
+  "native_draft_import": {
+    "implemented": true,
+    "entity": "commissionreportin",
+    "applicable": false,
+    "reward_type": "None",
+    "reward_formula": "delivery.standard_fee - delivery.bonus; official MoySklad Ozon import benchmark",
+    "max_lines_local": 1000,
+    "source_period_from": "2024-05",
+    "automatic_posting": false,
+    "corrections": "manual review; no PUT",
+    "idempotency": "scoped source-period durable work plus one attempt; UNKNOWN readback only; externalCode has no provider uniqueness guarantee"
+  }
+}

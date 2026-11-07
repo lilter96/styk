@@ -22,12 +22,13 @@ type ConfigReader interface {
 }
 
 type Factory struct {
-	Configs          ConfigReader
-	Credentials      CredentialResolver
-	Gate             providercall.Gate
-	DeliveryObserver delivery.Observer
-	NewMoysklad      func(string, string) (*moysklad.Client, error)
-	NewOzon          func(string, string) (*ozon.Client, error)
+	Configs               ConfigReader
+	Credentials           CredentialResolver
+	Gate                  providercall.Gate
+	DeliveryObserver      delivery.Observer
+	FinanceEvidenceSealer orders.FinancialEvidenceSealer
+	NewMoysklad           func(string, string) (*moysklad.Client, error)
+	NewOzon               func(string, string) (*ozon.Client, error)
 }
 
 func (f Factory) ResolveOrder(ctx context.Context, scope orders.Scope, provider, account string, expected int64) (orders.Binding, error) {
@@ -65,6 +66,8 @@ func (f Factory) client(ctx context.Context, scope orders.Scope, provider, accou
 		if err != nil {
 			return nil, err
 		}
+		options.FinanceEvidenceSealer = f.FinanceEvidenceSealer
+		options.FinanceCredentialRevision = revision
 		return ozon.NewOrderClientWithOptions(base, scope, options)
 	}
 	create := f.NewMoysklad

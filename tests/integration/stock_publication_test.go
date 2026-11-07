@@ -39,7 +39,7 @@ type publicationFixture struct {
 
 func publicationData(t *testing.T, two bool) publicationFixture {
 	t.Helper()
-	// Synthetic assertions are accepted only by the explicit loopback simulator.
+	// Default provider dispatch to the explicit loopback simulator.
 	t.Setenv("STYK_STOCK_PUBLICATION_ENABLED", "true")
 	t.Setenv("STYK_STOCK_PUBLICATION_TEST_ENDPOINT", "http://127.0.0.1:1")
 	ctx := context.Background()
@@ -111,19 +111,35 @@ func publicationData(t *testing.T, two bool) publicationFixture {
 
 func TestStockPublicationOperatorAssertionsAreNeverProviderProof(t *testing.T) {
 	f := publicationData(t, false)
-	review := f.preview(t, true)
-	if !review.Ready {
-		t.Fatal("loopback simulation did not accept synthetic assumptions")
+	tests := []struct {
+		name, endpoint string
+		ready          bool
+	}{
+		{"loopback", "http://127.0.0.1:1", true},
+		{"general", "", false}, // General publication also requires audited mapping confirmation.
 	}
-	for _, proof := range review.Targets[0].Decision.Evidence.Proofs {
-		if proof.EvidenceClass == "OPERATOR_ATTESTED" && proof.State != domain.ProofAttested {
-			t.Fatal("operator assertion was misclassified as independently verified")
-		}
-	}
-	t.Setenv("STYK_STOCK_PUBLICATION_ENABLED", "")
-	withoutSimulator := f.preview(t, true)
-	if withoutSimulator.Ready || withoutSimulator.Targets[0].Quantity != nil {
-		t.Fatal("ordinary customer policy accepted test assumptions")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("STYK_STOCK_PUBLICATION_TEST_ENDPOINT", tc.endpoint)
+			review := f.preview(t, true)
+			if review.Ready != tc.ready || len(review.Targets) != 1 || (review.Targets[0].Quantity != nil) != tc.ready {
+				t.Fatal("scoped review bypassed the current publication prerequisites")
+			}
+			decision := review.Targets[0].Decision
+			if !decision.Request.Policy.AcceptOperatorAttested || decision.Status != domain.StockReady {
+				t.Fatal("explicit operator-attestation calculation policy did not accept the scoped assumptions")
+			}
+			for _, assertion := range f.attest[0].Proofs {
+				proof, found := decision.Evidence.Proofs[assertion.Code]
+				if !found || proof.EvidenceClass != "OPERATOR_ATTESTED" || proof.State != domain.ProofAttested {
+					t.Fatalf("operator assertion %s lost its explicit attested provenance", assertion.Code)
+				}
+			}
+			unattested := f.preview(t, false)
+			if unattested.Ready || len(unattested.Targets) != 1 || unattested.Targets[0].Quantity != nil {
+				t.Fatal("unattested imports became publishable")
+			}
+		})
 	}
 }
 func (f publicationFixture) preview(t *testing.T, attested bool) domain.StockSyncReview {

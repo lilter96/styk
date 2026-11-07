@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -114,6 +115,7 @@ func output(ctx context.Context, root, name string, args ...string) ([]byte, err
 	configureProcess(cmd)
 	cmd.Dir, cmd.Env = root, cleanEnvironment()
 	data, err := cmd.Output()
+	err = errors.Join(err, finishProcess(cmd))
 	if err != nil {
 		return nil, fmt.Errorf("%s failed: %w", name, err)
 	}

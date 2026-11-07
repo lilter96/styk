@@ -151,6 +151,10 @@ func postingCorrelation(posting orders.Posting, correlations []orders.Correlatio
 }
 
 func (s *Service) planMirror(ctx context.Context, review orders.ReviewContext, decision orders.Decision, actions []orders.Action, automatic bool, now time.Time) (orders.Decision, error) {
+	if review.MerchantPending[decision.Posting.PostingNumber] {
+		decision.Validation = append(decision.Validation, orders.Validation{Field: "state", Code: "merchant_transition_pending"})
+		return decision, nil
+	}
 	if decision.Posting.Status.IsKnown() && *decision.Posting.Status.Value == "cancelled_from_split_pending" {
 		if len(actions) > 0 && !slices.Contains(actions, orders.ActionMirrorPositionUpdate) && !slices.Contains(actions, orders.ActionMirrorUpdate) {
 			return blockedSupersededDecision(decision), nil
@@ -197,6 +201,9 @@ func mirrorCommand(review orders.ReviewContext, decision orders.Decision, wareho
 		return orders.Command{}, err
 	}
 	action := orders.ActionMirrorCreate
+	if finance := review.Config.Finance; finance != nil && finance.Active(now, review.Config.Scope, review.Config.Revision) && finance.OrganizationID == write.OrganizationID && finance.AgentID == write.AgentID && decision.Correlation.CustomerOrderID == "" {
+		write.ContractID = finance.ContractID
+	}
 	if decision.Correlation.CustomerOrderID != "" {
 		action = orders.ActionMirrorUpdate
 	}

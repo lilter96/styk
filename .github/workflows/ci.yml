@@ -52,6 +52,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: go run ./cmd/checks run --base "$BASE_SHA" --head "$HEAD_SHA" --lane go
+        timeout-minutes: 5
 
   web:
     needs: plan
@@ -61,7 +62,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.3'
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -69,17 +74,14 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: npm ci
         working-directory: web
-      - run: npm run typecheck && npm run lint && npm test && npm run build
-        working-directory: web
       - if: needs.plan.outputs.browser == 'true'
         run: npx playwright install --with-deps chromium
         working-directory: web
-      - if: needs.plan.outputs.browser == 'true'
-        env:
-          SPECS: ${{ needs.plan.outputs.browser_specs }}
-        run: |
-          node --input-type=module -e 'import {spawnSync} from "node:child_process"; const r=spawnSync(process.execPath,["e2e/run-ui.mjs",...JSON.parse(process.env.SPECS)],{stdio:"inherit"}); process.exit(r.status??1)'
-        working-directory: web
+      - env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: go run ./cmd/checks run --base "$BASE_SHA" --head "$HEAD_SHA" --lane presentation
+        timeout-minutes: 5
 
   integration:
     needs: plan
@@ -111,6 +113,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: go run ./cmd/checks run --base "$BASE_SHA" --head "$HEAD_SHA" --lane integration
+        timeout-minutes: 5
 
   full:
     needs: plan

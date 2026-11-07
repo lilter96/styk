@@ -124,5 +124,13 @@
   },
   "syncId": "00000000-0000-4000-8000-000000000001",
   "vatEnabled": false,
-  "vatIncluded": false
+  "vatIncluded": false,
+  "contract": {
+    "meta": {
+      "href": "https://example.invalid/sanitized",
+      "mediaType": "TEST",
+      "metadataHref": "https://example.invalid/sanitized",
+      "type": "contract"
+    }
+  }
 }

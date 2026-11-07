@@ -1698,3 +1698,48 @@ uses deterministic providers through the real application. Private probe ledger:
 The previously recorded native fixtures remain retained. Active Ozon fulfillment
 is still **NOT_OBSERVED_LIVE** because the account has no active postings; this
 release does not claim unrestricted production activation.
+
+### Local FBS/rFBS lifecycle and financial drafts — 2026-11-07
+
+Baseline was freshly fetched/pulled `origin/master@340c6f8`, including migration
+71. This local branch adds migrations **72–73**; it has not been pushed, merged
+or deployed. No shared development/production migration or real provider write
+was performed. All new mutations below use isolated loopback HTTP providers and
+dedicated disposable PostgreSQL.
+
+The actual merchant/API/leased-ingestor/outbox/worker paths now cover newly
+observed MoySklad assembly transitions, separate pair-scoped consent, v4 Ozon
+ship, ACK followed by real get readback, forward-state ownership and concurrent
+pending-intent fencing. Independent physical handoff and linked return events
+exercise exact native demand/return outcomes: `10 / 1 / 9 → 9 / 0 / 9`, replay
+unchanged, physical return restores ten. Omitted/null linked-demand coverage,
+foreign demand, retained reserve, changed source/native composition, revoked
+admission and uncertain outcomes block or remain read-only.
+
+The financial path reads the actual monthly realization contract, records separate
+owner consent and exact accountant choices, and creates one real **unposted**
+`commissionreportin` through the existing shared outbox. Four HTTP/PostgreSQL
+journeys plus schema-73 gate passed with race detection. They cover actual native
+metadata, idempotent review/approval, one POST, complete native draft readback,
+lost ACK/restart without resend, source correction and post-admission revocation.
+PostgreSQL additionally rejects stale claimants, foreign scope, false zero-send
+success, duplicate periods, changed immutable history and destructive rollback.
+Existing or possibly existing document identities cannot be bypassed by a retry
+with a fresh marker. Original UNKNOWN receipts remain intact after reconciliation.
+
+The owner required a five-minute total verification budget. Repeated manifest
+validation, repeated dummy bcrypt generation, per-fixture migration setup and
+dozens of `go run goose` invocations were removed without lowering password cost,
+rate limits, migration steps or concurrency assertions. A stock cooldown test
+now proves the immediate rejection and advances an explicit workflow clock past
+the unchanged thirty-second guard. The runner has a common deadline and bounded
+owned process/database cleanup. Actual final commands, durations, failures,
+stopped attempts, optional skips and current UI evidence are recorded in
+[the verification ledger](orders-lifecycle-verification.md); a timeout is not PASS.
+
+Still **NOT_OBSERVED_LIVE**: active Ozon assembly/delivery, actual seller physical
+handoff/acceptance and production monthly accounting. Carriage batch operations
+are not implemented; the current discovery schema and canonical approval evidence
+could not be verified in this session. Automatic native acceptance, partial
+movements and financial return/service/correction mappings remain explicitly
+unsupported or reviewed. See [the exact scope and first-three-seller checklist](orders-fbs-rfbs-lifecycle.md).

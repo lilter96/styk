@@ -60,6 +60,15 @@ func readOrderPreviewContext(ctx context.Context, q ordersQuerier, preview order
 	if err == nil {
 		err = validateOrderPreviewExemplars(ctx, q, preview, review)
 	}
+	if err == nil {
+		for _, decision := range preview.Decisions {
+			for _, command := range decision.Commands {
+				if err = validateMerchantIntentJournal(ctx, q, command, ""); err != nil {
+					return review, err
+				}
+			}
+		}
+	}
 	return review, err
 }
 

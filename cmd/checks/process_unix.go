@@ -20,6 +20,30 @@ func configureProcess(cmd *exec.Cmd) {
 		if errors.Is(err, syscall.ESRCH) {
 			return os.ErrProcessDone
 		}
+		if err != nil {
+			return err
+		}
+		// The browser runner forwards TERM to its owned detached browser group.
+		// Give it bounded time to do so, then also stop TERM-ignoring members of
+		// this group; exec.Cmd.WaitDelay alone kills only the direct parent.
+		time.Sleep(250 * time.Millisecond)
+		err = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		if errors.Is(err, syscall.ESRCH) {
+			return nil
+		}
 		return err
 	}
+}
+
+// A test binary can exit itself (including its own timeout) before the command
+// context is cancelled. Its still-running helpers remain in our isolated group.
+func finishProcess(cmd *exec.Cmd) error {
+	if cmd.Process == nil {
+		return nil
+	}
+	err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	if errors.Is(err, syscall.ESRCH) {
+		return nil
+	}
+	return err
 }

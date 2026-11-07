@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"os/exec"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -34,15 +34,47 @@ func orderInventoryTestDB(t *testing.T) *Store {
 		}
 		dsn = strings.TrimSpace(string(raw))
 	}
-	u, err := url.Parse(dsn)
-	if err != nil || u.Scheme != "postgres" || (u.Hostname() != "127.0.0.1" && u.Hostname() != "localhost") || (u.Path != "/styk_orders_store_test" && u.Path != "/styk_orders_release_test" && u.Path != "/styk_orders_guard_test") {
+	u, err := inventoryTestDatabaseURL(dsn)
+	if err != nil {
 		t.Fatal("inventory attribution tests require dedicated localhost orders test database")
 	}
 	return orderInventoryIsolatedSchema(t, u)
 }
 
+var inventoryFullDatabaseName = regexp.MustCompile(`^/styk_full_[1-9][0-9]*_[0-9]+_[0-7]_test$`)
+
+func inventoryFullDatabasePath(path string) bool {
+	return len(path) <= 64 && inventoryFullDatabaseName.MatchString(path)
+}
+
+func inventoryTestDatabaseURL(raw string) (*url.URL, error) {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "postgres" || u.Opaque != "" || u.Fragment != "" || u.RawPath != "" || (u.Hostname() != "127.0.0.1" && u.Hostname() != "localhost") {
+		return nil, fmt.Errorf("dedicated loopback database required")
+	}
+	if u.Path != "/styk_orders_store_test" && u.Path != "/styk_orders_release_test" && u.Path != "/styk_orders_guard_test" && !inventoryFullDatabasePath(u.Path) {
+		return nil, fmt.Errorf("allowlisted dedicated database required")
+	}
+	if _, err = url.ParseQuery(u.RawQuery); err != nil {
+		return nil, fmt.Errorf("invalid fixture database query")
+	}
+	config, err := pgx.ParseConfig(raw)
+	if err != nil || "/"+config.Database != u.Path || (config.Host != "127.0.0.1" && config.Host != "localhost") {
+		return nil, fmt.Errorf("effective loopback database cannot be overridden")
+	}
+	for _, fallback := range config.Fallbacks {
+		if fallback.Host != "127.0.0.1" && fallback.Host != "localhost" {
+			return nil, fmt.Errorf("remote database fallback forbidden")
+		}
+	}
+	return u, nil
+}
+
 func orderInventoryIsolatedSchema(t *testing.T, u *url.URL) *Store {
 	t.Helper()
+	if db, cloned := orderInventoryTemplateFixture(t, u); cloned {
+		return db
+	}
 	admin, err := Open(context.Background(), u.String(), 15*time.Second)
 	if err != nil {
 		t.Fatal("open inventory attribution test database")
@@ -73,9 +105,8 @@ func orderInventoryMigrate(t *testing.T, dsn string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	args := []string{"run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", dsn, "up"}
-	if output, err := exec.CommandContext(ctx, "go", args...).CombinedOutput(); err != nil {
-		t.Fatalf("inventory attribution test migration: %v %s", err, output)
+	if err := runOrderInventoryMigrations(ctx, dsn); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -1,0 +1,17 @@
+{
+  "classification": "LIVE_OBSERVED_UNDOCUMENTED_EXTENSION",
+  "reviewed_at": "2026-11-07",
+  "endpoint": "POST /v2/finance/realization",
+  "published_base_schema": "https://docs.ozon.ru/api/seller/zh/swagger.json",
+  "published_components": ["RowItemCommission", "RowItemCommissionReturn"],
+  "published_field_present": false,
+  "live_observed_path": "$.result.rows[].delivery_commission.pick_up_point_coinvestment",
+  "live_observed_type": "JSON number",
+  "live_observed_return_commission": "null",
+  "observed_semantics": "Unverified; no accounting meaning inferred from field name",
+  "fixture": "Minimal sanitized reproduction of the observed shape. Report, item and offer identities, prices and the precision-stressing amount are synthetic; this is not a raw provider capture.",
+  "retention": "Exact decimal numeric lexeme, missing/null/zero/value distinctions and source fingerprint; base contract version is unchanged",
+  "accounting_gate": "Both delivery and return component must be explicit known zero under ZERO_ONLY. Missing, null, positive or negative values require separate accounting review. Null return_commission is never inferred to mean zero returns.",
+  "compatibility": "Only absent new field is omitted in sanitized serialization so old immutable preview/source hashes remain unchanged. Newly observed null, zero or value changes source fingerprint.",
+  "other_unknown_fields": "Still rejected"
+}

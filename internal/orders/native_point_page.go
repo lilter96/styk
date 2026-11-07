@@ -4,13 +4,13 @@ func (page SourcePage) validateNativePointReads() error {
 	if err := page.validateNativeDocumentReads(); err != nil {
 		return err
 	}
-	if page.Stream == NativePointStream && (len(page.Postings) > 0 || len(page.Secrets) > 0) {
+	if IsNativeReadStream(page.Stream) && (len(page.Postings) > 0 || len(page.Secrets) > 0) {
 		return ErrInvalid
 	}
 	if len(page.NativeReads) == 0 {
 		return nil
 	}
-	if page.Stream != NativePointStream || len(page.Postings) > 0 || len(page.Secrets) > 0 || len(page.NativeReads) > MaxPagePostings {
+	if !IsNativeReadStream(page.Stream) || len(page.Postings) > 0 || len(page.Secrets) > 0 || len(page.NativeReads) > MaxPagePostings {
 		return ErrInvalid
 	}
 	seen := make(map[string]bool, len(page.NativeReads))

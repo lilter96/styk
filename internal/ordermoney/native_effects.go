@@ -27,7 +27,45 @@ func NativeParentEffectObserved(command orders.Command, target orders.TargetObse
 			return false
 		}
 	}
+	return nativeAutomaticReserveEffectObserved(command, target)
+}
+
+func nativeAutomaticReserveEffectObserved(command orders.Command, target orders.TargetObservation) bool {
+	if command.MerchantIntent == nil {
+		return true
+	}
+	for _, line := range command.NativeMovement.Lines {
+		before, found := nativeParentReserve(command.TargetPositions, line.OrderPositionID)
+		after, observed := nativeParentReserve(target.Positions, line.OrderPositionID)
+		if !found || !observed {
+			return false
+		}
+		remaining, err := RemainingQuantity(before, line.Quantity)
+		if err != nil {
+			if _, err = RemainingQuantity(line.Quantity, before); err != nil {
+				return false
+			}
+			remaining = "0"
+		}
+		if !orders.ExactDecimalEqual(remaining, after) {
+			return false
+		}
+	}
 	return true
+}
+
+func nativeParentReserve(positions []orders.TargetPosition, id string) (orders.Decimal, bool) {
+	result, found := orders.Decimal(""), false
+	for _, position := range positions {
+		if position.ID != id {
+			continue
+		}
+		if found || !position.Reserve.IsKnown() {
+			return "", false
+		}
+		result, found = *position.Reserve.Value, true
+	}
+	return result, found
 }
 
 func nativeParentCounter(positions []orders.TargetPosition, id string) (orders.Decimal, bool) {

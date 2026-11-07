@@ -3,6 +3,7 @@
 package identity
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -12,6 +13,7 @@ import (
 	"log/slog"
 	"net/mail"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -27,6 +29,12 @@ var (
 )
 
 const passwordCost = 12
+
+// Only the nonexistent-user comparison hash is shared. Every comparison still
+// uses the normal bcrypt cost, while real password hashes retain fresh salts.
+var dummyPasswordHash = sync.OnceValues(func() ([]byte, error) {
+	return bcrypt.GenerateFromPassword([]byte("styk-dummy-password-never-used-for-login"), passwordCost)
+})
 
 type Store struct {
 	pool      *pgxpool.Pool
@@ -69,11 +77,11 @@ func New(pool *pgxpool.Pool, timeout time.Duration) (*Store, error) {
 	if pool == nil || timeout <= 0 {
 		return nil, ErrInvalid
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte("styk-dummy-password-never-used-for-login"), passwordCost)
+	hash, err := dummyPasswordHash()
 	if err != nil {
 		return nil, err
 	}
-	return &Store{pool: pool, timeout: timeout, dummyHash: hash, hashSlots: make(chan struct{}, 4)}, nil
+	return &Store{pool: pool, timeout: timeout, dummyHash: bytes.Clone(hash), hashSlots: make(chan struct{}, 4)}, nil
 }
 
 func canonicalEmail(value string) (string, error) {

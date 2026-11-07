@@ -4,7 +4,6 @@ package integration
 
 import (
 	"context"
-	"os/exec"
 	"testing"
 	"time"
 
@@ -37,7 +36,7 @@ func TestOrdersStoreMigrationRetainsHistory(t *testing.T) {
 	if err := fixture.db.Pool.QueryRow(ctx, history).Scan(&before); err != nil {
 		t.Fatal(err)
 	}
-	command := exec.CommandContext(ctx, "go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", fixture.db.Pool.Config().ConnString(), "down-to", "44")
+	command := migrationCommand(t, ctx, "-dir", "../../migrations", "postgres", fixture.db.Pool.Config().ConnString(), "down-to", "44")
 	if _, err := command.CombinedOutput(); err == nil {
 		t.Fatal("rollback discarded immutable order configuration history")
 	}

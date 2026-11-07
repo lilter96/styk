@@ -129,6 +129,16 @@ func insertOrderConfig(ctx context.Context, tx pgx.Tx, req orders.SaveConfigRequ
 	if err = validateOrderGrantChange(req, current, owner, now); err != nil {
 		return orders.Config{}, err
 	}
+	if err = validateOrderLifecycleChange(req, current, owner, now); err != nil {
+		return orders.Config{}, err
+	}
+	if err = validateCommissionConsent(req, current, owner, now); err != nil {
+		return orders.Config{}, err
+	}
+	req.Config.ReadEnabled, req.Config.ReadConfigured = current.ReadEnabled, current.ReadConfigured
+	if req.ReadEnabled != nil {
+		req.Config.ReadEnabled, req.Config.ReadConfigured = *req.ReadEnabled, true
+	}
 	config, err := finalizedOrderConfig(req.Config, current, owner, now)
 	if err != nil {
 		return orders.Config{}, err
@@ -148,6 +158,12 @@ func insertOrderConfig(ctx context.Context, tx pgx.Tx, req orders.SaveConfigRequ
 func finalizedOrderConfig(config, previous orders.Config, owner string, now time.Time) (orders.Config, error) {
 	config.Revision = previous.Revision + 1
 	config.UpdatedAt = now
+	if err := finalizeOrderLifecycle(&config, previous, owner, now); err != nil {
+		return config, err
+	}
+	if err := finalizeCommissionPolicy(&config, previous, owner, now); err != nil {
+		return config, err
+	}
 	if config.Automation != nil {
 		grant := *config.Automation
 		grant.Scope, grant.OwnerID, grant.SourceAccount = config.Scope, owner, config.Scope.OzonAccount
@@ -188,7 +204,10 @@ func writeOrderConfig(ctx context.Context, tx pgx.Tx, req orders.SaveConfigReque
 	if _, err = tx.Exec(ctx, `INSERT INTO orders_config_revisions(tenant_id,moysklad_account,ozon_account,revision,config,actor,owner_user_id,request_key,request_hash,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, args...); err != nil {
 		return ordersError("save order configuration revision", err)
 	}
-	return insertOrderGrant(ctx, tx, c)
+	if err = insertOrderGrant(ctx, tx, c); err != nil {
+		return err
+	}
+	return writeCommissionSchedule(ctx, tx, c)
 }
 
 func insertOrderGrant(ctx context.Context, tx pgx.Tx, config orders.Config) error {

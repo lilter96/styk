@@ -13,6 +13,9 @@ func (r *Runner) authorizeDispatch(ctx context.Context, work orders.Work, change
 	if errors.Is(err, orders.ErrSplitTransferBusy) {
 		return false, r.stop(ctx, work, "SPLIT_RESERVE_GROUP_BUSY")
 	}
+	if errors.Is(err, orders.ErrBlocked) || errors.Is(err, orders.ErrStale) {
+		return false, r.stop(ctx, work, changedCode)
+	}
 	if err != nil {
 		return false, fmt.Errorf("check order dispatch authority: %w", err)
 	}

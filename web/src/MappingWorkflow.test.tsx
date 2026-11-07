@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
@@ -168,7 +169,9 @@ async function createReview() {
       name: "Synthetic variant, вариант",
     }),
   );
-  expect(screen.getAllByText("Synthetic variant").length).toBeGreaterThan(1);
+  await waitFor(() =>
+    expect(screen.getAllByText("Synthetic variant").length).toBeGreaterThan(1),
+  );
   expect(screen.queryByText("Технические данные товаров")).toBeNull();
   fireEvent.click(
     screen.getByRole("button", { name: "Проверить соответствие" }),
@@ -277,10 +280,13 @@ it("uses latest-catalog counts for progress instead of historical mappings or th
     catalog_confirmed_products: 4,
   });
   const summary = await screen.findByLabelText("Состояние товаров");
-  await waitFor(() =>
-    expect(summary.textContent).toContain("4 сопоставлено в Ozon"),
-  );
-  expect(summary.textContent).toContain("5 без подтверждённой пары");
+  const countFor = (label: string) =>
+    within(summary)
+      .getByText(label, { exact: true })
+      .closest(".products-summary-value")
+      ?.querySelector("b")?.textContent;
+  await waitFor(() => expect(countFor("связано в Ozon")).toBe("4"));
+  expect(countFor("в Ozon без пары")).toBe("5");
   expect(summary.textContent).not.toContain("99");
 });
 

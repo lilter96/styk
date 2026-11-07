@@ -1,0 +1,25 @@
+{
+  "result": {
+    "posting_number": "SYNTHETIC-historical-express-1",
+    "order_id": 1,
+    "status": "cancelled",
+    "substatus": "posting_canceled",
+    "tpl_integration_type": "hybrid",
+    "is_express": true,
+    "available_actions": [],
+    "delivery_method": {
+      "id": 88,
+      "warehouse_id": 77,
+      "tpl_provider_id": -2
+    },
+    "products": [
+      {
+        "sku": 101,
+        "offer_id": "synthetic-offer",
+        "quantity": 1,
+        "price": "9.99",
+        "currency_code": "RUB"
+      }
+    ]
+  }
+}

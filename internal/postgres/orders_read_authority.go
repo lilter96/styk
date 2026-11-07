@@ -33,6 +33,16 @@ func validateOrderReadAuthority(ctx context.Context, tx pgx.Tx, config orders.Co
 		return err
 	}
 	if config.Automation != nil {
+		now, clockErr := ordersClock(ctx, tx)
+		if clockErr != nil {
+			return clockErr
+		}
+		if config.Lifecycle != nil && config.Lifecycle.OwnerID == owner && config.Lifecycle.Active(now, config.Scope, config.Revision) {
+			return nil
+		}
+		if config.Finance != nil && config.Finance.OwnerID == owner && config.Finance.Active(now, config.Scope, config.Revision) {
+			return nil
+		}
 		_, err = ordersGrantOwner(ctx, tx, config, orderAutomationActor(*config.Automation))
 	}
 	return err

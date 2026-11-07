@@ -2,65 +2,24 @@ import { spawn } from "node:child_process";
 import process from "node:process";
 import { fileURLToPath, URL } from "node:url";
 import console from "node:console";
+import { setTimeout as delay } from "node:timers/promises";
+import { setTimeout, clearTimeout } from "node:timers";
 
-function testEnvironment() {
-  const dsn = process.env.TEST_DATABASE_URL;
-  if (!dsn)
-    throw new Error(
-      "TEST_DATABASE_URL is required: use the dedicated localhost styk_orders_release_test or styk_orders_store_test database.",
-    );
-  let url;
-  try {
-    url = new URL(dsn);
-  } catch {
-    throw new Error(
-      "TEST_DATABASE_URL must be a dedicated localhost PostgreSQL URL.",
-    );
-  }
-  if (
-    !["postgres:", "postgresql:"].includes(url.protocol) ||
-    !["localhost", "127.0.0.1"].includes(url.hostname) ||
-    !["/styk_orders_release_test", "/styk_orders_store_test"].includes(
-      url.pathname,
-    )
-  ) {
-    throw new Error(
-      "Browser E2E refuses a non-test database; no services were started.",
-    );
-  }
-  const env = { ...process.env };
-  for (const name of Object.keys(env)) {
-    if (
-      /^(MOYSKLAD_|OZON_|STYK_TEST_|STYK_STOCK_PUBLICATION|STYK_CREDENTIAL_ENCRYPTION_KEY|STYK_OPERATOR_SECRET|DATABASE_URL$)/.test(
-        name,
-      )
-    )
-      delete env[name];
-  }
-  env.STYK_ORDERS_BROWSER_E2E = "1";
-  return env;
-}
-
-try {
-  if (process.platform === "win32")
-    throw new Error("The browser process stack requires POSIX process groups.");
-  const env = testEnvironment();
-  console.log(
-    "Running isolated merchant/order E2E: PostgreSQL, 3 APIs, 2 schedulers, 4 workers and loopback providers. Live credentials are excluded.",
+if (process.platform === "win32") {
+  console.error("The browser process stack requires POSIX process groups.");
+  process.exitCode = 1;
+} else {
+  // The Go runner validates an optional dedicated loopback DSN, otherwise owns
+  // a disposable database, and scrubs credentials before running the stack.
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([key]) =>
+        !/^(MOYSKLAD_|OZON_|STYK_|PG|NEON_|AWS_|VITE_NEON_|DATABASE_URL)/.test(key),
+    ),
   );
   const child = spawn(
     "go",
-    [
-      "test",
-      "-race",
-      "-tags=integration",
-      "./tests/integration",
-      "-run",
-      "^TestOrdersNineProcessStack$",
-      "-count=1",
-      "-timeout=8m",
-      "-v",
-    ],
+    ["run", "./cmd/checks", "run", "--lane", "browser-stack"],
     {
       cwd: fileURLToPath(new URL("../../", import.meta.url)),
       env,
@@ -68,39 +27,38 @@ try {
       detached: true,
     },
   );
-  let interrupted = false;
-  const stopGroup = (signal) => {
+  let stopping;
+  const signalGroup = (signal) => {
     if (!child.pid) return;
     try {
       process.kill(-child.pid, signal);
     } catch (error) {
-      if (error.code !== "ESRCH") {
+      if (error.code !== "ESRCH")
         console.error("Unable to stop the owned browser test process group.");
-        process.exitCode = 1;
-      }
     }
   };
-  const interrupt = () => {
-    interrupted = true;
-    stopGroup("SIGINT");
+  const stop = () => {
+    if (stopping) return;
+    signalGroup("SIGTERM");
+    // Allow the runner to remove its owned database inside the remaining twenty
+    // seconds, then stop even a TERM-ignoring wrapper or descendant.
+    stopping = delay(20_000).then(() => signalGroup("SIGKILL"));
   };
-  const terminate = () => {
-    interrupted = true;
-    stopGroup("SIGTERM");
-  };
-  process.on("SIGINT", interrupt);
-  process.on("SIGTERM", terminate);
-  child.once("error", () => {
-    console.error("Unable to start Go browser integration harness.");
-    process.exitCode = 1;
-  });
-  child.once("exit", (code) => {
-    if (interrupted) stopGroup("SIGKILL");
-    process.off("SIGINT", interrupt);
-    process.off("SIGTERM", terminate);
-    process.exitCode = interrupted ? 1 : (code ?? 1);
-  });
-} catch (error) {
-  console.error(error.message);
-  process.exitCode = 1;
+  const deadline = setTimeout(stop, 280_000);
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
+  try {
+    process.exitCode = await new Promise((resolve) => {
+      child.once("error", () => {
+        console.error("Unable to start Go browser integration harness.");
+        resolve(1);
+      });
+      child.once("exit", (code) => resolve(stopping ? 1 : (code ?? 1)));
+    });
+  } finally {
+    clearTimeout(deadline);
+    if (stopping) await stopping;
+    process.off("SIGINT", stop);
+    process.off("SIGTERM", stop);
+  }
 }

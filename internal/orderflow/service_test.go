@@ -142,7 +142,7 @@ func TestServiceExistingOrderNoopAndScalarUpdatePreserveManualPositions(t *testi
 		change  func(*orders.TargetObservation)
 		command bool
 		ready   bool
-	}{{name: "already represented", ready: true}, {name: "state with manual position", command: true, ready: true, change: changeTargetStateAndPositions},
+	}{{name: "already represented", ready: true}, {name: "merchant state with manual position", ready: true, change: changeTargetStateAndPositions},
 		{name: "position replacement", change: func(target *orders.TargetObservation) { target.Positions[0].Quantity = "3" }},
 		{name: "malformed native field presence", change: func(target *orders.TargetObservation) {
 			target.Fields.Name = orders.Field[string]{Presence: orders.PresenceValue}

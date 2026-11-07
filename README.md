@@ -246,6 +246,16 @@ The authenticated merchant API creates and inspects short-lived, revision-bound 
 
 ### Ozon account refresh and order polling
 
+For processing seller orders primarily in MoySklad, configure the separate
+**Работа в МойСклад** section in Orders settings. Its owner consent covers exact
+native transitions and selected whole-posting Ozon/native actions; it does not
+expand the existing mirror grant. Detection runs in the scheduling worker using
+bounded updated-window polling and exact document reads, without requiring
+webhooks or an open browser. Existing native states remain merchant-owned in this
+mode. See the [FBS/rFBS lifecycle and acceptance boundaries](docs/orders-fbs-rfbs-lifecycle.md)
+before enabling physical-event automation. Migration 72 is required; no existing
+configuration is automatically enrolled.
+
 On Integrations, **Ozon → Refresh** queues the catalog import and order-source request atomically for the selected MoySklad/Ozon pair. It enables source polling (default 300 seconds) without enabling MoySklad document writes or changing an existing target configuration revision/automation grant. Discovery covers the last 31 days and the unfulfilled cutoff window; persisted active postings are refreshed separately. A bounded refresh reports its own queued/success/failure/partial result beside the catalog result. Disable “Automatically load postings from Ozon” in Orders settings to revoke source polling. Refresh intents are idempotent; replay never restores a subsequently revoked permission. A MoySklad connection must be selected because the order cache is scoped to that pair.
 
 Migrations 67–68 remove the stock account constraint and generalize audited recovery, then add separate source permissions and refresh history. Rollback refuses to discard source history or restore the legacy account restriction over incompatible enabled policies/recovery records. Stop old workers before upgrading both entry points; an old worker cannot process newly connected scopes.
@@ -370,3 +380,12 @@ refresh button remains available when Realtime is unavailable.
 Neon Auth is provisioned in `neon.ts`; the current STYK identity and account
 ownership remain in use. Moving login to Neon Auth requires a separate account
 migration decision.
+
+
+The [2026-11-07 LIVE account acceptance](docs/live-orders-acceptance-2026-11-07/executive-summary.md)
+records the actual account/posting coverage, five controlled native writes,
+independent readbacks, API compatibility fixes and remaining first-seller gates.
+Real physical fulfillment and native monthly accounting are not declared complete
+by source reads or automated contract tests.
+
+Финансовый ledger, отдельные Ozon accruals и FBS carriage: [контракты и дизайн](docs/finance-carriage-contract-and-design-2026-11-07.md), [LIVE verification](docs/live-finance-carriage-2026-11-07/verification.md), [фактические ограничения](docs/live-finance-carriage-2026-11-07/failures.md).

@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"time"
 
@@ -11,6 +12,9 @@ import (
 )
 
 func ordersGrantOwner(ctx context.Context, tx pgx.Tx, config orders.Config, actor string) (string, error) {
+	if strings.HasPrefix(actor, "LIFECYCLE:") {
+		return ordersLifecycleOwner(ctx, tx, config, actor)
+	}
 	grant := config.Automation
 	if grant == nil || actor != orderAutomationActor(*grant) {
 		return "", orders.ErrBlocked
@@ -62,7 +66,22 @@ func validateOrderDecision(decision orders.Decision, current orders.ReviewContex
 }
 
 func validateOrderCommandCurrent(command orders.Command, posting orders.Posting, current orders.ReviewContext, automatic bool, now time.Time) error {
+	if automatic && command.Action.IsNativeMovement() && !orders.AutomaticNativeSourceSupported(posting) {
+		return orders.ErrBlocked
+	}
+	if err := validateMerchantPackingBaseline(command, current); err != nil {
+		return err
+	}
+	if command.Action.IsMirror() && current.MerchantPending[command.PostingNumber] {
+		return orders.ErrBlocked
+	}
+	if (command.MerchantIntent != nil || command.LifecyclePolicyRevision != 0) && !automatic {
+		return orders.ErrBlocked
+	}
 	if err := command.Validate(); err != nil {
+		return err
+	}
+	if err := validateOrderNativeStateBaseline(command, current); err != nil {
 		return err
 	}
 	if current.NativeInventoryActionBlocked(command.Action, command.PostingNumber) {
@@ -106,7 +125,7 @@ func validateOrderCommandCurrent(command orders.Command, posting orders.Posting,
 		return err
 	}
 	if command.CustomerOrder != nil {
-		if err := validateOrderNativeWrite(*command.CustomerOrder, current); err != nil {
+		if err := validateOrderNativeWrite(command, current); err != nil {
 			return err
 		}
 	}
@@ -285,12 +304,16 @@ func orderWarehouseMappingSame(expected, actual orders.WarehouseMappingRef) bool
 	return expected.ID == actual.ID && expected.Version == actual.Version && expected.Scope == actual.Scope && expected.OzonWarehouseID == actual.OzonWarehouseID && expected.MoyskladStoreID == actual.MoyskladStoreID && actual.Confirmed
 }
 
-func validateOrderNativeWrite(write orders.CustomerOrderWrite, current orders.ReviewContext) error {
+func validateOrderNativeWrite(command orders.Command, current orders.ReviewContext) error {
+	write := *command.CustomerOrder
 	config := current.Config
+	if !commissionOrderContractAllowed(command, config) {
+		return orders.ErrStale
+	}
 	if write.OrganizationID != config.OrganizationID || write.AgentID != config.AgentID || write.SalesChannelID != config.SalesChannelID {
 		return orders.ErrStale
 	}
-	allowedState := write.StateID == config.StateID
+	allowedState := command.Action != orders.ActionMirrorCreate && !slices.Contains(write.OwnedFields, "state") || write.StateID == config.StateID
 	for _, mapping := range config.StatusMappings {
 		allowedState = allowedState || write.StateID == mapping.StateID
 	}
@@ -303,6 +326,17 @@ func validateOrderNativeWrite(write orders.CustomerOrderWrite, current orders.Re
 		}
 	}
 	return nil
+}
+
+func commissionOrderContractAllowed(command orders.Command, config orders.Config) bool {
+	if command.CustomerOrder == nil {
+		return true
+	}
+	wanted := ""
+	if command.Action == orders.ActionMirrorCreate && config.Finance != nil && config.Finance.Enabled {
+		wanted = config.Finance.ContractID
+	}
+	return command.CustomerOrder.ContractID == wanted
 }
 
 func orderAttributeAllowed(id string, current orders.ReviewContext) bool {
@@ -319,6 +353,21 @@ func orderAttributeAllowed(id string, current orders.ReviewContext) bool {
 }
 
 func validateOrderAutomaticCommand(command orders.Command, config orders.Config, now time.Time) error {
+	if command.MerchantIntent != nil || command.LifecyclePolicyRevision != 0 {
+		if config.Lifecycle == nil {
+			return orders.ErrBlocked
+		}
+		if command.Action.IsNativeMovement() {
+			if !config.Lifecycle.AllowsNative(command, now) {
+				return orders.ErrBlocked
+			}
+			return nil
+		}
+		if !config.Lifecycle.Allows(command, now) {
+			return orders.ErrBlocked
+		}
+		return nil
+	}
 	grant := config.Automation
 	if grant == nil || !grant.Allows(command, now) {
 		return orders.ErrBlocked

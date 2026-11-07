@@ -126,22 +126,15 @@ func (r *Runner) readFulfillmentResult(ctx context.Context, work orders.Work) (o
 	return orders.TargetObservation{Scope: posting.Scope, ObservedAt: r.now(), Complete: true, Correlation: orders.Correlation{PostingNumber: posting.PostingNumber}}, nil
 }
 
-// reconcileFulfillment confirms a fulfillment work item only when the provider
-// posting status matches the expected status for the dispatched action. When the
-// status has not yet been applied, the work is deferred for the next polling
-// cycle instead of being marked reconciled. After confirmation, the status is
-// written back to MoySklad to keep both providers in sync.
+// reconcileFulfillment confirms the exact outcome or a verified scheme-specific
+// successor. It never issues a native projection or stock write from readback.
 func (r *Runner) reconcileFulfillment(ctx context.Context, work orders.Work, posting orders.Posting) error {
 	if posting.Validate() != nil || posting.Evidence.Origin != orders.OriginOzon || posting.Scope != work.Scope || posting.PostingNumber != work.Command.PostingNumber || posting.CommercialOrderID != work.Command.CommercialOrderID {
 		return r.deferReadback(ctx, work, "FULFILLMENT_TARGET_MISMATCH")
 	}
 	expected := orders.ExpectedPostingStatus(work.Command.Action)
 
-	if expected != "" && posting.Status.Presence == orders.PresenceValue && posting.Status.Value != nil && *posting.Status.Value != expected {
-		return r.deferReadback(ctx, work, "STATUS_NOT_APPLIED")
-	}
-
-	if expected != "" && posting.Status.Presence != orders.PresenceValue {
+	if expected != "" && !orders.FulfillmentStatusConfirmed(work.Command, posting) {
 		return r.deferReadback(ctx, work, "STATUS_NOT_APPLIED")
 	}
 

@@ -67,12 +67,23 @@ func (t Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, &NotDispatchedError{Cause: err}
 	}
 	response, err := t.Base.RoundTrip(req)
+	// Complete admission bookkeeping before diagnostic I/O. An observer failure
+	// must not conceal an already observed response from the durable coordinator.
+	if response != nil {
+		if finishErr := permit.Finish(req.Context(), response.StatusCode, response.Header); finishErr != nil {
+			response.Header.Set("X-STYK-Coordination-Pending", "true")
+		}
+	}
+	if evidenceErr := observeProviderRead(req, t.Scope, response, err); evidenceErr != nil {
+		if response != nil {
+			if closeErr := response.Body.Close(); closeErr != nil {
+				evidenceErr = errors.Join(evidenceErr, closeErr)
+			}
+		}
+		return nil, evidenceErr
+	}
 	if response == nil {
 		return nil, err
-	}
-	// A bookkeeping outage must not erase a provider response or cause a resend.
-	if finishErr := permit.Finish(req.Context(), response.StatusCode, response.Header); finishErr != nil {
-		response.Header.Set("X-STYK-Coordination-Pending", "true")
 	}
 	return response, err
 }
@@ -113,7 +124,7 @@ func isMutation(req *http.Request) bool {
 		return false
 	}
 	switch path {
-	case "/v5/fbs/posting/product/exemplar/status", "/v2/posting/fbs/product/country/list", "/v2/product/info/stocks-by-warehouse/fbs", "/v3/products/info/attributes", "/v1/posting/fbs/cancel-reason":
+	case "/v1/roles", "/v2/finance/realization", "/v1/finance/accrual/types", "/v1/finance/accrual/by-day", "/v1/finance/accrual/postings", "/v1/carriage/get", "/v2/carriage/delivery/list", "/v2/posting/fbs/act/get-postings", "/v5/fbs/posting/product/exemplar/status", "/v2/posting/fbs/product/country/list", "/v2/product/info/stocks-by-warehouse/fbs", "/v3/products/info/attributes", "/v1/posting/fbs/cancel-reason":
 		return false
 	}
 	return true

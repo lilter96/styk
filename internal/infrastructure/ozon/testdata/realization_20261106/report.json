@@ -1,0 +1,23 @@
+{
+  "result": {
+    "header": {
+      "number": "STYK-SYNTHETIC-2026-09",
+      "currency_sys_name": "RUB",
+      "doc_date": "2026-10-05",
+      "start_date": "2026-09-01",
+      "stop_date": "2026-09-30",
+      "payer_name": "PRIVATE_PAYER",
+      "receiver_inn": "PRIVATE_TAX_ID"
+    },
+    "rows": [
+      {
+        "rowNumber": 1,
+        "item": {"sku": 9007199254740993, "offer_id": "synthetic-offer", "name": "Synthetic product", "barcode": "synthetic-barcode"},
+        "commission_ratio": 0.10,
+        "seller_price_per_instance": 1234567890123456.78,
+        "delivery_commission": {"quantity": 2, "amount": 2469135780246913.56, "bonus": 0, "standard_fee": -0.01, "bank_coinvestment": 0.005, "stars": null, "total": 2469135780246913.575},
+        "return_commission": {"quantity": 0, "amount": 0, "total": 0}
+      }
+    ]
+  }
+}

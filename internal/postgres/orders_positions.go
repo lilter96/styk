@@ -38,7 +38,13 @@ func enrichOrderPositionBaselines(ctx context.Context, q ordersQuerier, result *
 	if err = rows.Err(); err != nil {
 		return ordersError("read immutable position frontiers", err)
 	}
-	return enrichRecoveryPositionBaselines(ctx, q, result, numbers)
+	if err = enrichRecoveryPositionBaselines(ctx, q, result, numbers); err != nil {
+		return err
+	}
+	if err = enrichOrderNativeStateBaselines(ctx, q, result, numbers); err != nil {
+		return err
+	}
+	return enrichMerchantPending(ctx, q, result, numbers)
 }
 
 func validateOrderPositionBaseline(command orders.Command, current orders.ReviewContext) error {

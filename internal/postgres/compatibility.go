@@ -14,8 +14,9 @@ func (s *Store) RequireCurrentSchema(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
 	var version int64
-	err := s.Pool.QueryRow(ctx, `SELECT COALESCE(max(version_id),0) FROM (SELECT DISTINCT ON(version_id) version_id,is_applied FROM goose_db_version ORDER BY version_id,id DESC) versions WHERE is_applied`).Scan(&version)
-	if err != nil || version < 71 {
+	var financeCarriageVersions int
+	err := s.Pool.QueryRow(ctx, `SELECT COALESCE(max(version_id),0),count(*) FILTER(WHERE version_id IN(73,74,75,76)) FROM (SELECT DISTINCT ON(version_id) version_id,is_applied FROM goose_db_version ORDER BY version_id,id DESC) versions WHERE is_applied`).Scan(&version, &financeCarriageVersions)
+	if err != nil || version < 76 || financeCarriageVersions != 4 {
 		return ErrSchemaIncompatible
 	}
 	var compatible bool
@@ -23,7 +24,31 @@ func (s *Store) RequireCurrentSchema(ctx context.Context) error {
 	if err != nil || !compatible {
 		return ErrSchemaIncompatible
 	}
-	return s.requireProductSchema(ctx)
+	if err = s.requireProductSchema(ctx); err != nil {
+		return err
+	}
+	if err = s.requireCommissionSchema(ctx); err != nil {
+		return err
+	}
+	return s.requireCarriageSchema(ctx)
+}
+
+func (s *Store) requireCommissionSchema(ctx context.Context) error {
+	var compatible bool
+	err := s.Pool.QueryRow(ctx, `SELECT bool_and(to_regclass(name) IS NOT NULL) AND EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid=to_regclass('outbox_tasks') AND conname='finance_outbox_scope_fk') FROM(VALUES('orders_merchant_intents'),('orders_finance_previews'),('orders_finance_work'),('orders_finance_periods'),('orders_finance_observations'),('orders_finance_attempts'),('orders_finance_schedule'),('orders_finance_ledgers'),('orders_finance_raw_evidence'))required(name)`).Scan(&compatible)
+	if err != nil || !compatible {
+		return ErrSchemaIncompatible
+	}
+	return nil
+}
+
+func (s *Store) requireCarriageSchema(ctx context.Context) error {
+	var compatible bool
+	err := s.Pool.QueryRow(ctx, `SELECT bool_and(to_regclass(name) IS NOT NULL) AND EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid=to_regclass('outbox_tasks') AND conname='carriage_outbox_scope_fk') AND to_regclass('carriage_outbox_work') IS NOT NULL FROM(VALUES('orders_carriage_previews'),('orders_carriage_work'),('orders_carriage_heads'),('orders_carriage_attempts'))required(name)`).Scan(&compatible)
+	if err != nil || !compatible {
+		return ErrSchemaIncompatible
+	}
+	return nil
 }
 
 func (s *Store) requireProductSchema(ctx context.Context) error {

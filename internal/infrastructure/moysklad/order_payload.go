@@ -51,6 +51,9 @@ func (c *OrderClient) orderPayload(command orders.Command) (map[string]any, erro
 	}
 	if command.Action == orders.ActionMirrorCreate {
 		body["syncId"], body["externalCode"] = command.Correlation.SyncID, command.Correlation.Marker
+		if write.ContractID != "" {
+			body["contract"] = c.reference("entity/contract", "contract", write.ContractID)
+		}
 	}
 	if len(body) == 0 {
 		return nil, orders.ErrBlocked
@@ -59,6 +62,9 @@ func (c *OrderClient) orderPayload(command orders.Command) (map[string]any, erro
 }
 
 func orderWriteReferences(write orders.CustomerOrderWrite) error {
+	if write.ContractID != "" && !orderUUID.MatchString(write.ContractID) {
+		return ErrOrderIdentity
+	}
 	for _, id := range []string{write.OrganizationID, write.AgentID, write.StoreID, write.StateID, write.SalesChannelID, write.CurrencyID} {
 		if !orderUUID.MatchString(id) {
 			return ErrOrderIdentity

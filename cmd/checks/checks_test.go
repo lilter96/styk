@@ -104,7 +104,7 @@ func TestSingleCommandBuildDoesNotPolluteWorkingTree(t *testing.T) {
 func TestFullLaneRunsOneRaceEnabledIntegrationBuild(t *testing.T) {
 	t.Parallel()
 	testCommands := 0
-	for _, args := range fullGoCommands() {
+	for _, args := range append(fullQualityCommands(), fullUnitCommand([]string{"example/internal/domain", "example/internal/postgres"})) {
 		if len(args) < 2 || args[0] != "go" || args[1] != "test" {
 			continue
 		}
@@ -112,6 +112,14 @@ func TestFullLaneRunsOneRaceEnabledIntegrationBuild(t *testing.T) {
 		command := " " + strings.Join(args, " ") + " "
 		if !strings.Contains(command, " -race ") || !strings.Contains(command, " -tags=integration ") {
 			t.Fatal("full lane split race and integration coverage")
+		}
+		for _, required := range []string{" -count=1 ", " -timeout=4m ", " -p=4 ", " example/internal/domain ", " example/internal/postgres "} {
+			if !strings.Contains(command, required) {
+				t.Fatalf("full lane lost bounded, complete or isolated coverage: %s", required)
+			}
+		}
+		if strings.Contains(command, " -run ") || strings.Contains(command, " -skip ") || strings.Contains(command, " -short ") {
+			t.Fatal("full lane filters tests")
 		}
 	}
 	if testCommands != 1 {

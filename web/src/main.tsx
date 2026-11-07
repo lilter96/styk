@@ -7,6 +7,7 @@ import "./style.css";
 import "./imports.css";
 import "./mapping.css";
 import "./design-system.css";
+import "./orders-settings.css";
 import "./product-matching.css";
 import "./products-workspace.css";
 import "./products-reference.css";

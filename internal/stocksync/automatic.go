@@ -23,7 +23,7 @@ func (r AutomaticRunner) RunNext(ctx context.Context) (bool, error) {
 	if r.Store == nil || (!r.Publisher.DurableDispatch && !simulator) || !r.Publisher.Enabled {
 		return false, nil
 	}
-	action, worked, err := r.Store.AdvanceAutomaticStock(ctx, time.Now().UTC())
+	action, worked, err := r.Store.AdvanceAutomaticStock(ctx, r.Publisher.now())
 	if err != nil || action == nil {
 		return worked, err
 	}

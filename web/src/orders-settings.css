@@ -147,7 +147,7 @@
 .settings-content section > h2:not(:first-child) {
   margin-top: 26px;
 }
-.settings-content section > .orders-check {
+.settings-content > section > .orders-check {
   display: flex;
   gap: 14px;
   align-items: center;
@@ -169,12 +169,12 @@
   height: 18px;
   flex-shrink: 0;
 }
-.settings-content section > .orders-check > input {
+.settings-content > section > .orders-check > input {
   order: 2;
   margin-left: auto;
 }
 .settings-content input.settings-switch,
-.settings-content section > .orders-check > input {
+.settings-content > section > .orders-check > input {
   appearance: none;
   width: 44px;
   height: 24px;
@@ -186,7 +186,7 @@
   box-shadow: inset 0 1px 3px #0001;
 }
 .settings-content input.settings-switch::after,
-.settings-content section > .orders-check > input::after {
+.settings-content > section > .orders-check > input::after {
   content: "";
   position: absolute;
   left: 3px;
@@ -201,11 +201,11 @@
 .settings-content input.settings-switch:checked {
   background: var(--settings-purple);
 }
-.settings-content section > .orders-check > input:checked {
+.settings-content > section > .orders-check > input:checked {
   background: #12b849;
 }
 .settings-content input.settings-switch:checked::after,
-.settings-content section > .orders-check > input:checked::after {
+.settings-content > section > .orders-check > input:checked::after {
   transform: translateX(20px);
 }
 .settings-content label:not(.orders-check):not(.settings-field-row) {
@@ -532,6 +532,15 @@
   box-shadow: 0 5px 20px #6b49ce0b;
   margin-top: -15px;
 }
+.order-settings-form[data-section="lifecycle"] .settings-footer {
+  position: static;
+  margin-top: 0;
+}
+.settings-lifecycle-diagnostics {
+  max-width: 900px;
+  margin-left: 220px;
+  padding: 0;
+}
 .settings-save-status {
   display: flex;
   align-items: center;
@@ -567,6 +576,227 @@
   justify-content: flex-end;
   gap: 10px;
   margin-top: 10px;
+}
+.settings-lifecycle-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+.settings-lifecycle-grid > label {
+  line-height: 1.5;
+}
+.settings-content .settings-lifecycle-fields {
+  container-type: inline-size;
+}
+.orders-settings-page
+  .settings-content
+  .settings-lifecycle-fields
+  :is(select, button),
+.orders-settings-page
+  .settings-content
+  .settings-realization-controls
+  :is(input, button),
+.orders-settings-page .settings-content .settings-lifecycle-journal button {
+  min-height: 44px;
+  line-height: 1.5;
+}
+.orders-settings-page
+  .settings-content
+  .settings-commission-policy
+  :is(select, input:not([type="checkbox"]), button),
+.orders-settings-page
+  .settings-content
+  :is(
+    .settings-commission-import,
+    .settings-carriage,
+    .settings-accrual,
+    .settings-financial-ledger
+  )
+  :is(select, input:not([type="checkbox"]), button) {
+  min-height: 44px;
+  line-height: 1.5;
+}
+.settings-content .settings-commission-policy .orders-check,
+.settings-content .settings-commission-import .orders-check,
+.settings-content .settings-carriage .orders-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 0;
+}
+.settings-content .settings-carriage > fieldset {
+  container-type: inline-size;
+  margin: 16px 0;
+}
+.settings-carriage .settings-lifecycle-grid {
+  margin-bottom: 16px;
+}
+.settings-carriage .settings-carriage-dismiss {
+  display: block;
+  margin-top: 12px;
+}
+.settings-carriage :is(p, label, code),
+.settings-financial-ledger :is(p, label, code),
+.settings-accrual :is(p, label, code) {
+  overflow-wrap: anywhere;
+}
+.settings-content .settings-financial-ledger {
+  border-top: 1px solid var(--settings-line);
+  margin-top: 20px;
+  padding-top: 4px;
+}
+.settings-content .settings-financial-ledger details,
+.settings-content .settings-carriage details {
+  margin: 12px 0;
+}
+.settings-content :is(.settings-financial-ledger, .settings-carriage) summary {
+  min-height: 44px;
+  padding: 10px 0;
+  line-height: 1.5;
+}
+.settings-financial-ledger .settings-realization-facts > div {
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+}
+.settings-financial-ledger .settings-realization-facts dt {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.settings-financial-components {
+  display: grid;
+  gap: 12px;
+  padding-left: 20px;
+  margin: 12px 0;
+}
+.settings-financial-components > li {
+  display: grid;
+  gap: 4px;
+  line-height: 1.5;
+}
+.settings-commission-policy > fieldset {
+  container-type: inline-size;
+}
+.settings-content
+  :is(
+    .settings-commission-import,
+    .settings-carriage,
+    .settings-accrual,
+    .settings-financial-ledger
+  )
+  h4 {
+  font-size: 15px;
+  line-height: 1.5;
+  margin: 16px 0 8px;
+}
+.settings-commission-work {
+  border-top: 1px solid var(--settings-line);
+  margin: 16px 0;
+  padding-top: 12px;
+  overflow-wrap: anywhere;
+}
+.settings-commission-import details {
+  overflow-wrap: anywhere;
+}
+.settings-commission-facts > div {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+}
+.settings-commission-facts dt {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.settings-content .settings-lifecycle-rule {
+  padding: 14px;
+  margin: 16px 0;
+}
+.settings-content .settings-lifecycle-rule .orders-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+}
+.settings-content .settings-lifecycle-predecessors {
+  margin: 0;
+  padding: 10px;
+}
+.settings-content .settings-lifecycle-predecessors > div {
+  max-height: 220px;
+  overflow: auto;
+  margin-top: 8px;
+}
+.settings-content .settings-lifecycle-predecessors .orders-check {
+  min-height: 44px;
+  padding: 8px 0;
+  overflow-wrap: anywhere;
+}
+.settings-content .settings-lifecycle-fields .orders-check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  min-height: 44px;
+  padding: 12px 0;
+}
+.settings-lifecycle-events,
+.settings-realization-rows {
+  display: grid;
+  gap: 12px;
+  padding: 0;
+  margin: 12px 0;
+  list-style: none;
+}
+.settings-lifecycle-events > li,
+.settings-realization-rows > li {
+  display: grid;
+  gap: 5px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--settings-line);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.settings-lifecycle-events time {
+  color: var(--settings-blue);
+}
+.settings-content .settings-lifecycle-selected {
+  margin-top: 12px;
+  overflow-wrap: anywhere;
+}
+.settings-realization-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 16px 0;
+}
+.settings-realization-controls > label {
+  flex: 1 1 170px;
+}
+.settings-realization-facts {
+  display: grid;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.settings-realization-facts > div {
+  display: grid;
+  grid-template-columns: minmax(70px, 1fr) minmax(0, 2fr);
+  gap: 10px;
+}
+.settings-realization-facts dt {
+  color: var(--settings-blue);
+}
+.settings-realization-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.settings-realization .settings-pagination {
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+@container (min-width: 560px) {
+  .settings-lifecycle-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 @media (min-width: 1650px) {
   .settings-workspace {
@@ -613,6 +843,9 @@
   }
 }
 @media (max-width: 780px) {
+  .settings-lifecycle-diagnostics {
+    margin-left: 0;
+  }
   .settings-page-heading {
     margin: 0 0 20px;
     align-items: flex-start;
@@ -724,20 +957,20 @@
   background: #6410e8;
   color: white;
 }
-.settings-content section > .orders-check > span {
+.settings-content > section > .orders-check > span {
   display: grid;
   gap: 6px;
 }
-.settings-content section > .orders-check > span > strong {
+.settings-content > section > .orders-check > span > strong {
   font-size: 16px;
   line-height: 1.35;
 }
-.settings-content section > .orders-check small {
+.settings-content > section > .orders-check small {
   font-size: 12px;
   font-weight: 400;
   color: var(--settings-blue);
 }
-.settings-content section > .orders-check > svg {
+.settings-content > section > .orders-check > svg {
   width: 42px;
   height: 42px;
   color: var(--settings-purple);
@@ -799,10 +1032,10 @@
     font-size: 11px;
     padding: 5px;
   }
-  .settings-content section > .orders-check > svg {
+  .settings-content > section > .orders-check > svg {
     display: none;
   }
-  .settings-content section > .orders-check > span > strong {
+  .settings-content > section > .orders-check > span > strong {
     font-size: 14px;
   }
   .settings-content .orders-check input {
@@ -892,12 +1125,44 @@
   font-size: 12px;
   line-height: 1.5;
 }
-.settings-warehouse-table td { white-space: normal; }
-.settings-content .settings-reservation-note { padding: 0; margin: 0 0 12px; border: 0; }
-.settings-content .settings-reservation-note summary { font-size: 11px; font-weight: 400; color: #606a92; }
-.settings-reservation-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.settings-reservation-controls > label { margin-top: 0 !important; }
-.settings-content .settings-permissions .orders-check { margin: 4px 0; min-height: 24px; }
-.settings-content .settings-automation-toggle { margin-left: auto; flex-shrink: 0; align-self: center; }
-.settings-content .settings-automation-toggle input:checked { background: #12b849; }
-@media (max-width: 780px) { .settings-reservation-controls { grid-template-columns: 1fr; } .settings-content .settings-permissions .orders-check { min-height: 32px; } }
+.settings-warehouse-table td {
+  white-space: normal;
+}
+.settings-content .settings-reservation-note {
+  padding: 0;
+  margin: 0 0 12px;
+  border: 0;
+}
+.settings-content .settings-reservation-note summary {
+  font-size: 11px;
+  font-weight: 400;
+  color: #606a92;
+}
+.settings-reservation-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.settings-reservation-controls > label {
+  margin-top: 0 !important;
+}
+.settings-content .settings-permissions .orders-check {
+  margin: 4px 0;
+  min-height: 24px;
+}
+.settings-content .settings-automation-toggle {
+  margin-left: auto;
+  flex-shrink: 0;
+  align-self: center;
+}
+.settings-content .settings-automation-toggle input:checked {
+  background: #12b849;
+}
+@media (max-width: 780px) {
+  .settings-reservation-controls {
+    grid-template-columns: 1fr;
+  }
+  .settings-content .settings-permissions .orders-check {
+    min-height: 32px;
+  }
+}

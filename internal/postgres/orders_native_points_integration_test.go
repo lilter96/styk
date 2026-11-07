@@ -358,7 +358,7 @@ func nativePointTestURL(explicit, fallback string) (*url.URL, error) {
 	if err != nil || u.Scheme != "postgres" || (u.Hostname() != "localhost" && u.Hostname() != "127.0.0.1") || u.Fragment != "" || u.Opaque != "" {
 		return nil, errors.New("native point tests require explicit dedicated localhost PostgreSQL test DSN")
 	}
-	if explicitSet && u.Path != "/styk_orders_point_test" || !explicitSet && u.Path != "/styk_orders_release_test" && u.Path != "/styk_orders_store_test" {
+	if explicitSet && u.Path != "/styk_orders_point_test" || !explicitSet && u.Path != "/styk_orders_release_test" && u.Path != "/styk_orders_store_test" && !inventoryFullDatabasePath(u.Path) {
 		return nil, errors.New("native point tests require styk_orders_point_test or an allowlisted orders test DSN")
 	}
 	query, err := url.ParseQuery(u.RawQuery)
@@ -381,6 +381,9 @@ func TestNativeOrderPointTestDatabaseScopeGuard(t *testing.T) {
 	}{
 		{"named override", "postgres://localhost/styk_orders_point_test?sslmode=disable", "", true},
 		{"derived fixture", "", "postgres://127.0.0.1/styk_orders_release_test?sslmode=disable", true},
+		{"owned worker fallback", "", "postgres://127.0.0.1/styk_full_123_456_3_test?sslmode=disable", true},
+		{"malformed owned worker", "", "postgres://127.0.0.1/styk_full_123_456_8_test?sslmode=disable", false},
+		{"owned name cannot replace explicit point", "postgres://127.0.0.1/styk_full_123_456_3_test", "", false},
 		{"no implicit database", "", "", false},
 		{"protected database", "", "postgres://localhost/styk", false},
 		{"remote server", "postgres://remote.example/styk_orders_point_test", "", false},

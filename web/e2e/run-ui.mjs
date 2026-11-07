@@ -6,6 +6,7 @@ import { fileURLToPath, URL } from "node:url";
 import { createServer as createHTTPServer } from "node:http";
 import process from "node:process";
 import console from "node:console";
+import { setTimeout as delay } from "node:timers/promises";
 
 const allowed = ["e2e/orders-console.spec.ts", "e2e/redesign.spec.ts"];
 const specs = process.argv.slice(2);
@@ -49,6 +50,7 @@ if (specs.some((spec) => !allowed.includes(spec))) {
       "test",
       ...(specs.length ? specs : allowed),
       "--workers=1",
+      "--global-timeout=280000",
       "--reporter=line",
     ],
     {
@@ -58,24 +60,33 @@ if (specs.some((spec) => !allowed.includes(spec))) {
       detached: process.platform !== "win32",
     },
   );
-  const stop = () => {
+  let stopping;
+  const signalChild = (signal) => {
     if (!child.pid) return;
     try {
-      if (process.platform === "win32") child.kill("SIGTERM");
-      else process.kill(-child.pid, "SIGTERM");
+      if (process.platform === "win32") child.kill(signal);
+      else process.kill(-child.pid, signal);
     } catch (error) {
       if (error.code !== "ESRCH")
         console.error("Could not stop owned browser test process.");
     }
+  };
+  const stop = () => {
+    if (stopping) return;
+    signalChild("SIGTERM");
+    stopping = delay(100).then(() => signalChild("SIGKILL"));
   };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
   try {
     process.exitCode = await new Promise((resolve, reject) => {
       child.once("error", reject);
-      child.once("exit", (code) => resolve(code ?? 1));
+      child.once("exit", (code) => resolve(stopping ? 1 : (code ?? 1)));
     });
   } finally {
+    // Await the owned-group escalation even when the direct Playwright process
+    // exits first; a TERM-ignoring browser grandchild must not survive the run.
+    if (stopping) await stopping;
     process.off("SIGINT", stop);
     process.off("SIGTERM", stop);
     await server.close();

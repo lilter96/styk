@@ -19,6 +19,11 @@ func (s *Service) finishMirrorPlan(ctx context.Context, review orders.ReviewCont
 			return decision, nil
 		}
 		decision.Target = &target
+		if review.Config.Lifecycle != nil && review.Config.Lifecycle.Enabled {
+			command.CustomerOrder.StateID = target.Fields.StateID
+		} else {
+			preserveNativeState(&command, target, review.NativeStateBaselines[command.PostingNumber])
+		}
 		if validation := prepareMirrorUpdate(&command, target, review.PositionBaselines[command.PostingNumber]); validation.Code != "" {
 			decision.Validation = append(decision.Validation, validation)
 			return decision, nil
@@ -188,6 +193,9 @@ func targetRepresents(command orders.Command, target orders.TargetObservation) b
 }
 
 func sameNativeReferences(wanted, actual orders.CustomerOrderWrite) bool {
+	if wanted.ContractID != "" && wanted.ContractID != actual.ContractID {
+		return false
+	}
 	return wanted.OrganizationID == actual.OrganizationID && wanted.AgentID == actual.AgentID &&
 		wanted.StoreID == actual.StoreID && wanted.SalesChannelID == actual.SalesChannelID &&
 		(wanted.CurrencyID == "" || wanted.CurrencyID == actual.CurrencyID)

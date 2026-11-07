@@ -4,7 +4,6 @@ package integration
 
 import (
 	"context"
-	"os/exec"
 	"testing"
 	"time"
 
@@ -26,7 +25,7 @@ func TestProductWorkspaceMigrationRoundTripAndAuditGuard(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", dsn, "down-to", "69")
+	cmd := migrationCommand(t, ctx, "-dir", "../../migrations", "postgres", dsn, "down-to", "69")
 	if _, err := cmd.CombinedOutput(); err == nil {
 		t.Fatal("rollback removed policy audit")
 	}

@@ -2,7 +2,13 @@ import { Icon, type IconName } from "./UI";
 import type { OrderScope } from "./OrdersTypes";
 
 export type SettingsSection =
-  "general" | "warehouses" | "fields" | "statuses" | "automation" | "advanced";
+  | "general"
+  | "warehouses"
+  | "fields"
+  | "statuses"
+  | "lifecycle"
+  | "automation"
+  | "advanced";
 export const settingsSections: {
   id: SettingsSection;
   label: string;
@@ -12,6 +18,7 @@ export const settingsSections: {
   { id: "warehouses", label: "Куда передавать", icon: "products" },
   { id: "fields", label: "Данные заказа", icon: "catalog" },
   { id: "statuses", label: "Статусы и действия", icon: "refresh" },
+  { id: "lifecycle", label: "Работа в МойСклад", icon: "warehouse" },
   { id: "automation", label: "Автоматизация", icon: "bolt" },
   { id: "advanced", label: "Дополнительно", icon: "diagnostics" },
 ];
@@ -52,10 +59,19 @@ export function SettingsHelp({
     statuses: {
       title: "Важно понимать",
       rows: [
-        "Статус Ozon меняет состояние в МойСклад",
-        "Обратные действия требуют вашего решения",
+        "Ozon сообщает состояние доставки",
+        "Ручной статус продавца сохраняется",
       ],
-      note: "Предложение действия можно проверить в карточке отправления.",
+      note: "Обратные подсказки требуют проверки. Для действий без открытия STYK настройте раздел «Работа в МойСклад».",
+    },
+    lifecycle: {
+      title: "Продавец работает в МойСклад",
+      rows: [
+        "Сотрудник меняет состояние заказа",
+        "STYK замечает разрешённый переход",
+        "Проверяет данные и сверяет результат",
+      ],
+      note: "Подтверждайте физическую передачу и возврат только после реального события. При нехватке данных действие ожидает вмешательства.",
     },
     automation: {
       title: "Как это работает",
@@ -64,7 +80,7 @@ export function SettingsHelp({
         "Проверяет товары и склады",
         "Создаёт и обновляет заказы в МойСклад",
       ],
-      note: "Отгрузки и возвраты не запускаются автоматически.",
+      note: "Это разрешение только на заказы. Действия Ozon, Отгрузки и Возвраты настраиваются отдельно в разделе «Работа в МойСклад».",
     },
     advanced: {
       title: "Отдельное подтверждение",

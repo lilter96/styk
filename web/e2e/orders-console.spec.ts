@@ -1,7 +1,11 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { auditButtonHovers } from "./hover-contrast";
-import type { OrderActionProposal, OrderCommand } from "../src/OrdersTypes";
+import type {
+  OrderActionProposal,
+  OrderCommand,
+  OrdersConfigData,
+} from "../src/OrdersTypes";
 
 const origin = process.env.STYK_ORDERS_UI_ORIGIN || "http://127.0.0.1:5173";
 
@@ -574,6 +578,8 @@ async function openOrders(
   await page.route("**/api/orders/**", (route) => {
     const request = route.request();
     const url = new URL(request.url());
+    if (url.pathname.endsWith("/carriage/operations"))
+      return fulfill(route, { operations: [] });
     if (url.pathname.endsWith("/config")) return fulfill(route, config);
     if (url.pathname.endsWith("/warehouses"))
       return fulfill(route, {
@@ -2490,5 +2496,1446 @@ test("order settings references, persistent draft, permanent consent and scoped 
     page.getByRole("heading", { name: "Заказы", exact: true }),
   ).toBeVisible();
   expect(approvals).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test("lifecycle settings require owner transition consent and show honest report diagnostics across viewports", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const { errors, approvals } = await openOrders(page, false, false, true);
+  const before = "11111111-1111-4111-8111-111111111111";
+  const after = "22222222-2222-4222-8222-222222222222";
+  let current: OrdersConfigData = {
+    ...config,
+    state_id: before,
+    read_configured: true,
+    read_enabled: true,
+  };
+  const saves: {
+    config: OrdersConfigData;
+    lifecycle_consent: boolean;
+    automation_consent: boolean;
+  }[] = [];
+  await page.route("**/api/orders/config*", (route) => {
+    if (route.request().method() === "POST") {
+      const body = route.request().postDataJSON();
+      saves.push(body);
+      current = {
+        ...body.config,
+        revision: current.revision + 1,
+        publication_available: true,
+      };
+    }
+    return fulfill(route, current);
+  });
+  await page.route("**/api/orders/metadata?*", (route) =>
+    fulfill(route, {
+      ...metadata,
+      states: [
+        reference(before, "Новый заказ — ожидает фактической сборки"),
+        reference(
+          after,
+          "Полностью собран и проверен сотрудником склада продавца",
+        ),
+      ],
+    }),
+  );
+  await page.route("**/api/orders/merchant-intents?*", (route) =>
+    fulfill(route, {
+      intents: [
+        {
+          intent: {
+            id: "event-one",
+            scope,
+            correlation: {
+              posting_number: "SYNTHETIC-LONG-POSTING-9007199254740993-1",
+              customer_order_id: before,
+            },
+            action: "posting_pack",
+            observed_at: "2026-11-06T12:00:00Z",
+            before_state_id: before,
+            after_state_id: after,
+          },
+          state: "BLOCKED",
+          code: "MERCHANT_ACTION_REQUIRES_EVIDENCE",
+        },
+      ],
+    }),
+  );
+  let reportReads = 0;
+  await page.route("**/api/orders/finance/realization?*", (route) => {
+    reportReads++;
+    const url = new URL(route.request().url());
+    return fulfill(route, {
+      scope,
+      period: {
+        year: Number(url.searchParams.get("year")),
+        month: Number(url.searchParams.get("month")),
+      },
+      number: "REPORT-LIFECYCLE",
+      currency: "RUB",
+      observed_at: "2026-11-06T12:00:00Z",
+      fingerprint: "synthetic",
+      rows: Array.from({ length: 22 }, (_, i) => ({
+        number: i + 1,
+        sku: known("9007199254740993"),
+        offer_id: known("LONG-SELLER-ARTICLE-9007199254740993"),
+        delivery: {
+          quantity: known("1"),
+          amount: known("9007199254740993.01"),
+          total: known("-0.01"),
+        },
+        return: { quantity: known("0"), amount: missing, total: known("0") },
+      })),
+      blockers: [
+        { code: "accounting_mapping_review_required" },
+        { code: "provider_has_no_declared_totals_or_row_count" },
+      ],
+    });
+  });
+  await page.getByRole("link", { name: "Настройки", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Работа в МойСклад", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Обработка в МойСклад", exact: true }),
+  ).toBeVisible();
+  expect(reportReads).toBe(0);
+  const enabled = page.getByRole("checkbox", {
+    name: /Выполнять команды из МойСклад автоматически/,
+  });
+  await expect(enabled).not.toBeChecked();
+  await enabled.focus();
+  await enabled.press("Space");
+  await expect(enabled).toBeFocused();
+  await page
+    .getByRole("button", { name: "Добавить переход МойСклад", exact: true })
+    .click();
+  await page
+    .getByRole("combobox", { name: "Новое состояние МойСклад 1", exact: true })
+    .selectOption(after);
+  await page
+    .getByLabel(
+      "Из состояния «Новый заказ — ожидает фактической сборки», переход 1",
+      { exact: true },
+    )
+    .check();
+  const whole = page.getByRole("checkbox", {
+    name: "Событие относится ко всем позициям отправления",
+    exact: true,
+  });
+  await whole.check();
+  await expect(
+    page.getByRole("button", { name: "Сохранить настройки", exact: true }),
+  ).toBeDisabled();
+  const consent = page.getByRole("checkbox", {
+    name: /Разрешаю выбранные команды Ozon/,
+  });
+  await consent.check();
+  await whole.uncheck();
+  await expect(consent).not.toBeChecked();
+  await whole.check();
+  await consent.check();
+  await expect(
+    page.getByRole("option", {
+      name: "После приёмки Ozon — пока недоступно",
+      exact: true,
+    }),
+  ).toHaveJSProperty("disabled", true);
+  const layout = [];
+  expect(
+    await page
+      .locator(".settings-footer")
+      .evaluate((element) => getComputedStyle(element).position),
+  ).toBe("static");
+  for (const width of [1440, 1366, 390]) {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+    const selector = page.getByRole("combobox", {
+      name: "Новое состояние МойСклад 1",
+      exact: true,
+    });
+    await selector.focus();
+    await selector.press("ArrowDown");
+    await selector.press("Escape");
+    await selector.selectOption(after);
+    await consent.check();
+    await selector.focus();
+    await selector.press("Tab");
+    await page.keyboard.press("Shift+Tab");
+    await expect(selector).toBeFocused();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(width);
+    layout.push(
+      await selector.evaluate((element) => {
+        const style = getComputedStyle(element),
+          rect = element.getBoundingClientRect();
+        return {
+          viewport: innerWidth,
+          width: rect.width,
+          height: rect.height,
+          padding: style.padding,
+          lineHeight: style.lineHeight,
+          color: style.color,
+          background: style.backgroundColor,
+          outline: style.outlineStyle,
+          outlineWidth: style.outlineWidth,
+        };
+      }),
+    );
+    await page.locator(".settings-lifecycle-rule").screenshot({
+      path: testInfo.outputPath(`lifecycle-rule-${width}.png`),
+      animations: "disabled",
+    });
+    await page
+      .getByRole("heading", { name: "Обработка в МойСклад", exact: true })
+      .scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: testInfo.outputPath(`lifecycle-settings-${width}.png`),
+      animations: "disabled",
+      fullPage: true,
+    });
+  }
+  for (const result of layout) {
+    expect(result.height).toBeGreaterThanOrEqual(44);
+    expect(result.outline).not.toBe("none");
+    expect(Number.parseFloat(result.outlineWidth)).toBeGreaterThanOrEqual(2);
+  }
+  const contrast = await auditButtonHovers(page, "lifecycle");
+  for (const result of contrast.filter((item) =>
+    [
+      "Добавить переход МойСклад",
+      "Удалить переход",
+      "Обновить команды",
+      "Прочитать отчёт Ozon",
+    ].includes(item.label ?? ""),
+  )) {
+    expect(result.normal).toBeGreaterThanOrEqual(4.5);
+    expect(result.hover).toBeGreaterThanOrEqual(4.5);
+  }
+  await writeFile(
+    testInfo.outputPath("lifecycle-computed-layout.json"),
+    JSON.stringify({ layout, contrast }, null, 2),
+  );
+  await testInfo.attach("lifecycle-computed-layout", {
+    body: JSON.stringify(layout, null, 2),
+    contentType: "application/json",
+  });
+  await page
+    .getByRole("button", { name: "Сохранить настройки", exact: true })
+    .click();
+  await expect.poll(() => saves.length).toBe(1);
+  expect(saves[0].lifecycle_consent).toBe(true);
+  expect(saves[0].automation_consent).toBe(false);
+  expect(saves[0].config.lifecycle?.mappings).toEqual([
+    {
+      state_id: after,
+      from_state_ids: [before],
+      action: "posting_pack",
+      scheme: "FBS",
+      event_kind: "assembly_ready",
+      whole_posting: true,
+    },
+  ]);
+  expect(saves[0].config.automation).toBeNull();
+  await expect(
+    page.getByText("Требуется вмешательство", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/Для команды не хватает подтверждённых данных/),
+  ).toBeVisible();
+  await page.getByLabel("Месяц отчёта", { exact: true }).fill("2026-09");
+  await page
+    .getByRole("button", { name: "Прочитать отчёт Ozon", exact: true })
+    .click();
+  await expect(
+    page.getByText("REPORT-LIFECYCLE", { exact: true }),
+  ).toBeVisible();
+  expect(reportReads).toBe(1);
+  await page
+    .locator(".settings-realization-rows details > summary")
+    .first()
+    .click();
+  await expect(page.getByText(/9007199254740993.01/).first()).toBeVisible();
+  await page.locator(".settings-realization").screenshot({
+    path: testInfo.outputPath("lifecycle-report-mobile.png"),
+    animations: "disabled",
+  });
+  await page.getByRole("button", { name: "Далее", exact: true }).click();
+  await expect(page.getByText("Строки 21–22", { exact: true })).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(390);
+  await page
+    .getByRole("checkbox", {
+      name: /Выполнять команды из МойСклад автоматически/,
+    })
+    .uncheck();
+  await page
+    .getByRole("button", { name: "Сохранить настройки", exact: true })
+    .click();
+  await expect.poll(() => saves.length).toBe(2);
+  expect(saves[1].lifecycle_consent).toBe(false);
+  expect(saves[1].config.lifecycle?.enabled).toBe(false);
+  expect(approvals).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test("commission draft settings and approval preserve accountant choices and unknown fences", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const { errors, approvals } = await openOrders(page, false, false, true);
+  const uid = (n: number) =>
+    `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+  let current: OrdersConfigData = {
+    ...config,
+    read_configured: true,
+    read_enabled: true,
+    organization_id: uid(1),
+    agent_id: uid(2),
+    currency_id: uid(3),
+    state_id: uid(5),
+    sales_channel_id: uid(6),
+    automation: {
+      perpetual: true,
+      actions: ["mirror_create"],
+      fields: ["name"],
+    },
+  };
+  const saves: {
+    config: OrdersConfigData;
+    finance_consent: boolean;
+    lifecycle_consent: boolean;
+    automation_consent: boolean;
+  }[] = [];
+  const financeApprovals: Record<string, unknown>[] = [];
+  let history: Record<string, unknown>[] = [];
+  let lost = false;
+  let corrected = false;
+  let existingDocumentCode = "";
+  let previewMonth = 10;
+  const financialPlan = (month: number) => ({
+    id: `finance-plan-${month}`,
+    scope,
+    config_revision: current.revision,
+    policy_revision: current.revision,
+    policy: current.finance,
+    source: {
+      scope,
+      period: { year: 2026, month },
+      number: `OZON-REPORT-${month}`,
+      currency: "RUB",
+      observed_at: new Date().toISOString(),
+      fingerprint: "f".repeat(64),
+      rows: [],
+      blockers: [],
+    },
+    references: {
+      scope,
+      organization_id: uid(1),
+      agent_id: uid(2),
+      contract_id: uid(4),
+      currency_id: uid(3),
+      currency_iso: "RUB",
+      contract_type: "Commission",
+      contract_organization_id: uid(1),
+      contract_agent_id: uid(2),
+      contract_currency_id: uid(3),
+      contract_reward_type: "None",
+      revision: "verified",
+      observed_at: new Date().toISOString(),
+      complete: true,
+    },
+    external_code: `styk-commission-${month}`,
+    lines: [
+      {
+        source_row: 1,
+        mapping: {
+          id: "mapping-1",
+          version: 1,
+          moysklad_kind: "product",
+          moysklad_id: uid(8),
+        },
+        quantity: "1",
+        price: { amount: "100.01", currency: "RUB" },
+        reward: { amount: "10.01", currency: "RUB" },
+      },
+    ],
+    totals: { currency: "RUB", gross: "100.01", reward: "10.01", net: "90" },
+    fingerprint: "p".repeat(64),
+    created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 300000).toISOString(),
+  });
+  const financialWork = (month: number, state: string) => ({
+    id: `finance-work-${month}`,
+    scope,
+    plan: financialPlan(month),
+    preview_id: `finance-plan-${month}`,
+    config_revision: current.revision,
+    state,
+    document_id: state === "RECONCILED" ? uid(9) : "",
+    code: "FINANCE_DRAFT_TEST",
+    receipt: {
+      state: state === "UNKNOWN" ? "UNKNOWN" : "ACKNOWLEDGED",
+      external_id: "",
+    },
+    dispatch_count: 1,
+    automatic: false,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    source_changed: corrected,
+  });
+  await page.route("**/api/orders/config*", (route) => {
+    if (route.request().method() === "POST") {
+      const body = route.request().postDataJSON();
+      saves.push(body);
+      current = {
+        ...body.config,
+        revision: current.revision + 1,
+        publication_available: true,
+      };
+    }
+    return fulfill(route, current);
+  });
+  await page.route("**/api/orders/metadata?*", (route) =>
+    fulfill(route, {
+      ...metadata,
+      organizations: [
+        reference(uid(1), "Организация продавца для комиссионной торговли"),
+      ],
+      agents: [reference(uid(2), "Контрагент Ozon по комиссионному договору")],
+      states: [reference(uid(5), "Новый заказ")],
+      sales_channels: [reference(uid(6), "Ozon")],
+      currencies: [{ id: uid(3), iso_code: "RUB", default: true }],
+    }),
+  );
+  await page.route("**/api/orders/merchant-intents?*", (route) =>
+    fulfill(route, { intents: [] }),
+  );
+  await page.route("**/api/orders/finance/metadata?*", (route) =>
+    fulfill(route, {
+      scope,
+      contracts: [
+        {
+          id: uid(4),
+          name: "Комиссионный договор Ozon: проверенный договор продавца с точной валютой и организацией",
+          organization_id: uid(1),
+          agent_id: uid(2),
+          currency_id: uid(3),
+          contract_type: "Commission",
+          reward_type: "None",
+          archived: false,
+        },
+        {
+          id: uid(11),
+          name: "Неподходящий процентный договор",
+          organization_id: uid(1),
+          agent_id: uid(2),
+          currency_id: uid(3),
+          contract_type: "Commission",
+          reward_type: "Percent",
+          archived: false,
+        },
+      ],
+      truncated: false,
+      observed_at: new Date().toISOString(),
+    }),
+  );
+  await page.route("**/api/orders/finance/operations?*", (route) =>
+    fulfill(route, { operations: history }),
+  );
+  await page.route("**/api/orders/finance/preview", (route) => {
+    const body = route.request().postDataJSON();
+    previewMonth = body.period.month;
+    expect(body.expected_revision).toBe(current.revision);
+    return fulfill(route, {
+      id: `finance-plan-${previewMonth}`,
+      plan: financialPlan(previewMonth),
+      validation: [],
+      ...(existingDocumentCode
+        ? {
+            existing_work: {
+              ...financialWork(previewMonth, "BLOCKED"),
+              dispatch_count: 0,
+              code: existingDocumentCode,
+            },
+          }
+        : corrected
+          ? {
+              existing_work: financialWork(10, "RECONCILED"),
+              source_changed: true,
+              source_diff: {
+                before_fingerprint: "a".repeat(64),
+                after_fingerprint: "b".repeat(64),
+                header_changed: true,
+                added_rows: [5],
+                removed_rows: [4],
+                changed_rows: [2, 3],
+                component_changes: [
+                  {
+                    source_row: 2,
+                    side: "SALE",
+                    component: "amount",
+                    kind: "CHANGED",
+                    before: known("100.01"),
+                    after: known("101.01"),
+                  },
+                  {
+                    source_row: 3,
+                    side: "RETURN",
+                    component: "bank_coinvestment",
+                    kind: "CHANGED",
+                    before: { presence: "null" },
+                    after: known("0"),
+                  },
+                ],
+              },
+            }
+          : {}),
+    });
+  });
+  await page.route("**/api/orders/finance/approve", (route) => {
+    financeApprovals.push(route.request().postDataJSON());
+    if (lost) return route.abort("failed");
+    history = [financialWork(previewMonth, "QUEUED")];
+    return fulfill(route, history[0]);
+  });
+  await page.getByRole("link", { name: "Настройки", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Работа в МойСклад", exact: true })
+    .click();
+  await page
+    .getByText("Черновики отчётов комиссионера", { exact: true })
+    .click();
+  await page
+    .getByRole("checkbox", {
+      name: "Разрешить черновики отчётов комиссионера",
+      exact: true,
+    })
+    .check();
+  await expect(
+    page.getByLabel("Курс валюты финансового отчёта", { exact: true }),
+  ).toHaveValue("");
+  await expect(
+    page.getByRole("combobox", { name: "Основание цены отчёта", exact: true }),
+  ).toHaveValue("");
+  await page
+    .getByRole("combobox", {
+      name: "Организация финансового отчёта",
+      exact: true,
+    })
+    .selectOption(uid(1));
+  await page
+    .getByRole("combobox", {
+      name: "Контрагент финансового отчёта",
+      exact: true,
+    })
+    .selectOption(uid(2));
+  await page
+    .getByRole("combobox", { name: "Валюта финансового отчёта", exact: true })
+    .selectOption(uid(3));
+  await page
+    .getByRole("button", {
+      name: "Прочитать комиссионные договоры",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("option", {
+      name: "Неподходящий процентный договор",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("combobox", { name: "Комиссионный договор", exact: true })
+    .selectOption(uid(4));
+  await page
+    .getByLabel("Курс валюты финансового отчёта", { exact: true })
+    .fill("1");
+  await page
+    .getByRole("combobox", { name: "Основание цены отчёта", exact: true })
+    .selectOption("SELLER_PRICE");
+  await page
+    .getByRole("combobox", { name: "Учёт НДС в отчёте", exact: true })
+    .selectOption("false");
+  await page
+    .getByRole("combobox", { name: "НДС в цене отчёта", exact: true })
+    .selectOption("false");
+  await page
+    .getByLabel("Ставка НДС финансового отчёта, %", { exact: true })
+    .fill("0");
+  await page
+    .getByRole("checkbox", {
+      name: /Автоматически готовить черновик предыдущего месяца/,
+    })
+    .check();
+  await expect(
+    page.getByRole("button", { name: "Сохранить настройки", exact: true }),
+  ).toBeDisabled();
+  const financeConsent = page.getByRole("checkbox", {
+    name: /Разрешаю создание непроведённых черновиков отчёта комиссионера/,
+  });
+  await financeConsent.check();
+  const returnsPolicy = page.getByRole("combobox", {
+    name: "Финансовые возвраты в отчёте",
+    exact: true,
+  });
+  const residualPolicy = page.getByRole("combobox", {
+    name: "Неучтённые финансовые компоненты",
+    exact: true,
+  });
+  await expect(returnsPolicy).toHaveValue("REQUIRE_ZERO");
+  await expect(residualPolicy).toHaveValue("ZERO_ONLY");
+  await returnsPolicy.selectOption("COMMISSION_RETURN");
+  await expect(financeConsent).not.toBeChecked();
+  await residualPolicy.selectOption("PARTIAL_REVIEW");
+  await expect(
+    page.getByRole("button", { name: "Сохранить настройки", exact: true }),
+  ).toBeDisabled();
+  await financeConsent.check();
+  const dimensions = [];
+  for (const width of [1440, 1366, 390]) {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+    const contract = page.getByRole("combobox", {
+      name: "Комиссионный договор",
+      exact: true,
+    });
+    await contract.focus();
+    await contract.press("Space");
+    await contract.press("Escape");
+    dimensions.push(
+      await contract.evaluate((element) => ({
+        width: innerWidth,
+        height: element.getBoundingClientRect().height,
+        outline: getComputedStyle(element).outlineWidth,
+      })),
+    );
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(width);
+    await page.locator(".settings-commission-policy").screenshot({
+      path: testInfo.outputPath(`commission-policy-${width}.png`),
+      animations: "disabled",
+    });
+  }
+  expect(dimensions.every((value) => value.height >= 44)).toBe(true);
+  await writeFile(
+    testInfo.outputPath("commission-computed-layout.json"),
+    JSON.stringify(dimensions, null, 2),
+  );
+  await page
+    .getByRole("button", { name: "Сохранить настройки", exact: true })
+    .click();
+  await expect.poll(() => saves.length).toBe(1);
+  expect(saves[0].finance_consent).toBe(true);
+  expect(saves[0].lifecycle_consent).toBe(false);
+  expect(saves[0].automation_consent).toBe(false);
+  expect(saves[0].config.automation).toEqual({
+    perpetual: true,
+    actions: ["mirror_create"],
+    fields: ["name"],
+  });
+  expect(saves[0].config.finance).toMatchObject({
+    automatic: true,
+    contract_id: uid(4),
+    rate_value: "1",
+    price_basis: "SELLER_PRICE",
+    vat: "0",
+    other_components: "PARTIAL_REVIEW",
+    return_treatment: "COMMISSION_RETURN",
+  });
+  await page
+    .getByLabel("Месяц черновика комиссионера", { exact: true })
+    .fill("2026-10");
+  await page
+    .getByRole("button", {
+      name: "Проверить черновик комиссионера",
+      exact: true,
+    })
+    .click();
+  const review = page.getByRole("region", {
+    name: "Проверка финансового черновика",
+    exact: true,
+  });
+  await expect(review.getByText("100.01 RUB", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", {
+      name: "Создать непроведённый черновик",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await review
+    .getByText("Договор, ссылки и позиции черновика", { exact: true })
+    .click();
+  for (const width of [1440, 1366, 390]) {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(width);
+    await review.screenshot({
+      path: testInfo.outputPath(`commission-preview-${width}.png`),
+      animations: "disabled",
+    });
+  }
+  await page
+    .getByRole("checkbox", { name: /Я проверил полный период, договор/ })
+    .check();
+  await page
+    .getByRole("button", {
+      name: "Создать непроведённый черновик",
+      exact: true,
+    })
+    .click();
+  await expect.poll(() => financeApprovals.length).toBe(1);
+  await expect(
+    page.getByText("Черновик ожидает создания", { exact: true }),
+  ).toBeVisible();
+  history = [financialWork(10, "ACKNOWLEDGED")];
+  await page
+    .getByRole("button", { name: "Обновить историю отчётов", exact: true })
+    .click();
+  await expect(
+    page.getByText("Запрос принят, ждём сверки черновика", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", {
+      name: "Открыть непроведённый отчёт МойСклад",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  history = [financialWork(10, "RECONCILED")];
+  await page
+    .getByRole("button", { name: "Обновить историю отчётов", exact: true })
+    .click();
+  await expect(
+    page.getByText("Непроведённый черновик создан и сверён", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", {
+      name: "Открыть непроведённый отчёт МойСклад",
+      exact: true,
+    }),
+  ).toHaveAttribute(
+    "href",
+    `https://online.moysklad.ru/app/#commissionreportin/edit?id=${uid(9)}`,
+  );
+  corrected = true;
+  await page
+    .getByRole("button", {
+      name: "Проверить черновик комиссионера",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByText(/Требуется ручной разбор корректировки/),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Изменены строки: 2, 3", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", {
+      name: "Создать непроведённый черновик",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await page
+    .getByText("Изменения финансовых компонентов (2)", { exact: true })
+    .click();
+  await expect(
+    page.getByText("Изменён: 100.01 → 101.01.", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Изменён: NULL — значение неизвестно → 0.", { exact: true }),
+  ).toBeVisible();
+  await page
+    .locator(".settings-commission-source-diff")
+    .screenshot({
+      path: testInfo.outputPath("commission-semantic-diff-mobile.png"),
+    });
+  corrected = false;
+  for (const code of [
+    "FINANCE_EXISTING_DOCUMENT_REQUIRES_REVIEW",
+    "FINANCE_EXISTING_DOCUMENT_UNVERIFIED",
+  ]) {
+    existingDocumentCode = code;
+    await page
+      .getByRole("button", {
+        name: "Проверить черновик комиссионера",
+        exact: true,
+      })
+      .click();
+    await expect(
+      review.getByText(
+        /создание нового черновика за этот период заблокировано/,
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Создать новую попытку черновика" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Создать непроведённый черновик" }),
+    ).toHaveCount(0);
+  }
+  await review.screenshot({
+    path: testInfo.outputPath("commission-existing-document-mobile.png"),
+    animations: "disabled",
+  });
+  expect(financeApprovals).toHaveLength(1);
+  existingDocumentCode = "";
+  lost = true;
+  await page
+    .getByLabel("Месяц черновика комиссионера", { exact: true })
+    .fill("2026-09");
+  await page
+    .getByRole("button", {
+      name: "Проверить черновик комиссионера",
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("checkbox", { name: /Я проверил полный период, договор/ })
+    .check();
+  await page
+    .getByRole("button", {
+      name: "Создать непроведённый черновик",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: /Ответ на подтверждение не получен/ }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByText(/Результат подтверждения за 2026-09 пока не установлен/),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", {
+      name: "Проверить черновик комиссионера",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  history = [financialWork(9, "UNKNOWN"), financialWork(10, "RECONCILED")];
+  await page
+    .getByRole("button", { name: "Обновить историю отчётов", exact: true })
+    .click();
+  await expect(
+    page.getByText("Результат неизвестен — только проверка", { exact: true }),
+  ).toBeVisible();
+  expect(financeApprovals).toHaveLength(2);
+  expect(approvals).toEqual([]);
+  expect(errors).toEqual([]);
+  await page.locator(".settings-commission-import").screenshot({
+    path: testInfo.outputPath("commission-unknown-mobile.png"),
+    animations: "disabled",
+  });
+  history = [
+    {
+      ...financialWork(9, "UNKNOWN"),
+      code: "FINANCE_DOCUMENT_POSTED_EXTERNALLY",
+      document_id: uid(10),
+    },
+    financialWork(10, "RECONCILED"),
+  ];
+  await page
+    .getByRole("button", { name: "Обновить историю отчётов", exact: true })
+    .click();
+  await expect(
+    page.getByText("Документ проведён вне STYK — нужна сверка", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", {
+      name: "Открыть проведённый отчёт МойСклад",
+      exact: true,
+    }),
+  ).toHaveAttribute(
+    "href",
+    `https://online.moysklad.ru/app/#commissionreportin/edit?id=${uid(10)}`,
+  );
+  expect(financeApprovals).toHaveLength(2);
+  await page
+    .locator(".settings-commission-import")
+    .screenshot({
+      path: testInfo.outputPath("commission-posted-externally-mobile.png"),
+      animations: "disabled",
+    });
+});
+
+test("financial source classification remains visible without accounting policy and preserves exact unresolved values", async ({
+  page,
+}, testInfo) => {
+  const { errors } = await openOrders(page, false, false, true);
+  const sourceRows = Array.from({ length: 22 }, (_, i) => ({
+    source_row: i + 1,
+    classification: i === 21 ? "UNKNOWN" : "SALE",
+    native_status: i === 20 ? "PARTIAL" : i === 21 ? "UNMAPPED" : "MAPPED",
+    blockers: [],
+  }));
+  await page.route("**/api/orders/config*", (route) =>
+    fulfill(route, { ...config, read_enabled: true, read_configured: true }),
+  );
+  await page.route("**/api/orders/merchant-intents?*", (route) =>
+    fulfill(route, { intents: [] }),
+  );
+  await page.route("**/api/orders/finance/realization?*", (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    return fulfill(route, {
+      scope,
+      period: {
+        year: Number(params.get("year")),
+        month: Number(params.get("month")),
+      },
+      number: "SYNTHETIC-COMPONENT-REPORT",
+      currency: "RUB",
+      observed_at: new Date().toISOString(),
+      fingerprint: "a".repeat(64),
+      rows: [],
+      blockers: [],
+      analysis: {
+        version: "realization-v2-components",
+        source_fingerprint: "a".repeat(64),
+        period: { year: 2026, month: 10 },
+        currency: "RUB",
+        rows_total: 22,
+        rows_classified: 22,
+        rows_mapped_to_native: 20,
+        rows_partial: 1,
+        rows_unmapped: 1,
+        components_total: 3,
+        components_represented: 0,
+        components_unrepresented: 3,
+        unknown_components: 1,
+        complete: false,
+        rows: sourceRows,
+        components: [
+          {
+            id: "large",
+            source_row: 1,
+            side: "SALE",
+            component: "amount",
+            category: "SALE_GROSS",
+            role: "BASE",
+            value: known("9007199254740993.01"),
+            currency: "RUB",
+            sign: "POSITIVE",
+            disposition: "NATIVE_SALE",
+          },
+          {
+            id: "missing",
+            source_row: 21,
+            side: "RETURN",
+            component: "quantity",
+            category: "QUANTITY",
+            role: "QUANTITY",
+            value: { presence: "missing" },
+            currency: "RUB",
+            sign: "UNKNOWN",
+            disposition: "UNREPRESENTED",
+          },
+          {
+            id: "null",
+            source_row: 21,
+            side: "RETURN",
+            component: "total",
+            category: "CONTROL_TOTAL",
+            role: "CONTROL_TOTAL",
+            value: { presence: "null" },
+            currency: "RUB",
+            sign: "UNKNOWN",
+            disposition: "UNREPRESENTED",
+          },
+        ],
+        category_totals: [
+          {
+            category: "COMMISSION_FEE",
+            side: "RETURN",
+            role: "ADJUSTMENT",
+            currency: "RUB",
+            sum: "-0.01",
+            known: 1,
+            missing: 1,
+            null: 1,
+            positive: 0,
+            negative: 1,
+            zero: 0,
+          },
+        ],
+        reconciliation: [
+          {
+            source_row: 21,
+            side: "RETURN",
+            gross: known("1.01"),
+            reward: known("0.01"),
+            expected_net: known("1"),
+            source_net: known("0.99"),
+            difference: known("0.01"),
+            status: "DIFFERENCE",
+          },
+        ],
+      },
+    });
+  });
+  await page.getByRole("link", { name: "Настройки", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Работа в МойСклад", exact: true })
+    .click();
+  await expect(page.getByText(/Финансовое разрешение выключено/)).toBeVisible();
+  await page
+    .getByRole("button", { name: "Прочитать отчёт Ozon", exact: true })
+    .click();
+  const ledger = page.getByRole("region", {
+    name: "Финансовый состав источника",
+    exact: true,
+  });
+  await expect(ledger).toBeVisible();
+  await expect(ledger.getByText("22 из 22", { exact: true })).toBeVisible();
+  await expect(
+    ledger.getByText(/Финансовая сверка не завершена/),
+  ).toBeVisible();
+  await ledger
+    .getByText("Построчная классификация и компоненты", { exact: true })
+    .click();
+  await ledger.getByText("Компоненты строки 1", { exact: true }).click();
+  await expect(ledger.getByText(/9007199254740993.01/)).toBeVisible();
+  await ledger.getByRole("button", { name: "Следующие строки" }).click();
+  await expect(
+    ledger.getByText("Строка 22: Неизвестно", { exact: true }),
+  ).toBeVisible();
+  await ledger.getByText("Компоненты строки 21", { exact: true }).click();
+  await expect(
+    ledger.getByText("total: NULL — значение неизвестно RUB", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    ledger.getByText("quantity: Поле отсутствует", { exact: true }),
+  ).toBeVisible();
+  const audit = [];
+  for (const width of [1440, 1366, 390]) {
+    await page.setViewportSize({ width, height: width === 1366 ? 768 : 900 });
+    await ledger.scrollIntoViewIfNeeded();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    const select = ledger.getByLabel("Показать строки финансового состава");
+    await select.focus();
+    await expect(select).toBeFocused();
+    audit.push(
+      await select.evaluate((el) => {
+        const s = getComputedStyle(el);
+        return {
+          width: innerWidth,
+          height: el.getBoundingClientRect().height,
+          font: s.fontFamily,
+          lineHeight: s.lineHeight,
+          outlineWidth: s.outlineWidth,
+          outlineStyle: s.outlineStyle,
+        };
+      }),
+    );
+    expect(
+      await ledger
+        .locator(".settings-realization-facts dt")
+        .evaluateAll((nodes) =>
+          nodes.every((node) => node.scrollWidth <= node.clientWidth + 1),
+        ),
+    ).toBe(true);
+    await ledger.screenshot({
+      path: testInfo.outputPath(`financial-ledger-${width}.png`),
+    });
+  }
+  await ledger
+    .getByLabel("Показать строки финансового состава")
+    .selectOption("review");
+  await expect(
+    ledger.getByText("Строка 21: Продажа", { exact: true }),
+  ).toBeVisible();
+  await ledger.getByText("Проверка сумм строк (1)", { exact: true }).click();
+  await expect(
+    ledger.getByText("Разница: 0.01 RUB.", { exact: true }),
+  ).toBeVisible();
+  await ledger.screenshot({
+    path: testInfo.outputPath("financial-ledger-unresolved-mobile.png"),
+  });
+  await writeFile(
+    testInfo.outputPath("financial-ledger-computed.json"),
+    JSON.stringify(audit, null, 2),
+  );
+  expect(audit.every((v) => v.height >= 44 && v.outlineStyle !== "none")).toBe(
+    true,
+  );
+  expect(errors).toEqual([]);
+});
+
+test("FBS carriage presents full membership and separate stage consents with unknown read-only recovery", async ({
+  page,
+}, testInfo) => {
+  const { errors } = await openOrders(page, false, false, true);
+  const requests: Record<string, unknown>[] = [];
+  let history: Record<string, unknown>[] = [];
+  let action = "CREATE";
+  let lost = false;
+  let rereads = 0;
+  let changed = false;
+  const batch = (kind = action) => ({
+    id: `batch-plan-${kind}`,
+    scope,
+    action: kind,
+    config_revision: config.revision,
+    credentials: { ozon: 1, moysklad: 1 },
+    delivery_method_id: "9007199254740993",
+    warehouse_id: "1234567890123456789",
+    ...(kind === "APPROVE"
+      ? {
+          carriage_id: "1234567890123456789",
+          snapshot: {
+            header: { status: "new", available_actions: ["approve"] },
+          },
+        }
+      : {}),
+    members: Array.from({ length: 6 }, (_, i) => ({
+      posting_number: `SYNTHETIC-0000000000000000${i + 1}-1`,
+      status: "awaiting_deliver",
+      ready: true,
+      lines: [
+        {
+          identity: { sku: "9007199254740993", offer_id: "SYNTHETIC-SKU" },
+          quantity: "1",
+          name: { presence: "missing" },
+          price: { presence: "missing" },
+        },
+      ],
+      blockers: [],
+    })),
+    membership_fingerprint: "f".repeat(64),
+    fingerprint: "b".repeat(64),
+    created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 300000).toISOString(),
+  });
+  const saved = (kind: string, state: string) => ({
+    id: `batch-work-${kind}`,
+    scope,
+    plan: batch(kind),
+    preview_id: `batch-plan-${kind}`,
+    config_revision: config.revision,
+    state,
+    code: state === "UNKNOWN" ? "CARRIAGE_UNKNOWN" : "CARRIAGE_CONFIRMED",
+    carriage_id: state === "UNKNOWN" ? "" : "1234567890123456789",
+    receipt: { state, http_status: state === "UNKNOWN" ? 0 : 200 },
+    dispatch_count: 1,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+  await page.route("**/api/orders/config*", (route) =>
+    fulfill(route, { ...config, read_enabled: true, read_configured: true }),
+  );
+  await page.route("**/api/orders/merchant-intents?*", (route) =>
+    fulfill(route, { intents: [] }),
+  );
+  await page.route("**/api/orders/carriage/operations?*", (route) =>
+    fulfill(route, { operations: history }),
+  );
+  await page.route("**/api/orders/carriage/preview", (route) => {
+    const body = route.request().postDataJSON();
+    action = body.action;
+    expect(body.delivery_method_id).toBe("9007199254740993");
+    return fulfill(route, {
+      id: `batch-plan-${action}`,
+      plan: batch(),
+      validation: changed ? [{ code: "CARRIAGE_MEMBERSHIP_CHANGED" }] : [],
+    });
+  });
+  await page.route("**/api/orders/carriage/approve", (route) => {
+    const body = route.request().postDataJSON();
+    requests.push(body);
+    history = [...history, saved(action, lost ? "UNKNOWN" : "ACKNOWLEDGED")];
+    return lost ? route.abort("failed") : fulfill(route, history.at(-1));
+  });
+  await page.route("**/api/orders/carriage/reread", (route) => {
+    rereads++;
+    expect(route.request().postDataJSON().work_id).toBe("batch-work-APPROVE");
+    return fulfill(route, { queued: true });
+  });
+  await page.getByRole("link", { name: "Настройки", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Работа в МойСклад", exact: true })
+    .click();
+  const card = page.locator(".settings-carriage");
+  await expect(
+    card.getByText(/Для rFBS этот процесс не применяется/),
+  ).toBeVisible();
+  await card
+    .getByLabel("Идентификатор способа доставки Ozon", { exact: true })
+    .fill("9007199254740993");
+  await expect(
+    card.getByRole("button", { name: "Проверить полную партию" }),
+  ).toBeDisabled();
+  await card
+    .getByRole("combobox", {
+      name: "Все товары прослеживаемые в Беларуси",
+      exact: true,
+    })
+    .selectOption("false");
+  await card.getByRole("button", { name: "Проверить полную партию" }).click();
+  await card.getByText("Полный состав партии (6)", { exact: true }).click();
+  await expect(
+    card.getByText("SYNTHETIC-00000000000000006-1", { exact: true }),
+  ).toBeVisible();
+  const create = card.getByRole("button", {
+    name: "Создать партию в Ozon",
+    exact: true,
+  });
+  await expect(create).toBeDisabled();
+  const consent = card.getByLabel(/Разрешаю создать всю проверенную партию/);
+  await consent.focus();
+  await consent.press("Space");
+  await expect(create).toBeDisabled();
+  await card
+    .getByLabel(/Подтверждаю фактическую готовность всех отправлений/)
+    .check();
+  await expect(create).toBeEnabled();
+  const audit = [];
+  for (const width of [1440, 1366, 390]) {
+    await page.setViewportSize({ width, height: width === 1366 ? 768 : 900 });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    const input = card.getByLabel("Идентификатор способа доставки Ozon", {
+      exact: true,
+    });
+    await input.focus();
+    audit.push(
+      await input.evaluate((el) => {
+        const s = getComputedStyle(el);
+        return {
+          width: innerWidth,
+          height: el.getBoundingClientRect().height,
+          font: s.fontFamily,
+          lineHeight: s.lineHeight,
+          outlineWidth: s.outlineWidth,
+          outlineStyle: s.outlineStyle,
+        };
+      }),
+    );
+    await card.screenshot({
+      path: testInfo.outputPath(`carriage-create-${width}.png`),
+    });
+  }
+  const contrast = await auditButtonHovers(page, "carriage");
+  const primary = contrast.find(
+    (item) => item.label === "Создать партию в Ozon",
+  );
+  expect(primary?.normal).toBeGreaterThanOrEqual(4.5);
+  expect(primary?.hover).toBeGreaterThanOrEqual(4.5);
+  await writeFile(
+    testInfo.outputPath("carriage-contrast.json"),
+    JSON.stringify(contrast, null, 2),
+  );
+  await create.click();
+  await expect(
+    card.getByText("Запрос принят, ждём независимой сверки", { exact: true }),
+  ).toBeVisible();
+  expect(requests).toHaveLength(1);
+  const stage = card.getByRole("combobox", {
+    name: "Операция партии",
+    exact: true,
+  });
+  await stage.focus();
+  await stage.press("End");
+  await stage.press("Enter");
+  await expect(stage).toHaveValue("APPROVE");
+  await card
+    .getByLabel("Идентификатор созданной партии Ozon", { exact: true })
+    .fill("1234567890123456789");
+  changed = true;
+  await card
+    .getByRole("button", { name: "Проверить созданную партию" })
+    .click();
+  await expect(
+    card.getByText("CARRIAGE_MEMBERSHIP_CHANGED", { exact: true }),
+  ).toBeVisible();
+  expect(
+    await card
+      .getByRole("button", { name: "Подтвердить партию в Ozon", exact: true })
+      .count(),
+  ).toBe(0);
+  await card
+    .getByRole("button", { name: "Закрыть проверку без записи", exact: true })
+    .click();
+  await expect(
+    card.getByRole("region", { name: "Проверка партии Ozon", exact: true }),
+  ).toHaveCount(0);
+  expect(requests).toHaveLength(1);
+  changed = false;
+  await card
+    .getByRole("button", { name: "Проверить созданную партию" })
+    .click();
+  await expect(
+    card.getByLabel(/Подтверждаю фактическую готовность всех отправлений/),
+  ).not.toBeChecked();
+  await card
+    .getByLabel(/Разрешаю подтвердить именно эту созданную партию/)
+    .check();
+  await card
+    .getByLabel(/Подтверждаю фактическую готовность всех отправлений/)
+    .check();
+  lost = true;
+  await card
+    .getByRole("button", { name: "Подтвердить партию в Ozon", exact: true })
+    .click();
+  await expect(card.getByText(/Ответ не получен/)).toBeVisible();
+  expect(requests).toHaveLength(2);
+  await card.getByRole("button", { name: "Обновить историю партий" }).click();
+  await expect(
+    card.getByText("Результат неизвестен — только перечитывание", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await card
+    .locator("article")
+    .filter({ hasText: "Результат неизвестен" })
+    .getByRole("button", { name: "Перечитать результат партии" })
+    .click();
+  expect(rereads).toBe(1);
+  expect(requests).toHaveLength(2);
+  await card.screenshot({
+    path: testInfo.outputPath("carriage-unknown-mobile.png"),
+  });
+  await writeFile(
+    testInfo.outputPath("carriage-computed.json"),
+    JSON.stringify(audit, null, 2),
+  );
+  expect(audit.every((v) => v.height >= 44 && v.outlineStyle !== "none")).toBe(
+    true,
+  );
+  expect(errors).toEqual([]);
+});
+
+test("accrual diagnostics remain a separate read-only source with date-bound empty and exact typed facts", async ({
+  page,
+}, testInfo) => {
+  const { errors } = await openOrders(page, false, false, true);
+  const reads: string[] = [];
+  await page.route("**/api/orders/config*", (route) =>
+    fulfill(route, { ...config, read_enabled: true, read_configured: true }),
+  );
+  await page.route("**/api/orders/merchant-intents?*", (route) =>
+    fulfill(route, { intents: [] }),
+  );
+  await page.route("**/api/orders/finance/accrual/*", (route) => {
+    const url = new URL(route.request().url());
+    expect(route.request().method()).toBe("GET");
+    reads.push(url.pathname);
+    const kind = url.pathname.endsWith("types") ? "TYPES" : "BY_DAY";
+    return fulfill(route, {
+      scope,
+      source_family: "ACCRUAL",
+      kind,
+      request: {
+        kind,
+        ...(kind === "BY_DAY" ? { date: url.searchParams.get("date") } : {}),
+      },
+      facts:
+        kind === "BY_DAY"
+          ? [{ path: "items", kind: "ARRAY", presence: "empty", size: 0 }]
+          : Array.from({ length: 51 }, (_, i) => ({
+              path: `accrual_types[${i}].id`,
+              kind: "INTEGER",
+              presence: "value",
+              number: i === 50 ? "9007199254740993" : "1",
+            })),
+      unknown_fields:
+        kind === "TYPES"
+          ? [
+              {
+                path: "future_component",
+                kind: "NULL",
+                value: { presence: "null" },
+                value_digest: "a".repeat(64),
+              },
+            ]
+          : [],
+      complete: true,
+      pages: 1,
+      record_count: kind === "TYPES" ? 51 : 0,
+      fingerprint: "b".repeat(64),
+      observed_at: new Date().toISOString(),
+      blockers: [],
+    });
+  });
+  await page.getByRole("link", { name: "Настройки", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Работа в МойСклад", exact: true })
+    .click();
+  const card = page.locator(".settings-accrual");
+  await expect(
+    card.getByText(
+      /Начисления не прибавляются к отчёту о реализации и не подтверждают выплату/,
+    ),
+  ).toBeVisible();
+  expect(reads).toHaveLength(0);
+  await card.getByLabel("Дата начислений", { exact: true }).fill("2026-10-01");
+  await card
+    .getByRole("button", { name: "Прочитать начисления за день", exact: true })
+    .click();
+  await expect(card.getByText("2026-10-01", { exact: true })).toBeVisible();
+  await expect(
+    card.getByText(/В ответе нет записей. Это не доказывает нулевую выручку/),
+  ).toBeVisible();
+  await card.screenshot({
+    path: testInfo.outputPath("accrual-empty-desktop.png"),
+  });
+  await card
+    .getByRole("button", { name: "Прочитать типы начислений", exact: true })
+    .click();
+  await card.getByText("Поля источника (51)", { exact: true }).click();
+  await card
+    .getByRole("button", { name: "Следующие поля", exact: true })
+    .click();
+  await expect(
+    card.getByText("9007199254740993", { exact: true }),
+  ).toBeVisible();
+  await card.getByText("Новые поля источника (1)", { exact: true }).click();
+  await expect(
+    card.getByText("NULL — значение неизвестно", { exact: true }),
+  ).toBeVisible();
+  const audit = [];
+  for (const width of [1440, 1366, 390]) {
+    await page.setViewportSize({ width, height: width === 1366 ? 768 : 900 });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    const date = card.getByLabel("Дата начислений", { exact: true });
+    await date.focus();
+    audit.push(
+      await date.evaluate((el) => ({
+        width: innerWidth,
+        height: el.getBoundingClientRect().height,
+        outline: getComputedStyle(el).outlineWidth,
+        font: getComputedStyle(el).fontFamily,
+      })),
+    );
+    await card.screenshot({
+      path: testInfo.outputPath(`accrual-types-${width}.png`),
+    });
+  }
+  await writeFile(
+    testInfo.outputPath("accrual-computed.json"),
+    JSON.stringify(audit, null, 2),
+  );
+  expect(audit.every((value) => value.height >= 44)).toBe(true);
+  expect(reads).toEqual([
+    "/api/orders/finance/accrual/by-day",
+    "/api/orders/finance/accrual/types",
+  ]);
   expect(errors).toEqual([]);
 });

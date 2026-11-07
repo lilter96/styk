@@ -13033,7 +13033,7 @@
         "moy_customerorder",
         "moy_general"
       ],
-      "sha256": "908cf17638dab863e14334186707811899c83f2e91d7a5e75cfb46a1e9883392",
+      "sha256": "e740e5bf7c876a2bcbbdb54294792fbb2a5ecdbdcf3a58269de40908afe8bfc6",
       "fixture": "moy-customerorder-create-request.json",
       "fields": [
         {
@@ -13378,6 +13378,114 @@
           "classification": "structured",
           "read_only": false,
           "privacy": "operational_identifier",
+          "fixture": "moy-customerorder-create-request.json"
+        },
+        {
+          "path": "$.contract",
+          "types": [
+            "object"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "moy_customerorder"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Exact source field $.contract; retain presence independently of zero and empty values",
+          "destination": "customerorder native projection (explicit reviewed mapping)",
+          "classification": "native",
+          "read_only": false,
+          "privacy": "operational",
+          "fixture": "moy-customerorder-create-request.json"
+        },
+        {
+          "path": "$.contract.meta",
+          "types": [
+            "object"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "moy_customerorder"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Exact source field $.contract.meta; retain presence independently of zero and empty values",
+          "destination": "customerorder native projection (explicit reviewed mapping)",
+          "classification": "native",
+          "read_only": false,
+          "privacy": "operational",
+          "fixture": "moy-customerorder-create-request.json"
+        },
+        {
+          "path": "$.contract.meta.href",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "moy_customerorder"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Exact source field $.contract.meta.href; retain presence independently of zero and empty values",
+          "destination": "customerorder native projection (explicit reviewed mapping)",
+          "classification": "native",
+          "read_only": false,
+          "privacy": "operational_identifier",
+          "fixture": "moy-customerorder-create-request.json"
+        },
+        {
+          "path": "$.contract.meta.mediaType",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "moy_customerorder"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Exact source field $.contract.meta.mediaType; retain presence independently of zero and empty values",
+          "destination": "customerorder native projection (explicit reviewed mapping)",
+          "classification": "native",
+          "read_only": false,
+          "privacy": "operational",
+          "fixture": "moy-customerorder-create-request.json"
+        },
+        {
+          "path": "$.contract.meta.metadataHref",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "moy_customerorder"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Exact source field $.contract.meta.metadataHref; retain presence independently of zero and empty values",
+          "destination": "customerorder native projection (explicit reviewed mapping)",
+          "classification": "native",
+          "read_only": false,
+          "privacy": "operational_identifier",
+          "fixture": "moy-customerorder-create-request.json"
+        },
+        {
+          "path": "$.contract.meta.type",
+          "types": [
+            "string"
+          ],
+          "presence": "optional",
+          "nullable": false,
+          "sources": [
+            "moy_customerorder"
+          ],
+          "verification": "official_field_verified",
+          "semantics": "Exact source field $.contract.meta.type; retain presence independently of zero and empty values",
+          "destination": "customerorder native projection (explicit reviewed mapping)",
+          "classification": "native",
+          "read_only": false,
+          "privacy": "operational",
           "fixture": "moy-customerorder-create-request.json"
         },
         {

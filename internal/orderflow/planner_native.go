@@ -35,13 +35,14 @@ func validateNativeProposals(request orders.PreviewRequest) error {
 	return nil
 }
 
-func (s *Service) planNativeMovement(ctx context.Context, review orders.ReviewContext, posting orders.Posting, proposal orders.NativeMovementProposal, automatic bool, now time.Time) (orders.Decision, error) {
+func (s *Service) planNativeMovement(ctx context.Context, review orders.ReviewContext, posting orders.Posting, proposal orders.NativeMovementProposal, automatic bool, now time.Time, intents ...*orders.MerchantIntent) (orders.Decision, error) {
 	posting.PII = nil
 	decision := orders.Decision{Posting: posting, Commands: []orders.Command{}, Validation: sourceValidation(posting, review, now)}
 	if review.NativeInventoryActionBlocked(proposal.Action, posting.PostingNumber) {
 		return nativePlanBlocked(decision, "native_documents", "native_split_fulfillment_allocation_unverified"), nil
 	}
-	if automatic || review.Config.NativeDocuments == nil || !proposal.Applicable.IsKnown() || !review.Config.NativeDocuments.Allows(proposal.Action, *proposal.Applicable.Value, now) {
+	intent := nativeAutomaticIntent(intents)
+	if !nativeProposalPolicyAllows(review, posting, proposal, automatic, intent, now) {
 		return nativePlanBlocked(decision, "native_documents", "native_document_policy_required"), nil
 	}
 	proposal, retryIssue := s.nativeRetryProposal(ctx, review, proposal)
@@ -71,6 +72,10 @@ func (s *Service) planNativeMovement(ctx context.Context, review orders.ReviewCo
 	if err != nil {
 		return nativePlanBlocked(decision, "credentials", "native_credentials_unavailable"), nil
 	}
+	coverage, issue := planNativeDemandCoverage(ctx, client, parent, automatic && proposal.Action == orders.ActionDemandCreate, s.now)
+	if issue.Code != "" {
+		return nativePlanBlocked(decision, issue.Field, issue.Code), nil
+	}
 	basis, err := s.nativeDemandBasis(ctx, &review, posting, proposal, client)
 	if errors.Is(err, orders.ErrNativeDocumentDeleted) {
 		return nativePlanBlocked(decision, "demand_basis", "native_document_deleted_requires_review"), nil
@@ -79,11 +84,12 @@ func (s *Service) planNativeMovement(ctx context.Context, review orders.ReviewCo
 		return nativePlanBlocked(decision, "demand_basis", "complete_reconciled_demand_basis_required"), nil
 	}
 	movement, validations := planNativeValues(review, posting, proposal, parent, baseline, basis)
+	movement.DemandCoverage = coverage
 	decision.Validation = append(decision.Validation, validations...)
 	if len(decision.Validation) != 0 {
 		return decision, nil
 	}
-	return s.freezeNativeMovement(ctx, review, decision, warehouse, parent, proposal, movement, client, now)
+	return s.freezeNativeMovement(ctx, review, decision, warehouse, parent, proposal, movement, client, now, intent)
 }
 
 func nativePlanBlocked(decision orders.Decision, field, code string) orders.Decision {
@@ -129,7 +135,7 @@ func (s *Service) nativeDemandBasis(ctx context.Context, review *orders.ReviewCo
 	return &current, nil
 }
 
-func (s *Service) freezeNativeMovement(ctx context.Context, review orders.ReviewContext, decision orders.Decision, warehouse orders.WarehouseMappingRef, parent orders.TargetObservation, proposal orders.NativeMovementProposal, movement orders.NativeMovement, client orders.Provider, now time.Time) (orders.Decision, error) {
+func (s *Service) freezeNativeMovement(ctx context.Context, review orders.ReviewContext, decision orders.Decision, warehouse orders.WarehouseMappingRef, parent orders.TargetObservation, proposal orders.NativeMovementProposal, movement orders.NativeMovement, client orders.Provider, now time.Time, intents ...*orders.MerchantIntent) (orders.Decision, error) {
 	reader, ok := client.(orders.NativeProductReader)
 	if !ok {
 		return nativePlanBlocked(decision, "products", "native_product_requirements_unavailable"), nil
@@ -146,10 +152,13 @@ func (s *Service) freezeNativeMovement(ctx context.Context, review orders.Review
 		return nativePlanBlocked(decision, validation.Field, validation.Code), nil
 	}
 	movement.Products = products
-	return s.freezeNativeDecision(ctx, review, decision, warehouse, parent, proposal, movement, now)
+	return s.freezeNativeDecision(ctx, review, decision, warehouse, parent, proposal, movement, now, nativeAutomaticIntent(intents))
 }
 
-func (s *Service) freezeNativeDecision(ctx context.Context, review orders.ReviewContext, decision orders.Decision, warehouse orders.WarehouseMappingRef, parent orders.TargetObservation, proposal orders.NativeMovementProposal, movement orders.NativeMovement, now time.Time) (orders.Decision, error) {
+func (s *Service) freezeNativeDecision(ctx context.Context, review orders.ReviewContext, decision orders.Decision, warehouse orders.WarehouseMappingRef, parent orders.TargetObservation, proposal orders.NativeMovementProposal, movement orders.NativeMovement, now time.Time, intents ...*orders.MerchantIntent) (orders.Decision, error) {
+	if movement.DemandCoverage != nil {
+		now = s.now()
+	}
 	protector, ok := s.options.ActionProtector.(orders.NativeEventProtector)
 	if !ok {
 		return nativePlanBlocked(decision, "event", "protected_native_event_required"), nil
@@ -168,10 +177,13 @@ func (s *Service) freezeNativeDecision(ctx context.Context, review orders.Review
 		return decision, err
 	}
 	command := orders.Command{ID: id, Scope: review.Config.Scope, Action: proposal.Action, CommercialOrderID: decision.Posting.CommercialOrderID, PostingNumber: proposal.PostingNumber, Correlation: parent.Correlation, ConfigRevision: review.Config.Revision, Credentials: review.Credentials, ExpectedSourceRevision: decision.Posting.Evidence.Revision, ExpectedTargetRevision: parent.Revision, TargetPositions: slices.Clone(parent.Positions), TargetPositionsComplete: parent.Complete, SourceOrigin: orders.OriginOzon, Warehouse: warehouse, NativeMovement: &movement, IdempotencyKey: id, CreatedAt: now}
+	if intent := nativeAutomaticIntent(intents); intent != nil && review.Config.Lifecycle != nil {
+		command.MerchantIntent, command.LifecyclePolicyRevision = intent, review.Config.Lifecycle.Revision
+	}
 	if invalid := sealNativeConsumption(command, review, proposal); invalid.Code != "" {
 		return nativePlanBlocked(decision, invalid.Field, invalid.Code), nil
 	}
-	if command.Validate() != nil || !movement.AllowedBy(review.Config.NativeDocuments, command.Action, now) {
+	if command.Validate() != nil || !nativeCommandPolicyAllows(review.Config, command, now) {
 		return nativePlanBlocked(decision, "native_document", "native_values_or_policy_unverified"), nil
 	}
 	safeParent := orders.NativeParentFacts(parent)

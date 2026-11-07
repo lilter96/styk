@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os/exec"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -92,7 +91,8 @@ func TestAutomaticStockCyclesUseOutboxAndDeduplicate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pub := stocksync.Runner{Enabled: true, DurableDispatch: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return oz, nil }}
+	var clockAdvance atomic.Int64
+	pub := stocksync.Runner{Now: func() time.Time { return time.Now().UTC().Add(time.Duration(clockAdvance.Load())) }, Enabled: true, DurableDispatch: true, WorkerID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Store: db, ResolveOzon: func(context.Context, string, string) (*ozon.Client, error) { return oz, nil }}
 	imports := ozonjob.Runner{Store: db, Account: scope.OzonAccount, Client: oz, MoyskladAccount: scope.MoyskladAccount, MoyskladClient: mo}
 	worker := application.Worker{Store: db, Handler: application.MockHandler{}, Imports: imports, Publications: pub, Automatic: stocksync.AutomaticRunner{Store: db, Publisher: pub}, ImportAccount: scope.OzonAccount, MoyskladImportAccount: scope.MoyskladAccount, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Poll: 50 * time.Millisecond, Lease: time.Minute, Retry: time.Second}
 	done := make(chan error, 1)
@@ -197,6 +197,10 @@ func TestAutomaticStockCyclesUseOutboxAndDeduplicate(t *testing.T) {
 	if err = db.Pool.QueryRow(ctx, `SELECT count(*) FROM stock_auto_cycles WHERE state IN ('STARTING','READING','WAITING_PUBLICATION')`).Scan(&active); err != nil || active != 0 {
 		t.Fatalf("active cycle count %d: %v", active, err)
 	}
+	// The target still has its real thirty-second dispatch cooldown. The
+	// boundary is covered explicitly by the multi-target scenario; advance the
+	// worker clock here so this pause/resume contract need not sleep it again.
+	clockAdvance.Add(int64(31 * time.Second))
 	req.IdempotencyKey = "automatic-resume-0001"
 	if _, err = db.ConfigureAutomaticStock(ctx, req, time.Now()); err != nil {
 		t.Fatal(err)
@@ -323,7 +327,7 @@ func TestAutomaticReadFailureClassificationAndRestart(t *testing.T) {
 			if tc.name == "authorization" {
 				rollbackEmptySaaSMigrations(t, db)
 				down := func() ([]byte, error) {
-					return exec.Command("go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", db.Pool.Config().ConnString(), "down").CombinedOutput()
+					return migrationCommand(t, context.Background(), "-dir", "../../migrations", "postgres", db.Pool.Config().ConnString(), "down").CombinedOutput()
 				}
 				if _, e := down(); e != nil {
 					t.Fatal("could not roll back empty initial-renewal migration")

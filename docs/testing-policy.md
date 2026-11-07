@@ -62,6 +62,9 @@ runner owns a random loopback HTTP port and has no provider/application API
 proxy. It preserves other running previews. POSIX cancellation terminates owned
 process groups, including worker/test grandchildren. Process-backed browser
 acceptance retains the existing POSIX requirement.
+After a command exits, the runner also removes remaining members of its owned
+process group. This covers a test binary's own timeout or early exit, when
+context cancellation would otherwise never run and helper workers could survive.
 
 ## CI and full regression
 
@@ -69,6 +72,10 @@ Pull requests and pushes to `master` use the same planner. Go, frontend and
 component integration jobs run independently when selected; frontend/docs changes
 do not provision PostgreSQL. Feature-branch pushes are covered by their PR rather
 than a second identical push workflow. Superseded branch runs are cancelled.
+The frontend job runs its selected unit/build and browser checks together through
+the `presentation` lane under one five-minute verification step. Go and selected
+integration verification steps have the same limit; dependency installation is
+separate setup, with no tests moved into those setup steps.
 
 The stable `test` status requires the plan and every selected job to succeed.
 An unselected job may be skipped; a selected-but-skipped, failed or cancelled job
@@ -80,17 +87,79 @@ Go integration build once with `-race` (including ordinary Go tests), rather tha
 separate ordinary/race copies; frontend checks and browser acceptance also run
 once. The full lane includes the existing independent order process/browser
 flags and tests under `internal/` that the previous workflow omitted.
+The full CI job pre-pulls the PostgreSQL image during setup and lets the runner
+own the same disposable PostgreSQL configuration used locally, including the
+companion native-point database and cleanup; it does not substitute a service
+container with different connection or DDL-lock limits.
 
-Fast Go tests have a two-minute per-package timeout; selected integration groups
-have an eight-minute timeout. The full Go suite retains its forty-minute bound.
-These are failure bounds, not promised run times or instructions to run a full
-suite on every task. A routine push must not wait for a newly invented full run;
-high-risk merges must satisfy their selected CI gate or an explicit owner waiver.
+Every verification run has a **five-minute total wall budget**, including planning,
+database preparation and cancellation/cleanup. The runner stops work after four
+minutes forty seconds, reserving twenty seconds for owned process groups and the
+disposable PostgreSQL container. This is one deadline for the entire run, not a
+fresh five minutes for each package, partition or retry. A deadline is a failed or
+incomplete result, never a passing regression. Dependency/tool installation
+(`npm ci`, downloading Chromium and the Go toolchain) is a separate machine setup
+step; warm dependencies do not justify dropping any test from verification.
+
+Full regression runs three independent lanes concurrently: Go/workflow lint;
+the complete race-enabled Go integration build followed by the Go build; and
+frontend type/lint/unit/build followed by browser acceptance. Go packages are
+enumerated from `go list -tags=integration ./...` and divided exhaustively between
+ordinary packages (`-count=1 -race -tags=integration -p=4`) and the business
+integration package, compiled once with those same race/integration settings.
+The compiled binary's complete Test/Example/Fuzz list is assigned exactly once to
+eight concurrent processes. Anchored top-level patterns execute every subtest and
+fuzz seed; benchmarks retain their ordinary opt-in behavior. Each process has its
+own fully migrated root database on the one owned server, its own environment, and
+at most two parallel test cases. Existing per-test database clones remain isolated.
+The two real-browser cases that own the same Vite port have one dedicated
+sequential worker. Other cases are assigned greedily by recorded top-level wall
+times, so costly workflows do not collect in a worker merely because a new test
+shifted a list index. The checked-in cost table affects scheduling only; every
+name still runs once. Other package fixtures use their existing independent
+databases/schemas.
+Separate databases also isolate database-wide PostgreSQL advisory locks used by
+legacy stock schedulers. Internally created worker names have a strict owned
+prefix; the public supplied-DSN allowlist still accepts only the dedicated base
+databases. Owned Docker PostgreSQL allows at most 200 connections and reserves
+512 locks per transaction for concurrent migration/fixture cleanup. These settings
+apply only to the disposable test server, not a supplied database or production.
+
+Each worker writes a separate JSON log under `.local/checks/full-*`; the runner
+checks that every enumerated top-level name has exactly one terminal outcome and
+rejects missing, duplicate or foreign outcomes. The manifest records the complete
+disjoint assignment. A failed worker or incomplete coverage fails the full lane.
+There are no omitted groups, `-short`, retries, repeated ordinary/race suites or
+consecutive partition runs with renewed deadlines. All eight workers share the
+same earlier global deadline; increasing concurrency never increases its budget.
+Fast Go tests retain a two-minute per-package timeout; integration and broad Go
+tests have a four-minute per-package timeout inside the earlier global deadline.
+Business subprocesses derive their test timeout from the remaining shared work
+deadline, so preparation time or a worker start never renews the global budget.
+Independent lanes retain all failures; cancellation terminates their owned
+process groups. PostgreSQL fixtures may reuse a migrated empty template only when
+every test receives an independent database, preserving mutable rows, sequences,
+leases, rollback, concurrency and migration assertions.
+
+A routine push must not wait for a newly invented full run; high-risk merges must
+satisfy their selected CI gate or an explicit owner waiver. Improve fixture setup
+or repeated pure computation when a run exceeds the budget; do not raise the
+deadline, hide slow tests or split a suite into consecutive five-minute runs.
 
 All automated entry points scrub provider credentials, live opt-ins and PostgreSQL
 environment defaults. They do not read `.env` or local credential files. Legacy
 `make lint`, `make test`, `make build` and `make test-integration` remain available
 for explicit broad diagnostics; they are not the default completion checklist.
+`make test` runs all Go unit tests with race detection through the bounded runner.
+`make test-integration` runs the complete Go integration build with race detection,
+including the same eight exhaustive business workers and other Go packages,
+without frontend checks. It owns a disposable database (or uses a validated
+dedicated loopback database). Both scrub the same environment and obey the same total deadline;
+neither implicitly opts into live provider tests.
+`npm run test:browser` delegates the existing nine-process browser contract to
+the same bounded runner, with owned disposable PostgreSQL by default. The
+standalone presentation runner also gives Playwright one 280-second global
+deadline and awaits its owned browser-group shutdown.
 Operational `make up`, `make down`, `make migrate` retain their `.env` behavior.
 
 Report the actual result of each required lane. A stopped, omitted or still-running

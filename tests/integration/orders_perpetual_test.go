@@ -6,11 +6,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/lilter96/styk/internal/orders"
 )
 
@@ -105,11 +106,10 @@ func TestOrdersPermanentMigrationRefusesToRewriteImmutableHistory(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(f.ctx, 30*time.Second)
-	defer cancel()
-	command := exec.CommandContext(ctx, "go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", f.db.Pool.Config().ConnString(), "down")
-	if output, e := command.CombinedOutput(); e == nil || !strings.Contains(string(output), "Permanent order authorization history exists") {
-		t.Fatal("downgrade did not fail closed before changing permanent audit history")
+	before := permanentMigrationAudit(t, f)
+	assertPermanentMigration69DownRefuses(t, f)
+	if after := permanentMigrationAudit(t, f); after != before {
+		t.Fatal("refused exact migration69 downgrade changed schema version or immutable authorization source")
 	}
 	if err = f.db.RequireCurrentSchema(f.ctx); err != nil {
 		t.Fatal("failed downgrade changed current schema", err)
@@ -118,4 +118,46 @@ func TestOrdersPermanentMigrationRefusesToRewriteImmutableHistory(t *testing.T) 
 	if err != nil || loaded.Automation == nil || !loaded.Automation.Active(time.Now().Add(48*time.Hour), config.Scope, config.Revision) {
 		t.Fatal("failed downgrade altered authorization history", err)
 	}
+}
+
+// Exercise the authorization migration itself; the latest schema may contain
+// unrelated later migrations, whose Down contract is a separate test.
+func assertPermanentMigration69DownRefuses(t *testing.T, f ordersStoreFixture) {
+	t.Helper()
+	raw, err := os.ReadFile("../../migrations/00069_orders_perpetual_automation.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, down, found := strings.Cut(string(raw), "-- +goose Down")
+	if !found {
+		t.Fatal("exact migration69 Down section missing")
+	}
+	ctx, cancel := context.WithTimeout(f.ctx, 5*time.Second)
+	defer cancel()
+	tx, err := f.db.Pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rollbackLeaseTest(t, tx)
+	_, refused := tx.Exec(ctx, down)
+	var database *pgconn.PgError
+	if !errors.As(refused, &database) || database.Code != "P0001" || !strings.Contains(database.Message, "Permanent order authorization history exists") {
+		t.Fatal("exact migration69 downgrade did not preserve permanent authorization audit")
+	}
+	if err = tx.Rollback(ctx); err != nil {
+		t.Fatal("rollback exact migration69 guard probe", err)
+	}
+}
+
+func permanentMigrationAudit(t *testing.T, f ordersStoreFixture) string {
+	t.Helper()
+	var snapshot string
+	err := f.db.Pool.QueryRow(f.ctx, `SELECT jsonb_build_object(
+ 'grants',(SELECT COALESCE(jsonb_agg(to_jsonb(g) ORDER BY g.id,g.revision),'[]'::jsonb) FROM orders_automation_grants g),
+ 'revisions',(SELECT COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.tenant_id,r.moysklad_account,r.ozon_account,r.revision),'[]'::jsonb) FROM orders_config_revisions r),
+ 'schema_versions',(SELECT COALESCE(jsonb_agg(to_jsonb(v) ORDER BY v.id),'[]'::jsonb) FROM goose_db_version v))::text`).Scan(&snapshot)
+	if err != nil {
+		t.Fatal("read immutable authorization and schema audit", err)
+	}
+	return snapshot
 }

@@ -13,6 +13,7 @@ import (
 )
 
 type orderNative struct {
+	Contract catalogReference `json:"contract"`
 	catalogReference
 	ID           string           `json:"id"`
 	AccountID    string           `json:"accountId"`

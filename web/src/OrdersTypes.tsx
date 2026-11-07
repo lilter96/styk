@@ -1,6 +1,8 @@
 import { ApiError } from "./api";
 import type { NativeDocumentPolicy } from "./OrdersNativeTypes";
 import type { ExemplarSetInput } from "./OrdersExemplarTypes";
+import type { OrdersLifecyclePolicy } from "./OrdersLifecycleTypes";
+import type { CommissionPolicy } from "./OrdersFinanceTypes";
 
 export type OrderScope = { tenant: string; moy: string; ozon: string };
 export type NativeScope = {
@@ -106,6 +108,8 @@ export type OrderAutomation = {
   revoked_at?: string;
 };
 export type OrdersConfigData = {
+  finance?: CommissionPolicy | null;
+  lifecycle?: OrdersLifecyclePolicy | null;
   native_documents?: NativeDocumentPolicy;
   scope: NativeScope;
   revision: number;
@@ -680,6 +684,36 @@ const issueLabels: Record<string, string> = {
     "Не удалось подтвердить текущий статус отправления Ozon.",
 };
 export const orderIssueLabel = (code: string) =>
+  (
+    ({
+      MERCHANT_EVIDENCE_CHANGED_OR_INTERVENTION_REQUIRED:
+        "Данные или разрешение изменились. Проверьте состояние заказа, состав упаковок и настройки действия в карточке отправления.",
+      MERCHANT_ACTION_REQUIRES_EVIDENCE:
+        "Для команды не хватает подтверждённых данных. Проверьте упаковки, маркировку и условия действия в карточке отправления.",
+      native_automatic_physical_intent_required:
+        "Нужно подтверждённое изменение состояния МойСклад для всех позиций отправления. Первое наблюдение состояния не запускает складской документ.",
+      native_automatic_policy_required:
+        "Проверьте отдельное разрешение автоматических складских документов и его актуальную версию в настройках.",
+      native_shipment_evidence_required:
+        "Подтвердите фактическую передачу товара перевозчику. Сборка или готовность к отправке недостаточны.",
+      native_shipment_source_exception_requires_review:
+        "Отправление отменено, не принято или спорно. Проверьте реальное движение товара и существующие документы вручную.",
+      native_unique_applied_demand_required:
+        "Для Возврата нужна одна точно связанная проведённая Отгрузка STYK. Проверьте документы вручную.",
+      native_automatic_partial_movement_requires_review:
+        "Частичное движение или отменённые позиции требуют отдельной ручной проверки количества.",
+      native_physical_event_time_unverified:
+        "Время физического события не подтверждено. Проверьте состояние и дату изменения заказа МойСклад.",
+      native_linked_demand_coverage_unavailable:
+        "МойСклад не предоставил полный список связанных Отгрузок. Автоматическое создание остановлено. Проверьте документы в МойСклад и откройте ручную проверку складских документов в карточке отправления.",
+      native_existing_linked_demand_requires_review:
+        "У заказа есть связанная Отгрузка, включая возможный черновик или документ другой интеграции. Автоматическое создание остановлено. Проверьте существующий документ в МойСклад и откройте ручную проверку складских документов в карточке отправления.",
+      merchant_packing_owned_positions_changed:
+        "Состав или подтверждённые позиции заказа МойСклад изменились. Автоматическая сборка остановлена. Сверьте товары и количества с Ozon, затем подготовьте сборку через ручную проверку отправления.",
+      merchant_transition_pending:
+        "Команда продавца ожидает проверки. Обновление заказа приостановлено, чтобы сохранить этот переход. Проверьте команды в разделе «Работа в МойСклад» и историю передач.",
+    }) as Record<string, string>
+  )[code] ||
   issueLabels[code] ||
   "Условия передачи не подтверждены. Проверьте настройки и связи перед новой проверкой.";
 export function orderOperationProblem(code: string | undefined) {

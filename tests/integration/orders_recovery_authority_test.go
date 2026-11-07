@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os/exec"
 	"testing"
 	"time"
 
@@ -86,7 +85,7 @@ func TestOrdersRecoveryMigrationUpgradeRetainsOriginalUnknown(t *testing.T) {
 	catalogSyncMigrate(t, dsn, "down-to", "57")
 	ctx, cancel := context.WithTimeout(f.ctx, 30*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, "go", "run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", dsn, "down")
+	command := migrationCommand(t, ctx, "-dir", "../../migrations", "postgres", dsn, "down")
 	output, err := command.CombinedOutput()
 	if err == nil || !bytes.Contains(output, []byte("refusing to discard order recovery audit")) {
 		t.Fatal("destructive recovery rollback was not rejected")

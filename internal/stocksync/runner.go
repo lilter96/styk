@@ -15,6 +15,8 @@ import (
 )
 
 type Runner struct {
+	// Now supplies the workflow clock; production uses the current UTC time.
+	Now               func() time.Time
 	Enabled           bool
 	DurableDispatch   bool
 	WorkerID          string
@@ -36,7 +38,7 @@ func (r Runner) MaintainPresence(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		_ = r.Store.TouchStockWorker(ctx, r.WorkerID, time.Now().UTC())
+		_ = r.Store.TouchStockWorker(ctx, r.WorkerID, r.now())
 		select {
 		case <-ctx.Done():
 			return
@@ -52,7 +54,7 @@ func (r Runner) RunNext(ctx context.Context) (bool, error) {
 	if r.Store == nil || (r.ResolveOzon == nil && r.ResolveScopedOzon == nil) {
 		return false, errors.New("stock publisher requires a store and scoped credential resolver")
 	}
-	now := time.Now().UTC()
+	now := r.now()
 	var op *domain.StockPublication
 	var err error
 	if r.DurableDispatch {
@@ -78,12 +80,12 @@ func (r Runner) RunNext(ctx context.Context) (bool, error) {
 	finish := func(target domain.StockPublicationTarget, state, code string, status *int) error {
 		save, cancel := context.WithTimeout(context.WithoutCancel(ctx), r.Store.Timeout)
 		defer cancel()
-		return r.Store.FinishStockTargetHTTP(save, op.StockSyncScope, op.ID, target.ID, state, code, status, time.Now().UTC())
+		return r.Store.FinishStockTargetHTTP(save, op.StockSyncScope, op.ID, target.ID, state, code, status, r.now())
 	}
 	finishProvider := func(target domain.StockPublicationTarget, state, code string, status *int, updated *bool, codes []string) error {
 		save, cancel := context.WithTimeout(context.WithoutCancel(ctx), r.Store.Timeout)
 		defer cancel()
-		return r.Store.FinishStockTargetProvider(save, op.StockSyncScope, op.ID, target.ID, state, code, status, updated, codes, time.Now().UTC())
+		return r.Store.FinishStockTargetProvider(save, op.StockSyncScope, op.ID, target.ID, state, code, status, updated, codes, r.now())
 	}
 	enabled, err := r.Store.StockPublicationStillEnabled(ctx, op.StockSyncScope)
 	if err != nil {
@@ -130,7 +132,7 @@ func (r Runner) RunNext(ctx context.Context) (bool, error) {
 	if err != nil {
 		return true, err
 	}
-	valid, checkErr := r.Store.StockPublicationCanDispatch(ctx, *op, time.Now().UTC())
+	valid, checkErr := r.Store.StockPublicationCanDispatch(ctx, *op, r.now())
 	if checkErr != nil {
 		return true, checkErr
 	}
@@ -147,7 +149,7 @@ func (r Runner) RunNext(ctx context.Context) (bool, error) {
 			return true, errors.New("durable publication must contain exactly one target")
 		}
 		if err = client.BindStockIntent(items[0], func(check context.Context) (bool, error) {
-			return r.Store.StockPublicationCanDispatch(check, *op, time.Now().UTC())
+			return r.Store.StockPublicationCanDispatch(check, *op, r.now())
 		}); err != nil {
 			return true, err
 		}
@@ -211,7 +213,7 @@ func (r Runner) RunNext(ctx context.Context) (bool, error) {
 				observed = &quantity
 			}
 			save, saveCancel := context.WithTimeout(context.WithoutCancel(ctx), r.Store.Timeout)
-			err = r.Store.RecordStockReadback(save, op.StockSyncScope, op.ID, t.ID, observed, time.Now().UTC())
+			err = r.Store.RecordStockReadback(save, op.StockSyncScope, op.ID, t.ID, observed, r.now())
 			saveCancel()
 			if err != nil {
 				return true, err
@@ -228,7 +230,7 @@ func (r Runner) Reconcile(ctx context.Context, scope domain.StockSyncScope, id s
 	if r.Store == nil || r.ResolveOzon == nil {
 		return domain.StockSyncView{}, errors.New("stock reconciler unavailable")
 	}
-	now := time.Now().UTC()
+	now := r.now()
 	if err := r.Store.MarkStockPublicationUnknown(ctx, scope, id, now); err != nil {
 		return domain.StockSyncView{}, err
 	}
@@ -251,7 +253,7 @@ func (r Runner) Reconcile(ctx context.Context, scope domain.StockSyncScope, id s
 			if readErr == nil {
 				observed = &quantity
 			}
-			if err = r.Store.RecordStockReadback(ctx, scope, id, t.ID, observed, time.Now().UTC()); err != nil {
+			if err = r.Store.RecordStockReadback(ctx, scope, id, t.ID, observed, r.now()); err != nil {
 				return domain.StockSyncView{}, err
 			}
 			continue
@@ -261,7 +263,7 @@ func (r Runner) Reconcile(ctx context.Context, scope domain.StockSyncScope, id s
 			if readErr == nil {
 				observed = &quantity
 			}
-			if err = r.Store.RecordUnknownStockReadback(ctx, scope, id, t.ID, observed, time.Now().UTC()); err != nil {
+			if err = r.Store.RecordUnknownStockReadback(ctx, scope, id, t.ID, observed, r.now()); err != nil {
 				return domain.StockSyncView{}, err
 			}
 			// Controlled supersession preserves the original UNKNOWN outcome even
@@ -276,12 +278,12 @@ func (r Runner) Reconcile(ctx context.Context, scope domain.StockSyncScope, id s
 		}
 		desired, e := strconv.ParseInt(t.Quantity, 10, 64)
 		if e == nil && quantity == desired {
-			if err = r.Store.FinishStockTarget(ctx, scope, id, t.ID, "CONFIRMED_EFFECTIVE", "READBACK_MATCHED_EFFECT", time.Now().UTC()); err != nil {
+			if err = r.Store.FinishStockTarget(ctx, scope, id, t.ID, "CONFIRMED_EFFECTIVE", "READBACK_MATCHED_EFFECT", r.now()); err != nil {
 				return domain.StockSyncView{}, err
 			}
 		}
 	}
-	return r.Store.StockSyncStatus(ctx, scope, time.Now().UTC())
+	return r.Store.StockSyncStatus(ctx, scope, r.now())
 }
 
 func (r Runner) resolveOzon(ctx context.Context, scope domain.StockSyncScope) (*ozon.Client, error) {
@@ -292,4 +294,11 @@ func (r Runner) resolveOzon(ctx context.Context, scope domain.StockSyncScope) (*
 		return nil, errors.New("stock provider resolver unavailable")
 	}
 	return r.ResolveOzon(ctx, scope.Tenant, scope.OzonAccount)
+}
+
+func (r Runner) now() time.Time {
+	if r.Now != nil {
+		return r.Now().UTC()
+	}
+	return time.Now().UTC()
 }

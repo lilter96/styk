@@ -285,6 +285,8 @@ type AutomationGrant struct {
 }
 
 type Config struct {
+	Finance                *CommissionPolicy      `json:"finance,omitempty"`
+	Lifecycle              *LifecyclePolicy       `json:"lifecycle,omitempty"`
 	ReadConfigured         bool                   `json:"read_configured,omitempty"`
 	ReadEnabled            bool                   `json:"read_enabled,omitempty"`
 	NativeDocuments        *NativeDocumentPolicy  `json:"native_documents,omitempty"`
@@ -356,6 +358,7 @@ type PositionWrite struct {
 // CustomerOrderWrite deliberately has no sum, paid or shipped fields: those
 // values are computed provider facts. No payment or shipment document is implied.
 type CustomerOrderWrite struct {
+	ContractID          string                 `json:"contract_id,omitempty"`
 	OwnedFields         []string               `json:"owned_fields,omitempty"`
 	CurrencyID          string                 `json:"currency_id,omitempty"`
 	RateValue           Field[Decimal]         `json:"rate_value"`
@@ -392,7 +395,11 @@ type PostingAction struct {
 }
 
 type Command struct {
-	SplitAncestorSettlement *SplitAncestorSettlementPermission `json:"split_ancestor_settlement,omitempty"`
+	MerchantPositionBaseline *PositionBaseline                  `json:"merchant_position_baseline,omitempty"`
+	LifecyclePolicyRevision  int64                              `json:"lifecycle_policy_revision,omitempty"`
+	MerchantIntent           *MerchantIntent                    `json:"merchant_intent,omitempty"`
+	NativeStateBaseline      *NativeStateBaseline               `json:"native_state_baseline,omitempty"`
+	SplitAncestorSettlement  *SplitAncestorSettlementPermission `json:"split_ancestor_settlement,omitempty"`
 
 	SupersededSplitWorkID   string                          `json:"superseded_split_work_id,omitempty"`
 	SplitSourceWorkID       string                          `json:"split_source_work_id,omitempty"`

@@ -35,7 +35,7 @@ func allowedReadPath(path string) bool {
 	case "entity/demand", "entity/salesreturn", "entity/customerorder/metadata", "entity/customerorder/metadata/attributes", "entity/organization", "entity/counterparty", "entity/currency", "entity/saleschannel", "context/employee", "entity/product", "entity/variant", "entity/store", "report/stock/all", "report/stock/bystore", "entity/customerorder":
 		return true
 	}
-	return nativeDocumentReadPath.MatchString(path) || orderReadPath.MatchString(path) || allowedCatalogReadPath(path)
+	return nativeDocumentReadPath.MatchString(path) || orderReadPath.MatchString(path) || allowedCatalogReadPath(path) || allowedCommissionReadPath(path)
 }
 
 type Options struct {

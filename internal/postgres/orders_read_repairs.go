@@ -15,7 +15,7 @@ func orderDiscoveryStream(stream string) bool {
 // This derived lookup index is updated with the same leased source-page commit.
 // Immutable page_failures remain the audit; this has no queue/lease of its own.
 func updateOrderReadRepairs(ctx context.Context, tx pgx.Tx, page orders.SourcePage, now time.Time) error {
-	if !page.FreshDetail || page.Stream == orders.NativePointStream {
+	if !page.FreshDetail || orders.IsNativeReadStream(page.Stream) {
 		return nil
 	}
 	var admitted *time.Time

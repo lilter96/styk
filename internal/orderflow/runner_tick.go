@@ -38,7 +38,8 @@ func (r *Runner) tickScope(ctx context.Context, config orders.Config) error {
 		return nil
 	}
 	grant := config.Automation
-	if !config.ReadEnabled && grant != nil && !grant.Active(r.now(), config.Scope, config.Revision) {
+	lifecycleActive := config.Lifecycle != nil && config.Lifecycle.Active(r.now(), config.Scope, config.Revision)
+	if !config.ReadEnabled && grant != nil && !grant.Active(r.now(), config.Scope, config.Revision) && !lifecycleActive {
 		return nil
 	}
 	collectErr := r.options.Collector.Collect(ctx, config.Scope)
@@ -47,6 +48,9 @@ func (r *Runner) tickScope(ctx context.Context, config orders.Config) error {
 	}
 	if collectErr != nil {
 		collectErr = fmt.Errorf("collect due order facts: %w", collectErr)
+	}
+	if writeAllowed && ctx.Err() == nil {
+		collectErr = errors.Join(collectErr, r.options.Service.ProcessMerchantIntents(ctx, config))
 	}
 	if !writeAllowed || grant == nil || !grant.Active(r.now(), config.Scope, config.Revision) || ctx.Err() != nil {
 		return collectErr

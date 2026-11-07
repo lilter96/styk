@@ -33,7 +33,7 @@ func registerOrdersRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c *co
 	if err != nil {
 		return err
 	}
-	factory := orderprovider.Factory{Credentials: &credentials.Resolver{Store: db, Vault: c.vault}, Gate: gate, DeliveryObserver: db, Configs: db}
+	factory := orderprovider.Factory{Credentials: &credentials.Resolver{Store: db, Vault: c.vault}, Gate: gate, DeliveryObserver: db, Configs: db, FinanceEvidenceSealer: orderprivacy.FinancialEvidenceProtector{Vault: c.vault}}
 	if c.moyFactory != nil {
 		factory.NewMoysklad = func(_, secret string) (*moysklad.Client, error) { return c.moyFactory(secret) }
 	}
@@ -63,8 +63,21 @@ func registerOrdersRoutes(mux *http.ServeMux, a *auth, db *postgres.Store, c *co
 		{"GET /api/orders/action-options", api.actionOptions, false},
 		{"GET /api/orders/exemplars", api.exemplarSnapshot, false},
 		{"GET /api/orders/countries", api.countries, false},
+		{"GET /api/orders/finance/realization", api.realizationReport, false},
+		{"GET /api/orders/finance/metadata", api.commissionMetadata, false},
+		{"POST /api/orders/finance/preview", api.commissionPreview, true},
+		{"POST /api/orders/finance/approve", api.commissionApprove, true},
+		{"GET /api/orders/finance/operations", api.commissionOperations, false},
+		{"GET /api/orders/finance/accrual/types", api.accrualTypes, false},
+		{"GET /api/orders/finance/accrual/by-day", api.accrualByDay, false},
+		{"POST /api/orders/finance/accrual/postings", api.accrualPostings, true},
+		{"POST /api/orders/carriage/preview", api.carriagePreview, true},
+		{"POST /api/orders/carriage/approve", api.carriageApprove, true},
+		{"GET /api/orders/carriage/operations", api.carriageOperations, false},
+		{"POST /api/orders/carriage/reread", api.carriageReread, true},
 		{"GET /api/orders/recovery", api.recovery, false}, {"POST /api/orders/recovery/check", api.recoveryCheck, true}, {"POST /api/orders/recovery/resolve", api.recoveryResolve, true},
 		{"GET /api/orders/reverse-suggestion", api.reverseSuggestion, false},
+		{"GET /api/orders/merchant-intents", api.merchantIntents, false},
 		{"GET /api/orders/artifacts/{workid}", api.labelArtifact, false},
 		{"GET /api/orders/metadata", api.metadata, false}, {"POST /api/orders/preview", api.preview, true},
 		{"GET /api/orders/metadata/registry", api.metadataRegistry, false}, {"POST /api/orders/metadata/attributes", api.createMetadata, true},

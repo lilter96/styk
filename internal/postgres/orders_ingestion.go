@@ -167,7 +167,7 @@ func writeOrderPage(ctx context.Context, tx pgx.Tx, page orders.SourcePage, conf
 }
 
 func insertOrderPageFacts(ctx context.Context, tx pgx.Tx, page orders.SourcePage, config orders.Config, now time.Time) ([]string, error) {
-	if page.Stream == orders.NativePointStream {
+	if orders.IsNativeReadStream(page.Stream) {
 		return []string{}, nil
 	}
 	ids, err := insertOrderPagePostings(ctx, tx, page, now)
@@ -258,7 +258,7 @@ func mergeOrderCheckpointFailures(checkpoint *orders.Checkpoint, previous orders
 	checkpoint.NativeDocumentFailures = page.NativeDocumentFailures
 	checkpoint.NativeDocumentFailuresTruncated = page.NativeDocumentFailuresTruncated
 	checkpoint.Complete = checkpoint.Complete && page.Complete
-	if page.Stream != "ozon-orders-active" && page.Stream != orders.NativePointStream {
+	if page.Stream != "ozon-orders-active" && !orders.IsNativeReadStream(page.Stream) {
 		return
 	}
 	var failures []orders.ReadFailure
@@ -267,7 +267,7 @@ func mergeOrderCheckpointFailures(checkpoint *orders.Checkpoint, previous orders
 		failures = previous.Failures
 		truncated = truncated || previous.FailuresTruncated
 	}
-	if page.Stream == orders.NativePointStream {
+	if orders.IsNativeReadStream(page.Stream) {
 		checkpoint.Failures, checkpoint.FailuresTruncated = orders.MergeNativePointFailures(failures, page.Failures, page.NativeReads, truncated)
 	} else {
 		checkpoint.Failures, checkpoint.FailuresTruncated = orders.MergeReadFailures(failures, page.Failures, page.Postings, truncated)

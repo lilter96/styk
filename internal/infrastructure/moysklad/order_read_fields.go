@@ -55,7 +55,11 @@ func (c *OrderClient) decodeOrderReadOnlyFields(raw map[string]json.RawMessage, 
 	if err != nil {
 		return orders.TargetObservation{}, err
 	}
-	return orders.TargetObservation{SourceDeleted: deleted, ProviderUpdatedAt: updated, Scope: c.scope, Correlation: correlation, Fields: write, Sum: sum, ObservedAt: time.Now().UTC()}, nil
+	demands, err := c.orderLinkedDemandIDs(raw)
+	if err != nil {
+		return orders.TargetObservation{}, err
+	}
+	return orders.TargetObservation{LinkedDemandIDs: demands, SourceDeleted: deleted, ProviderUpdatedAt: updated, Scope: c.scope, Correlation: correlation, Fields: write, Sum: sum, ObservedAt: time.Now().UTC()}, nil
 }
 
 func orderReadDeleted(raw map[string]json.RawMessage) (orders.Field[string], error) {
@@ -107,6 +111,13 @@ func (c *OrderClient) decodeOrderAttributes(raw json.RawMessage) ([]orders.Attri
 
 func (c *OrderClient) decodeOrderReferences(document orderNative) (orders.CustomerOrderWrite, error) {
 	write := orders.CustomerOrderWrite{}
+	if document.Contract.Meta.Href != "" {
+		id, err := c.referenceID(document.Contract, "entity/contract", "contract")
+		if err != nil {
+			return write, err
+		}
+		write.ContractID = id
+	}
 	refs := []struct {
 		ref        catalogReference
 		path, kind string

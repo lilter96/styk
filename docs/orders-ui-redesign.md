@@ -2,6 +2,26 @@
 
 Based on `master` at `cab972a`. The two supplied STYK references guide the layout; their example orders, amounts, product images and counters are not production data.
 
+## MoySklad-primary lifecycle configuration
+
+`/orders/settings?section=lifecycle` adds an independent owner opt-in for exact
+native-state transitions. The existing settings pattern exposes scheme, action,
+target/predecessor IDs and explicit whole-posting evidence. It validates forward
+state conflicts, cycles and incompatible event semantics. Separate toggles cover
+physical handoff demand and verified physical return; Ozon acceptance is visibly
+unavailable in this version. Revocation does not erase execution history.
+
+The transition journal and authoritative monthly realization preview are separate
+read-only sections outside the editable form. `QUEUED` is a work binding, not
+completion. Finance amounts remain decimal strings and the preview exposes its
+accounting blockers without offering an unimplemented native report write.
+
+The lifecycle section uses a static save footer so expanded mappings and the last
+read-only rows remain visible on mobile. Existing settings sections retain their
+existing footer behavior. Browser evidence covers 1440, 1366 and 390 CSS pixels,
+exact focus/control geometry, long native state names, opt-in/save/revoke and
+manual report pagination; this evidence does not establish provider acceptance.
+
 ## User workflow
 
 - The shipment table provides server search by posting number, commercial order ID and the observed order number; status and attention filters; page selection; cursor navigation; and the existing bulk mirror preview.

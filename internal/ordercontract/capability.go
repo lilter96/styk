@@ -37,7 +37,7 @@ type CapabilityDecision struct {
 
 // AssessCapability checks explicit facts against the embedded registry.
 func AssessCapability(facts CapabilityFacts, action string) CapabilityDecision {
-	manifest, err := ContractManifest()
+	manifest, err := embeddedManifest()
 	if err != nil {
 		return CapabilityDecision{Status: "blocked", Reason: "invalid_manifest"}
 	}

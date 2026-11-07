@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
@@ -30,6 +29,9 @@ func catalogSyncDB(t testing.TB) *postgres.Store {
 	u, err := url.Parse(os.Getenv("TEST_DATABASE_URL"))
 	if err != nil || (u.Hostname() != "127.0.0.1" && u.Hostname() != "localhost") || !strings.Contains(u.Path, "_test") {
 		t.Fatal("catalog tests require a dedicated localhost test database")
+	}
+	if db, cloned := catalogTemplateFixture(t, u); cloned {
+		return db
 	}
 	ctx := context.Background()
 	admin, err := postgres.Open(ctx, u.String(), 15*time.Second)
@@ -60,8 +62,8 @@ func catalogSyncMigrate(t testing.TB, dsn string, args ...string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cmdArgs := []string{"run", "-tags=no_mysql no_sqlite3 no_mssql no_ydb no_vertica no_clickhouse no_libsql", "github.com/pressly/goose/v3/cmd/goose@v3.25.0", "-dir", "../../migrations", "postgres", dsn}
-	cmd := exec.CommandContext(ctx, "go", append(cmdArgs, args...)...)
+	cmdArgs := []string{"-dir", "../../migrations", "postgres", dsn}
+	cmd := migrationCommand(t, ctx, append(cmdArgs, args...)...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("catalog test migration failed: %v %s", err, output)
 	}

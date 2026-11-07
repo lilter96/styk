@@ -3,6 +3,9 @@ package orders
 import "time"
 
 func (movement NativeMovement) validateHeader(command Command) error {
+	if movement.ContractID != "" && !validUUID(movement.ContractID) {
+		return ErrInvalid
+	}
 	if !command.Action.IsNativeMovement() || command.CustomerOrder != nil || command.PostingAction != nil || command.PositionPatch != nil || command.SourceOrigin != OriginOzon {
 		return ErrInvalid
 	}
@@ -99,6 +102,9 @@ func (movement NativeMovement) validateBasis(action Action) error {
 	if !validID(movement.DemandWorkID) || basis == nil || basis.Validate() != nil || !nativeDocumentPresent(basis.SourceDeleted) || basis.Scope != movement.SourceBaseline.Scope || basis.Correlation.Kind != "demand" || !basis.ReturnsComplete || !basis.Applicable.IsKnown() || !*basis.Applicable.Value {
 		return ErrBlocked
 	}
+	if movement.ContractID != "" && basis.ContractID != movement.ContractID {
+		return ErrStale
+	}
 	if !basis.CustomerOrderID.IsKnown() || *basis.CustomerOrderID.Value != movement.SourceBaseline.Correlation.CustomerOrderID || basis.OrganizationID != movement.OrganizationID || basis.AgentID != movement.AgentID || basis.CurrencyID != movement.CurrencyID {
 		return ErrStale
 	}
@@ -109,6 +115,9 @@ func (movement NativeMovement) validateBasis(action Action) error {
 }
 
 func (observation NativeDocumentObservation) Validate() error {
+	if observation.ContractID != "" && !validUUID(observation.ContractID) {
+		return ErrInvalid
+	}
 	if observation.SourceDeleted.Validate() != nil || observation.Scope.Validate() != nil || observation.Correlation.Validate() != nil || observation.Correlation.DocumentID == "" || !observation.Complete || !validID(observation.Revision) || observation.ObservedAt.IsZero() {
 		return ErrInvalid
 	}

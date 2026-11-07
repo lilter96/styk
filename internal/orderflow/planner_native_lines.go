@@ -15,6 +15,11 @@ func planNativeValues(review orders.ReviewContext, posting orders.Posting, propo
 		moment = proposal.PlannedMoment
 	}
 	movement := orders.NativeMovement{SourceBaseline: baseline, DemandWorkID: proposal.DemandWorkID, DemandBasis: basis, OrganizationID: fields.OrganizationID, AgentID: fields.AgentID, StoreID: fields.StoreID, CurrencyID: fields.CurrencyID, RateValue: fields.RateValue, Applicable: proposal.Applicable, VATEnabled: fields.VATEnabled, VATIncluded: fields.VATIncluded, Moment: orders.NativeAccountingMoment(moment), Lines: make([]orders.NativeMovementLine, 0, len(proposal.Lines))}
+	movement.ContractID = fields.ContractID
+	if finance := review.Config.Finance; finance != nil && finance.Enabled && movement.ContractID != finance.ContractID {
+		return movement, []orders.Validation{{Field: "customer_order.contract", Code: "native_parent_commission_contract_requires_review"}}
+	}
+	movement.LinkedDemandIDs = parent.LinkedDemandIDs
 	movement.ParentApplicable = fields.Applicable
 	if *proposal.Applicable.Value && !fields.Applicable.IsKnown() {
 		return movement, []orders.Validation{{Field: "customer_order.applicable", Code: "native_parent_applicability_unverified"}}

@@ -159,7 +159,7 @@ describe("read-only views", () => {
       }),
     );
     mount(<Products scope={scope} />);
-    expect(await screen.findByText("Не сопоставлен")).toBeTruthy();
+    expect(await screen.findByText("Нет пары", { exact: true })).toBeTruthy();
     fireEvent.click(
       screen.getByRole("button", { name: "Открыть сопоставление sample" }),
     );
@@ -304,7 +304,15 @@ it("reviews candidates and requires a durable review before confirmation", async
   fireEvent.click(
     await screen.findByRole("button", { name: "Без названия, вариант" }),
   );
-  expect(screen.getByText(/Артикул или код совпал/)).toBeTruthy();
+  expect(
+    screen.getByText("Артикул или код совпал", { selector: "span" }),
+  ).toBeTruthy();
+  expect(
+    screen.getByText(
+      "Артикул или код совпал. Убедитесь, что это один и тот же товар.",
+      { selector: "p" },
+    ),
+  ).toBeTruthy();
   expect(
     screen.queryByRole("button", { name: "Подтвердить соответствие" }),
   ).toBeNull();

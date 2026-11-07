@@ -36,14 +36,16 @@ type OrdersClient struct {
 // OrderReadOptions requests separately authorized optional provider groups.
 // CustomerPII remains transient and must be protected before a page is stored.
 type OrderReadOptions struct {
-	RelatedPostings  bool              `json:"-"`
-	AnalyticsData    bool              `json:"analytics_data"`
-	FinancialData    bool              `json:"financial_data"`
-	LegalInfo        bool              `json:"legal_info"`
-	Barcodes         bool              `json:"barcodes"`
-	CustomerPII      bool              `json:"-"`
-	ResolveDelivery  bool              `json:"-"`
-	DeliveryObserver delivery.Observer `json:"-"`
+	FinanceEvidenceSealer     orders.FinancialEvidenceSealer `json:"-"`
+	FinanceCredentialRevision int64                          `json:"-"`
+	RelatedPostings           bool                           `json:"-"`
+	AnalyticsData             bool                           `json:"analytics_data"`
+	FinancialData             bool                           `json:"financial_data"`
+	LegalInfo                 bool                           `json:"legal_info"`
+	Barcodes                  bool                           `json:"barcodes"`
+	CustomerPII               bool                           `json:"-"`
+	ResolveDelivery           bool                           `json:"-"`
+	DeliveryObserver          delivery.Observer              `json:"-"`
 }
 
 func NewOrderClient(client *Client, scope orders.Scope) (*OrdersClient, error) {
@@ -70,10 +72,10 @@ func (c *OrdersClient) ReadOrderCorrelation(_ context.Context, _ orders.Correlat
 
 func orderReadPath(path string) bool {
 	switch path {
-	case countryListPath, exemplarStatusPath, "/v4/posting/fbs/list", "/v4/posting/fbs/unfulfilled/list", "/v3/posting/fbs/get", "/v2/warehouse/list", "/v2/delivery-method/list", "/v1/posting/fbs/cancel-reason", labelTaskPath:
+	case financeRealizationPath, countryListPath, exemplarStatusPath, "/v4/posting/fbs/list", "/v4/posting/fbs/unfulfilled/list", "/v3/posting/fbs/get", "/v2/warehouse/list", "/v2/delivery-method/list", "/v1/posting/fbs/cancel-reason", labelTaskPath:
 		return true
 	default:
-		return false
+		return carriageReadPath(path) || accrualReadPath(path)
 	}
 }
 

@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -29,6 +30,18 @@ import (
 	"github.com/lilter96/styk/internal/postgres"
 )
 
+var ownedFullDatabaseName = regexp.MustCompile(`^/styk_full_[1-9][0-9]*_[0-9]+_[0-7]_test$`)
+
+func ownedFullDatabasePath(path string) bool {
+	return len(path) <= 64 && ownedFullDatabaseName.MatchString(path)
+}
+
+var ordersProcessCloneName = regexp.MustCompile(`^/styk_orders_clone_[0-9]+_[0-9]+$`)
+
+func ordersProcessDatabaseName(path string) bool {
+	return path == "/styk_orders_store_test" || path == "/styk_orders_release_test" || path == "/styk_orders_guard_test" || ordersProcessCloneName.MatchString(path) || ownedFullDatabasePath(path)
+}
+
 func ordersProcessSafety(t testing.TB, dsn string) {
 	t.Helper()
 	for _, key := range []string{"MOYSKLAD_TOKEN", "MOYSKLAD_ACCOUNT_ID", "OZON_API_KEY", "OZON_CLIENT_ID"} {
@@ -36,19 +49,29 @@ func ordersProcessSafety(t testing.TB, dsn string) {
 			t.Fatal("orders process tests require blank live provider environment")
 		}
 	}
+	if !ordersProcessDatabaseURL(dsn) {
+		t.Fatal("orders process tests require an allowlisted effective loopback database")
+	}
+}
+
+func ordersProcessDatabaseURL(dsn string) bool {
 	u, err := url.Parse(dsn)
-	if err != nil || (u.Hostname() != "127.0.0.1" && u.Hostname() != "localhost") || (u.Path != "/styk_orders_store_test" && u.Path != "/styk_orders_release_test" && u.Path != "/styk_orders_guard_test") {
-		t.Fatal("orders process tests require the dedicated localhost orders test database")
+	if err != nil || u.Scheme != "postgres" && u.Scheme != "postgresql" || u.Opaque != "" || u.Fragment != "" || u.RawPath != "" || (u.Hostname() != "127.0.0.1" && u.Hostname() != "localhost") || !ordersProcessDatabaseName(u.Path) {
+		return false
+	}
+	if _, err = url.ParseQuery(u.RawQuery); err != nil {
+		return false
 	}
 	config, err := pgxpool.ParseConfig(dsn)
 	if err != nil || "/"+config.ConnConfig.Database != u.Path || (config.ConnConfig.Host != "127.0.0.1" && config.ConnConfig.Host != "localhost") {
-		t.Fatal("orders process test DSN cannot override the dedicated localhost database")
+		return false
 	}
 	for _, fallback := range config.ConnConfig.Fallbacks {
 		if fallback.Host != "127.0.0.1" && fallback.Host != "localhost" {
-			t.Fatal("orders process test DSN cannot fall back to a remote database")
+			return false
 		}
 	}
+	return true
 }
 
 func ordersProcessLoopback(raw string) bool {

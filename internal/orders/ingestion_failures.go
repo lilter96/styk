@@ -14,7 +14,7 @@ func (page SourcePage) validateReadFailures(success map[string]bool) error {
 	if page.Exhausted && page.NextCursor != "" {
 		return ErrInvalid
 	}
-	if (page.Exhausted || len(page.Failures) > 0 || page.FailuresTruncated) && ((page.Stream != "ozon-orders-active" && page.Stream != "ozon-orders-discovery" && page.Stream != "ozon-orders-unfulfilled" && page.Stream != NativePointStream) || !page.FreshDetail) {
+	if (page.Exhausted || len(page.Failures) > 0 || page.FailuresTruncated) && ((page.Stream != "ozon-orders-active" && page.Stream != "ozon-orders-discovery" && page.Stream != "ozon-orders-unfulfilled" && !IsNativeReadStream(page.Stream)) || !page.FreshDetail) {
 		return ErrInvalid
 	}
 	seen := make(map[string]bool, len(page.Failures))
@@ -28,7 +28,7 @@ func (page SourcePage) validateReadFailures(success map[string]bool) error {
 }
 
 func (page SourcePage) validReadFailureCode(code string) bool {
-	if page.Stream == NativePointStream {
+	if IsNativeReadStream(page.Stream) {
 		return validateNativePointFailureCode(code) == nil
 	}
 	return validReadFailureCode(code)

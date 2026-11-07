@@ -172,6 +172,9 @@ func validateOrderReconciliation(work orders.Work, completion orders.Completion)
 	if completion.ObservedPosting == nil {
 		return orders.ErrInvalid
 	}
+	if orders.ExpectedPostingStatus(work.Command.Action) != "" && !orders.FulfillmentStatusConfirmed(work.Command, *completion.ObservedPosting) {
+		return orders.ErrStale
+	}
 	return nil
 }
 

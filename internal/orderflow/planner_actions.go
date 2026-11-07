@@ -42,12 +42,12 @@ func (s *Service) planRequestedPosting(ctx context.Context, request orders.Previ
 	}
 	for _, proposal := range request.NativeProposals {
 		if proposal.PostingNumber == posting.PostingNumber {
-			return s.planNativeMovement(ctx, review, posting, proposal, automatic, now)
+			return s.planNativeMovement(ctx, review, posting, proposal, automatic, now, request.MerchantIntent)
 		}
 	}
 	for _, proposal := range request.Proposals {
 		if proposal.PostingNumber == posting.PostingNumber {
-			return s.planAction(ctx, review, posting, proposal, now)
+			return s.planMerchantAction(ctx, request, review, posting, proposal, automatic, now)
 		}
 	}
 	return s.planPosting(ctx, review, posting, request.Actions, automatic, now)

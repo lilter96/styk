@@ -53,10 +53,13 @@ func (c orderCollector) Collect(ctx context.Context, scope orders.Scope) error {
 }
 
 type ordersWork struct {
-	runner    *orderflow.Runner
-	retention *ordersRetentionWork
-	mode      string
-	nextCheck time.Time
+	runner       orderPhaseRunner
+	finance      orderPhaseRunner
+	carriage     application.PublicationRunner
+	dispatchTurn int
+	retention    *ordersRetentionWork
+	mode         string
+	nextCheck    time.Time
 }
 
 func (w *ordersWork) RunNext(ctx context.Context) (bool, error) {
@@ -65,17 +68,12 @@ func (w *ordersWork) RunNext(ctx context.Context) (bool, error) {
 			return false, err
 		}
 	}
+	scheduleErr := w.scheduleNext(ctx)
 	if w.mode != "schedule" && publication.OrdersEnabled() {
-		worked, err := w.runner.RunNext(ctx)
-		if worked || err != nil {
-			return worked, err
-		}
+		worked, err := w.dispatchNext(ctx)
+		return worked, errors.Join(scheduleErr, err)
 	}
-	if w.mode == "dispatch" || time.Now().Before(w.nextCheck) {
-		return false, nil
-	}
-	w.nextCheck = time.Now().Add(time.Second)
-	return false, w.runner.Tick(ctx)
+	return false, scheduleErr
 }
 func orderAllowed(scope orders.Scope) bool {
 	return publication.Orders(scope)
@@ -95,7 +93,7 @@ func newOrdersWork(db *postgres.Store, resolver *credentials.Resolver) (applicat
 	if err != nil {
 		return nil, err
 	}
-	factory := orderprovider.Factory{Credentials: resolver, Gate: gate, DeliveryObserver: db, Configs: db}
+	factory := orderprovider.Factory{Credentials: resolver, Gate: gate, DeliveryObserver: db, Configs: db, FinanceEvidenceSealer: orderprivacy.FinancialEvidenceProtector{Vault: resolver.Vault}}
 	protector := orderprivacy.Protector{Vault: resolver.Vault, Store: db}
 	exemplars := orderprivacy.ExemplarProtector{Vault: resolver.Vault, Store: db}
 	service, err := orderflow.NewService(db, factory, orderflow.ServiceOptions{AllowScope: orderAllowed, CustomerReader: protector, ExemplarReader: exemplars})
@@ -107,7 +105,15 @@ func newOrdersWork(db *postgres.Store, resolver *credentials.Resolver) (applicat
 	if err != nil {
 		return nil, err
 	}
-	return &ordersWork{runner: runner, retention: retention, mode: os.Getenv("STYK_WORKER_MODE")}, nil
+	finance, err := orderflow.NewCommissionRunner(db, factory, orderflow.CommissionRunnerOptions{WorkerID: id, AllowScope: orderAllowed, Service: service})
+	if err != nil {
+		return nil, err
+	}
+	carriage, err := orderflow.NewCarriageRunner(db, factory, orderflow.CarriageRunnerOptions{WorkerID: id, AllowScope: orderAllowed})
+	if err != nil {
+		return nil, err
+	}
+	return &ordersWork{runner: runner, finance: finance, carriage: carriage, retention: retention, mode: os.Getenv("STYK_WORKER_MODE")}, nil
 }
 func runSchedule(ctx context.Context, runners ...application.PublicationRunner) error {
 	tick := time.NewTicker(time.Second)
