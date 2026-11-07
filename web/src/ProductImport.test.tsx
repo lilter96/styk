@@ -208,11 +208,13 @@ it("does not retry or create another plan after an unknown approval outcome", as
 
 it("imports a selection larger than twenty using immutable per-batch approvals", async () => {
   const { writes, fetcher } = setup(false, 45);
-  fireEvent.click(
-    await screen.findByRole("button", {
-      name: "Выбрать доступные на странице",
-    }),
+  const selectPage = await screen.findByRole("button", {
+    name: "Выбрать доступные на странице",
+  });
+  await waitFor(() =>
+    expect((selectPage as HTMLButtonElement).disabled).toBe(false),
   );
+  fireEvent.click(selectPage);
   fireEvent.click(
     screen.getByRole("button", { name: "Проверить выбранные (45)" }),
   );

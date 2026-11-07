@@ -5,7 +5,6 @@ package integration
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -17,11 +16,8 @@ import (
 
 func TestProductMatching(t *testing.T) {
 	ctx := context.Background()
-	db, err := postgres.Open(ctx, os.Getenv("TEST_DATABASE_URL"), 5*time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(db.Pool.Close)
+	db := catalogSyncDB(t)
+	var err error
 	suffix := fmt.Sprint(time.Now().UnixNano())
 	scope := postgres.MatchScope{Tenant: "tenant-" + suffix, OzonAccount: "ozon-" + suffix, MoyskladAccount: "moy-" + suffix}
 	t.Cleanup(func() {

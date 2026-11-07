@@ -37,17 +37,16 @@ func (s *Store) CreateProductMatchingJob(ctx context.Context, scope catalog.Scop
 	if err = lockProductMatch(ctx, tx, scope, actor); err != nil {
 		return j, err
 	}
-	// Replay before checking changed imports or policy; the same intent owns one job.
-	args := append(catalogScopeArgs(scope), actor, key)
-	var previousRevision int64
-	err = tx.QueryRow(ctx, `SELECT id,state,processed,total,pages,code,revision FROM product_matching_jobs WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND actor=$4 AND request_key=$5`, args...).Scan(&j.ID, &j.State, &j.Processed, &j.Total, &j.Pages, &j.Code, &previousRevision)
-	if err == nil {
-		if previousRevision != revision {
-			return j, catalogsync.ErrConflict
-		}
-		return j, nil
+	j, err = createProductMatchingJob(ctx, tx, scope, revision, actor, key)
+	if err != nil {
+		return j, err
 	}
-	if !errors.Is(err, pgx.ErrNoRows) {
+	return j, tx.Commit(ctx)
+}
+
+func createProductMatchingJob(ctx context.Context, tx pgx.Tx, scope catalog.Scope, revision int64, actor, key string) (ProductMatchingJob, error) {
+	j, found, err := replayProductMatchingJob(ctx, tx, scope, revision, actor, key)
+	if err != nil || found {
 		return j, err
 	}
 	c, err := readCatalogConfig(ctx, tx, scope)
@@ -72,14 +71,30 @@ func (s *Store) CreateProductMatchingJob(ctx context.Context, scope catalog.Scop
 	if err != nil {
 		return j, err
 	}
-	j.State = "QUEUED"
-	j.Total = data.Total
+	j.State, j.Total = "QUEUED", data.Total
 	_, err = tx.Exec(ctx, `INSERT INTO product_matching_jobs(id,tenant_id,moysklad_account,ozon_account,actor,request_key,revision,moy_import,ozon_import,state,total) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'QUEUED',$10)`, j.ID, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, actor, key, revision, data.MoyID, data.OzonID, j.Total)
 	if err != nil {
 		return j, fmt.Errorf("queue matching job: %w", err)
 	}
-	return j, tx.Commit(ctx)
+	return j, nil
 }
+
+func replayProductMatchingJob(ctx context.Context, tx pgx.Tx, scope catalog.Scope, revision int64, actor, key string) (ProductMatchingJob, bool, error) {
+	var j ProductMatchingJob
+	var previousRevision int64
+	err := tx.QueryRow(ctx, `SELECT id,state,processed,total,pages,code,revision,summary FROM product_matching_jobs WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND actor=$4 AND request_key=$5`, append(catalogScopeArgs(scope), actor, key)...).Scan(&j.ID, &j.State, &j.Processed, &j.Total, &j.Pages, &j.Code, &previousRevision, &j.Summary)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return j, false, nil
+	}
+	if err != nil {
+		return j, false, err
+	}
+	if previousRevision != revision {
+		return j, false, catalogsync.ErrConflict
+	}
+	return j, true, nil
+}
+
 func (s *Store) ProductMatchingJob(ctx context.Context, scope catalog.Scope, id, actor string, page int) (ProductMatchingJob, error) {
 	var j ProductMatchingJob
 	if scope.Validate() != nil || page < 0 {
@@ -98,8 +113,12 @@ func (s *Store) ProductMatchingJob(ctx context.Context, scope catalog.Scope, id,
 	if j.State != "COMPLETED" {
 		return j, nil
 	}
+	return s.readProductMatchingJobPage(ctx, j, page)
+}
+
+func (s *Store) readProductMatchingJobPage(ctx context.Context, j ProductMatchingJob, page int) (ProductMatchingJob, error) {
 	var raw []byte
-	err = s.Pool.QueryRow(ctx, `SELECT p.preview FROM product_matching_job_pages jp JOIN product_matching_previews p ON p.id=jp.preview_id WHERE jp.job_id=$1 AND jp.page=$2`, id, page).Scan(&raw)
+	err := s.Pool.QueryRow(ctx, `SELECT p.preview FROM product_matching_job_pages jp JOIN product_matching_previews p ON p.id=jp.preview_id WHERE jp.job_id=$1 AND jp.page=$2`, j.ID, page).Scan(&raw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return j, nil
 	}
@@ -109,6 +128,7 @@ func (s *Store) ProductMatchingJob(ctx context.Context, scope catalog.Scope, id,
 	j.Preview = &ProductMatchPreview{}
 	return j, catalogDecode(raw, j.Preview)
 }
+
 func (s *Store) RunProductMatchingJob(ctx context.Context) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -132,12 +152,20 @@ func (s *Store) RunProductMatchingJob(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	err = processProductMatchingPage(ctx, tx, id, scope, actor, revision, mi, oi, after, pages)
+	if err = finishProductMatchingPage(ctx, tx, id, err); err != nil {
+		return false, err
+	}
+	return true, tx.Commit(ctx)
+}
+
+func finishProductMatchingPage(ctx context.Context, tx pgx.Tx, id string, pageErr error) error {
+	err := pageErr
 	if err != nil {
 		if ctx.Err() != nil {
-			return false, err
+			return err
 		}
 		if _, rollbackErr := tx.Exec(ctx, `ROLLBACK TO SAVEPOINT matching_page`); rollbackErr != nil {
-			return false, rollbackErr
+			return rollbackErr
 		}
 		code, state := "MATCHING_SERVICE_UNAVAILABLE", "FAILED"
 		if errors.Is(err, catalogsync.ErrStale) {
@@ -147,11 +175,12 @@ func (s *Store) RunProductMatchingJob(ctx context.Context) (bool, error) {
 			code, state = "MATCHING_AUTHORIZATION_CHANGED", "STALE"
 		}
 		if _, err = tx.Exec(ctx, `UPDATE product_matching_jobs SET state=$2,code=$3,updated_at=clock_timestamp() WHERE id=$1`, id, state, code); err != nil {
-			return false, err
+			return err
 		}
 	}
-	return true, tx.Commit(ctx)
+	return nil
 }
+
 func processProductMatchingPage(ctx context.Context, tx pgx.Tx, id string, scope catalog.Scope, actor string, revision, mi, oi int64, after string, page int) error {
 	if err := lockProductMatch(ctx, tx, scope, actor); err != nil {
 		return err
@@ -174,7 +203,11 @@ func processProductMatchingPage(ctx context.Context, tx pgx.Tx, id string, scope
 	if err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO product_matching_job_pages(job_id,page,preview_id) VALUES($1,$2,$3)`, id, page, p.ID); err != nil {
+	return saveProductMatchingPage(ctx, tx, id, after, page, p, data)
+}
+
+func saveProductMatchingPage(ctx context.Context, tx pgx.Tx, id, after string, page int, p ProductMatchPreview, data productMatchSnapshot) error {
+	if _, err := tx.Exec(ctx, `INSERT INTO product_matching_job_pages(job_id,page,preview_id) VALUES($1,$2,$3)`, id, page, p.ID); err != nil {
 		return err
 	}
 	counts := map[string]int{}

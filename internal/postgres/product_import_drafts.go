@@ -67,6 +67,15 @@ func (s *Store) SaveProductImportDraft(ctx context.Context, r ProductDraftSave) 
 	if _, err = initializeImportConfig(ctx, tx, c, r.Actor); err != nil {
 		return d, err
 	}
+	d, err = persistProductDraft(ctx, tx, r, state)
+	if err != nil {
+		return d, err
+	}
+	return d, tx.Commit(ctx)
+}
+
+func persistProductDraft(ctx context.Context, tx pgx.Tx, r ProductDraftSave, state map[string]json.RawMessage) (ProductImportDraft, error) {
+	var d ProductImportDraft
 	hash, err := catalogHash(state)
 	if err != nil {
 		return d, err
@@ -82,19 +91,16 @@ func (s *Store) SaveProductImportDraft(ctx context.Context, r ProductDraftSave) 
 	if err != nil {
 		return d, fmt.Errorf("save product draft: %w", err)
 	}
-	return d, tx.Commit(ctx)
+	return d, nil
 }
 
 // Draft contents are untrusted editable data, never an authorization to dispatch.
 // Validate identities for safe restoration; approval still revalidates canonical previews.
 func validProductDraftState(raw json.RawMessage, scope catalog.Scope, provider string) bool {
 	var state struct {
-		Selected map[string]struct {
-			Product    catalog.Product        `json:"product"`
-			Enrollment catalogsync.Enrollment `json:"enrollment"`
-		} `json:"selected"`
-		Plans   []catalogsync.Preview `json:"plans"`
-		Intents []struct {
+		Selected map[string]productDraftSelection `json:"selected"`
+		Plans    []catalogsync.Preview            `json:"plans"`
+		Intents  []struct {
 			PreviewID string                 `json:"preview_id"`
 			IDs       []string               `json:"enrollment_ids"`
 			Key       string                 `json:"idempotency_key"`
@@ -104,11 +110,8 @@ func validProductDraftState(raw json.RawMessage, scope catalog.Scope, provider s
 	if json.Unmarshal(raw, &state) != nil {
 		return false
 	}
-	for key, item := range state.Selected {
-		p, e := item.Product, item.Enrollment
-		if p.Identity.Validate() != nil || string(p.Identity.Account.Provider) != provider || !scope.Contains(p.Identity.Account) || key != p.Identity.EntityType+":"+p.Identity.ID || !p.Identity.SameEntity(e.Source) || !scope.Contains(e.Target.Account) || e.Create == nil || e.Automatic || e.Create.Values == nil {
-			return false
-		}
+	if !validProductDraftSelections(state.Selected, scope, provider) {
+		return false
 	}
 	for _, p := range state.Plans {
 		if p.Scope != scope || p.ID == "" || len(p.Decisions) > 20 {
@@ -120,6 +123,21 @@ func validProductDraftState(raw json.RawMessage, scope catalog.Scope, provider s
 			return false
 		}
 		if i.Operation != nil && (i.Operation.Scope != scope || i.Operation.ID == "") {
+			return false
+		}
+	}
+	return true
+}
+
+type productDraftSelection struct {
+	Product    catalog.Product        `json:"product"`
+	Enrollment catalogsync.Enrollment `json:"enrollment"`
+}
+
+func validProductDraftSelections(selected map[string]productDraftSelection, scope catalog.Scope, provider string) bool {
+	for key, item := range selected {
+		p, e := item.Product, item.Enrollment
+		if p.Identity.Validate() != nil || string(p.Identity.Account.Provider) != provider || !scope.Contains(p.Identity.Account) || key != p.Identity.EntityType+":"+p.Identity.ID || !p.Identity.SameEntity(e.Source) || !scope.Contains(e.Target.Account) || e.Create == nil || e.Automatic || e.Create.Values == nil {
 			return false
 		}
 	}

@@ -68,6 +68,18 @@ function failure(error: unknown) {
       : "Не удалось выполнить сопоставление. Обновите данные и повторите проверку.";
 }
 
+function sharedNameWords(source: string, target: string): string[] {
+  const tokens = (text: string) =>
+    new Set(
+      text
+        .toLocaleLowerCase("ru")
+        .replaceAll("ё", "е")
+        .match(/[\p{L}\p{N}]+/gu) || [],
+    );
+  const sourceWords = tokens(source);
+  return [...tokens(target)].filter((word) => sourceWords.has(word));
+}
+
 export function ProductAutoMatching(props: {
   scope: Scope;
   confirmation?: Confirmation;
@@ -716,7 +728,7 @@ function ProductAutoMatchingAccount({
                           .filter((c) => c.evidence === "similar_name")
                           .map(
                             (c) =>
-                              `${c.name}: ${Math.round(c.score * 100)}% совпадения слов`,
+                              `${c.name}: ${Math.round(c.score * 100)}% совпадения слов; общие слова: ${sharedNameWords(item.name, c.name).join(", ") || "—"}`,
                           )
                           .join("; ")}
                         . Название — только подсказка, проверьте модель и
