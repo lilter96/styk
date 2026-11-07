@@ -25,6 +25,11 @@ jobs:
         working-directory: web
       - run: npm test -- --reporter=json --outputFile=test-results/unit.json
         working-directory: web
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-results
+          path: web/test-results/unit.json
       - run: npm run build
         working-directory: web
       - run: npx playwright install --with-deps chromium
@@ -34,8 +39,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: frontend-results
-          path: web/test-results/unit.json
+          name: frontend-browser-evidence
+          path: web/test-results
 
   contracts:
     if: inputs.contracts

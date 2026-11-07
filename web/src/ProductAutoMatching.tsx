@@ -61,11 +61,17 @@ const reasons: Record<string, string> = {
   mapping_conflict: "Конфликт существующей связи",
 };
 function failure(error: unknown) {
-  return error instanceof ApiError && error.status === 409
-    ? "Данные или настройки изменились. Обновите каталоги обоих сервисов и выполните новую проверку. Требуются полные данные не старше часа."
-    : error instanceof ApiError && error.status === 404
-      ? "Эта проверка недоступна для выбранных аккаунтов."
-      : "Не удалось выполнить сопоставление. Обновите данные и повторите проверку.";
+  if (error instanceof ApiError) {
+    if (error.status === 409)
+      return "Данные или настройки изменились. Обновите каталоги обоих сервисов и выполните новую проверку. Требуются полные данные не старше часа.";
+    if (error.status === 404)
+      return "Эта проверка недоступна для выбранных аккаунтов.";
+    if (error.status === 403)
+      return "Права изменились. Проверьте доступ к выбранной паре аккаунтов.";
+    if ([400, 413, 422].includes(error.status))
+      return "Выбранные данные не приняты. Проверьте выбор товаров и повторите проверку.";
+  }
+  return "Сервис временно недоступен или соединение прервалось. Повторите действие. Сохранённые результаты останутся доступны.";
 }
 
 function sharedNameWords(source: string, target: string): string[] {
@@ -428,6 +434,9 @@ function ProductAutoMatchingAccount({
           >
             Новая проверка
           </button>
+          {job.query.isFetching && (
+            <p role="status">Загружаем страницу результатов…</p>
+          )}
           {job.query.data?.state === "COMPLETED" && (
             <nav aria-label="Страницы сопоставления">
               <button
@@ -435,7 +444,11 @@ function ProductAutoMatchingAccount({
                 disabled={
                   !job.page || job.query.isFetching || busy || uncertain
                 }
-                onClick={() => job.setPage(job.page - 1)}
+                onClick={() => {
+                  setSelected([]);
+                  setAcknowledge(false);
+                  job.setPage(job.page - 1);
+                }}
               >
                 Предыдущие товары
               </button>
@@ -450,7 +463,11 @@ function ProductAutoMatchingAccount({
                   busy ||
                   uncertain
                 }
-                onClick={() => job.setPage(job.page + 1)}
+                onClick={() => {
+                  setSelected([]);
+                  setAcknowledge(false);
+                  job.setPage(job.page + 1);
+                }}
               >
                 Следующие товары
               </button>
@@ -640,7 +657,7 @@ function ProductAutoMatchingAccount({
         <>
           <button
             className="secondary"
-            disabled={busy || uncertain}
+            disabled={busy || job.query.isFetching || uncertain}
             onClick={() => void refreshPage()}
           >
             Перепроверить эту страницу
@@ -683,6 +700,7 @@ function ProductAutoMatchingAccount({
               className="secondary"
               disabled={
                 busy ||
+                job.query.isFetching ||
                 uncertain ||
                 !!run ||
                 expired ||
@@ -727,6 +745,7 @@ function ProductAutoMatchingAccount({
                       checked={selected.includes(item.product_id)}
                       disabled={
                         busy ||
+                        job.query.isFetching ||
                         uncertain ||
                         !!run ||
                         expired ||
@@ -805,7 +824,9 @@ function ProductAutoMatchingAccount({
                 <input
                   type="checkbox"
                   checked={acknowledge}
-                  disabled={!selected.length || busy || expired}
+                  disabled={
+                    !selected.length || busy || job.query.isFetching || expired
+                  }
                   onChange={(e) => setAcknowledge(e.target.checked)}
                 />
                 Разрешаю подтвердить выбранные точные пары ({selected.length})
@@ -815,6 +836,7 @@ function ProductAutoMatchingAccount({
                   !acknowledge ||
                   !selected.length ||
                   busy ||
+                  job.query.isFetching ||
                   (expired && !uncertain)
                 }
                 onClick={() => void execute()}
@@ -829,7 +851,7 @@ function ProductAutoMatchingAccount({
           )}
           <button
             className="secondary"
-            disabled={busy || uncertain}
+            disabled={busy || job.query.isFetching || uncertain}
             onClick={() => {
               setPreview(null);
               setRun(null);

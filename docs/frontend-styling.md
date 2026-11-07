@@ -12,6 +12,11 @@ user's corrections take precedence over aesthetic defaults in upstream skills.
 styles and base components load first; page styles load afterwards. Do not import
 a competing page stylesheet through a component's dependency tree: importing
 `App` evaluates its component imports before the entry point's global CSS.
+With lazy routes the opposite failure also occurs: a transitive base stylesheet
+arrives after the page overrides. Keep `matching-page.css` and `catalog-sync.css`
+explicitly in `main.tsx`, before the Products specializations; do not import them
+again from lazy components. Verify a direct route load and navigation into the
+route, because the CSS arrival order can otherwise differ.
 
 The Products styles have these responsibilities:
 
@@ -21,6 +26,8 @@ The Products styles have these responsibilities:
 | `products-reference.css` | Approved page appearance, rules, automation, import, detail and responsive layout |
 | `products-matching-layout.css` | Matching drawers, source summary, result scrolling, pagination and inline disclosure layout |
 | `products-controls.css` | Shared Products control appearance and native dropdown picker states |
+| `products-conflict.css` | Conflict explanation, comparison and replacement confirmation |
+| `products-workflows.css` | Durable draft bar, background-job status and batch pagination |
 
 Products selectors are scoped below `.reference-shell .products-workspace`.
 Mobile shell elements outside that subtree use

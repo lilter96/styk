@@ -38,9 +38,10 @@ export function useProductMatchingJob(scope: Scope) {
     localStorage.setItem(storageKey + ".page", String(value));
     setPageState(value);
   };
-  const query = useQuery({
+  const query = useQuery<MatchingJob>({
     queryKey: ["matching-job", scope, id, page],
     enabled: !!id,
+    placeholderData: (previous) => (previous?.id === id ? previous : undefined),
     queryFn: ({ signal }) =>
       api<MatchingJob>(
         `/api/product-matching/jobs/${id}?` +
