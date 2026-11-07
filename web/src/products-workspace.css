@@ -632,6 +632,18 @@
   margin-top: 20px;
   overflow: hidden;
 }
+.products-match-list {
+  max-height: 60dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.products-match-selection {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-block: 16px;
+}
 .products-match-list article {
   display: grid;
   grid-template-columns:

@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jackc/pgx/v5/pgconn"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -136,5 +139,27 @@ func TestProductMatchingJobStopsOnPolicyChangeAndDoesNotWriteMappings(t *testing
 	var mappings int
 	if err = db.Pool.QueryRow(ctx, `SELECT count(*) FROM product_mappings`).Scan(&mappings); err != nil || mappings != 0 {
 		t.Fatal("preview wrote mappings", err)
+	}
+}
+
+func TestProductDraftRollbackGuardPreservesSavedWork(t *testing.T) {
+	db, scope := productMatchingFixture(t)
+	ctx := context.Background()
+	req := postgres.ProductDraftSave{Scope: scope, Provider: "ozon", Actor: "matching-test", Key: "rollback-draft", State: json.RawMessage(`{"selected":{}}`)}
+	if _, err := db.SaveProductImportDraft(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	migration, err := os.ReadFile("../../migrations/00077_product_workspaces.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Pool.Exec(ctx, strings.Split(string(migration), "-- +goose Down")[1])
+	var failure *pgconn.PgError
+	if !errors.As(err, &failure) || failure.Code != "P0001" {
+		t.Fatalf("saved draft did not block rollback: %v", err)
+	}
+	loaded, err := db.ProductImportDraft(ctx, scope, "ozon")
+	if err != nil || loaded.Revision != 1 {
+		t.Fatalf("rollback lost draft: %+v %v", loaded, err)
 	}
 }

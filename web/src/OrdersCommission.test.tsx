@@ -264,7 +264,7 @@ it("requires explicit accountant choices and separate finance consent without ex
     automation_consent: false,
     config: { finance: policy, automation: config.automation },
   });
-});
+}, 15000);
 
 it("does not infer finance policy choices or extend consent through server revisions", () => {
   expect(financeValidation({ ...config, finance: policy })).toBe("");

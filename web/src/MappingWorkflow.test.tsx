@@ -12,8 +12,11 @@ import { MemoryRouter } from "react-router-dom";
 import { ProductsWorkspace as Products } from "./ProductsWorkspace";
 import type { Product } from "./api";
 import { ConfirmationNotice, useConfirmation } from "./Confirmation";
+const clients: QueryClient[] = [];
 afterEach(() => {
   cleanup();
+  clients.forEach((client) => client.clear());
+  clients.length = 0;
   vi.restoreAllMocks();
 });
 const scope = { tenant: "tenant", moy: "moy", ozon: "ozon" };
@@ -131,12 +134,12 @@ function setup(
       if (init?.method === "POST") throw new Error("unexpected post");
       return response({ items: products, offset: 0, has_next: false });
     });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  clients.push(client);
   render(
-    <QueryClientProvider
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
-    >
+    <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={["/products"]}>
         {withNotice ? <ProductsWithNotice /> : <Products scope={scope} />}
       </MemoryRouter>
@@ -164,17 +167,16 @@ async function createReview() {
   fireEvent.change(screen.getByLabelText("Поиск товара МойСклад"), {
     target: { value: "different" },
   });
-  fireEvent.click(
-    await screen.findByRole("button", {
-      name: "Synthetic variant, вариант",
-    }),
-  );
+  const target = await screen.findByRole("button", {
+    name: "Synthetic variant, вариант",
+  });
   await waitFor(() =>
-    expect(screen.getAllByText("Synthetic variant").length).toBeGreaterThan(1),
+    expect((target as HTMLButtonElement).disabled).toBe(false),
   );
+  fireEvent.click(target);
   expect(screen.queryByText("Технические данные товаров")).toBeNull();
   fireEvent.click(
-    screen.getByRole("button", { name: "Проверить соответствие" }),
+    await screen.findByRole("button", { name: "Проверить соответствие" }),
   );
   await screen.findByText("Проверка готова к подтверждению");
 }

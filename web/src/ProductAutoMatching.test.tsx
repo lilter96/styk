@@ -194,7 +194,14 @@ it("requires opt-in, exact selection and acknowledgement, and recovers a lost re
       name: "Посмотреть предварительный результат",
     }),
   );
-  fireEvent.click(await screen.findByLabelText("Выбрать пару A"));
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Выбрать точные пары на странице (1)",
+    }),
+  );
+  expect(
+    (screen.getByLabelText("Выбрать пару A") as HTMLInputElement).checked,
+  ).toBe(true);
   expect(
     (screen.getByLabelText("Выбрать пару B") as HTMLInputElement).disabled,
   ).toBe(true);

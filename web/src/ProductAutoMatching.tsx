@@ -678,6 +678,30 @@ function ProductAutoMatchingAccount({
               Срок предпросмотра истёк. Выполните новую проверку.
             </p>
           )}
+          <div className="products-match-selection">
+            <button
+              className="secondary"
+              disabled={
+                busy ||
+                uncertain ||
+                !!run ||
+                expired ||
+                !preview.policy.auto_confirm ||
+                !items.some((item) => item.status === "exact")
+              }
+              onClick={() => {
+                setSelected(
+                  items
+                    .filter((item) => item.status === "exact")
+                    .map((item) => item.product_id),
+                );
+                setAcknowledge(false);
+              }}
+            >
+              Выбрать точные пары на странице ({counts("exact")})
+            </button>
+            <span>Выбрано пар: {selected.length}</span>
+          </div>
           <div className="products-match-table-heading">
             <span />
             <b>Товар Ozon</b>

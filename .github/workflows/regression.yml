@@ -36,3 +36,12 @@ jobs:
       - run: docker pull postgres:17.6
       - run: go run ./cmd/checks run --lane full
         timeout-minutes: 5
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: full-regression-evidence
+          path: |
+            .local/checks/full-*/coverage.json
+            .local/checks/full-*/worker-*.jsonl
+            web/test-results
+          include-hidden-files: true
