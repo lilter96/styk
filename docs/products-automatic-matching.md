@@ -15,7 +15,9 @@ automation is a separate disclosure with its own explicit Save action.
   Returns complete global counts and at most three examples/exception samples.
   A repeated key returns the same complete job; changing its criterion is 409.
 - `GET /api/product-matching/jobs/{id}`: the initiating actor's durable result.
-  The response has no result pages or per-page approval.
+  The response has no result pages or per-page approval. The obsolete `/preview`
+  and `/runs` endpoints and per-item application loop are removed; no redirects
+  or compatibility adapters remain. Historical immutable audit rows are retained.
 - `POST /api/product-matching/jobs/{id}/apply`: scope, `expected_count`,
   `acknowledge: true`, and an idempotency key. The exact count belongs to the
   frozen whole-catalogue job, not a submitted product-ID list. A completed response

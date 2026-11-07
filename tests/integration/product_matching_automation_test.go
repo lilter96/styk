@@ -75,7 +75,7 @@ func TestProductMatchingMissingCompletedBatchCannotAuthorize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.PreviewProductMatches(ctx, scope, 0, "matching-test"); !errors.Is(err, catalogsync.ErrStale) {
+	if _, err = db.CreateProductMatchingJob(ctx, scope, "matching-test", "incomplete-search", matching.ArticleOrCode); !errors.Is(err, catalogsync.ErrStale) {
 		t.Fatalf("incomplete import accepted: %v", err)
 	}
 }

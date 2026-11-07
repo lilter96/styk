@@ -44,75 +44,61 @@ func productMatchingFixture(t *testing.T) (*postgres.Store, catalog.Scope) {
 	return db, scope
 }
 
-func TestProductMatchingPreviewIsReadOnlyAndOptIn(t *testing.T) {
+func TestProductMatchingSearchIsReadOnlyAndOneOff(t *testing.T) {
 	db, scope := productMatchingFixture(t)
 	ctx := context.Background()
-	p, err := db.PreviewProductMatches(ctx, scope, 0, "matching-test")
-	if err != nil || len(p.Items) != 3 {
-		t.Fatalf("preview: %+v %v", p, err)
-	}
-	if p.Items[0].Status != "exact" || p.Items[1].Status != "conflict" || p.Items[2].Status != "review" {
-		t.Fatalf("classification: %+v", p.Items)
+	job, err := db.CreateProductMatchingJob(ctx, scope, "matching-test", "read-only", matching.ArticleOrCode)
+	if err != nil || job.Summary["exact"] != 1 || job.Summary["conflict"] != 1 || job.Summary["unmatched"] != 1 {
+		t.Fatalf("search: %+v %v", job, err)
 	}
 	var count int
 	if err = db.Pool.QueryRow(ctx, `SELECT count(*) FROM product_mappings`).Scan(&count); err != nil || count != 0 {
-		t.Fatalf("preview wrote: %d %v", count, err)
-	}
-	req := postgres.ProductMatchExecute{Scope: scope, PreviewID: p.ID, Actor: "matching-test", IdempotencyKey: "only-opt-in", Products: []string{"101"}, Acknowledge: true}
-	if _, err = db.ExecuteProductMatches(ctx, req); !errors.Is(err, catalogsync.ErrBlocked) {
-		t.Fatalf("default allowed write: %v", err)
+		t.Fatalf("search wrote mappings: %d %v", count, err)
 	}
 	foreign := scope
 	foreign.OzonAccount = "foreign"
-	if _, err = db.PreviewProductMatches(ctx, foreign, 0, "matching-test"); !errors.Is(err, catalogsync.ErrNotFound) {
-		t.Fatalf("foreign scope: %v", err)
+	if _, err = db.CreateProductMatchingJob(ctx, foreign, "matching-test", "foreign", matching.ArticleOrCode); !errors.Is(err, catalogsync.ErrNotFound) {
+		t.Fatalf("foreign search: %v", err)
+	}
+	app, err := db.ApplyProductMatchingJob(ctx, postgres.ProductMatchingApproval{Scope: scope, JobID: job.ID, Actor: "matching-test", Key: "one-off", Expected: 1, Acknowledge: true})
+	if err != nil || app.State != "COMPLETED" || app.Confirmed != 1 {
+		t.Fatalf("one-off required a permanent rule: %+v %v", app, err)
+	}
+	policy, err := db.ProductMatchPolicy(ctx, scope)
+	if err != nil || policy.AutoConfirm || policy.AfterImport || policy.Revision != 0 {
+		t.Fatalf("one-off changed policy: %+v %v", policy, err)
 	}
 }
 
-func TestProductMatchingConcurrentReplayAndPartialResults(t *testing.T) {
+func TestProductMatchingConcurrentReplayPreservesExceptions(t *testing.T) {
 	db, scope := productMatchingFixture(t)
 	ctx := context.Background()
-	policy, err := db.SaveProductMatchPolicy(ctx, scope, matching.Policy{ExactSKU: true, Names: true, AutoConfirm: true}, "matching-test")
+	job, err := db.CreateProductMatchingJob(ctx, scope, "matching-test", "concurrent-search", matching.ArticleOrCode)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := db.PreviewProductMatches(ctx, scope, policy.Revision, "matching-test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	req := postgres.ProductMatchExecute{Scope: scope, PreviewID: p.ID, Actor: "matching-test", IdempotencyKey: "concurrent-run", Products: []string{"101", "102", "103"}, Acknowledge: true}
+	req := postgres.ProductMatchingApproval{Scope: scope, JobID: job.ID, Actor: "matching-test", Key: "concurrent-approval", Expected: 1, Acknowledge: true}
 	var wg sync.WaitGroup
-	results := make([]postgres.ProductMatchRun, 2)
+	results := make([]postgres.ProductMatchingApplication, 2)
 	errs := make([]error, 2)
 	for i := range 2 {
 		wg.Add(1)
-		go func() { defer wg.Done(); results[i], errs[i] = db.ExecuteProductMatches(ctx, req) }()
+		go func() { defer wg.Done(); results[i], errs[i] = db.ApplyProductMatchingJob(ctx, req) }()
 	}
 	wg.Wait()
-	if errs[0] != nil || errs[1] != nil || results[0].ID != results[1].ID || results[0].Confirmed != 1 {
+	if errs[0] != nil || errs[1] != nil || results[0].Confirmed != 1 || results[1].Confirmed != 1 {
 		t.Fatalf("replay: %+v %v", results, errs)
 	}
-	if results[0].Items[1].Status != "conflict" || results[0].Items[2].Status != "review" {
-		t.Fatal("unsafe items confirmed")
-	}
-	var maps, audits, runs int
-	if err = db.Pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM product_mappings),(SELECT count(*) FROM product_mapping_confirmation_audits),(SELECT count(*) FROM product_matching_runs)`).Scan(&maps, &audits, &runs); err != nil || maps != 1 || audits != 1 || runs != 1 {
-		t.Fatalf("atomic audit %d/%d/%d %v", maps, audits, runs, err)
-	}
-	req.Products = []string{"103"}
-	if _, err = db.ExecuteProductMatches(ctx, req); !errors.Is(err, catalogsync.ErrConflict) {
-		t.Fatalf("key reuse accepted: %v", err)
+	var maps, audits, outcomes int
+	if err = db.Pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM product_mappings),(SELECT count(*) FROM product_mapping_confirmation_audits),(SELECT count(*) FROM product_matching_job_results)`).Scan(&maps, &audits, &outcomes); err != nil || maps != 1 || audits != 1 || outcomes != 1 {
+		t.Fatalf("atomic exact-only outcome: %d/%d/%d %v", maps, audits, outcomes, err)
 	}
 }
 
-func TestProductMatchingManualConfirmationInvalidatesPlan(t *testing.T) {
+func TestProductMatchingManualConfirmationIsPreservedAtApply(t *testing.T) {
 	db, scope := productMatchingFixture(t)
 	ctx := context.Background()
-	policy, err := db.SaveProductMatchPolicy(ctx, scope, matching.Policy{ExactSKU: true, AutoConfirm: true}, "matching-test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	p, err := db.PreviewProductMatches(ctx, scope, policy.Revision, "matching-test")
+	job, err := db.CreateProductMatchingJob(ctx, scope, "matching-test", "before-manual", matching.ArticleOrCode)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,8 +109,12 @@ func TestProductMatchingManualConfirmationInvalidatesPlan(t *testing.T) {
 	if _, err = db.ConfirmMappingReview(ctx, domain.MappingConfirmationRequest{ReviewID: review.Review.ID, SessionID: "matching-test", IdempotencyKey: "manual", Acknowledged: true}); err != nil {
 		t.Fatal(err)
 	}
-	req := postgres.ProductMatchExecute{Scope: scope, PreviewID: p.ID, Actor: "matching-test", IdempotencyKey: "stale-run", Products: []string{"101"}, Acknowledge: true}
-	if _, err = db.ExecuteProductMatches(ctx, req); !errors.Is(err, catalogsync.ErrStale) {
-		t.Fatalf("manual change not rechecked: %v", err)
+	app, err := db.ApplyProductMatchingJob(ctx, postgres.ProductMatchingApproval{Scope: scope, JobID: job.ID, Actor: "matching-test", Key: "after-manual", Expected: 1, Acknowledge: true})
+	if err != nil || app.Confirmed != 0 || app.Skipped != 1 || app.State != "COMPLETED" {
+		t.Fatalf("manual confirmation was replaced: %+v %v", app, err)
+	}
+	var count int
+	if err = db.Pool.QueryRow(ctx, `SELECT count(*) FROM product_mapping_confirmation_audits`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("duplicate audit: %d %v", count, err)
 	}
 }

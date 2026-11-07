@@ -25,17 +25,13 @@ func TestProductWorkspaceIncludesBothSourcesAndMissingConfirmedObservation(t *te
 	if initial.Total != 6 || len(initial.Items) != 6 {
 		t.Fatalf("unified catalog omitted or duplicated source identities: %+v", initial)
 	}
-	policy, err := db.SaveProductMatchPolicy(context.Background(), scope, matching.Policy{ExactSKU: true, AutoConfirm: true}, "matching-test")
+	job, err := db.CreateProductMatchingJob(context.Background(), scope, "matching-test", "read-model-search", matching.ArticleOrCode)
 	if err != nil {
 		t.Fatal(err)
 	}
-	preview, err := db.PreviewProductMatches(context.Background(), scope, policy.Revision, "matching-test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = db.ExecuteProductMatches(context.Background(), postgres.ProductMatchExecute{Scope: scope, PreviewID: preview.ID, Actor: "matching-test", IdempotencyKey: "read-model-link", Products: []string{"101"}, Acknowledge: true})
-	if err != nil {
-		t.Fatal(err)
+	app, err := db.ApplyProductMatchingJob(context.Background(), postgres.ProductMatchingApproval{Scope: scope, JobID: job.ID, Actor: "matching-test", Key: "read-model-link", Expected: 1, Acknowledge: true})
+	if err != nil || app.State != "COMPLETED" || app.Confirmed != 1 {
+		t.Fatalf("read-model fixture: %+v %v", app, err)
 	}
 	now := time.Now().UTC()
 	active := false

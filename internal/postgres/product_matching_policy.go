@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/lilter96/styk/internal/catalog"
@@ -37,29 +36,6 @@ func saveProductMatchPolicy(ctx context.Context, tx pgx.Tx, scope catalog.Scope,
 		return fmt.Errorf("audit matching policy: %w", err)
 	}
 	return nil
-}
-
-func persistProductMatchPreview(ctx context.Context, tx pgx.Tx, scope catalog.Scope, policy matching.Policy, data productMatchSnapshot, actor string) (ProductMatchPreview, error) {
-	p := ProductMatchPreview{Scope: scope, Policy: policy, After: data.After, HasNext: data.HasNext, Total: data.Total, ExpiresAt: time.Now().UTC().Add(time.Hour)}
-	var err error
-	p.Fingerprint, err = catalogHash(data)
-	if err != nil {
-		return p, err
-	}
-	p.ID, err = catalogID()
-	if err != nil {
-		return p, err
-	}
-	p.Items = matching.Preview(scope.Tenant, scope.MoyskladAccount, policy, data.Sources, data.Targets, data.Mappings)
-	raw, err := catalogJSON(p)
-	if err != nil {
-		return p, err
-	}
-	_, err = tx.Exec(ctx, `INSERT INTO product_matching_previews(id,tenant_id,moysklad_account,ozon_account,actor,preview) VALUES($1,$2,$3,$4,$5,$6)`, p.ID, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, actor, raw)
-	if err != nil {
-		return p, fmt.Errorf("save matching preview: %w", err)
-	}
-	return p, nil
 }
 
 func productMatchOwnerCurrent(ctx context.Context, tx pgx.Tx, scope catalog.Scope, owner string) error {
