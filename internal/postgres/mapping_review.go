@@ -37,12 +37,17 @@ type reviewSnapshot struct {
 }
 
 func lockReview(ctx context.Context, tx pgx.Tx, scope MatchScope) error {
+	batch := &pgx.Batch{}
 	for _, key := range []string{"ozon:" + scope.OzonAccount, "moysklad:" + scope.MoyskladAccount, "matching:" + scope.Tenant} {
-		if _, e := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, key); e != nil {
-			return e
+		batch.Queue(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, key)
+	}
+	results := tx.SendBatch(ctx, batch)
+	for i := 0; i < batch.Len(); i++ {
+		if _, err := results.Exec(); err != nil {
+			return errors.Join(err, results.Close())
 		}
 	}
-	return nil
+	return results.Close()
 }
 func snapshotReview(ctx context.Context, tx pgx.Tx, in domain.MappingReviewRequest) (reviewSnapshot, error) {
 	var s reviewSnapshot

@@ -73,49 +73,17 @@ func TestProductMatchingJobTraversesLargeCatalogueAndKeepsGlobalDuplicates(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 30; i++ {
-		if _, err = db.RunProductMatchingJob(ctx); err != nil {
-			t.Fatal(err)
-		}
-		job, err = db.ProductMatchingJob(ctx, scope, job.ID, "matching-test", 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if i == 0 {
-			if job.Processed != 100 || job.Pages != 1 {
-				t.Fatalf("missing committed progress: %+v", job)
-			}
-			if _, err = db.Pool.Exec(ctx, `UPDATE product_matching_jobs SET state='FAILED',code='MATCHING_SERVICE_UNAVAILABLE' WHERE id=$1`, job.ID); err != nil {
-				t.Fatal(err)
-			}
-			if err = db.RetryProductMatchingJob(ctx, scope, job.ID, "foreign-actor"); !errors.Is(err, catalogsync.ErrNotFound) {
-				t.Fatalf("foreign retry: %v", err)
-			}
-			if err = db.RetryProductMatchingJob(ctx, scope, job.ID, "matching-test"); err != nil {
-				t.Fatal(err)
-			}
-			if err = db.RetryProductMatchingJob(ctx, scope, job.ID, "matching-test"); err != nil {
-				t.Fatal("retry replay", err)
-			}
-		}
-		if job.State == "COMPLETED" {
-			break
-		}
-		if job.State == "FAILED" || job.State == "STALE" {
-			t.Fatalf("job stopped: %+v", job)
-		}
-	}
-	if job.Processed != 2106 || job.Pages != 22 || job.State != "COMPLETED" || job.Preview == nil {
-		t.Fatalf("incomplete job: %+v", job)
+	if job.Processed != 2106 || job.State != "COMPLETED" || len(job.Examples) != 3 {
+		t.Fatalf("incomplete catalogue search: %+v", job)
 	}
 	if job.Summary["exact"] != 2103 || job.Summary["conflict"] != 3 {
 		t.Fatalf("global summary: %+v", job.Summary)
 	}
-	if job.Preview.Items[1].Reason != "duplicate_sku" || job.Preview.Items[2].Reason != "duplicate_offer" {
-		t.Fatalf("cross-page duplicates: %+v", job.Preview.Items[:3])
+	if len(job.Attention) != 3 || job.Attention[0].Reason != "duplicate_sku" || job.Attention[1].Reason != "duplicate_offer" {
+		t.Fatalf("global duplicates: %+v", job.Attention)
 	}
 	again, err := db.CreateProductMatchingJob(ctx, scope, "matching-test", "large-job", matching.ArticleOrCode)
-	if err != nil || again.ID != job.ID {
+	if err != nil || again.ID != job.ID || len(again.Examples) != 3 || again.Apply.State != "NOT_STARTED" {
 		t.Fatal("job replay duplicated work", err)
 	}
 }
@@ -130,12 +98,9 @@ func TestProductMatchingJobPinsImportsAndDoesNotWriteMappings(t *testing.T) {
 	if _, err = db.Pool.Exec(ctx, `UPDATE product_matching_jobs SET moy_import=ozon_import WHERE id=$1`, job.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.RunProductMatchingJob(ctx); err != nil {
-		t.Fatal(err)
-	}
-	state, err := db.ProductMatchingJob(ctx, scope, job.ID, "matching-test", 0)
-	if err != nil || state.State != "STALE" {
-		t.Fatalf("source pin change ignored: %+v %v", state, err)
+	app, err := db.ApplyProductMatchingJob(ctx, postgres.ProductMatchingApproval{Scope: scope, JobID: job.ID, Actor: "matching-test", Key: "stale-apply", Expected: job.Summary["exact"], Acknowledge: true})
+	if err != nil || app.State != "STALE" {
+		t.Fatalf("source pin change ignored: %+v %v", app, err)
 	}
 	var mappings int
 	if err = db.Pool.QueryRow(ctx, `SELECT count(*) FROM product_mappings`).Scan(&mappings); err != nil || mappings != 0 {

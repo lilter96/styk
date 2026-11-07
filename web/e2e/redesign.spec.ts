@@ -207,7 +207,6 @@ async function fixtures(page: Page, signedIn = true) {
           state: "COMPLETED",
           processed: 0,
           total: 0,
-          pages: 1,
           code: "",
           summary: {},
           examples: [],
@@ -1143,7 +1142,7 @@ for (const width of [1440, 768, 390])
           skipped: 0,
           code: "",
         };
-        return route.fulfill({ status: 202, json: { job_id: "visual-job" } });
+        return route.fulfill({ status: 200, json: application });
       }
       return route.fulfill({
         json: {
@@ -1152,7 +1151,6 @@ for (const width of [1440, 768, 390])
           state: "COMPLETED",
           processed: 2106,
           total: 2106,
-          pages: 22,
           code: "",
           summary: { exact: 2104, review: 1, conflict: 1 },
           examples: [items[0]],

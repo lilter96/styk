@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/lilter96/styk/internal/matching"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/lilter96/styk/internal/catalog"
@@ -11,7 +12,7 @@ import (
 )
 
 // Only a new pair of complete imported snapshots can trigger the standing rule.
-// One worker turn confirms at most 100 pairs; the next turn handles the remainder.
+// Every criterion uses the same catalogue-wide atomic operation.
 func (s *Store) RunProductMatchAutomation(ctx context.Context) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
@@ -38,7 +39,7 @@ const productMatchDueSQL = `SELECT p.tenant_id,p.moysklad_account,p.ozon_account
  JOIN LATERAL(SELECT i.id,i.finished_at FROM source_imports i WHERE i.source='moysklad' AND i.account_id=p.moysklad_account ORDER BY i.id DESC LIMIT 1) m ON true
  JOIN LATERAL(SELECT i.id,i.finished_at,b.traversal_status FROM source_imports i LEFT JOIN ozon_import_batches b ON b.import_id=i.id WHERE i.source='ozon' AND i.account_id=p.ozon_account ORDER BY i.id DESC LIMIT 1) o ON true
  WHERE p.policy->>'after_import'='true' AND p.policy->>'auto_confirm'='true'
- AND (p.last_checked_at<clock_timestamp()-interval '30 seconds' OR p.batch_cursor<>'')
+ AND p.last_checked_at<clock_timestamp()-interval '30 seconds'
  AND m.finished_at BETWEEN clock_timestamp()-interval '1 hour' AND clock_timestamp()
  AND o.finished_at BETWEEN clock_timestamp()-interval '1 hour' AND clock_timestamp() AND o.traversal_status='completed'
  AND (p.activated_moy_import<>m.id OR p.activated_ozon_import<>o.id)
@@ -48,7 +49,7 @@ const productMatchDueSQL = `SELECT p.tenant_id,p.moysklad_account,p.ozon_account
 func (s *Store) runProductMatchCycle(ctx context.Context, scope catalog.Scope) error {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("begin matching cycle: %w", err)
+		return err
 	}
 	defer rollbackMerchantMutation(tx)
 	if err = lockReview(ctx, tx, MatchScope{Tenant: scope.Tenant, MoyskladAccount: scope.MoyskladAccount, OzonAccount: scope.OzonAccount}); err != nil {
@@ -64,39 +65,38 @@ func (s *Store) runProductMatchCycle(ctx context.Context, scope catalog.Scope) e
 	if err = authorizeProductMatchCycle(ctx, tx, scope); err != nil {
 		return err
 	}
-	data, err := productMatchDataPage(ctx, tx, scope, "", p.Criterion)
+	imports, err := productMatchingImports(ctx, tx, scope)
 	if err != nil {
 		return err
 	}
-	var after string
-	if err = tx.QueryRow(ctx, `SELECT CASE WHEN batch_moy_import=$4 AND batch_ozon_import=$5 THEN batch_cursor ELSE '' END FROM product_matching_policies WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3`, append(catalogScopeArgs(scope), data.MoyID, data.OzonID)...).Scan(&after); err != nil {
+	if err = productMatchCycleCurrent(ctx, tx, scope, p.Revision, imports); err != nil {
 		return err
 	}
-	if after != "" {
-		data, err = productMatchDataPage(ctx, tx, scope, after, p.Criterion)
-		if err != nil {
-			return err
-		}
-	}
-	if err = productMatchCycleCurrent(ctx, tx, scope, p.Revision, data); err != nil {
+	if err = executeNativeMatchingCycle(ctx, tx, scope, p, imports); err != nil {
 		return err
 	}
-	actorHash, err := catalogHash(scope)
+	return tx.Commit(ctx)
+}
+func executeNativeMatchingCycle(ctx context.Context, tx pgx.Tx, scope catalog.Scope, p matching.Policy, imports productMatchSnapshot) error {
+	key, err := catalogHash([]any{scope, p.Revision, imports.MoyID, imports.OzonID})
 	if err != nil {
 		return err
 	}
-	actor := fmt.Sprintf("matching-rule:%s:%d", actorHash[:32], p.Revision)
-	preview, err := persistProductMatchPreview(ctx, tx, scope, p, data, actor)
+	actor := "matching-rule:" + key[:32]
+	job, err := createProductMatchingJob(ctx, tx, scope, actor, key, p.Criterion.Resolved())
 	if err != nil {
 		return err
 	}
-	if err = executeProductMatchCycle(ctx, tx, preview, data, actor); err != nil {
+	_, err = tx.Exec(ctx, `UPDATE product_matching_jobs SET apply_state='QUEUED',apply_key=$2,apply_total=COALESCE((summary->>'exact')::int,0) WHERE id=$1`, job.ID, key)
+	if err != nil {
 		return err
 	}
-	if err = tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit matching cycle: %w", err)
+	work := productMatchingWork{ID: job.ID, Actor: actor, Scope: scope, Criterion: p.Criterion.Resolved(), MoyImport: imports.MoyID, OzonImport: imports.OzonID}
+	if _, err = applyProductMatchingSet(ctx, tx, work); err != nil {
+		return err
 	}
-	return nil
+	_, err = tx.Exec(ctx, `INSERT INTO product_matching_cycles(tenant_id,moysklad_account,ozon_account,revision,moy_import,ozon_import,job_id) VALUES($1,$2,$3,$4,$5,$6,$7)`, scope.Tenant, scope.MoyskladAccount, scope.OzonAccount, p.Revision, imports.MoyID, imports.OzonID, job.ID)
+	return err
 }
 
 func productMatchCycleCurrent(ctx context.Context, tx pgx.Tx, scope catalog.Scope, revision int64, data productMatchSnapshot) error {
@@ -108,38 +108,6 @@ func productMatchCycleCurrent(ctx context.Context, tx pgx.Tx, scope catalog.Scop
 	}
 	if completed {
 		return catalogsync.ErrStale
-	}
-	return nil
-}
-
-func executeProductMatchCycle(ctx context.Context, tx pgx.Tx, p ProductMatchPreview, data productMatchSnapshot, actor string) error {
-	ids := make([]string, 0, 100)
-	for _, item := range p.Items {
-		if item.Status == "exact" {
-			if len(ids) < 100 {
-				ids = append(ids, item.ProductID)
-			}
-		}
-	}
-	key, err := catalogHash([]any{p.Scope, p.Policy.Revision, data.MoyID, data.OzonID, ids})
-	if err != nil {
-		return err
-	}
-	req := ProductMatchExecute{Scope: p.Scope, PreviewID: p.ID, Actor: actor, IdempotencyKey: key, Products: ids, Acknowledge: true}
-	result, err := confirmProductMatchItems(ctx, tx, req, p)
-	if err != nil {
-		return err
-	}
-	if err = saveProductMatchRun(ctx, tx, req, result, key); err != nil {
-		return err
-	}
-	if data.HasNext {
-		_, err = tx.Exec(ctx, `UPDATE product_matching_policies SET batch_cursor=$4,batch_moy_import=$5,batch_ozon_import=$6 WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3`, p.Scope.Tenant, p.Scope.MoyskladAccount, p.Scope.OzonAccount, data.Sources[len(data.Sources)-1].Match.Identity.ID, data.MoyID, data.OzonID)
-		return err
-	}
-	_, err = tx.Exec(ctx, `INSERT INTO product_matching_cycles(tenant_id,moysklad_account,ozon_account,revision,moy_import,ozon_import,run_id) VALUES($1,$2,$3,$4,$5,$6,$7)`, p.Scope.Tenant, p.Scope.MoyskladAccount, p.Scope.OzonAccount, p.Policy.Revision, data.MoyID, data.OzonID, result.ID)
-	if err != nil {
-		return fmt.Errorf("finish matching cycle: %w", err)
 	}
 	return nil
 }

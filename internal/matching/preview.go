@@ -17,12 +17,14 @@ type Policy struct {
 	AutoConfirm bool      `json:"auto_confirm"`
 }
 type Source struct {
+	SKU            *string            `json:"sku,omitempty"`
 	DuplicateOffer bool               `json:"duplicate_offer,omitempty"`
 	Match          domain.MatchSource `json:"match"`
 	Name           string             `json:"name"`
 	Archived       *bool              `json:"archived"`
 }
 type Target struct {
+	Updated  string             `json:"updated,omitempty"`
 	Match    domain.MatchTarget `json:"match"`
 	Archived *bool              `json:"archived"`
 }

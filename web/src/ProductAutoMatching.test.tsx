@@ -47,7 +47,6 @@ function mount(lost = false, noMatches = false) {
     state: "COMPLETED",
     processed: 2105,
     total: 2105,
-    pages: 22,
     code: "",
     summary: { exact: noMatches ? 0 : 2104, conflict: 1 },
     examples: noMatches ? [] : [exact],
@@ -91,7 +90,7 @@ function mount(lost = false, noMatches = false) {
           code: "",
         },
       };
-      return response({ job_id: j.id });
+      return response(j.apply);
     }
     if (path.endsWith("/retry")) return new Response(null, { status: 204 });
     if (path.endsWith("/jobs") && body) {

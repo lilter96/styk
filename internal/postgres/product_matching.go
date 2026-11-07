@@ -120,7 +120,7 @@ func (s *Store) PreviewProductMatchesPage(ctx context.Context, scope catalog.Sco
 	if p.Policy.Revision != revision {
 		return p, catalogsync.ErrStale
 	}
-	data, err := productMatchDataPage(ctx, tx, scope, after, p.Policy.Criterion)
+	data, err := productMatchDataPage(ctx, tx, scope, after, p.Policy.Criterion, p.Policy.Names)
 	if err != nil {
 		return p, err
 	}
@@ -205,7 +205,7 @@ func currentProductMatchPreview(ctx context.Context, tx pgx.Tx, req ProductMatch
 	if p.Policy != policy || !p.ExpiresAt.After(time.Now()) {
 		return p, catalogsync.ErrStale
 	}
-	data, err := productMatchDataPage(ctx, tx, req.Scope, p.After, p.Policy.Criterion)
+	data, err := productMatchDataPage(ctx, tx, req.Scope, p.After, p.Policy.Criterion, p.Policy.Names)
 	if err != nil {
 		return p, err
 	}

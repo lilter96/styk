@@ -85,8 +85,8 @@ func catalogActor(ctx context.Context, tx pgx.Tx, tenant, actor string) error {
 	if session, ok := identity.SessionFromContext(ctx); ok && session.AuditID != actor {
 		return catalogsync.ErrBlocked
 	}
-	if err := requireContextActor(ctx, tx, tenant, true); err != nil {
-		return err
+	if _, ok := identity.SessionFromContext(ctx); ok {
+		return requireContextActor(ctx, tx, tenant, true)
 	}
 	if strings.HasPrefix(actor, "user.") {
 		return requireMerchantActor(ctx, tx, tenant, "MERCHANT_SESSION:"+actor, true)

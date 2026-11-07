@@ -24,11 +24,11 @@ type productMatchSnapshot struct {
 }
 
 func productMatchData(ctx context.Context, tx pgx.Tx, scope catalog.Scope) (productMatchSnapshot, error) {
-	return productMatchDataPage(ctx, tx, scope, "", matching.ArticleOrCode)
+	return productMatchDataPage(ctx, tx, scope, "", matching.ArticleOrCode, true)
 }
 
-func productMatchDataPage(ctx context.Context, tx pgx.Tx, scope catalog.Scope, after string, criterion matching.Criterion) (productMatchSnapshot, error) {
-	data := productMatchSnapshot{After: after, Criterion: criterion.Resolved()}
+func productMatchingImports(ctx context.Context, tx pgx.Tx, scope catalog.Scope) (productMatchSnapshot, error) {
+	data := productMatchSnapshot{}
 	var fresh bool
 	err := tx.QueryRow(ctx, `WITH imports AS (
  SELECT DISTINCT ON(i.source) i.source,i.id,i.fingerprint,i.finished_at,b.traversal_status
@@ -36,25 +36,35 @@ func productMatchDataPage(ctx context.Context, tx pgx.Tx, scope catalog.Scope, a
  LEFT JOIN ozon_import_batches b ON b.import_id=i.id
  WHERE ((i.source='moysklad' AND i.account_id=$2) OR (i.source='ozon' AND i.account_id=$3)) AND (c.include_import_history OR i.started_at>=c.registered_at)
  ORDER BY i.source,i.id DESC)
- SELECT COALESCE(max(id) FILTER(WHERE source='moysklad'),0),COALESCE(max(id) FILTER(WHERE source='ozon'),0),COALESCE(max(fingerprint) FILTER(WHERE source='moysklad'),''),COALESCE(max(fingerprint) FILTER(WHERE source='ozon'),''),count(*)=2 AND COALESCE(bool_and(COALESCE(finished_at BETWEEN clock_timestamp()-interval '1 hour' AND clock_timestamp() AND (source='moysklad' OR traversal_status='completed'),false)),false) FROM imports`, catalogScopeArgs(scope)...).Scan(&data.MoyID, &data.OzonID, &data.MoyFingerprint, &data.OzonFingerprint, &fresh)
+ SELECT COALESCE(max(id) FILTER(WHERE source='moysklad'),0),COALESCE(max(id) FILTER(WHERE source='ozon'),0),COALESCE(max(fingerprint) FILTER(WHERE source='moysklad'),''),COALESCE(max(fingerprint) FILTER(WHERE source='ozon'),''),count(*)=2 AND COALESCE(bool_and(COALESCE(finished_at BETWEEN clock_timestamp()-interval '1 hour' AND clock_timestamp() AND (source='moysklad' OR traversal_status='completed'),false)),false),(SELECT count(*) FROM ozon_product_observations WHERE import_id=(SELECT id FROM imports WHERE source='ozon')) FROM imports`, catalogScopeArgs(scope)...).Scan(&data.MoyID, &data.OzonID, &data.MoyFingerprint, &data.OzonFingerprint, &fresh, &data.Total)
 	if err != nil {
 		return data, fmt.Errorf("read matching imports: %w", err)
 	}
 	if !fresh {
 		return data, catalogsync.ErrStale
 	}
-	if err = tx.QueryRow(ctx, `SELECT count(*) FROM ozon_product_observations WHERE import_id=$1`, data.OzonID).Scan(&data.Total); err != nil {
+	return data, nil
+}
+
+func productMatchDataPage(ctx context.Context, tx pgx.Tx, scope catalog.Scope, after string, criterion matching.Criterion, names bool) (productMatchSnapshot, error) {
+	data, err := productMatchingImports(ctx, tx, scope)
+	if err != nil {
 		return data, err
 	}
-	data.Sources, err = productMatchSources(ctx, tx, scope, data.OzonID, after)
-	if len(data.Sources) > 100 {
+	return productMatchingWindow(ctx, tx, scope, data, after, criterion, names, 100)
+}
+func productMatchingWindow(ctx context.Context, tx pgx.Tx, scope catalog.Scope, data productMatchSnapshot, after string, criterion matching.Criterion, names bool, limit int) (productMatchSnapshot, error) {
+	data.After, data.Criterion = after, criterion.Resolved()
+	var err error
+	data.Sources, err = productMatchSources(ctx, tx, scope, data.OzonID, after, limit)
+	if len(data.Sources) > limit {
 		data.HasNext = true
-		data.Sources = data.Sources[:100]
+		data.Sources = data.Sources[:limit]
 	}
 	if err != nil {
 		return data, err
 	}
-	data.Targets, err = productMatchTargets(ctx, tx, scope, data.MoyID, data.Sources, criterion)
+	data.Targets, err = productMatchTargets(ctx, tx, scope, data.MoyID, data.Sources, criterion, names)
 	if err != nil {
 		return data, err
 	}
@@ -62,29 +72,29 @@ func productMatchDataPage(ctx context.Context, tx pgx.Tx, scope catalog.Scope, a
 	return data, err
 }
 
-func productMatchSources(ctx context.Context, tx pgx.Tx, scope catalog.Scope, importID int64, after string) ([]matching.Source, error) {
-	rows, err := tx.Query(ctx, `SELECT p.product_id,p.offer_id,COALESCE(p.name,''),p.archived,EXISTS(SELECT 1 FROM ozon_product_observations d WHERE d.import_id=p.import_id AND product_matching_key(d.offer_id)=product_matching_key(p.offer_id) AND d.product_id<>p.product_id) FROM ozon_product_observations p WHERE p.import_id=$1 AND p.product_id>$2 ORDER BY p.product_id LIMIT 101`, importID, after)
+func productMatchSources(ctx context.Context, tx pgx.Tx, scope catalog.Scope, importID int64, after string, limit int) ([]matching.Source, error) {
+	rows, err := tx.Query(ctx, `SELECT p.product_id,p.offer_id,COALESCE(p.name,''),p.archived,p.sku,EXISTS(SELECT 1 FROM ozon_product_observations d WHERE d.import_id=p.import_id AND product_matching_key(d.offer_id)=product_matching_key(p.offer_id) AND d.product_id<>p.product_id) FROM ozon_product_observations p WHERE p.import_id=$1 AND p.product_id>$2 ORDER BY p.product_id LIMIT $3`, importID, after, limit+1)
 	if err != nil {
 		return nil, fmt.Errorf("read matching source products: %w", err)
 	}
 	defer rows.Close()
-	result := make([]matching.Source, 0, 100)
+	result := make([]matching.Source, 0, limit)
 	for rows.Next() {
 		s := matching.Source{Match: domain.MatchSource{Identity: domain.ProductIdentity{System: "ozon", Account: scope.OzonAccount, Kind: "product"}}}
-		if err = rows.Scan(&s.Match.Identity.ID, &s.Match.OfferID, &s.Name, &s.Archived, &s.DuplicateOffer); err != nil {
+		if err = rows.Scan(&s.Match.Identity.ID, &s.Match.OfferID, &s.Name, &s.Archived, &s.SKU, &s.DuplicateOffer); err != nil {
 			return nil, err
 		}
 		result = append(result, s)
 	}
 	return result, rows.Err()
 }
-func productMatchTargets(ctx context.Context, tx pgx.Tx, scope catalog.Scope, importID int64, sources []matching.Source, criterion matching.Criterion) ([]matching.Target, error) {
+func productMatchTargets(ctx context.Context, tx pgx.Tx, scope catalog.Scope, importID int64, sources []matching.Source, criterion matching.Criterion, namesEnabled bool) ([]matching.Target, error) {
 	offers, names := make([]string, 0, len(sources)), make([]string, 0, len(sources))
 	for _, s := range sources {
 		offers = append(offers, s.Match.OfferID)
 		names = append(names, s.Name)
 	}
-	rows, err := tx.Query(ctx, productMatchTargetsSQL, importID, offers, names, string(criterion.Resolved()))
+	rows, err := tx.Query(ctx, productMatchTargetsSQL, importID, offers, names, string(criterion.Resolved()), namesEnabled)
 	if err != nil {
 		return nil, fmt.Errorf("read matching candidates: %w", err)
 	}
@@ -92,7 +102,7 @@ func productMatchTargets(ctx context.Context, tx pgx.Tx, scope catalog.Scope, im
 	result := make([]matching.Target, 0, len(sources)*3)
 	for rows.Next() {
 		t := matching.Target{Match: domain.MatchTarget{Identity: domain.ProductIdentity{System: "moysklad", Account: scope.MoyskladAccount}}}
-		if err = rows.Scan(&t.Match.Identity.Kind, &t.Match.Identity.ID, &t.Match.Article, &t.Match.Code, &t.Match.Name, &t.Match.ParentID, &t.Archived); err != nil {
+		if err = rows.Scan(&t.Match.Identity.Kind, &t.Match.Identity.ID, &t.Match.Article, &t.Match.Code, &t.Match.Name, &t.Match.ParentID, &t.Archived, &t.Updated); err != nil {
 			return nil, err
 		}
 		result = append(result, t)
@@ -101,10 +111,10 @@ func productMatchTargets(ctx context.Context, tx pgx.Tx, scope catalog.Scope, im
 }
 
 const productMatchTargetsSQL = `WITH exact AS (
- SELECT t.kind,t.external_id,t.article,t.code,t.name,t.parent_id,t.archived FROM unnest($2::text[]) offer
+ SELECT t.kind,t.external_id,t.article,t.code,t.name,t.parent_id,t.archived,t.source_updated FROM unnest($2::text[]) offer
  CROSS JOIN LATERAL(SELECT s.* FROM source_entities s WHERE s.import_id=$1 AND s.kind IN ('product','variant') AND product_matching_key(offer)<>'' AND (($4<>'code' AND product_matching_key(s.article)=product_matching_key(offer)) OR ($4<>'article' AND product_matching_key(s.code)=product_matching_key(offer))) ORDER BY s.kind,s.external_id LIMIT 3) t
 ), names AS (
- SELECT t.kind,t.external_id,t.article,t.code,t.name,t.parent_id,t.archived FROM unnest($3::text[]) title
+ SELECT t.kind,t.external_id,t.article,t.code,t.name,t.parent_id,t.archived,t.source_updated FROM unnest(CASE WHEN $5::boolean THEN $3::text[] ELSE ARRAY[]::text[] END) title
  CROSS JOIN LATERAL(SELECT s.*, (SELECT count(*)::float FROM (SELECT unnest(product_matching_words(s.name)) INTERSECT SELECT unnest(product_matching_words(title))) shared) / NULLIF((SELECT count(*) FROM (SELECT unnest(product_matching_words(s.name)) UNION SELECT unnest(product_matching_words(title))) combined),0) score
  FROM (SELECT * FROM (SELECT s.* FROM source_entities s WHERE s.import_id=$1 AND s.kind IN ('product','variant') AND NOT COALESCE(s.archived,false) AND lower(s.name)=lower(title) ORDER BY s.kind,s.external_id LIMIT 3) exact_name
  UNION SELECT * FROM (SELECT s.* FROM source_entities s WHERE s.import_id=$1 AND s.kind IN ('product','variant') AND NOT COALESCE(s.archived,false) AND product_matching_words(s.name)&&product_matching_words(title) ORDER BY s.kind,s.external_id LIMIT 100) name_pool) s

@@ -1,6 +1,6 @@
 import { api, ApiError, params, post } from "./api";
 import { scopeBody, type Scope } from "./CatalogSyncTypes";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import {
   matchingCriteria,
@@ -16,7 +16,8 @@ function stored<T>(key: string): T | null {
   }
 }
 export function useProductMatchingJob(scope: Scope) {
-  const storage = "styk.automatic-matching." + JSON.stringify(scope);
+  const client = useQueryClient();
+  const storage = "styk.automatic-matching.v3." + JSON.stringify(scope);
   const [id, setID] = useState(() => localStorage.getItem(storage) || "");
   const [criterion, setCriterionState] = useState<MatchingCriterion>(() => {
     const value = localStorage.getItem(storage + ".criterion");
@@ -71,6 +72,7 @@ export function useProductMatchingJob(scope: Scope) {
       if (!value.id || value.criterion !== criterion)
         throw new Error("Unexpected matching job");
       localStorage.removeItem(storage + ".intent");
+      client.setQueryData(["matching-job", scope, value.id], value);
       localStorage.setItem(storage, value.id);
       setID(value.id);
     } catch (error) {
@@ -100,7 +102,7 @@ export function useProductMatchingJob(scope: Scope) {
     localStorage.setItem(storage + ".approval", JSON.stringify(intent));
     setSubmitting(true);
     try {
-      await post(
+      const application = await post<MatchingJob["apply"]>(
         `/api/product-matching/jobs/${id}/apply`,
         {
           ...scopeBody(scope),
@@ -112,7 +114,11 @@ export function useProductMatchingJob(scope: Scope) {
       );
       localStorage.removeItem(storage + ".approval");
       setUncertain(false);
-      await query.refetch();
+      client.setQueryData<MatchingJob>(
+        ["matching-job", scope, id],
+        (previous) =>
+          previous ? { ...previous, apply: application } : previous,
+      );
     } catch (error) {
       const unknown =
         uncertain || !(error instanceof ApiError) || error.status >= 500;

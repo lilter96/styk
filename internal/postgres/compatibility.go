@@ -54,9 +54,10 @@ func (s *Store) requireCarriageSchema(ctx context.Context) error {
 func (s *Store) requireProductSchema(ctx context.Context) error {
 	var compatible bool
 	err := s.Pool.QueryRow(ctx, `SELECT bool_and(to_regclass(name) IS NOT NULL)
+ AND to_regprocedure('product_matching_rows(text,text,text,bigint,bigint,text[])') IS NOT NULL
  AND EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid=to_regclass('product_matching_jobs') AND attname='apply_state' AND NOT attisdropped)
  AND EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid=to_regclass('source_entities') AND attname='archived' AND NOT attisdropped)
- FROM (VALUES ('product_matching_policies'),('product_matching_policy_audits'),('product_matching_previews'),('product_matching_runs'),('product_matching_cycles'),('catalog_created_links'),('product_mapping_replacements'),('product_import_drafts'),('product_matching_jobs'),('product_matching_job_pages')) AS required(name)`).Scan(&compatible)
+ FROM (VALUES ('product_matching_policies'),('product_matching_policy_audits'),('product_matching_previews'),('product_matching_runs'),('product_matching_cycles'),('catalog_created_links'),('product_mapping_replacements'),('product_import_drafts'),('product_matching_jobs'),('product_matching_job_pages'),('product_matching_job_candidates'),('product_matching_job_results')) AS required(name)`).Scan(&compatible)
 	if err != nil || !compatible {
 		return ErrSchemaIncompatible
 	}

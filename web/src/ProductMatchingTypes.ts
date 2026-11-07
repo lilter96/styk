@@ -51,7 +51,6 @@ export type MatchingJob = {
   state: "QUEUED" | "RUNNING" | "COMPLETED" | "STALE" | "FAILED";
   processed: number;
   total: number;
-  pages: number;
   code: string;
   summary: Record<string, number>;
   examples: MatchItem[];

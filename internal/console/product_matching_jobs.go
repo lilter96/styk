@@ -1,8 +1,9 @@
 package console
 
 import (
+	"fmt"
 	"net/http"
-	"strconv"
+	"time"
 
 	"github.com/lilter96/styk/internal/matching"
 	"github.com/lilter96/styk/internal/postgres"
@@ -54,16 +55,7 @@ func registerProductMatchingRead(mux *http.ServeMux, a *auth, db *postgres.Store
 		w.WriteHeader(http.StatusNoContent)
 	})))
 	mux.HandleFunc("GET /api/product-matching/jobs/{id}", a.authorized(func(w http.ResponseWriter, r *http.Request) {
-		page := -1
-		var err error
-		if raw := r.URL.Query().Get("page"); raw != "" {
-			page, err = strconv.Atoi(raw)
-		}
-		if err != nil || page < -1 {
-			writeError(w, 400, "INVALID_PAGE")
-			return
-		}
-		j, err := db.ProductMatchingJob(r.Context(), catalogScope(r), r.PathValue("id"), catalogActor(r), page)
+		j, err := db.ProductMatchingJob(r.Context(), catalogScope(r), r.PathValue("id"), catalogActor(r))
 		if err != nil {
 			catalogHTTPError(w, err)
 			return
@@ -84,12 +76,17 @@ func registerProductMatchingApply(mux *http.ServeMux, a *auth, db *postgres.Stor
 			return
 		}
 		req := postgres.ProductMatchingApproval{Scope: body.catalogScope(), JobID: r.PathValue("id"), Actor: catalogActor(r), Key: body.Key, Expected: body.Expected, Acknowledge: body.Acknowledge}
-		if err := db.ApplyProductMatchingJob(r.Context(), req); err != nil {
+		started := time.Now()
+		app, err := db.ApplyProductMatchingJob(r.Context(), req)
+		if err != nil {
 			catalogHTTPError(w, err)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusAccepted)
-		writeJSON(w, map[string]string{"job_id": r.PathValue("id")})
+		w.Header().Set("Server-Timing", fmt.Sprintf("matching;dur=%.3f", float64(time.Since(started).Microseconds())/1000))
+		if app.State != "COMPLETED" {
+			w.WriteHeader(http.StatusAccepted)
+		}
+		writeJSON(w, app)
 	})))
 }

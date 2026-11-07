@@ -2,14 +2,10 @@ package postgres
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5"
 	"github.com/lilter96/styk/internal/catalog"
 	"github.com/lilter96/styk/internal/catalogsync"
-	"github.com/lilter96/styk/internal/matching"
 )
 
-// Retry keeps the committed cursor and pages. Changed snapshots require a new job.
 func (s *Store) RetryProductMatchingJob(ctx context.Context, scope catalog.Scope, id, actor string) error {
 	if scope.Validate() != nil {
 		return catalogsync.ErrInvalid
@@ -21,47 +17,19 @@ func (s *Store) RetryProductMatchingJob(ctx context.Context, scope catalog.Scope
 		return err
 	}
 	defer rollbackMerchantMutation(tx)
-	var state, after, apply string
-	var criterion matching.Criterion
-	var revision, mi, oi int64
-	err = tx.QueryRow(ctx, `SELECT state,cursor,revision,moy_import,ozon_import,criterion,apply_state FROM product_matching_jobs WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND id=$4 AND actor=$5 FOR UPDATE`, append(catalogScopeArgs(scope), id, actor)...).Scan(&state, &after, &revision, &mi, &oi, &criterion, &apply)
-	if err != nil {
-		return catalogError("read matching retry", err)
-	}
-	if err = lockProductMatch(ctx, tx, scope, actor); err != nil {
+	if err = catalogActor(ctx, tx, scope.Tenant, actor); err != nil {
 		return err
 	}
-	if apply == "FAILED" {
-		if err = validateProductMatchingRetry(ctx, tx, scope, revision, mi, oi, after, criterion); err != nil {
-			return err
-		}
-		if _, err = tx.Exec(ctx, `UPDATE product_matching_jobs SET apply_state='QUEUED',apply_code='',updated_at=clock_timestamp() WHERE id=$1`, id); err != nil {
-			return err
-		}
-		return tx.Commit(ctx)
-	}
-	if state == "QUEUED" || state == "RUNNING" || state == "COMPLETED" {
-		return tx.Commit(ctx)
-	}
-	if state != "FAILED" {
-		return catalogsync.ErrStale
-	}
-	if err = validateProductMatchingRetry(ctx, tx, scope, revision, mi, oi, after, criterion); err != nil {
-		return err
-	}
-	_, err = tx.Exec(ctx, `UPDATE product_matching_jobs SET state='QUEUED',code='',updated_at=clock_timestamp() WHERE id=$1`, id)
+	tag, err := tx.Exec(ctx, `UPDATE product_matching_jobs SET apply_state=CASE WHEN apply_state='FAILED' THEN 'QUEUED' ELSE apply_state END,apply_code=CASE WHEN apply_state='FAILED' THEN '' ELSE apply_code END,updated_at=clock_timestamp() WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND id=$4 AND actor=$5`, append(catalogScopeArgs(scope), id, actor)...)
 	if err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
-}
-func validateProductMatchingRetry(ctx context.Context, tx pgx.Tx, scope catalog.Scope, revision, mi, oi int64, after string, criterion matching.Criterion) error {
-	data, err := productMatchDataPage(ctx, tx, scope, after, criterion)
-	if err != nil {
+	if tag.RowsAffected() != 1 {
+		return catalogsync.ErrNotFound
+	}
+	if err = tx.Commit(ctx); err != nil {
 		return err
 	}
-	if data.MoyID != mi || data.OzonID != oi {
-		return catalogsync.ErrStale
-	}
-	return nil
+	_, err = s.executeProductMatchingApplication(ctx, id)
+	return err
 }

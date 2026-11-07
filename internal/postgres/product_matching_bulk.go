@@ -2,12 +2,12 @@ package postgres
 
 import (
 	"context"
-	"time"
+	"errors"
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/lilter96/styk/internal/catalog"
 	"github.com/lilter96/styk/internal/catalogsync"
-	"github.com/lilter96/styk/internal/matching"
 )
 
 type ProductMatchingApproval struct {
@@ -17,151 +17,115 @@ type ProductMatchingApproval struct {
 	Acknowledge       bool
 }
 
-func (s *Store) ApplyProductMatchingJob(ctx context.Context, r ProductMatchingApproval) error {
+func (s *Store) ApplyProductMatchingJob(ctx context.Context, r ProductMatchingApproval) (ProductMatchingApplication, error) {
 	if r.Scope.Validate() != nil || !r.Acknowledge || r.Expected <= 0 || !importKeyPattern.MatchString(r.Key) {
-		return catalogsync.ErrInvalid
+		return ProductMatchingApplication{}, catalogsync.ErrInvalid
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
+	if err := s.queueProductMatchingApplication(ctx, r); err != nil {
+		return ProductMatchingApplication{}, err
+	}
+	return s.executeProductMatchingApplication(ctx, r.JobID)
+}
+func (s *Store) queueProductMatchingApplication(ctx context.Context, r ProductMatchingApproval) error {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer rollbackMerchantMutation(tx)
-	if err = queueProductMatchingApplication(ctx, tx, r); err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
-}
-
-func queueProductMatchingApplication(ctx context.Context, tx pgx.Tx, r ProductMatchingApproval) error {
 	var state, apply, key string
 	var count, total int
-	var mi, oi int64
-	var criterion matching.Criterion
-	err := tx.QueryRow(ctx, `SELECT state,apply_state,apply_key,COALESCE((summary->>'exact')::int,0),apply_total,moy_import,ozon_import,criterion FROM product_matching_jobs WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND id=$4 AND actor=$5 FOR UPDATE`, append(catalogScopeArgs(r.Scope), r.JobID, r.Actor)...).Scan(&state, &apply, &key, &count, &total, &mi, &oi, &criterion)
+	err = tx.QueryRow(ctx, `SELECT state,apply_state,apply_key,COALESCE((summary->>'exact')::int,0),apply_total FROM product_matching_jobs WHERE tenant_id=$1 AND moysklad_account=$2 AND ozon_account=$3 AND id=$4 AND actor=$5 FOR UPDATE`, append(catalogScopeArgs(r.Scope), r.JobID, r.Actor)...).Scan(&state, &apply, &key, &count, &total)
 	if err != nil {
 		return catalogError("read matching approval", err)
 	}
-	if err = lockProductMatch(ctx, tx, r.Scope, r.Actor); err != nil {
+	if err = catalogActor(ctx, tx, r.Scope.Tenant, r.Actor); err != nil {
 		return err
 	}
 	if apply != "NOT_STARTED" {
 		if key != r.Key || total != r.Expected {
 			return catalogsync.ErrConflict
 		}
-		return nil
+		return tx.Commit(ctx)
 	}
 	if state != "COMPLETED" || count != r.Expected {
 		return catalogsync.ErrStale
 	}
-	if err = validateProductMatchingRetry(ctx, tx, r.Scope, 0, mi, oi, "", criterion); err != nil {
+	_, err = tx.Exec(ctx, `UPDATE product_matching_jobs SET apply_state='QUEUED',apply_key=$2,apply_total=$3,updated_at=clock_timestamp() WHERE id=$1`, r.JobID, r.Key, r.Expected)
+	if err != nil {
 		return err
+	}
+	return tx.Commit(ctx)
+}
+func (s *Store) executeProductMatchingApplication(ctx context.Context, id string) (ProductMatchingApplication, error) {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return ProductMatchingApplication{}, err
+	}
+	defer rollbackMerchantMutation(tx)
+	w, app, err := readProductMatchingApplication(ctx, tx, id)
+	if err != nil {
+		return app, err
+	}
+	if app.State != "QUEUED" && app.State != "RUNNING" {
+		return app, tx.Commit(ctx)
+	}
+	if _, err = tx.Exec(ctx, `SAVEPOINT matching_apply`); err != nil {
+		return app, err
+	}
+	app, err = authorizeAndApplyMatching(ctx, tx, w)
+	if err != nil {
+		if ctx.Err() != nil {
+			return app, err
+		}
+		if _, rollbackErr := tx.Exec(ctx, `ROLLBACK TO SAVEPOINT matching_apply`); rollbackErr != nil {
+			return app, errors.Join(err, rollbackErr)
+		}
+		app.State, app.Code = "FAILED", "MATCHING_SERVICE_UNAVAILABLE"
+		if errors.Is(err, catalogsync.ErrStale) || errors.Is(err, catalogsync.ErrBlocked) {
+			app.State, app.Code = "STALE", "MATCHING_SOURCE_STALE"
+		}
+		if _, err = tx.Exec(ctx, `UPDATE product_matching_jobs SET apply_state=$2,apply_code=$3,updated_at=clock_timestamp() WHERE id=$1`, id, app.State, app.Code); err != nil {
+			return app, err
+		}
+	}
+	return app, tx.Commit(ctx)
+}
+func readProductMatchingApplication(ctx context.Context, tx pgx.Tx, id string) (productMatchingWork, ProductMatchingApplication, error) {
+	var w productMatchingWork
+	var app ProductMatchingApplication
+	err := tx.QueryRow(ctx, `SELECT id,tenant_id,moysklad_account,ozon_account,actor,criterion,moy_import,ozon_import,apply_state,apply_total,confirmed,skipped,apply_code FROM product_matching_jobs WHERE id=$1 FOR UPDATE`, id).Scan(&w.ID, &w.Scope.Tenant, &w.Scope.MoyskladAccount, &w.Scope.OzonAccount, &w.Actor, &w.Criterion, &w.MoyImport, &w.OzonImport, &app.State, &app.Total, &app.Confirmed, &app.Skipped, &app.Code)
+	return w, app, err
+}
+func applyProductMatchingSet(ctx context.Context, tx pgx.Tx, w productMatchingWork) (ProductMatchingApplication, error) {
+	var app ProductMatchingApplication
+	imports, err := productMatchingImports(ctx, tx, w.Scope)
+	if err != nil {
+		return app, err
+	}
+	if imports.MoyID != w.MoyImport || imports.OzonID != w.OzonImport {
+		return app, catalogsync.ErrStale
 	}
 	var expired bool
-	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM product_matching_job_pages jp JOIN product_matching_previews p ON p.id=jp.preview_id WHERE jp.job_id=$1 AND (p.preview->>'expires_at')::timestamptz<=clock_timestamp())`, r.JobID).Scan(&expired)
-	if err != nil {
-		return err
+	if err = tx.QueryRow(ctx, `SELECT created_at<clock_timestamp()-interval '1 hour' FROM product_matching_jobs WHERE id=$1`, w.ID).Scan(&expired); err != nil {
+		return app, err
 	}
 	if expired {
-		return catalogsync.ErrStale
+		return app, catalogsync.ErrStale
 	}
-	_, err = tx.Exec(ctx, `UPDATE product_matching_jobs SET apply_state='QUEUED',apply_key=$2,apply_total=$3,updated_at=clock_timestamp() WHERE id=$1`, r.JobID, r.Key, r.Expected)
-	return err
+	explanation := fmt.Sprintf("Exact catalogue matching; criterion %s; job %s", w.Criterion, w.ID)
+	err = tx.QueryRow(ctx, productMatchingApplySQL, w.ID, w.Criterion.Fields(), auditPrincipal(w.Actor), mappingSnapshotHash(reviewSnapshot{}), explanation).Scan(&app.Total, &app.Confirmed, &app.Skipped)
+	if err != nil {
+		return app, fmt.Errorf("apply exact matching set: %w", err)
+	}
+	app.State = "COMPLETED"
+	return app, nil
 }
 
-func processProductMatchingApplication(ctx context.Context, tx pgx.Tx, w productMatchingWork) error {
+func authorizeAndApplyMatching(ctx context.Context, tx pgx.Tx, w productMatchingWork) (ProductMatchingApplication, error) {
 	if err := lockProductMatch(ctx, tx, w.Scope, w.Actor); err != nil {
-		return err
+		return ProductMatchingApplication{}, err
 	}
-	p, err := readProductMatchingApplicationPage(ctx, tx, w)
-	if err != nil {
-		return err
-	}
-	data, err := productMatchDataPage(ctx, tx, w.Scope, p.After, w.Criterion)
-	if err != nil {
-		return err
-	}
-	if data.MoyID != w.MoyImport || data.OzonID != w.OzonImport {
-		return catalogsync.ErrStale
-	}
-	fresh := matching.Preview(w.Scope.Tenant, w.Scope.MoyskladAccount, p.Policy, data.Sources, data.Targets, data.Mappings)
-	checked, next := productMatchingApplicationBatch(p, fresh, w.ApplyOffset)
-	result, err := saveProductMatchingApplicationBatch(ctx, tx, w, checked)
-	if err != nil {
-		return err
-	}
-	page := w.ApplyPage
-	if next >= len(p.Items) {
-		page++
-		next = 0
-	}
-	state := "RUNNING"
-	if page >= w.Pages {
-		state = "COMPLETED"
-	}
-	_, err = tx.Exec(ctx, `UPDATE product_matching_jobs SET apply_state=$2,apply_page=$3,apply_offset=$4,confirmed=confirmed+$5,skipped=skipped+$6,updated_at=clock_timestamp() WHERE id=$1`, w.ID, state, page, next, result.Confirmed, len(checked.Items)-result.Confirmed)
-	return err
-}
-
-func readProductMatchingApplicationPage(ctx context.Context, tx pgx.Tx, w productMatchingWork) (ProductMatchPreview, error) {
-	var p ProductMatchPreview
-	var raw []byte
-	err := tx.QueryRow(ctx, `SELECT p.preview FROM product_matching_job_pages jp JOIN product_matching_previews p ON p.id=jp.preview_id WHERE jp.job_id=$1 AND jp.page=$2`, w.ID, w.ApplyPage).Scan(&raw)
-	if err != nil {
-		return p, err
-	}
-	if err = catalogDecode(raw, &p); err != nil {
-		return p, err
-	}
-	if p.Scope != w.Scope || p.Policy.Criterion.Resolved() != w.Criterion || !p.ExpiresAt.After(time.Now()) {
-		return p, catalogsync.ErrStale
-	}
-	return p, nil
-}
-
-func productMatchingApplicationBatch(p ProductMatchPreview, fresh []matching.Item, offset int) (ProductMatchPreview, int) {
-	current := make(map[string]matching.Item, len(fresh))
-	for _, item := range fresh {
-		current[item.ProductID] = item
-	}
-	end := min(offset+20, len(p.Items))
-	checked := p
-	checked.Items = make([]matching.Item, 0, 20)
-	for _, item := range p.Items[offset:end] {
-		if item.Status != "exact" || len(item.Candidates) != 1 {
-			continue
-		}
-		candidate, found := current[item.ProductID]
-		same := found && candidate.Status == "exact" && len(candidate.Candidates) == 1 && candidate.Candidates[0].ID == item.Candidates[0].ID && candidate.Candidates[0].Kind == item.Candidates[0].Kind
-		if !same {
-			item.Status, item.Reason = "skipped", "matching_changed"
-		}
-		checked.Items = append(checked.Items, item)
-	}
-	return checked, end
-}
-
-func saveProductMatchingApplicationBatch(ctx context.Context, tx pgx.Tx, w productMatchingWork, p ProductMatchPreview) (ProductMatchRun, error) {
-	if len(p.Items) == 0 {
-		return ProductMatchRun{}, nil
-	}
-	key, err := catalogHash([]any{w.ID, w.ApplyPage, w.ApplyOffset})
-	if err != nil {
-		return ProductMatchRun{}, err
-	}
-	ids := make([]string, 0, len(p.Items))
-	for _, item := range p.Items {
-		ids = append(ids, item.ProductID)
-	}
-	req := ProductMatchExecute{Scope: w.Scope, Actor: w.Actor, PreviewID: p.ID, Products: ids, IdempotencyKey: key, Acknowledge: true}
-	result, err := confirmProductMatchItems(ctx, tx, req, p)
-	if err != nil {
-		return result, err
-	}
-	hash, err := catalogHash(req)
-	if err != nil {
-		return result, err
-	}
-	return result, saveProductMatchRun(ctx, tx, req, result, hash)
+	return applyProductMatchingSet(ctx, tx, w)
 }

@@ -10,7 +10,10 @@ const (
 	Code          Criterion = "code"
 )
 
-func (c Criterion) Valid() bool { return c == ArticleOrCode || c == Article || c == Code }
+var criterionFields = map[Criterion][]string{ArticleOrCode: {"article", "code"}, Article: {"article"}, Code: {"code"}}
+
+func (c Criterion) Valid() bool      { _, ok := criterionFields[c]; return ok }
+func (c Criterion) Fields() []string { return criterionFields[c.Resolved()] }
 func (c Criterion) Resolved() Criterion {
 	if c == "" {
 		return ArticleOrCode
