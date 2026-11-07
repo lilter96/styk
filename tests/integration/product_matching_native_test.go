@@ -12,7 +12,6 @@ import (
 
 	"github.com/lilter96/styk/internal/domain"
 	"github.com/lilter96/styk/internal/matching"
-	"github.com/lilter96/styk/internal/postgres"
 )
 
 func TestProductMatchingNativeHashesMatchCanonicalConfirmation(t *testing.T) {
@@ -99,8 +98,15 @@ func TestProductMatchingNativeClassificationMatchesDomain(t *testing.T) {
 	}
 	var mappings []domain.Mapping
 	for _, pair := range []struct{ source, target string }{{"7", "exact"}, {"6", "duplicate-1"}} {
-		m, err := db.ConfirmMatch(ctx, postgres.MatchScope{Tenant: scope.Tenant, MoyskladAccount: scope.MoyskladAccount, OzonAccount: scope.OzonAccount}, pair.source, "product", pair.target, "native-conformance")
+		review, err := db.CreateMappingReview(ctx, domain.MappingReviewRequest{Tenant: scope.Tenant, OzonAccount: scope.OzonAccount, MoyskladAccount: scope.MoyskladAccount, ProductID: pair.source, TargetKind: "product", TargetID: pair.target, SessionID: "native-conformance", Evidence: domain.MappingOperatorAttested, Lifetime: time.Minute})
 		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = db.ConfirmMappingReview(ctx, domain.MappingConfirmationRequest{ReviewID: review.Review.ID, SessionID: "native-conformance", IdempotencyKey: "conformance-" + pair.source, Acknowledged: true, Explanation: "Native matching conformance fixture"}); err != nil {
+			t.Fatal(err)
+		}
+		m := domain.Mapping{Tenant: scope.Tenant, Source: domain.ProductIdentity{System: "ozon", Account: scope.OzonAccount, Kind: "product", ID: pair.source}, Target: domain.ProductIdentity{System: "moysklad", Account: scope.MoyskladAccount, Kind: "product", ID: pair.target}}
+		if err = db.Pool.QueryRow(ctx, `SELECT ozon_offer_id FROM product_mappings WHERE tenant_id=$1 AND ozon_account=$2 AND ozon_product_id=$3`, scope.Tenant, scope.OzonAccount, pair.source).Scan(&m.OfferID); err != nil {
 			t.Fatal(err)
 		}
 		mappings = append(mappings, m)
