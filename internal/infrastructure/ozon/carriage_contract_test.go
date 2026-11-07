@@ -43,7 +43,7 @@ func TestCarriageDiscoveryNeverGuessesNonemptyOrIncompleteMembership(t *testing.
 		name, body string
 		wantError  bool
 	}{
-		{"unverified method", `{"methods":[{"unknown":"opaque"}],"cursor":"","has_next":false}`, false},
+		{"unverified method", `{"methods":[{"unknown":"opaque"}],"cursor":"","has_next":false}`, true},
 		{"unverified page", `{"methods":[],"cursor":"next","has_next":true}`, false},
 		{"null methods", `{"methods":null,"cursor":"","has_next":false}`, true},
 		{"missing methods", `{"cursor":"","has_next":false}`, true},
@@ -64,7 +64,7 @@ func TestCarriageDiscoveryNeverGuessesNonemptyOrIncompleteMembership(t *testing.
 				}
 				return
 			}
-			if err != nil || snapshot.Complete || len(snapshot.Blockers) == 0 || len(snapshot.SourceShapeFingerprint) != 64 {
+			if err != nil || snapshot.Complete || len(snapshot.SourceShapeFingerprint) != 64 {
 				t.Fatal("unverified shape granted membership", snapshot, err)
 			}
 		})

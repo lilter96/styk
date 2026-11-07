@@ -14,7 +14,7 @@ const carriageGetPath = "/v1/carriage/get"
 const carriageMembersPath = "/v2/posting/fbs/act/get-postings"
 
 func carriageReadPath(path string) bool {
-	return path == carriageGetPath || path == carriageMembersPath || path == carriageDiscoveryPath
+	return path == carriageGetPath || path == carriageMembersPath || path == carriageDiscoveryPath || path == carriageDocumentStatusPath
 }
 
 func (c *OrdersClient) ReadCarriage(ctx context.Context, scope orders.Scope, id string) (orders.CarriageSnapshot, error) {
@@ -40,9 +40,17 @@ func (c *OrdersClient) ReadCarriage(ctx context.Context, scope orders.Scope, id 
 		return orders.CarriageSnapshot{}, orders.ErrSchemaDrift
 	}
 	snapshot := orders.CarriageSnapshot{Scope: scope, DeliveryMethodID: header.DeliveryMethodID, WarehouseID: header.WarehouseID, CarriageID: id, Header: &header, ContractVersion: "ozon-carriage-known-id-2026-11-07", Members: make([]orders.CarriageMember, 0, len(rows)), CandidateIDs: []string{}, Blockers: []orders.Validation{}}
-	snapshot.Blockers = append(snapshot.Blockers, orders.Validation{Code: "CARRIAGE_APPROVAL_CONTRACT_UNVERIFIED"})
+	if header.FirstMileType != "dropoff" || (header.IntegrationType != "ozon" && header.IntegrationType != "ozon_optional") {
+		snapshot.Blockers = append(snapshot.Blockers, orders.Validation{Code: "CARRIAGE_DELIVERY_PROFILE_UNSUPPORTED"})
+	}
 	if err = c.readCarriageMembers(ctx, &snapshot, rows); err != nil {
 		return orders.CarriageSnapshot{}, err
+	}
+	if header.Status != "new" {
+		snapshot.Documents, err = c.readCarriageDocuments(ctx, id)
+		if err != nil {
+			return orders.CarriageSnapshot{}, err
+		}
 	}
 	if err = c.carriageMembershipUnchanged(ctx, id, rows); err != nil {
 		return orders.CarriageSnapshot{}, err
@@ -116,13 +124,21 @@ func (c *OrdersClient) readCarriageMembers(ctx context.Context, snapshot *orders
 		if err != nil {
 			return err
 		}
+		posting, err = c.carriagePostingProfile(ctx, posting, snapshot.DeliveryMethodID, snapshot.WarehouseID)
+		if err != nil {
+			return err
+		}
 		if !carriageLinesEqual(member.Lines, posting.Lines) {
 			return orders.ErrStale
 		}
+		carriageStatus := member.Status
 		member.Status = orderKnown(posting.Status)
 		member.Scheme, member.WarehouseID, member.DeliveryMethodID = orderKnown(posting.Scheme), orderKnown(posting.WarehouseID), orderKnown(posting.DeliveryMethodID)
 		member.Capability = posting.DeliveryProfile
 		member.Blockers = carriagePostingBlockers(posting, snapshot.DeliveryMethodID, snapshot.WarehouseID, c.now())
+		if carriageStatus != "awaiting_deliver" {
+			member.Blockers = append(member.Blockers, orders.Validation{Code: "CARRIAGE_POSTING_NOT_READY"})
+		}
 		member.Ready = len(member.Blockers) == 0
 		member.SourceFingerprint, err = orders.PostingFingerprint(posting)
 		if err != nil {
@@ -146,7 +162,7 @@ func carriagePostingBlockers(posting orders.Posting, method, warehouse string, n
 	if capability == nil || capability.Validate() != nil || capability.Scheme != "FBS" || capability.WarehouseID != warehouse || capability.DeliveryMethodID != method || !capability.Express.IsKnown() || *capability.Express.Value || !slices.Contains(capability.VerifiedDimensions, "scheme") || !slices.Contains(capability.VerifiedDimensions, "warehouse") || !slices.Contains(capability.VerifiedDimensions, "express") || !now.Before(capability.ValidUntil) {
 		add("CARRIAGE_PROFILE_UNVERIFIED")
 	}
-	if len(posting.Drift) != 0 {
+	if slices.ContainsFunc(posting.Drift, carriageRelevantDrift) {
 		add("CARRIAGE_POSTING_SCHEMA_REVIEW_REQUIRED")
 	}
 	return issues

@@ -60,7 +60,19 @@ export type CarriagePreview = {
   validation: { code: string; field?: string }[];
   existing_work?: CarriageWork;
 };
-export function carriageIssue(code: string) {
+export function carriageIssue(code: string, field?: string) {
+  if (code === "CARRIAGE_NO_AVAILABLE_BATCH")
+    return "Ozon не вернул готовые отправления для новой партии этого способа доставки и даты. Проверьте дату и фактическую сборку отправлений.";
+  if (code === "CARRIAGE_PROVIDER_BLOCKED")
+    return field === "outdated"
+      ? "Ozon запретил создание партии: выбранная дата отгрузки устарела. Выберите актуальную дату и проверьте партию заново."
+      : `Ozon заблокировал партию${field ? ` (${field})` : ""}. Устраните причину в кабинете Ozon и повторите проверку.`;
+  if (code === "CARRIAGE_DELIVERY_PROFILE_UNSUPPORTED")
+    return "Для этой операции поддерживается обычный FBS с передачей в пункт приёма Ozon (dropoff). Текущий профиль доставки не подходит.";
+  if (code === "CARRIAGE_OPEN_BATCH_REQUIRES_REVIEW")
+    return "Для этого способа доставки уже есть незакрытая партия. Проверьте её состав и перейдите к подтверждению созданной партии.";
+  if (code === "CARRIAGE_APPROVAL_STATE_UNVERIFIED")
+    return "Подтвердить можно только созданную партию со статусом new. Сверьте текущий статус и идентификатор партии в Ozon.";
   if (/contract|discovery|unsupported/i.test(code))
     return "Контракт, способ доставки или профиль не подтверждён. Запись заблокирована; проверьте поддерживаемость FBS для этого склада.";
   if (/member|composition|posting|batch/i.test(code))

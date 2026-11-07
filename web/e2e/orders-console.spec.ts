@@ -3249,11 +3249,9 @@ test("commission draft settings and approval preserve accountant choices and unk
   await expect(
     page.getByText("Изменён: NULL — значение неизвестно → 0.", { exact: true }),
   ).toBeVisible();
-  await page
-    .locator(".settings-commission-source-diff")
-    .screenshot({
-      path: testInfo.outputPath("commission-semantic-diff-mobile.png"),
-    });
+  await page.locator(".settings-commission-source-diff").screenshot({
+    path: testInfo.outputPath("commission-semantic-diff-mobile.png"),
+  });
   corrected = false;
   for (const code of [
     "FINANCE_EXISTING_DOCUMENT_REQUIRES_REVIEW",
@@ -3358,12 +3356,10 @@ test("commission draft settings and approval preserve accountant choices and unk
     `https://online.moysklad.ru/app/#commissionreportin/edit?id=${uid(10)}`,
   );
   expect(financeApprovals).toHaveLength(2);
-  await page
-    .locator(".settings-commission-import")
-    .screenshot({
-      path: testInfo.outputPath("commission-posted-externally-mobile.png"),
-      animations: "disabled",
-    });
+  await page.locator(".settings-commission-import").screenshot({
+    path: testInfo.outputPath("commission-posted-externally-mobile.png"),
+    animations: "disabled",
+  });
 });
 
 test("financial source classification remains visible without accounting policy and preserves exact unresolved values", async ({
@@ -3582,6 +3578,7 @@ test("FBS carriage presents full membership and separate stage consents with unk
   let lost = false;
   let rereads = 0;
   let changed = false;
+  let unavailable = false;
   const batch = (kind = action) => ({
     id: `batch-plan-${kind}`,
     scope,
@@ -3647,7 +3644,14 @@ test("FBS carriage presents full membership and separate stage consents with unk
     return fulfill(route, {
       id: `batch-plan-${action}`,
       plan: batch(),
-      validation: changed ? [{ code: "CARRIAGE_MEMBERSHIP_CHANGED" }] : [],
+      validation: unavailable
+        ? [
+            { code: "CARRIAGE_PROVIDER_BLOCKED", field: "outdated" },
+            { code: "CARRIAGE_NO_AVAILABLE_BATCH" },
+          ]
+        : changed
+          ? [{ code: "CARRIAGE_MEMBERSHIP_CHANGED" }]
+          : [],
     });
   });
   await page.route("**/api/orders/carriage/approve", (route) => {
@@ -3728,6 +3732,44 @@ test("FBS carriage presents full membership and separate stage consents with unk
       path: testInfo.outputPath(`carriage-create-${width}.png`),
     });
   }
+  await card
+    .getByRole("button", { name: "Закрыть проверку без записи", exact: true })
+    .click();
+  unavailable = true;
+  await card
+    .getByRole("button", { name: "Проверить полную партию", exact: true })
+    .click();
+  await expect(
+    card.getByText(/выбранная дата отгрузки устарела/),
+  ).toBeVisible();
+  await expect(
+    card.getByText(/Ozon не вернул готовые отправления/),
+  ).toBeVisible();
+  await expect(
+    card.getByRole("button", { name: "Создать партию в Ozon", exact: true }),
+  ).toHaveCount(0);
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await card.screenshot({
+      path: testInfo.outputPath(`carriage-provider-block-${width}.png`),
+    });
+  }
+  await card
+    .getByRole("button", { name: "Закрыть проверку без записи", exact: true })
+    .click();
+  unavailable = false;
+  await card
+    .getByRole("button", { name: "Проверить полную партию", exact: true })
+    .click();
+  await card.getByLabel(/Разрешаю создать всю проверенную партию/).check();
+  await card
+    .getByLabel(/Подтверждаю фактическую готовность всех отправлений/)
+    .check();
   const contrast = await auditButtonHovers(page, "carriage");
   const primary = contrast.find(
     (item) => item.label === "Создать партию в Ozon",

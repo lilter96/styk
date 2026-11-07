@@ -1110,11 +1110,15 @@ for (const width of [1440, 768, 390])
     await page
       .getByRole("radio", { name: /Разрешить подтверждение уникальных/ })
       .check();
+    const prepare = page.getByRole("button", {
+      name: "Посмотреть предварительный результат",
+    });
+    await expect(prepare).toBeDisabled();
     await page
-      .getByRole("button", {
-        name: "Посмотреть предварительный результат",
-      })
+      .getByRole("button", { name: "Сохранить правила", exact: true })
       .click();
+    await expect(prepare).toBeEnabled();
+    await prepare.click();
     await expect(
       page.getByLabel("Выбрать пару STYK-02", { exact: true }),
     ).toBeDisabled();

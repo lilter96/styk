@@ -110,6 +110,9 @@ func validateCarriageHead(ctx context.Context, tx pgx.Tx, plan orders.CarriagePl
 	if prior.State == orders.StateReconciled && prior.Plan.Action == orders.CarriageCreate && plan.Action == orders.CarriageApprove && prior.CarriageID == plan.CarriageID {
 		return nil
 	}
+	if prior.State == orders.StateReconciled && prior.Plan.Action == orders.CarriageApprove && plan.Action == orders.CarriageCreate && prior.Observation != nil && prior.Observation.Header != nil && plan.Snapshot.Complete && len(plan.Snapshot.CandidateIDs) == 0 && prior.OutcomeMatches(*prior.Observation) {
+		return nil
+	}
 	return orders.ErrBlocked
 }
 

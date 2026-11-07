@@ -19,6 +19,7 @@ func TestMonthlyRealizationIsAnExplicitReadOnlyPOST(t *testing.T) {
 		{"/v1/finance/accrual/postings", false},
 		{"/v1/finance/accrual/postings/unknown", true},
 		{"/v1/roles", false},
+		{"/v2/posting/fbs/act/check-status", false},
 		{"/v1/carriage/get", false},
 		{"/v2/carriage/delivery/list", false},
 		{"/v2/posting/fbs/act/get-postings", false},

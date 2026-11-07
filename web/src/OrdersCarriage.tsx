@@ -184,7 +184,8 @@ function CarriageBatch({ plan }: { plan: CarriagePlan }) {
               ))}
               {(member.blockers ?? []).map((issue) => (
                 <span key={issue.code}>
-                  {carriageIssue(issue.code)} <code>{issue.code}</code>
+                  {carriageIssue(issue.code, issue.field)}{" "}
+                  <code>{issue.code}</code>
                 </span>
               ))}
             </li>
@@ -612,7 +613,7 @@ export function OrdersCarriage({
           <CarriageBatch plan={preview.plan} />
           {preview.validation.map((issue, index) => (
             <p className="settings-warning" key={`${issue.code}:${index}`}>
-              {carriageIssue(issue.code)} <code>{issue.code}</code>
+              {carriageIssue(issue.code, issue.field)} <code>{issue.code}</code>
             </p>
           ))}
           {preview.plan.config_revision !== config.revision && (
