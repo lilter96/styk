@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/lilter96/styk/internal/catalog"
 	"github.com/lilter96/styk/internal/catalogsync"
