@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lilter96/styk/internal/catalog"
 	"github.com/lilter96/styk/internal/matching"
 )
@@ -31,4 +32,10 @@ func completeProductMatchingSearch(ctx context.Context, tx pgx.Tx, j ProductMatc
 	}
 	j.State = "COMPLETED"
 	return j, nil
+}
+
+// The set pipeline must not become repeated scans when fresh import statistics
+// underestimate its cardinality. Settings are local to this transaction.
+func beginProductMatchingSet(ctx context.Context, pool *pgxpool.Pool) (pgx.Tx, error) {
+	return pool.BeginTx(ctx, pgx.TxOptions{BeginQuery: "BEGIN; SET LOCAL enable_nestloop=off; SET LOCAL jit=off"})
 }

@@ -96,7 +96,7 @@ function ProductAutoMatchingAccount({
   }, [job.criterion, job.id, job.query.data?.criterion]);
   useEffect(() => {
     if (data && data.apply.state !== "NOT_STARTED") setError("");
-    if (data && ["COMPLETED", "STALE", "FAILED"].includes(data.apply.state)) {
+    if (data && ["COMPLETED", "STALE", "FAILED", "CANCELLED"].includes(data.apply.state)) {
       void client.invalidateQueries({ queryKey: ["products", scope] });
       void client.invalidateQueries({ queryKey: ["diagnostics", scope] });
     }
@@ -236,18 +236,16 @@ function ProductAutoMatchingAccount({
               <p>
                 {data.state === "STALE"
                   ? "Каталоги или права доступа изменились. Выполните новый поиск."
-                  : "Сервис временно недоступен. Продолжите поиск с сохранённого места."}
+                  : "Сервис временно недоступен. Повторите поиск."}
               </p>
               <button
                 className="secondary"
                 disabled={locked}
                 onClick={() =>
-                  void (data.state === "FAILED" ? resume() : search())
+                  void (search())
                 }
               >
-                {data.state === "FAILED"
-                  ? "Продолжить поиск"
-                  : "Обновить поиск"}
+                Обновить поиск
               </button>
             </div>
           ) : (
@@ -283,7 +281,7 @@ function ProductAutoMatchingAccount({
                 {(applying ||
                   done ||
                   data.apply.state === "FAILED" ||
-                  data.apply.state === "STALE") && (
+                  ["STALE", "CANCELLED"].includes(data.apply.state)) && (
                   <div className="automatch-application" role="status">
                     <p>
                       Сопоставлено: <b>{confirmed}</b>
@@ -308,7 +306,7 @@ function ProductAutoMatchingAccount({
                         </p>
                       </>
                     )}
-                    {["FAILED", "STALE"].includes(data.apply.state) && (
+                    {["FAILED", "STALE", "CANCELLED"].includes(data.apply.state) && (
                       <>
                         <p>
                           Сохранённые связи остаются.{" "}

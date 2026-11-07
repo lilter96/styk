@@ -34,6 +34,7 @@ export function useProductMatchingJob(scope: Scope) {
     queryKey: ["matching-job", scope, id],
     enabled: !!id,
     retry: false,
+    staleTime: 10_000,
     queryFn: ({ signal }) =>
       api(
         `/api/product-matching/jobs/${id}?` + params(scopeBody(scope)),

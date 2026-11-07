@@ -29,7 +29,7 @@ func productMatchingBulkFixture(t *testing.T, size int) (*postgres.Store, catalo
 	market := domain.OzonImport{Account: scope.OzonAccount, StartedAt: now.Add(-time.Second), FinishedAt: now}
 	for i := 0; i < size; i++ {
 		code := fmt.Sprintf("BULK-%04d", i)
-		source.Entities = append(source.Entities, domain.ExternalEntity{Kind: "product", ID: code, Article: code, Archived: &active})
+		source.Entities = append(source.Entities, domain.ExternalEntity{Kind: "product", ID: code, Article: code, Code: code, Archived: &active})
 		market.Products = append(market.Products, domain.OzonProduct{ProductID: code, OfferID: code, Archived: &active})
 	}
 	if _, err := db.SaveInventoryImport(context.Background(), source, "bulk-source"); err != nil {
@@ -199,5 +199,49 @@ func TestProductMatchingBulkFailureRollsBackEveryEvidenceStage(t *testing.T) {
 	app, err = db.ApplyProductMatchingJob(ctx, req)
 	if err != nil || app.State != "COMPLETED" || app.Confirmed != 105 {
 		t.Fatalf("retry: %+v %v", app, err)
+	}
+}
+
+func TestProductMatchingBulkActorGuardValidatesEveryPrincipal(t *testing.T) {
+	db, scope := productMatchingBulkFixture(t, 1)
+	ctx := context.Background()
+	job := completedProductMatchingJob(t, db, scope, matching.ArticleOrCode)
+	app, err := db.ApplyProductMatchingJob(ctx, postgres.ProductMatchingApproval{Scope: scope, JobID: job.ID, Actor: "matching-test", Key: "actor-source", Expected: 1, Acknowledge: true})
+	if err != nil || app.State != "COMPLETED" {
+		t.Fatalf("fixture: %+v %v", app, err)
+	}
+	_, err = db.Pool.Exec(ctx, `INSERT INTO product_mapping_reviews SELECT (jsonb_populate_record(NULL::product_mapping_reviews,to_jsonb(r)||jsonb_build_object('id',repeat(v.id,32),'principal_type',v.principal,'session_audit_id',v.actor))).* FROM product_mapping_reviews r CROSS JOIN(VALUES('a','LOCAL_OPERATOR_SESSION','matching-test'),('b','MERCHANT_SESSION','user.missing'))v(id,principal,actor) LIMIT 2`)
+	var failure *pgconn.PgError
+	if !errors.As(err, &failure) || failure.Code != "42501" {
+		t.Fatalf("invalid actor accepted: %v", err)
+	}
+	var count int
+	if err = db.Pool.QueryRow(ctx, `SELECT count(*) FROM product_mapping_reviews`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("valid row escaped mixed rollback: %d %v", count, err)
+	}
+
+}
+
+func TestProductMatchingBulkHotPath(t *testing.T) {
+	if os.Getenv("STYK_MATCHING_PERFORMANCE") != "true" {
+		t.Skip("dedicated CI performance check")
+	}
+	for _, criterion := range []matching.Criterion{matching.ArticleOrCode, matching.Article, matching.Code} {
+		t.Run(string(criterion), func(t *testing.T) {
+			db, scope := productMatchingBulkFixture(t, 2104)
+			started := time.Now()
+			job := completedProductMatchingJob(t, db, scope, criterion)
+			search := time.Since(started)
+			started = time.Now()
+			app, err := db.ApplyProductMatchingJob(context.Background(), postgres.ProductMatchingApproval{Scope: scope, JobID: job.ID, Actor: "matching-test", Key: "hot-path", Expected: 2104, Acknowledge: true})
+			elapsed := time.Since(started)
+			t.Logf("criterion=%s products=2104 search=%s commit=%s", criterion, search, elapsed)
+			if err != nil || app.State != "COMPLETED" || app.Confirmed != 2104 {
+				t.Fatalf("incomplete application: %+v %v", app, err)
+			}
+			if search >= time.Second || elapsed >= time.Second {
+				t.Fatalf("one-second matching SLO exceeded: search=%s commit=%s", search, elapsed)
+			}
+		})
 	}
 }

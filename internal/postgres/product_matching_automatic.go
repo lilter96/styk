@@ -47,7 +47,7 @@ const productMatchDueSQL = `SELECT p.tenant_id,p.moysklad_account,p.ozon_account
  ORDER BY p.last_checked_at,p.tenant_id,p.moysklad_account,p.ozon_account LIMIT 1`
 
 func (s *Store) runProductMatchCycle(ctx context.Context, scope catalog.Scope) error {
-	tx, err := s.Pool.Begin(ctx)
+	tx, err := beginProductMatchingSet(ctx, s.Pool)
 	if err != nil {
 		return err
 	}

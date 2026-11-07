@@ -59,7 +59,7 @@ func (s *Store) queueProductMatchingApplication(ctx context.Context, r ProductMa
 	return tx.Commit(ctx)
 }
 func (s *Store) executeProductMatchingApplication(ctx context.Context, id string) (ProductMatchingApplication, error) {
-	tx, err := s.Pool.Begin(ctx)
+	tx, err := beginProductMatchingSet(ctx, s.Pool)
 	if err != nil {
 		return ProductMatchingApplication{}, err
 	}
@@ -71,10 +71,7 @@ func (s *Store) executeProductMatchingApplication(ctx context.Context, id string
 	if app.State != "QUEUED" && app.State != "RUNNING" {
 		return app, tx.Commit(ctx)
 	}
-	if _, err = tx.Exec(ctx, `SAVEPOINT matching_apply`); err != nil {
-		return app, err
-	}
-	app, err = authorizeAndApplyMatching(ctx, tx, w)
+	result, err := authorizeAndApplyMatching(ctx, tx, w)
 	if err != nil {
 		if ctx.Err() != nil {
 			return app, err
@@ -89,13 +86,26 @@ func (s *Store) executeProductMatchingApplication(ctx context.Context, id string
 		if _, err = tx.Exec(ctx, `UPDATE product_matching_jobs SET apply_state=$2,apply_code=$3,updated_at=clock_timestamp() WHERE id=$1`, id, app.State, app.Code); err != nil {
 			return app, err
 		}
+	} else {
+		app = result
 	}
 	return app, tx.Commit(ctx)
 }
 func readProductMatchingApplication(ctx context.Context, tx pgx.Tx, id string) (productMatchingWork, ProductMatchingApplication, error) {
 	var w productMatchingWork
 	var app ProductMatchingApplication
-	err := tx.QueryRow(ctx, `SELECT id,tenant_id,moysklad_account,ozon_account,actor,criterion,moy_import,ozon_import,apply_state,apply_total,confirmed,skipped,apply_code FROM product_matching_jobs WHERE id=$1 FOR UPDATE`, id).Scan(&w.ID, &w.Scope.Tenant, &w.Scope.MoyskladAccount, &w.Scope.OzonAccount, &w.Actor, &w.Criterion, &w.MoyImport, &w.OzonImport, &app.State, &app.Total, &app.Confirmed, &app.Skipped, &app.Code)
+	batch := &pgx.Batch{}
+	batch.Queue(`SELECT id,tenant_id,moysklad_account,ozon_account,actor,criterion,moy_import,ozon_import,apply_state,apply_total,confirmed,skipped,apply_code,created_at<clock_timestamp()-interval '1 hour' FROM product_matching_jobs WHERE id=$1 FOR UPDATE`, id)
+	batch.Queue(`SAVEPOINT matching_apply`)
+	results := tx.SendBatch(ctx, batch)
+	err := results.QueryRow().Scan(&w.ID, &w.Scope.Tenant, &w.Scope.MoyskladAccount, &w.Scope.OzonAccount, &w.Actor, &w.Criterion, &w.MoyImport, &w.OzonImport, &app.State, &app.Total, &app.Confirmed, &app.Skipped, &app.Code, &w.Expired)
+	if err != nil {
+		return w, app, errors.Join(err, results.Close())
+	}
+	if _, err = results.Exec(); err != nil {
+		return w, app, errors.Join(err, results.Close())
+	}
+	err = results.Close()
 	return w, app, err
 }
 func applyProductMatchingSet(ctx context.Context, tx pgx.Tx, w productMatchingWork) (ProductMatchingApplication, error) {
@@ -107,11 +117,7 @@ func applyProductMatchingSet(ctx context.Context, tx pgx.Tx, w productMatchingWo
 	if imports.MoyID != w.MoyImport || imports.OzonID != w.OzonImport {
 		return app, catalogsync.ErrStale
 	}
-	var expired bool
-	if err = tx.QueryRow(ctx, `SELECT created_at<clock_timestamp()-interval '1 hour' FROM product_matching_jobs WHERE id=$1`, w.ID).Scan(&expired); err != nil {
-		return app, err
-	}
-	if expired {
+	if w.Expired {
 		return app, catalogsync.ErrStale
 	}
 	explanation := fmt.Sprintf("Exact catalogue matching; criterion %s; job %s", w.Criterion, w.ID)

@@ -133,6 +133,7 @@ it("shows examples automatically and applies every exact pair across the whole c
   ).toBeTruthy();
   expect(screen.queryByRole("button", { name: /Следующие товары/ })).toBeNull();
   expect(calls.map((c) => c.path)).toEqual(["/api/product-matching/jobs"]);
+  await waitFor(() => expect((apply as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(apply);
   await screen.findByRole("heading", { name: "Сопоставлено товаров: 2104" });
   const approvals = calls.filter((c) => c.path.endsWith("/apply"));
@@ -160,11 +161,9 @@ it("a different criterion creates its own read-only search without saving automa
 });
 it("restores an uncertain approval and repeats its exact key after reload", async () => {
   const { calls, remount } = mount(true);
-  fireEvent.click(
-    await screen.findByRole("button", {
-      name: "Сопоставить все товары (2104)",
-    }),
-  );
+  const apply = await screen.findByRole("button", {name: "Сопоставить все товары (2104)"});
+  await waitFor(() => expect((apply as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(apply);
   await screen.findByText(/Ответ о запуске не получен/);
   const first = calls.find((c) => c.path.endsWith("/apply"))!.body;
   remount();

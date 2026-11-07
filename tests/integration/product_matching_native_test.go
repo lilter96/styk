@@ -76,12 +76,16 @@ func TestProductMatchingNativeClassificationMatchesDomain(t *testing.T) {
 	}
 	now := time.Now().UTC()
 	ctx := context.Background()
-	mi, err := db.SaveInventoryImport(ctx, domain.InventoryImport{Account: scope.MoyskladAccount, StartedAt: now, FinishedAt: now, Entities: targets}, "native-targets")
+	_, err := db.SaveInventoryImport(ctx, domain.InventoryImport{Account: scope.MoyskladAccount, StartedAt: now, FinishedAt: now, Entities: targets}, "native-targets")
 	if err != nil {
 		t.Fatal(err)
 	}
-	oi, err := db.SaveOzonImport(ctx, domain.OzonImport{Account: scope.OzonAccount, StartedAt: now, FinishedAt: now, Products: products}, "native-sources")
+	_, err = db.SaveOzonImport(ctx, domain.OzonImport{Account: scope.OzonAccount, StartedAt: now, FinishedAt: now, Products: products}, "native-sources")
 	if err != nil {
+		t.Fatal(err)
+	}
+	var mi, oi int64
+	if err = db.Pool.QueryRow(ctx, `SELECT (SELECT max(id) FROM source_imports WHERE source='moysklad'),(SELECT max(id) FROM source_imports WHERE source='ozon')`).Scan(&mi, &oi); err != nil {
 		t.Fatal(err)
 	}
 	var sources []matching.Source

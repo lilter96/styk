@@ -39,7 +39,7 @@ func (s *Store) CreateProductMatchingJob(ctx context.Context, scope catalog.Scop
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.Timeout)
 	defer cancel()
-	tx, err := s.Pool.Begin(ctx)
+	tx, err := beginProductMatchingSet(ctx, s.Pool)
 	if err != nil {
 		return j, err
 	}
@@ -127,6 +127,7 @@ func (s *Store) ProductMatchingJob(ctx context.Context, scope catalog.Scope, id,
 
 type productMatchingWork struct {
 	ID, Actor             string
+	Expired               bool
 	Scope                 catalog.Scope
 	Criterion             matching.Criterion
 	MoyImport, OzonImport int64

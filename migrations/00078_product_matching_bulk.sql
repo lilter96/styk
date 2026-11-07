@@ -28,6 +28,22 @@ CREATE TABLE product_matching_job_results (
  finished_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 CREATE TRIGGER product_matching_results_immutable BEFORE UPDATE OR DELETE ON product_matching_job_results FOR EACH ROW EXECUTE FUNCTION stock_reject_mutation();
+-- Validate each distinct actor after the complete statement, with the same
+-- lineage locks and clock checks as row writes. Invalid actors roll back all rows.
+-- +goose StatementBegin
+CREATE FUNCTION product_matching_validate_actors() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE actor record;
+BEGIN
+ FOR actor IN SELECT DISTINCT tenant_id,session_audit_id FROM matching_actor_rows WHERE principal_type='MERCHANT_SESSION' LOOP
+  PERFORM saas_require_actor(actor.tenant_id,actor.session_audit_id,false);
+ END LOOP;
+ RETURN NULL;
+END $$;
+-- +goose StatementEnd
+DROP TRIGGER saas_actor_product_review ON product_mapping_reviews;
+DROP TRIGGER saas_actor_product_confirmation ON product_mapping_confirmation_audits;
+CREATE TRIGGER saas_actor_product_review AFTER INSERT ON product_mapping_reviews REFERENCING NEW TABLE AS matching_actor_rows FOR EACH STATEMENT EXECUTE FUNCTION product_matching_validate_actors();
+CREATE TRIGGER saas_actor_product_confirmation AFTER INSERT ON product_mapping_confirmation_audits REFERENCING NEW TABLE AS matching_actor_rows FOR EACH STATEMENT EXECUTE FUNCTION product_matching_validate_actors();
 -- Same canonical string encoding as encoding/json (including its HTML and separator escaping).
 -- +goose StatementBegin
 CREATE FUNCTION product_matching_escape(text) RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
@@ -103,6 +119,11 @@ DO $$ BEGIN
  END IF;
 END $$;
 -- +goose StatementEnd
+DROP TRIGGER saas_actor_product_review ON product_mapping_reviews;
+DROP TRIGGER saas_actor_product_confirmation ON product_mapping_confirmation_audits;
+CREATE TRIGGER saas_actor_product_review BEFORE INSERT ON product_mapping_reviews FOR EACH ROW EXECUTE FUNCTION saas_validate_audit_actor();
+CREATE TRIGGER saas_actor_product_confirmation BEFORE INSERT ON product_mapping_confirmation_audits FOR EACH ROW EXECUTE FUNCTION saas_validate_audit_actor();
+DROP FUNCTION product_matching_validate_actors();
 ALTER TABLE product_matching_cycles DROP CONSTRAINT product_matching_cycle_evidence, DROP CONSTRAINT product_matching_cycle_job_scope, DROP COLUMN job_id, ALTER COLUMN run_id SET NOT NULL;
 ALTER TABLE product_matching_jobs DROP CONSTRAINT product_matching_jobs_scope;
 DROP TABLE product_matching_job_results;

@@ -64,3 +64,6 @@ jobs:
           go-version: '1.27.3'
       - run: go test -race ./internal/matching ./internal/postgres ./internal/console ./internal/catalogsync
       - run: go test -race -tags=integration ./tests/integration -run 'Test(ProductDraft|ProductMatching|CatalogImport)' -count=1
+      - run: go test -race -tags=integration ./tests/integration -run '^TestProductMatchingBulkHotPath$' -count=1 -v
+        env:
+          STYK_MATCHING_PERFORMANCE: 'true'
