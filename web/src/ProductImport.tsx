@@ -139,13 +139,21 @@ export function ProductImport({
     setSelected(value.selected || {});
     setPlans(value.plans || []);
     setIntents(value.intents || []);
-    setUncertain(!!value.intents?.some((i) => !i.operation && !i.rejected));
+    const recovering = !!value.intents?.some(
+      (i) => !i.operation && !i.rejected,
+    );
+    setUncertain(recovering);
+    setConfirming(recovering);
     if (
       value.intents?.length &&
       value.intents.every((i) => i.operation || i.rejected)
     )
       setOperation(value.intents.find((i) => i.operation)?.operation || null);
-    setError("");
+    setError(
+      recovering
+        ? "Восстановлен незавершённый импорт. Продолжите теми же запросами: повторно поставленные операции не создадут дубликаты."
+        : "",
+    );
   }
   async function prepare() {
     if (
@@ -571,7 +579,9 @@ export function ProductImport({
               <div className="products-import-selection">
                 <button
                   className="secondary"
-                  disabled={busy || !eligible.length || uncertain}
+                  disabled={
+                    busy || draft.saving || !eligible.length || uncertain
+                  }
                   onClick={() => {
                     setPreview(null);
                     setSelected({
@@ -673,6 +683,7 @@ export function ProductImport({
                             }
                             disabled={
                               busy ||
+                              draft.saving ||
                               uncertain ||
                               (preview ? !decision?.ready : paired) ||
                               product.lifecycle !== "active" ||

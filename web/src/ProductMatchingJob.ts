@@ -1,4 +1,4 @@
-import { api, params, post } from "./api";
+import { api, ApiError, params, post } from "./api";
 import { scopeBody, type Scope } from "./CatalogSyncTypes";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -61,15 +61,25 @@ export function useProductMatchingJob(scope: Scope) {
       key: crypto.randomUUID(),
     };
     localStorage.setItem(pendingKey, JSON.stringify(intent));
-    const value = await post<MatchingJob>(
-      "/api/product-matching/jobs",
-      {
-        ...scopeBody(scope),
-        expected_revision: intent.revision,
-        idempotency_key: intent.key,
-      },
-      signal,
-    );
+    let value: MatchingJob;
+    try {
+      value = await post<MatchingJob>(
+        "/api/product-matching/jobs",
+        {
+          ...scopeBody(scope),
+          expected_revision: intent.revision,
+          idempotency_key: intent.key,
+        },
+        signal,
+      );
+    } catch (error) {
+      if (
+        error instanceof ApiError &&
+        [400, 403, 404, 409, 422].includes(error.status)
+      )
+        localStorage.removeItem(pendingKey);
+      throw error;
+    }
     localStorage.removeItem(pendingKey);
     localStorage.setItem(storageKey, value.id);
     setID(value.id);
@@ -82,6 +92,10 @@ export function useProductMatchingJob(scope: Scope) {
     query,
     start,
     setPage,
+    resume: async () => {
+      await post(`/api/product-matching/jobs/${id}/retry`, scopeBody(scope));
+      await query.refetch();
+    },
     clear: async () => {
       if (id)
         await post(`/api/product-matching/jobs/${id}/cancel`, scopeBody(scope));

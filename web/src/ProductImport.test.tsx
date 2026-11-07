@@ -112,6 +112,9 @@ function setup(lost = false, count = 0) {
   return {
     writes,
     fetcher,
+    setLost: (value: boolean) => {
+      lost = value;
+    },
     remount: () => {
       view.rerender(<></>);
       client.clear();
@@ -271,4 +274,27 @@ it("restores a server draft after leaving the workflow", async () => {
   expect(
     (screen.getByLabelText("Выбрать Товар A") as HTMLInputElement).checked,
   ).toBe(true);
+});
+
+it("resumes the same approval key from a saved server manifest after reload", async () => {
+  const { writes, remount, setLost } = setup(true);
+  await prepare();
+  await confirm();
+  await screen.findByText(/Операция могла сохраниться/);
+  const first = writes.find((w) => w.path.endsWith("approve"))!.body;
+  remount();
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Восстановить черновик (2)" }),
+  );
+  setLost(false);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Продолжить теми же запросами" }),
+  );
+  await screen.findByRole("heading", { name: "Запрос поставлен в обработку" });
+  const approvals = writes.filter((w) => w.path.endsWith("approve"));
+  expect(approvals).toHaveLength(2);
+  expect(approvals[1].body).toEqual(first);
+  expect(writes.filter((w) => w.path.endsWith("import-preview"))).toHaveLength(
+    1,
+  );
 });

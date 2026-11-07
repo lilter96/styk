@@ -1,9 +1,10 @@
 package console
 
 import (
-	"github.com/lilter96/styk/internal/postgres"
 	"net/http"
 	"strconv"
+
+	"github.com/lilter96/styk/internal/postgres"
 )
 
 func registerProductMatchingJobs(mux *http.ServeMux, a *auth, db *postgres.Store) {
@@ -35,6 +36,21 @@ func registerProductMatchingJobs(mux *http.ServeMux, a *auth, db *postgres.Store
 		w.WriteHeader(http.StatusNoContent)
 	})))
 
+	registerProductMatchingRead(mux, a, db)
+}
+
+func registerProductMatchingRead(mux *http.ServeMux, a *auth, db *postgres.Store) {
+	mux.HandleFunc("POST /api/product-matching/jobs/{id}/retry", a.authorized(a.connectionMutation(func(w http.ResponseWriter, r *http.Request) {
+		var body catalogRequestScope
+		if !decodeStockSync(w, r, &body) {
+			return
+		}
+		if err := db.RetryProductMatchingJob(r.Context(), body.catalogScope(), r.PathValue("id"), catalogActor(r)); err != nil {
+			catalogHTTPError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})))
 	mux.HandleFunc("GET /api/product-matching/jobs/{id}", a.authorized(func(w http.ResponseWriter, r *http.Request) {
 		page := 0
 		var err error

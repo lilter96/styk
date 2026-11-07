@@ -384,9 +384,24 @@ function ProductAutoMatchingAccount({
                 : job.query.data?.state === "STALE"
                   ? "Данные или права изменились. Запустите новую проверку."
                   : job.query.data?.state === "FAILED"
-                    ? "Проверка остановлена из-за ошибки сервиса. Повторите проверку."
+                    ? "Проверка остановлена из-за ошибки сервиса. Можно продолжить с сохранённого места."
                     : "Проверка выполняется в фоне. Страницу можно закрыть и вернуться позже."}
             </p>
+          )}
+          {job.query.data?.state === "FAILED" && (
+            <button
+              className="secondary"
+              disabled={busy || uncertain}
+              onClick={() => {
+                setBusy(true);
+                void job
+                  .resume()
+                  .catch((e) => setError(failure(e)))
+                  .finally(() => setBusy(false));
+              }}
+            >
+              Продолжить проверку
+            </button>
           )}
           {job.query.data?.state === "COMPLETED" && (
             <p>

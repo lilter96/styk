@@ -77,6 +77,23 @@ func TestProductMatchingJobTraversesLargeCatalogueAndKeepsGlobalDuplicates(t *te
 		if err != nil {
 			t.Fatal(err)
 		}
+		if i == 0 {
+			if job.Processed != 100 || job.Pages != 1 {
+				t.Fatalf("missing committed progress: %+v", job)
+			}
+			if _, err = db.Pool.Exec(ctx, `UPDATE product_matching_jobs SET state='FAILED',code='MATCHING_SERVICE_UNAVAILABLE' WHERE id=$1`, job.ID); err != nil {
+				t.Fatal(err)
+			}
+			if err = db.RetryProductMatchingJob(ctx, scope, job.ID, "foreign-actor"); !errors.Is(err, catalogsync.ErrNotFound) {
+				t.Fatalf("foreign retry: %v", err)
+			}
+			if err = db.RetryProductMatchingJob(ctx, scope, job.ID, "matching-test"); err != nil {
+				t.Fatal(err)
+			}
+			if err = db.RetryProductMatchingJob(ctx, scope, job.ID, "matching-test"); err != nil {
+				t.Fatal("retry replay", err)
+			}
+		}
 		if job.State == "COMPLETED" {
 			break
 		}
@@ -86,6 +103,9 @@ func TestProductMatchingJobTraversesLargeCatalogueAndKeepsGlobalDuplicates(t *te
 	}
 	if job.Processed != 2106 || job.Pages != 22 || job.State != "COMPLETED" || job.Preview == nil {
 		t.Fatalf("incomplete job: %+v", job)
+	}
+	if job.Summary["exact"] != 2103 || job.Summary["conflict"] != 3 {
+		t.Fatalf("global summary: %+v", job.Summary)
 	}
 	if job.Preview.Items[1].Reason != "duplicate_sku" || job.Preview.Items[2].Reason != "duplicate_offer" {
 		t.Fatalf("cross-page duplicates: %+v", job.Preview.Items[:3])
